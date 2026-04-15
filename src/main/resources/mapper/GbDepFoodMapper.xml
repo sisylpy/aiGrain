@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nongxinle.mapper.GbDepFoodMapper">
+
+    <select id="queryObject" resultType="com.nongxinle.entity.GbDepFoodEntity">
+        select * from gb_dep_food where gb_dep_food_id = #{value}
+    </select>
+
+    <select id="queryList" resultType="com.nongxinle.entity.GbDepFoodEntity">
+        select * from gb_dep_food
+        <if test="offset != null and limit != null">
+            limit #{offset}, #{limit}
+        </if>
+    </select>
+
+    <select id="queryTotal" resultType="int">
+        select count(*) from gb_dep_food
+    </select>
+
+    <select id="queryDepFoodByParams" resultType="com.nongxinle.entity.GbDepFoodEntity">
+        select * from gb_dep_food
+        <where>
+            <if test="depId != null">
+                and gb_df_dep_id = #{depId}
+            </if>
+            <if test="foodId != null">
+                and gb_df_food_id = #{foodId}
+            </if>
+            <if test="depFatherId != null">
+                and gb_df_dep_father_id = #{depFatherId}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepFoodsByDepFatherId" resultType="com.nongxinle.entity.GbDepFoodEntity">
+        select * from gb_dep_food
+        where gb_df_dep_father_id = #{depFatherId}
+    </select>
+
+    <select id="queryDepAllFood" resultType="com.nongxinle.entity.GbDepFoodEntity">
+        select * from gb_dep_food
+        <where>
+            <if test="depId != null">
+                and gb_df_dep_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                and gb_df_dep_father_id = #{depFatherId}
+            </if>
+        </where>
+    </select>
+
+    <insert id="save" parameterType="com.nongxinle.entity.GbDepFoodEntity" useGeneratedKeys="true" keyProperty="gbDepFoodId">
+        insert into gb_dep_food
+        (gb_df_dep_id, gb_df_food_id, gb_df_dep_father_id, gb_df_food_price, gb_df_status, gb_df_distributer_id, gb_df_nx_food_id)
+        values
+        (#{gbDfDepId}, #{gbDfFoodId}, #{gbDfDepFatherId}, #{gbDfFoodPrice}, #{gbDfStatus}, #{gbDfDistributerId}, #{gbDfNxFoodId})
+    </insert>
+
+    <update id="update" parameterType="com.nongxinle.entity.GbDepFoodEntity">
+        update gb_dep_food
+        <set>
+            <if test="gbDfFoodPrice != null">`gb_df_food_price` = #{gbDfFoodPrice},</if>
+            <if test="gbDfStatus != null">`gb_df_status` = #{gbDfStatus},</if>
+            <if test="gbDfDepFatherId != null">`gb_df_dep_father_id` = #{gbDfDepFatherId},</if>
+        </set>
+        where gb_dep_food_id = #{gbDepFoodId}
+    </update>
+
+    <delete id="delete">
+        delete from gb_dep_food where gb_dep_food_id = #{value}
+    </delete>
+
+    <delete id="deleteBatch">
+        delete from gb_dep_food where gb_dep_food_id in
+        <foreach item="gbDepFoodId" collection="array" open="(" separator="," close=")">
+            #{gbDepFoodId}
+        </foreach>
+    </delete>
+
+</mapper>

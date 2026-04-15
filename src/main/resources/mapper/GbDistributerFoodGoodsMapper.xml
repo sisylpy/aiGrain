@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nongxinle.mapper.GbDistributerFoodGoodsMapper">
+
+    <select id="queryObject" resultType="com.nongxinle.entity.GbDistributerFoodGoodsEntity">
+        select * from gb_distributer_food_goods where gb_distributer_food_goods_id = #{value}
+    </select>
+
+    <select id="queryList" resultType="com.nongxinle.entity.GbDistributerFoodGoodsEntity">
+        select * from gb_distributer_food_goods
+        <if test="offset != null and limit != null">
+            limit #{offset}, #{limit}
+        </if>
+    </select>
+
+    <select id="queryTotal" resultType="int">
+        select count(*) from gb_distributer_food_goods
+    </select>
+
+    <select id="queryFoodGoodsByParams" resultType="com.nongxinle.entity.GbDistributerFoodGoodsEntity">
+        select * from gb_distributer_food_goods
+        <where>
+            <if test="foodId != null">
+                and gb_dfg_food_id = #{foodId}
+            </if>
+            <if test="disId != null">
+                and gb_dfg_dis_id = #{disId}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryFoodGoodsByFoodId" resultType="com.nongxinle.entity.GbDistributerFoodGoodsEntity">
+        select * from gb_distributer_food_goods
+        where gb_dfg_food_id = #{gbDfgFoodId}
+    </select>
+
+    <insert id="save" parameterType="com.nongxinle.entity.GbDistributerFoodGoodsEntity" useGeneratedKeys="true" keyProperty="gbDistributerFoodGoodsId">
+        insert into gb_distributer_food_goods
+        (gb_dfg_dis_id, gb_dfg_food_id, gb_dfg_dis_goods_id, gb_dfg_goods_amount, gb_dfg_goods_name, gb_dfg_goods_standardname, gb_dfg_status)
+        values
+        (#{gbDfgDisId}, #{gbDfgFoodId}, #{gbDfgDisGoodsId}, #{gbDfgGoodsAmount}, #{gbDfgGoodsName}, #{gbDfgGoodsStandardname}, #{gbDfgStatus})
+    </insert>
+
+    <update id="update" parameterType="com.nongxinle.entity.GbDistributerFoodGoodsEntity">
+        update gb_distributer_food_goods
+        <set>
+            <if test="gbDfgDisId != null">`gb_dfg_dis_id` = #{gbDfgDisId},</if>
+            <if test="gbDfgFoodId != null">`gb_dfg_food_id` = #{gbDfgFoodId},</if>
+            <if test="gbDfgDisGoodsId != null">`gb_dfg_dis_goods_id` = #{gbDfgDisGoodsId},</if>
+            <if test="gbDfgGoodsAmount != null">`gb_dfg_goods_amount` = #{gbDfgGoodsAmount},</if>
+            <if test="gbDfgGoodsName != null">`gb_dfg_goods_name` = #{gbDfgGoodsName},</if>
+            <if test="gbDfgGoodsStandardname != null">`gb_dfg_goods_standardname` = #{gbDfgGoodsStandardname},</if>
+            <if test="gbDfgStatus != null">`gb_dfg_status` = #{gbDfgStatus},</if>
+        </set>
+        where gb_distributer_food_goods_id = #{gbDistributerFoodGoodsId}
+    </update>
+
+    <delete id="delete">
+        delete from gb_distributer_food_goods where gb_distributer_food_goods_id = #{value}
+    </delete>
+
+    <delete id="deleteBatch">
+        delete from gb_distributer_food_goods where gb_distributer_food_goods_id in
+        <foreach item="gbDistributerFoodGoodsId" collection="array" open="(" separator="," close=")">
+            #{gbDistributerFoodGoodsId}
+        </foreach>
+    </delete>
+
+</mapper>

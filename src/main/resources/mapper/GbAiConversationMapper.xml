@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbAiConversationMapper">
+
+	<resultMap id="BaseResultMap" type="com.nongxinle.entity.GbAiConversationEntity">
+		<id column="gb_ai_conversation_id" property="gbAiConversationId" />
+		<result column="gb_ai_conversation_department_id" property="gbAiConversationDepartmentId" />
+		<result column="gb_ai_conversation_distributer_id" property="gbAiConversationDistributerId" />
+		<result column="gb_ai_conversation_type" property="gbAiConversationType" />
+		<result column="gb_ai_conversation_title" property="gbAiConversationTitle" />
+		<result column="gb_ai_conversation_create_time" property="gbAiConversationCreateTime" />
+		<result column="gb_ai_conversation_update_time" property="gbAiConversationUpdateTime" />
+		<result column="gb_ai_conversation_end_time" property="gbAiConversationEndTime" />
+		<result column="gb_ai_conversation_status" property="gbAiConversationStatus" />
+	</resultMap>
+
+	<select id="queryConversationListByParams" resultMap="BaseResultMap">
+		SELECT * FROM gb_ai_conversation
+		WHERE 1=1
+	</select>
+
+</mapper>

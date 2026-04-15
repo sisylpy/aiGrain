@@ -1,0 +1,13 @@
+package com.nongxinle.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.nongxinle.entity.GbDistributerAliasEntity;
+import org.apache.ibatis.annotations.Mapper;
+
+/**
+ * 批发商商品别名Mapper接口
+ */
+@Mapper
+public interface GbDistributerAliasMapper extends BaseMapper<GbDistributerAliasEntity> {
+
+}

@@ -1,0 +1,323 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbDistributerPurchaseBatchMapper">
+
+    <!-- 采购批次结果映射 -->
+    <resultMap id="purchaseBatchWithGoodsMap" type="com.nongxinle.entity.GbDistributerPurchaseBatchEntity">
+        <id column="gb_distributer_purchase_batch_id" property="gbDistributerPurchaseBatchId"/>
+        <result column="gb_dpb_status" property="gbDpbStatus"/>
+        <result column="gb_dpb_user_admin_type" property="gbDpbUserAdminType"/>
+        <result column="gb_dpb_time" property="gbDpbTime"/>
+        <result column="gb_dpb_pur_user_id" property="gbDpbPurUserId"/>
+        <result column="gb_dpb_dep_bill_id" property="gbDpbDepBillId"/>
+        <result column="gb_dpb_distributer_id" property="gbDpbDistributerId"/>
+        <result column="gb_dpb_date" property="gbDpbDate"/>
+        <result column="gb_dpb_hour" property="gbDpbHour"/>
+        <result column="gb_dpb_minute" property="gbDpbMinute"/>
+        <result column="gb_dpb_subtotal" property="gbDpbSubtotal"/>
+        <result column="gb_dpb_pur_department_id" property="gbDpbPurDepartmentId"/>
+        <result column="gb_dpb_pay_type" property="gbDpbPayType"/>
+        <result column="gb_dpb_pay_subtotal" property="gbDpbPaySubtotal"/>
+        <result column="gb_dpb_supplier_id" property="gbDpbSupplierId"/>
+        <result column="gb_dpb_purchase_month" property="gbDpbPurchaseMonth"/>
+        <result column="gb_dpb_purchase_week" property="gbDpbPurchaseWeek"/>
+        <result column="gb_dpb_purchase_year" property="gbDpbPurchaseYear"/>
+        <result column="gb_dpb_purchase_full_time" property="gbDpbPurchaseFullTime"/>
+        <result column="gb_dpb_seller_reply_full_time" property="gbDpbSellerReplyFullTime"/>
+        <result column="gb_dpb_finish_full_time" property="gbDpbFinishFullTime"/>
+        <result column="gb_dpb_buy_user_open_id" property="gbDpbBuyUserOpenId"/>
+        <result column="gb_dpb_sell_user_open_id" property="gbDpbSellUserOpenId"/>
+        <result column="gb_dpb_gb_supplier_payment_id" property="gbDpbGbSupplierPaymentId"/>
+        <result column="gb_dpb_buy_user_id" property="gbDpbBuyUserId"/>
+        <result column="gb_dpb_sell_user_id" property="gbDpbSellUserId"/>
+        <result column="gb_dpb_purchase_type" property="gbDpbPurchaseType"/>
+        
+        <!-- 嵌套查询采购人员 -->
+        <association property="nxJrdhPurEntity" javaType="com.nongxinle.entity.GbDepartmentUserEntity"
+                     column="gb_dpb_pur_user_id" 
+                     select="queryPurUserById"/>
+        
+        <!-- 嵌套查询卖方 -->
+        <association property="nxJrdhSellerEntity" javaType="com.nongxinle.entity.NxJrdhUserEntity"
+                     column="gb_dpb_sell_user_id" 
+                     select="querySellerById"/>
+        
+        <!-- 嵌套查询供货商 -->
+        <association property="nxJrdhSupplierEntity" javaType="com.nongxinle.entity.NxJrdhSupplierEntity"
+                     column="gb_dpb_supplier_id" 
+                     select="querySupplierById"/>
+        
+        <!-- 嵌套查询采购商品 -->
+        <collection property="gbDPGEntities" ofType="com.nongxinle.entity.GbDistributerPurchaseGoodsEntity"
+                    column="gb_distributer_purchase_batch_id" 
+                    select="queryPurchaseGoodsByBatchId"/>
+    </resultMap>
+    
+    <!-- 采购商品结果映射（包含商品信息和部门订单） -->
+    <resultMap id="purchaseGoodsWithOrdersMap" type="com.nongxinle.entity.GbDistributerPurchaseGoodsEntity">
+        <id column="gb_distributer_purchase_goods_id" property="gbDistributerPurchaseGoodsId"/>
+        <result column="gb_DPG_dis_goods_id" property="gbDpgDisGoodsId"/>
+        <result column="gb_DPG_dis_goods_father_id" property="gbDpgDisGoodsFatherId"/>
+        <result column="gb_DPG_dis_goods_grand_id" property="gbDpgDisGoodsGrandId"/>
+        <result column="gb_DPG_dis_goods_great_id" property="gbDpgDisGoodsGreatId"/>
+        <result column="gb_DPG_quantity" property="gbDpgQuantity"/>
+        <result column="gb_DPG_standard" property="gbDpgStandard"/>
+        <result column="gb_DPG_status" property="gbDpgStatus"/>
+        <result column="gb_DPG_distributer_id" property="gbDpgDistributerId"/>
+        <result column="gb_DPG_purchase_type" property="gbDpgPurchaseType"/>
+        <result column="gb_DPG_purchase_nx_supplier_id" property="gbDpgPurchaseNxSupplierId"/>
+        <result column="gb_DPG_time" property="gbDpgTime"/>
+        <result column="gb_DPG_apply_date" property="gbDpgApplyDate"/>
+        <result column="gb_DPG_batch_id" property="gbDpgBatchId"/>
+        <result column="gb_DPG_pur_user_id" property="gbDpgPurUserId"/>
+        <result column="gb_DPG_buy_price" property="gbDpgBuyPrice"/>
+        <result column="gb_DPG_buy_quantity" property="gbDpgBuyQuantity"/>
+        <result column="gb_DPG_dis_goods_price_id" property="gbDpgDisGoodsPriceId"/>
+        <result column="gb_DPG_is_check" property="gbDpgIsCheck"/>
+        <result column="gb_DPG_orders_amount" property="gbDpgOrdersAmount"/>
+        <result column="gb_DPG_type_add_user_id" property="gbDpgTypeAddUserId"/>
+        <result column="gb_DPG_input_type" property="gbDpgInputType"/>
+        <result column="gb_DPG_pay_type" property="gbDpgPayType"/>
+        <result column="gb_DPG_purchase_date" property="gbDpgPurchaseDate"/>
+        <result column="gb_DPG_buy_subtotal" property="gbDpgBuySubtotal"/>
+        <result column="gb_DPG_purchase_department_id" property="gbDpgPurchaseDepartmentId"/>
+        <result column="gb_DPG_purchase_month" property="gbDpgPurchaseMonth"/>
+        <result column="gb_DPG_purchase_year" property="gbDpgPurchaseYear"/>
+        <result column="gb_DPG_purchase_full_time" property="gbDpgPurchaseFullTime"/>
+        <result column="gb_DPG_purchase_week" property="gbDpgPurchaseWeek"/>
+        <result column="gb_DPG_purchase_week_year" property="gbDpgPurchaseWeekYear"/>
+        <result column="gb_DPG_buy_scale_quantity" property="gbDpgBuyScaleQuantity"/>
+        <result column="gb_DPG_buy_scale_price" property="gbDpgBuyScalePrice"/>
+        <result column="gb_DPG_buy_scale" property="gbDpgBuyScale"/>
+        <result column="gb_DPG_buy_price_reason" property="gbDpgBuyPriceReason"/>
+        <result column="gb_DPG_warn_full_time" property="gbDpgWarnFullTime"/>
+        <result column="gb_DPG_waste_full_time" property="gbDpgWasteFullTime"/>
+        <result column="gb_DPG_weight_id" property="gbDpgWeightId"/>
+        <result column="gb_DPG_orders_finish_amount" property="gbDpgOrdersFinishAmount"/>
+        <result column="gb_DPG_orders_bill_amount" property="gbDpgOrdersBillAmount"/>
+        <result column="gb_DPG_orders_weight_amount" property="gbDpgOrdersWeightAmount"/>
+        <result column="gb_DPG_supplier_finish_date" property="gbDpgSupplierFinishDate"/>
+        <result column="gb_DPG_stock_finish_date" property="gbDpgStockFinishDate"/>
+        
+        <!-- 商品名称、拼音、规格、重量、品牌 -->
+        <result column="gb_dg_goods_name" property="gbDistributerGoodsName"/>
+        <result column="gb_dg_goods_py" property="gbDgGoodsPy"/>
+        <result column="gb_dg_goods_standardname" property="gbDgGoodsStandardname"/>
+        <result column="gb_dg_goods_standard_weight" property="gbDgGoodsStandardWeight"/>
+        <result column="gb_dg_goods_brand" property="gbDgGoodsBrand"/>
+        
+        <!-- 嵌套查询部门订单 -->
+        <collection property="gbDepartmentOrdersEntities" ofType="com.nongxinle.entity.GbDepartmentOrdersEntity"
+                    column="gb_distributer_purchase_goods_id" 
+                    select="queryDepartmentOrdersByPurchaseGoodsId"/>
+    </resultMap>
+
+    <!-- 根据批次ID查询采购商品 -->
+    <select id="queryPurchaseGoodsByBatchId" resultMap="purchaseGoodsWithOrdersMap">
+        select dpg.gb_distributer_purchase_goods_id,
+               dpg.gb_DPG_dis_goods_id,
+               dpg.gb_DPG_dis_goods_father_id,
+               dpg.gb_DPG_dis_goods_grand_id,
+               dpg.gb_DPG_dis_goods_great_id,
+               dpg.gb_DPG_quantity,
+               dpg.gb_DPG_standard,
+               dpg.gb_DPG_status,
+               dpg.gb_DPG_distributer_id,
+               dpg.gb_DPG_purchase_type,
+               dpg.gb_DPG_purchase_nx_supplier_id,
+               dpg.gb_DPG_time,
+               dpg.gb_DPG_apply_date,
+               dpg.gb_DPG_batch_id,
+               dpg.gb_DPG_pur_user_id,
+               dpg.gb_DPG_buy_price,
+               dpg.gb_DPG_buy_quantity,
+               dpg.gb_DPG_dis_goods_price_id,
+               dpg.gb_DPG_is_check,
+               dpg.gb_DPG_orders_amount,
+               dpg.gb_DPG_type_add_user_id,
+               dpg.gb_DPG_input_type,
+               dpg.gb_DPG_pay_type,
+               dpg.gb_DPG_purchase_date,
+               dpg.gb_DPG_buy_subtotal,
+               dpg.gb_DPG_purchase_department_id,
+               dpg.gb_DPG_purchase_month,
+               dpg.gb_DPG_purchase_year,
+               dpg.gb_DPG_purchase_full_time,
+               dpg.gb_DPG_purchase_week,
+               dpg.gb_DPG_purchase_week_year,
+               dpg.gb_DPG_buy_scale_quantity,
+               dpg.gb_DPG_buy_scale_price,
+               dpg.gb_DPG_buy_scale,
+               dpg.gb_DPG_buy_price_reason,
+               dpg.gb_DPG_warn_full_time,
+               dpg.gb_DPG_waste_full_time,
+               dpg.gb_DPG_weight_id,
+               dpg.gb_DPG_orders_finish_amount,
+               dpg.gb_DPG_orders_bill_amount,
+               dpg.gb_DPG_orders_weight_amount,
+               dpg.gb_DPG_supplier_finish_date,
+               dpg.gb_DPG_stock_finish_date,
+               dg.gb_dg_goods_name,
+               dg.gb_dg_goods_py,
+               dg.gb_dg_goods_standardname,
+               dg.gb_dg_goods_standard_weight,
+               dg.gb_dg_goods_brand
+        from gb_distributer_purchase_goods dpg
+        left join gb_distributer_goods dg on dg.gb_distributer_goods_id = dpg.gb_DPG_dis_goods_id
+        where dpg.gb_DPG_batch_id = #{batchId}
+    </select>
+
+    <!-- 根据采购商品ID查询部门订单 -->
+    <select id="queryDepartmentOrdersByPurchaseGoodsId" resultType="com.nongxinle.entity.GbDepartmentOrdersEntity">
+        select *
+        from gb_department_orders
+        where gb_DO_purchase_goods_id = #{purchaseGoodsId}
+    </select>
+
+    <!-- 根据ID查询采购人员 -->
+    <select id="queryPurUserById" resultType="com.nongxinle.entity.GbDepartmentUserEntity">
+        select *
+        from gb_department_user
+        where gb_department_user_id = #{purUserId}
+    </select>
+
+    <!-- 根据ID查询卖方 -->
+    <select id="querySellerById" resultType="com.nongxinle.entity.NxJrdhUserEntity">
+        select *
+        from nx_jrdh_user
+        where nx_jrdh_user_id = #{sellUserId}
+    </select>
+
+    <!-- 根据ID查询供货商 -->
+    <select id="querySupplierById" resultType="com.nongxinle.entity.NxJrdhSupplierEntity">
+        select *
+        from nx_jrdh_supplier
+        where nx_jrdh_supplier_id = #{supplierId}
+    </select>
+
+    <!-- 查询批次及其订单信息 -->
+    <select id="queryBatchWithOrders" resultMap="purchaseBatchWithGoodsMap">
+        select *
+        from gb_distributer_purchase_batch
+        where gb_distributer_purchase_batch_id = #{batchId}
+    </select>
+
+    <!-- 查询采购批次列表 -->
+    <select id="queryDisPurchaseBatch" resultMap="purchaseBatchWithGoodsMap">
+        select *
+        from gb_distributer_purchase_batch as dpb
+        <where>
+            <if test="map.disId != null">
+                and gb_DPB_distributer_id = #{map.disId}
+            </if>
+            <if test="map.status != null">
+                and gb_DPB_status &lt; #{map.status, jdbcType=INTEGER}
+            </if>
+            <if test="map.equalStatus != null">
+                and gb_DPB_status = #{map.equalStatus}
+            </if>
+            <if test="map.purUserId != null">
+                and gb_DPB_pur_user_id = #{map.purUserId}
+            </if>
+        </where>
+        order by gb_distributer_purchase_batch_id DESC
+    </select>
+
+    <!-- 根据参数查询采购批次数量 -->
+    <select id="queryDisPurchaseBatchCount" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM gb_distributer_purchase_batch AS dpb
+        LEFT JOIN gb_distributer_purchase_goods AS dpg ON dpb.gb_distributer_purchase_batch_id = dpg.gb_DPG_batch_id
+        <where>
+            <if test="map.supplierId != null">
+                AND dpb.gb_dpb_supplier_id = #{map.supplierId}
+            </if>
+            <if test="map.equalStatus != null">
+                AND dpb.gb_dpb_status = #{map.equalStatus}
+            </if>
+            <if test="map.notEqualPurchaseType != null">
+                AND dpb.gb_dpb_purchase_type != #{map.notEqualPurchaseType}
+            </if>
+            <if test="map.purchaseType != null">
+                AND dpb.gb_dpb_purchase_type = #{map.purchaseType}
+            </if>
+            <if test="map.startDate != null">
+                AND dpb.gb_dpb_date &gt;= #{map.startDate}
+            </if>
+            <if test="map.stopDate != null">
+                AND dpb.gb_dpb_date &lt;= #{map.stopDate}
+            </if>
+        </where>
+    </select>
+
+    <!-- 查询供应商未结算小计 -->
+    <select id="querySupplierUnSettleSubtotal" resultType="java.lang.Double">
+        SELECT COALESCE(SUM(dpb.gb_dpb_subtotal), 0.0) FROM gb_distributer_purchase_batch AS dpb
+        <where>
+            <if test="map.supplierId != null">
+                AND dpb.gb_dpb_supplier_id = #{map.supplierId}
+            </if>
+            <if test="map.equalStatus != null">
+                AND dpb.gb_dpb_status = #{map.equalStatus}
+            </if>
+            <if test="map.notEqualPurchaseType != null">
+                AND dpb.gb_dpb_purchase_type != #{map.notEqualPurchaseType}
+            </if>
+            <if test="map.purchaseType != null">
+                AND dpb.gb_dpb_purchase_type = #{map.purchaseType}
+            </if>
+            <if test="map.startDate != null">
+                AND dpb.gb_dpb_date &gt;= #{map.startDate}
+            </if>
+            <if test="map.stopDate != null">
+                AND dpb.gb_dpb_date &lt;= #{map.stopDate}
+            </if>
+        </where>
+    </select>
+
+    <!-- 查询采购批次详细信息（老项目兼容方法） -->
+    <select id="queryDisPurchaseBatchInfo" resultMap="purchaseBatchWithGoodsMap">
+        select *
+        from gb_distributer_purchase_batch as dpb
+        left join gb_department_user as gdu on gdu.gb_department_user_id = dpb.gb_DPB_pur_user_id
+        left join nx_jrdh_user as sell_user on sell_user.nx_jrdh_user_id = dpb.gb_DPB_sell_user_id
+        left join nx_jrdh_supplier as sup on sup.nx_jrdh_supplier_id = dpb.gb_DPB_supplier_id
+        left join gb_department as purDep on purDep.gb_department_id = dpb.gb_DPB_pur_department_id
+        <where>
+            <if test="map.disId != null">
+                and gb_DPB_distributer_id = #{map.disId}
+            </if>
+            <if test="map.notEqualPurchaseType != null">
+                and gb_DPB_purchase_type != #{map.notEqualPurchaseType}
+            </if>
+            <if test="map.purchaseType != null">
+                and gb_DPB_purchase_type = #{map.purchaseType}
+            </if>
+            <if test="map.status != null">
+                and gb_DPB_status &lt; #{map.status}
+            </if>
+            <if test="map.equalStatus != null">
+                and gb_DPB_status = #{map.equalStatus}
+            </if>
+            <if test="map.purUserId != null">
+                and gb_DPB_pur_user_id = #{map.purUserId}
+            </if>
+            <if test="map.month != null">
+                and gb_DPB_purchase_month = #{map.month}
+            </if>
+            <if test="map.year != null">
+                and gb_DPB_purchase_year = #{map.year}
+            </if>
+            <if test="map.supplierId != null">
+                and gb_DPB_supplier_id = #{map.supplierId}
+            </if>
+            <if test="map.startDate != null">
+                and gb_DPB_date &gt;= #{map.startDate}
+            </if>
+            <if test="map.stopDate != null">
+                and gb_DPB_date &lt;= #{map.stopDate}
+            </if>
+        </where>
+        order by gb_distributer_purchase_batch_id DESC
+    </select>
+
+</mapper>

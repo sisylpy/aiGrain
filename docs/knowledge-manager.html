@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库管理工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .card h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+            border-bottom: 2px solid #4ECDC4;
+            padding-bottom: 10px;
+        }
+        .form-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        .form-group {
+            flex: 1;
+            min-width: 150px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+            font-size: 14px;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #4ECDC4;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #4ECDC4;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #3dbdb5;
+        }
+        .btn-danger {
+            background: #ff6b6b;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #ee5a5a;
+        }
+        .btn-secondary {
+            background: #ddd;
+            color: #333;
+        }
+        .btn-secondary:hover {
+            background: #ccc;
+        }
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background: #f8f8f8;
+            color: #333;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #e8f8f5;
+            color: #4ECDC4;
+            border-radius: 12px;
+            font-size: 12px;
+            margin: 2px;
+        }
+        .category-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: white;
+        }
+        .category-coupon { background: #ff6b6b; }
+        .category-menu { background: #4ECDC4; }
+        .category-decorate { background: #f38181; }
+        .category-staff { background: #fce38a; }
+        .category-cost { background: #95e1d3; }
+        .category-traffic { background: #aa96da; }
+        .category-customer { background: #fcbad3; }
+        .category-festival { background: #a8d8ea; }
+        .category-supply { background: #c9b1ff; }
+        .category-legal { background: #ffd3a5; }
+        .actions {
+            display: flex;
+            gap: 5px;
+        }
+        .search-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .search-bar input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+        }
+        .empty {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            background: #4ECDC4;
+            color: white;
+            border-radius: 4px;
+            display: none;
+            z-index: 1000;
+        }
+        .toast.error {
+            background: #ff6b6b;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+        }
+        .modal-content {
+            background: white;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 30px;
+            border-radius: 8px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal h2 {
+            margin-bottom: 20px;
+        }
+        .content-preview {
+            background: #f8f8f8;
+            padding: 15px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .summary-preview {
+            color: #666;
+            font-size: 13px;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍜 餐饮知识库管理工具</h1>
+
+        <!-- 添加知识 -->
+        <div class="card">
+            <h2>➕ 添加新知识</h2>
+            <form id="addForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>标题 *</label>
+                        <input type="text" name="title" required placeholder="如：满减券设置技巧">
+                    </div>
+                    <div class="form-group">
+                        <label>分类</label>
+                        <select name="category">
+                            <option value="coupon">优惠券营销</option>
+                            <option value="menu">菜单设计</option>
+                            <option value="decorate">餐厅装修</option>
+                            <option value="staff">人员管理</option>
+                            <option value="cost">成本控制</option>
+                            <option value="traffic">获客引流</option>
+                            <option value="customer">客户运营</option>
+                            <option value="festival">节日营销</option>
+                            <option value="supply">供应链</option>
+                            <option value="legal">法律合规</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>类型</label>
+                        <select name="type">
+                            <option value="0">通用</option>
+                            <option value="1">促销活动</option>
+                            <option value="2">公众号</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>摘要</label>
+                        <input type="text" name="summary" placeholder="1-3句话概括（AI后续可生成）">
+                    </div>
+                    <div class="form-group">
+                        <label>标签（逗号分隔）</label>
+                        <input type="text" name="tags" placeholder="如：满减,节日,低成本">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>作者/专家</label>
+                        <input type="text" name="author" placeholder="如：钱多多">
+                    </div>
+                    <div class="form-group">
+                        <label>来源URL</label>
+                        <input type="text" name="sourceUrl" placeholder="https://...">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>详细内容</label>
+                    <textarea name="content" placeholder="输入完整的知识内容..."></textarea>
+                </div>
+                <div class="form-row">
+                    <button type="submit" class="btn btn-primary">💾 保存知识</button>
+                    <button type="reset" class="btn btn-secondary">🔄 重置</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- 知识列表 -->
+        <div class="card">
+            <h2>📚 知识列表</h2>
+            <div class="search-bar">
+                <input type="text" id="searchInput" placeholder="搜索标题、标签...">
+                <select id="categoryFilter">
+                    <option value="">全部分类</option>
+                    <option value="coupon">优惠券营销</option>
+                    <option value="menu">菜单设计</option>
+                    <option value="decorate">餐厅装修</option>
+                    <option value="staff">人员管理</option>
+                    <option value="cost">成本控制</option>
+                    <option value="traffic">获客引流</option>
+                    <option value="customer">客户运营</option>
+                    <option value="festival">节日营销</option>
+                    <option value="supply">供应链</option>
+                    <option value="legal">法律合规</option>
+                </select>
+                <button class="btn btn-primary" onclick="loadKnowledge()">🔍 搜索</button>
+            </div>
+            <div id="loading" class="loading">加载中...</div>
+            <div id="empty" class="empty" style="display:none">暂无知识，点击上方表单添加</div>
+            <table id="knowledgeTable" style="display:none">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>标题</th>
+                        <th>分类</th>
+                        <th>摘要</th>
+                        <th>标签</th>
+                        <th>作者</th>
+                        <th>查看</th>
+                        <th>使用</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="knowledgeBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 详情弹窗 -->
+    <div class="modal" id="detailModal">
+        <div class="modal-content">
+            <h2 id="modalTitle">知识详情</h2>
+            <div id="modalContent" class="content-preview"></div>
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-secondary" onclick="closeModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:8090/api/ai/knowledge';
+
+        // 页面加载时获取列表
+        document.addEventListener('DOMContentLoaded', loadKnowledge);
+
+        // 添加表单提交
+        document.getElementById('addForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                gbAiKnowledgeTitle: formData.get('title'),
+                gbAiKnowledgeCategory: formData.get('category'),
+                gbAiKnowledgeType: parseInt(formData.get('type')),
+                gbAiKnowledgeSummary: formData.get('summary'),
+                gbAiKnowledgeTags: formData.get('tags'),
+                gbAiKnowledgeAuthor: formData.get('author'),
+                gbAiKnowledgeSourceUrl: formData.get('sourceUrl'),
+                gbAiKnowledgeContent: formData.get('content'),
+                gbAiKnowledgeStatus: 1
+            };
+
+            try {
+                const res = await fetch(`${API_BASE}/save`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (result.code === 0 || result.code === 200) {
+                    showToast('添加成功！');
+                    e.target.reset();
+                    loadKnowledge();
+                } else {
+                    showToast('添加失败: ' + (result.msg || result.message), true);
+                }
+            } catch (err) {
+                showToast('请求失败: ' + err.message, true);
+            }
+        });
+
+        // 加载知识列表
+        async function loadKnowledge() {
+            const search = document.getElementById('searchInput').value;
+            const category = document.getElementById('categoryFilter').value;
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('empty').style.display = 'none';
+            document.getElementById('knowledgeTable').style.display = 'none';
+
+            try {
+                let url = `${API_BASE}/list`;
+                const params = [];
+                if (category) params.push(`category=${category}`);
+                if (search) params.push(`search=${encodeURIComponent(search)}`);
+                if (params.length) url += '?' + params.join('&');
+
+                const res = await fetch(url);
+                const result = await res.json();
+                const list = result.data || [];
+
+                document.getElementById('loading').style.display = 'none';
+
+                if (list.length === 0) {
+                    document.getElementById('empty').style.display = 'block';
+                    return;
+                }
+
+                renderTable(list);
+            } catch (err) {
+                document.getElementById('loading').textContent = '加载失败: ' + err.message;
+            }
+        }
+
+        // 渲染表格
+        function renderTable(list) {
+            const tbody = document.getElementById('knowledgeBody');
+            tbody.innerHTML = list.map(item => `
+                <tr>
+                    <td>${item.gbAiKnowledgeId}</td>
+                    <td><strong>${escapeHtml(item.gbAiKnowledgeTitle || '')}</strong></td>
+                    <td><span class="category-badge category-${item.gbAiKnowledgeCategory || ''}">${getCategoryName(item.gbAiKnowledgeCategory)}</span></td>
+                    <td class="summary-preview" title="${escapeHtml(item.gbAiKnowledgeSummary || '')}">${escapeHtml(item.gbAiKnowledgeSummary || '-')}</td>
+                    <td>${(item.gbAiKnowledgeTags || '').split(',').filter(t => t).map(t => `<span class="tag">${t}</span>`).join('')}</td>
+                    <td>${escapeHtml(item.gbAiKnowledgeAuthor || '-')}</td>
+                    <td>${item.gbAiKnowledgeViewCount || 0}</td>
+                    <td>${item.gbAiKnowledgeUseCount || 0}</td>
+                    <td class="actions">
+                        <button class="btn btn-primary btn-sm" onclick="viewDetail(${item.gbAiKnowledgeId})">查看</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteKnowledge(${item.gbAiKnowledgeId})">删除</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            document.getElementById('knowledgeTable').style.display = 'table';
+        }
+
+        // 查看详情
+        async function viewDetail(id) {
+            try {
+                const res = await fetch(`${API_BASE}/detail/${id}`);
+                const result = await res.json();
+                const item = result.data;
+                if (item) {
+                    document.getElementById('modalTitle').textContent = item.gbAiKnowledgeTitle;
+                    document.getElementById('modalContent').textContent = item.gbAiKnowledgeContent || '无内容';
+                    document.getElementById('detailModal').style.display = 'block';
+                }
+            } catch (err) {
+                showToast('加载详情失败', true);
+            }
+        }
+
+        // 删除知识
+        async function deleteKnowledge(id) {
+            if (!confirm('确定要删除这条知识吗？')) return;
+            try {
+                const res = await fetch(`${API_BASE}/delete/${id}`, {method: 'POST'});
+                const result = await res.json();
+                if (result.code === 0 || result.code === 200) {
+                    showToast('删除成功');
+                    loadKnowledge();
+                } else {
+                    showToast('删除失败', true);
+                }
+            } catch (err) {
+                showToast('删除失败: ' + err.message, true);
+            }
+        }
+
+        // 关闭弹窗
+        function closeModal() {
+            document.getElementById('detailModal').style.display = 'none';
+        }
+
+        // 点击弹窗背景关闭
+        document.getElementById('detailModal').addEventListener('click', (e) => {
+            if (e.target.id === 'detailModal') closeModal();
+        });
+
+        // 工具函数
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.className = 'toast' + (isError ? ' error' : '');
+            toast.style.display = 'block';
+            setTimeout(() => toast.style.display = 'none', 3000);
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function getCategoryName(code) {
+            const map = {
+                coupon: '优惠券',
+                menu: '菜单',
+                decorate: '装修',
+                staff: '人员',
+                cost: '成本',
+                traffic: '获客',
+                customer: '客户',
+                festival: '节日',
+                supply: '供应链',
+                legal: '法律'
+            };
+            return map[code] || code || '-';
+        }
+
+        // 回车搜索
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loadKnowledge();
+        });
+    </script>
+</body>
+</html>

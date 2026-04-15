@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbAiMemoryMapper">
+
+	<resultMap id="BaseResultMap" type="com.nongxinle.entity.GbAiMemoryEntity">
+		<id column="gb_ai_memory_id" property="gbAiMemoryId" />
+		<result column="gb_ai_memory_department_id" property="gbAiMemoryDepartmentId" />
+		<result column="gb_ai_memory_type" property="gbAiMemoryType" />
+		<result column="gb_ai_memory_summary" property="gbAiMemorySummary" />
+		<result column="gb_ai_memory_content" property="gbAiMemoryContent" />
+		<result column="gb_ai_memory_conversation_id" property="gbAiMemoryConversationId" />
+		<result column="gb_ai_memory_importance" property="gbAiMemoryImportance" />
+		<result column="gb_ai_memory_tags" property="gbAiMemoryTags" />
+		<result column="gb_ai_memory_create_time" property="gbAiMemoryCreateTime" />
+		<result column="gb_ai_memory_update_time" property="gbAiMemoryUpdateTime" />
+		<result column="gb_ai_memory_last_used_time" property="gbAiMemoryLastUsedTime" />
+		<result column="gb_ai_memory_use_count" property="gbAiMemoryUseCount" />
+		<result column="gb_ai_memory_status" property="gbAiMemoryStatus" />
+	</resultMap>
+
+	<select id="queryMemoryListByParams" resultMap="BaseResultMap">
+		SELECT * FROM gb_ai_memory
+		WHERE 1=1
+	</select>
+
+</mapper>

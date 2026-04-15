@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nongxinle.mapper.GbDistributerStandardMapper">
+
+	<select id="queryObject" resultType="com.nongxinle.entity.GbDistributerStandardEntity">
+		select * from gb_distributer_standard where gb_distributer_standard_id = #{value}
+	</select>
+
+	<select id="queryList" resultType="com.nongxinle.entity.GbDistributerStandardEntity">
+		select * from gb_distributer_standard
+		<if test="offset != null and limit != null">
+			limit #{offset}, #{limit}
+		</if>
+	</select>
+
+	<select id="queryTotal" resultType="int">
+		select count(*) from gb_distributer_standard
+	</select>
+
+	<select id="queryDisStandardByDisGoodsIdGb" resultType="com.nongxinle.entity.GbDistributerStandardEntity">
+		select * from gb_distributer_standard where gb_DS_dis_goods_id = #{disGoodsId}
+	</select>
+
+	<select id="queryDisStandardByParams" resultType="com.nongxinle.entity.GbDistributerStandardEntity">
+		select * from gb_distributer_standard where gb_DS_standard_name = #{standardName} and gb_DS_dis_goods_id = #{disGoodsId}
+	</select>
+
+	<insert id="save" parameterType="com.nongxinle.entity.GbDistributerStandardEntity" useGeneratedKeys="true"
+		keyProperty="gbDistributerStandardId">
+		insert into gb_distributer_standard
+		(
+			`gb_distributer_standard_id`,
+			`gb_DS_dis_goods_id`,
+			`gb_DS_standard_name`,
+			`gb_DS_standard_file_path`,
+			`gb_DS_standard_scale`,
+			`gb_DS_standard_error`,
+			`gb_DS_standard_sort`,
+			`gb_DS_standard_weight`
+		)
+		values
+		(
+			#{gbDistributerStandardId},
+			#{gbDsDisGoodsId},
+			#{gbDsStandardName},
+			#{gbDsStandardFilePath},
+			#{gbDsStandardScale},
+			#{gbDsStandardError},
+			#{gbDsStandardSort},
+			#{gbDsStandardWeight}
+		)
+	</insert>
+
+	<update id="update" parameterType="com.nongxinle.entity.GbDistributerStandardEntity">
+		update gb_distributer_standard
+		<set>
+			<if test="gbDsDisGoodsId != null">`gb_DS_dis_goods_id` = #{gbDsDisGoodsId}, </if>
+			<if test="gbDsStandardName != null">`gb_DS_standard_name` = #{gbDsStandardName}, </if>
+			<if test="gbDsStandardFilePath != null">`gb_DS_standard_file_path` = #{gbDsStandardFilePath}, </if>
+			<if test="gbDsStandardScale != null">`gb_DS_standard_scale` = #{gbDsStandardScale}, </if>
+			<if test="gbDsStandardError != null">`gb_DS_standard_error` = #{gbDsStandardError}, </if>
+			<if test="gbDsStandardSort != null">`gb_DS_standard_sort` = #{gbDsStandardSort}, </if>
+			<if test="gbDsStandardWeight != null">`gb_DS_standard_weight` = #{gbDsStandardWeight}</if>
+		</set>
+		where gb_distributer_standard_id = #{gbDistributerStandardId}
+	</update>
+
+	<delete id="delete">
+		delete from gb_distributer_standard where gb_distributer_standard_id = #{value}
+	</delete>
+
+	<delete id="deleteBatch">
+		delete from gb_distributer_standard where gb_distributer_standard_id in
+		<foreach item="gbDistributerStandardId" collection="array" open="(" separator="," close=")">
+			#{gbDistributerStandardId}
+		</foreach>
+	</delete>
+
+</mapper>

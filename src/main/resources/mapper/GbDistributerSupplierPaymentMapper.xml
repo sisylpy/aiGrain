@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbDistributerSupplierPaymentMapper">
+
+    <resultMap id="paymentWithDetailsMap" type="com.nongxinle.entity.GbDistributerSupplierPaymentEntity">
+        <id column="gb_distributer_supplier_payment_id" property="gbDistributerSupplierPaymentId"/>
+        <result column="gb_dsp_date" property="gbDspDate"/>
+        <result column="gb_dsp_supplier_id" property="gbDspSupplierId"/>
+        <result column="gb_dsp_pay_user_id" property="gbDspPayUserId"/>
+        <result column="gb_dsp_nx_distributer_id" property="gbDspNxDistributerId"/>
+        <result column="gb_dsp_wx_out_trade_no" property="gbDspWxOutTradeNo"/>
+        <result column="gb_dsp_status" property="gbDspStatus"/>
+        <result column="gb_dsp_pay_user_open_id" property="gbDspPayUserOpenId"/>
+        <result column="gb_dsp_pay_total" property="gbDspPayTotal"/>
+        <result column="gb_dsp_distributer_id" property="gbDspDistributerId"/>
+        <result column="gb_dsp_pay_full_time" property="gbDspPayFullTime"/>
+    </resultMap>
+
+    <select id="queryPaymentListByParams" resultMap="paymentWithDetailsMap">
+        SELECT * FROM gb_distributer_supplier_payment
+        <where>
+            <if test="map.disId != null">
+                AND gb_dsp_distributer_id = #{map.disId}
+            </if>
+            <if test="map.supplierId != null">
+                AND gb_dsp_supplier_id = #{map.supplierId}
+            </if>
+            <if test="map.status != null">
+                AND gb_dsp_status = #{map.status}
+            </if>
+        </where>
+        ORDER BY gb_distributer_supplier_payment_id DESC
+    </select>
+
+    <select id="queryPaymentByWxTradeNo" resultMap="paymentWithDetailsMap">
+        SELECT * FROM gb_distributer_supplier_payment
+        WHERE gb_dsp_wx_out_trade_no = #{ordersSn}
+    </select>
+
+</mapper>

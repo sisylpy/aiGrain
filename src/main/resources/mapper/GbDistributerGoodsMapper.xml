@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbDistributerGoodsMapper">
+
+    <select id="queryDisGoodsByParams" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        SELECT * FROM gb_distributer_goods 
+        WHERE gb_dg_distributer_id = #{disId} 
+        AND gb_dg_nx_father_id = #{nxFatherId}
+        LIMIT 1
+    </select>
+
+    <!-- 批发商商品快速搜索 -->
+    <select id="queryGbDisGoodsQuickSearchStr" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        SELECT * FROM gb_distributer_goods
+        <where>
+            <if test="disId != null">
+                AND gb_dg_distributer_id = #{disId}
+            </if>
+            <if test="nxDisId != null">
+                AND gb_dg_nx_distributer_id = #{nxDisId}
+            </if>
+            <if test="price != null">
+                AND gb_dg_control_price = #{price}
+            </if>
+            <if test="fresh != null">
+                AND gb_dg_control_fresh = #{fresh}
+            </if>
+            <if test="toDepId != null">
+                AND gb_dg_gb_department_id = #{toDepId}
+            </if>
+            <if test="fatherId != null">
+                AND gb_dg_dfg_goods_father_id = #{fatherId}
+            </if>
+            <if test="searchStr != null or searchPinyin != null">
+                AND (
+                    gb_dg_goods_name LIKE CONCAT('%', #{searchStr}, '%')
+                    OR gb_dg_goods_brand LIKE CONCAT('%', #{searchStr}, '%')
+                    OR gb_dg_goods_pinyin LIKE CONCAT('%', #{searchPinyin}, '%')
+                    OR gb_dg_goods_py LIKE CONCAT('%', #{searchPinyin}, '%')
+                )
+            </if>
+        </where>
+        ORDER BY gb_dg_goods_sort, gb_dg_goods_sons_sort
+    </select>
+
+</mapper>

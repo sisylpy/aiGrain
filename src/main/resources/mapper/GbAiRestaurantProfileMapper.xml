@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbAiRestaurantProfileMapper">
+
+	<resultMap id="BaseResultMap" type="com.nongxinle.entity.GbAiRestaurantProfileEntity">
+		<id column="gb_ai_restaurant_profile_id" property="gbAiRestaurantProfileId" />
+		<result column="gb_ai_restaurant_profile_department_id" property="gbAiRestaurantProfileDepartmentId" />
+		<result column="gb_ai_restaurant_profile_distributer_id" property="gbAiRestaurantProfileDistributerId" />
+		<result column="gb_ai_restaurant_profile_restaurant_name" property="gbAiRestaurantProfileRestaurantName" />
+		<result column="gb_ai_restaurant_profile_address" property="gbAiRestaurantProfileAddress" />
+		<result column="gb_ai_restaurant_profile_longitude" property="gbAiRestaurantProfileLongitude" />
+		<result column="gb_ai_restaurant_profile_latitude" property="gbAiRestaurantProfileLatitude" />
+		<result column="gb_ai_restaurant_profile_business_district" property="gbAiRestaurantProfileBusinessDistrict" />
+		<result column="gb_ai_restaurant_profile_business_hours" property="gbAiRestaurantProfileBusinessHours" />
+		<result column="gb_ai_restaurant_profile_cuisine_type" property="gbAiRestaurantProfileCuisineType" />
+		<result column="gb_ai_restaurant_profile_avg_price" property="gbAiRestaurantProfileAvgPrice" />
+		<result column="gb_ai_restaurant_profile_seat_count" property="gbAiRestaurantProfileSeatCount" />
+		<result column="gb_ai_restaurant_profile_business_stage" property="gbAiRestaurantProfileBusinessStage" />
+		<result column="gb_ai_restaurant_profile_follower_count" property="gbAiRestaurantProfileFollowerCount" />
+		<result column="gb_ai_restaurant_profile_daily_customers" property="gbAiRestaurantProfileDailyCustomers" />
+		<result column="gb_ai_restaurant_profile_daily_revenue" property="gbAiRestaurantProfileDailyRevenue" />
+		<result column="gb_ai_restaurant_profile_target_age_range" property="gbAiRestaurantProfileTargetAgeRange" />
+		<result column="gb_ai_restaurant_profile_target_consumer" property="gbAiRestaurantProfileTargetConsumer" />
+		<result column="gb_ai_restaurant_profile_nearby_competitor_count" property="gbAiRestaurantProfileNearbyCompetitorCount" />
+		<result column="gb_ai_restaurant_profile_market_saturation" property="gbAiRestaurantProfileMarketSaturation" />
+		<result column="gb_ai_restaurant_profile_competitive_advantage" property="gbAiRestaurantProfileCompetitiveAdvantage" />
+		<result column="gb_ai_restaurant_profile_competitor_analysis" property="gbAiRestaurantProfileCompetitorAnalysis" />
+		<result column="gb_ai_restaurant_profile_competitor_analyzed_time" property="gbAiRestaurantProfileCompetitorAnalyzedTime" />
+		<result column="gb_ai_restaurant_profile_boss_name" property="gbAiRestaurantProfileBossName" />
+		<result column="gb_ai_restaurant_profile_boss_style" property="gbAiRestaurantProfileBossStyle" />
+		<result column="gb_ai_restaurant_profile_risk_preference" property="gbAiRestaurantProfileRiskPreference" />
+		<result column="gb_ai_restaurant_profile_decision_speed" property="gbAiRestaurantProfileDecisionSpeed" />
+		<result column="gb_ai_restaurant_profile_cost_sensitive" property="gbAiRestaurantProfileCostSensitive" />
+		<result column="gb_ai_restaurant_profile_kitchen_capacity" property="gbAiRestaurantProfileKitchenCapacity" />
+		<result column="gb_ai_restaurant_profile_staff_count" property="gbAiRestaurantProfileStaffCount" />
+		<result column="gb_ai_restaurant_profile_rent_monthly" property="gbAiRestaurantProfileRentMonthly" />
+		<result column="gb_ai_restaurant_profile_last_chat_time" property="gbAiRestaurantProfileLastChatTime" />
+		<result column="gb_ai_restaurant_profile_total_chat_count" property="gbAiRestaurantProfileTotalChatCount" />
+		<result column="gb_ai_restaurant_profile_summary" property="gbAiRestaurantProfileSummary" />
+		<result column="gb_ai_restaurant_profile_create_time" property="gbAiRestaurantProfileCreateTime" />
+		<result column="gb_ai_restaurant_profile_update_time" property="gbAiRestaurantProfileUpdateTime" />
+		<result column="gb_ai_restaurant_profile_monthly_wage" property="gbAiRestaurantProfileMonthlyWage" />
+		<result column="gb_ai_restaurant_profile_monthly_fixed_cost" property="gbAiRestaurantProfileMonthlyFixedCost" />
+	</resultMap>
+
+	<select id="queryRestaurantProfileListByParams" resultMap="BaseResultMap">
+		SELECT * FROM gb_ai_restaurant_profile
+		WHERE 1=1
+	</select>
+
+	<select id="selectByDepartmentId" resultMap="BaseResultMap">
+		SELECT * FROM gb_ai_restaurant_profile
+		WHERE gb_ai_restaurant_profile_department_id = #{departmentId}
+	</select>
+
+</mapper>

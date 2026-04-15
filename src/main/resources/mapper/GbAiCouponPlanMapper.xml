@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbAiCouponPlanMapper">
+
+	<resultMap id="BaseResultMap" type="com.nongxinle.entity.GbAiCouponPlanEntity">
+		<id column="gb_ai_coupon_plan_id" property="gbAiCouponPlanId" />
+		<result column="gb_ai_coupon_plan_department_id" property="gbAiCouponPlanDepartmentId" />
+		<result column="gb_ai_coupon_plan_distributer_id" property="gbAiCouponPlanDistributerId" />
+		<result column="gb_ai_coupon_plan_name" property="gbAiCouponPlanName" />
+		<result column="gb_ai_coupon_plan_type" property="gbAiCouponPlanType" />
+		<result column="gb_ai_coupon_plan_value" property="gbAiCouponPlanValue" />
+		<result column="gb_ai_coupon_plan_threshold" property="gbAiCouponPlanThreshold" />
+		<result column="gb_ai_coupon_plan_total_count" property="gbAiCouponPlanTotalCount" />
+		<result column="gb_ai_coupon_plan_received_count" property="gbAiCouponPlanReceivedCount" />
+		<result column="gb_ai_coupon_plan_used_count" property="gbAiCouponPlanUsedCount" />
+		<result column="gb_ai_coupon_plan_start_time" property="gbAiCouponPlanStartTime" />
+		<result column="gb_ai_coupon_plan_end_time" property="gbAiCouponPlanEndTime" />
+		<result column="gb_ai_coupon_plan_valid_days" property="gbAiCouponPlanValidDays" />
+		<result column="gb_ai_coupon_plan_status" property="gbAiCouponPlanStatus" />
+		<result column="gb_ai_coupon_plan_analysis" property="gbAiCouponPlanAnalysis" />
+		<result column="gb_ai_coupon_plan_create_time" property="gbAiCouponPlanCreateTime" />
+	</resultMap>
+
+	<select id="queryCouponPlanListByParams" resultMap="BaseResultMap">
+		SELECT * FROM gb_ai_coupon_plan
+		WHERE 1=1
+	</select>
+
+</mapper>

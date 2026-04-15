@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nongxinle.mapper.NxAliasMapper">
+
+	<select id="queryNxAliasList" resultType="com.nongxinle.entity.NxAliasEntity">
+		select * from nx_alias
+		<where>
+			<if test="goodsId != null">
+				and nx_als_goods_id = #{goodsId}
+			</if>
+		</where>
+	</select>
+
+	<resultMap id="aliasList" type="NxAliasEntity">
+		<id property="nxAliasId" column="nx_alias_id"/>
+		<result property="nxAliasName" column="nx_alias_name"/>
+		<result property="nxAlsGoodsId" column="nx_als_goods_id"/>
+	</resultMap>
+
+	<resultMap id="nxGoodsWithAlias" type="NxGoodsEntity">
+		 <id property="nxGoodsId" column="nx_goods_id"/>
+		<result property="nxGoodsItemsPerCarton" column="nx_goods_items_per_carton"/>
+		<result property="nxGoodsCartonUnit" column="nx_goods_carton_unit"/>
+		<result property="nxGoodsQuantityDays" column="nx_goods_quantity_days"/>
+		<result property="nxGoodsIsHidden" column="nx_goods_is_hidden"/>
+		<result property="nxGoodsSonsSort" column="nx_goods_sons_sort"/>
+		<result property="nxGoodsGrandId" column="nx_goods_grand_id"/>
+		<result property="nxGoodsIsOldestSon" column="nx_goods_is_oldest_son"/>
+		<result property="nxGoodsLevel" column="nx_goods_level"/>
+		<result property="nxGoodsName" column="nx_goods_name"/>
+		<result property="nxGoodsStandardname" column="nx_goods_standardname"/>
+		<result property="nxGoodsStandardWeight" column="nx_goods_standard_weight"/>
+		<result property="nxGoodsBrand" column="nx_goods_brand"/>
+		<result property="nxGoodsPlace" column="nx_goods_place"/>
+		<result property="nxGoodsDetail" column="nx_goods_detail"/>
+		<result property="nxGoodsFatherId" column="nx_goods_father_id"/>
+		<result property="nxGoodsPy" column="nx_goods_py"/>
+		<result property="nxGoodsPinyin" column="nx_goods_pinyin"/>
+		<collection property="nxAliasEntities" resultMap="aliasList"/>
+	</resultMap>
+
+    <select id="queryNxGoodsByName" resultMap="nxGoodsWithAlias">
+		select * from nx_alias as na
+		left join nx_goods as ng  on na.nx_als_goods_id = ng.nx_goods_id
+		<where>
+			<if test="name != null">
+				and nx_alias_name = #{name}
+			</if>
+			<if test="level != null">
+				and ng.nx_goods_level = #{level}
+			</if>
+		</where>
+	</select>
+
+</mapper>

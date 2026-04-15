@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nongxinle.mapper.NxJrdhSupplierMapper">
+
+    <resultMap id="jrdhSupplierWithDis" type="com.nongxinle.entity.NxJrdhSupplierEntity">
+        <id property="nxJrdhSupplierId" column="nx_jrdh_supplier_id"/>
+        <result property="nxJrdhsNxDistributerId" column="nx_jrdhs_nx_distributer_id"/>
+        <result property="nxJrdhsGbDistributerId" column="nx_jrdhs_gb_distributer_id"/>
+        <result property="nxJrdhsGbDepartmentId" column="nx_jrdhs_gb_department_id"/>
+        <result property="nxJrdhsSupplierName" column="nx_jrdhs_supplier_name"/>
+        <result property="nxJrdhsUserId" column="nx_jrdhs_user_id"/>
+        <result property="nxJrdhsNxPurUserId" column="nx_jrdhs_nx_pur_user_id"/>
+        <result property="nxJrdhsNxCommunityId" column="nx_jrdhs_nx_community_id"/>
+        <association property="gbDistributerEntity" javaType="com.nongxinle.entity.GbDistributerEntity">
+            <id property="gbDistributerId" column="gb_distributer_id"/>
+            <result property="gbDistributerName" column="gb_distributer_name"/>
+            <result property="gbDistributerAddress" column="gb_distributer_address"/>
+            <result property="gbDistributerPhone" column="gb_distributer_phone"/>
+        </association>
+    </resultMap>
+
+    <select id="queryJrdhSupplerWithDisByUserId" resultMap="jrdhSupplierWithDis">
+        select * from nx_jrdh_supplier as njs
+        left join gb_distributer as gd on gd.gb_distributer_id = njs.nx_jrdhs_gb_distributer_id
+        left join gb_department_user as gdu on gdu.gb_department_user_id = njs.nx_jrdhs_nx_jrdh_buy_user_id
+        <where>
+            <if test="userId != null">
+                and njs.nx_jrdhs_user_id = #{userId}
+            </if>
+            <if test="gbDisId != null">
+                and njs.nx_jrdhs_gb_distributer_id = #{gbDisId}
+            </if>
+        </where>
+    </select>
+
+</mapper>

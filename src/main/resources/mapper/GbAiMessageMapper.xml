@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbAiMessageMapper">
+
+	<resultMap id="BaseResultMap" type="com.nongxinle.entity.GbAiMessageEntity">
+		<id column="gb_ai_message_id" property="gbAiMessageId" />
+		<result column="gb_ai_message_conversation_id" property="gbAiMessageConversationId" />
+		<result column="gb_ai_message_role" property="gbAiMessageRole" />
+		<result column="gb_ai_message_content" property="gbAiMessageContent" />
+		<result column="gb_ai_message_token_count" property="gbAiMessageTokenCount" />
+		<result column="gb_ai_message_memory_extracted" property="gbAiMessageMemoryExtracted" />
+		<result column="gb_ai_message_create_time" property="gbAiMessageCreateTime" />
+	</resultMap>
+
+	<select id="queryMessageListByParams" resultMap="BaseResultMap">
+		SELECT * FROM gb_ai_message
+		WHERE 1=1
+	</select>
+
+</mapper>

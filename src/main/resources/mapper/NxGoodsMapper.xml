@@ -1,0 +1,757 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.NxGoodsMapper">
+
+    <resultMap id="BaseResultMap" type="com.nongxinle.entity.NxGoodsEntity">
+        <id property="nxGoodsId" column="nx_goods_id"/>
+        <result property="nxGoodsName" column="nx_goods_name"/>
+        <result property="nxGoodsStandardname" column="nx_goods_standardname"/>
+        <result property="nxGoodsBrand" column="nx_goods_brand"/>
+        <result property="nxGoodsPlace" column="nx_goods_place"/>
+        <result property="nxGoodsPinyin" column="nx_goods_pinyin"/>
+        <result property="nxGoodsPy" column="nx_goods_py"/>
+        <result property="nxGoodsFatherId" column="nx_goods_father_id"/>
+        <result property="nxGoodsSort" column="nx_goods_sort"/>
+        <result property="nxGoodsIsOldestSon" column="nx_goods_is_oldest_son"/>
+        <result property="nxGoodsGrandId" column="nx_goods_grand_id"/>
+        <result property="nxGoodsGreatGrandId" column="nx_goods_great_grand_id"/>
+        <result property="nxGoodsFile" column="nx_goods_file"/>
+        <result property="color" column="color"/>
+        <result property="nxGoodsApplyNxDistributerId" column="nx_goods_apply_nx_distributer_id"/>
+        <result property="nxGoodsLevel" column="nx_goods_level"/>
+        <result property="nxGoodsIsHidden" column="nx_goods_is_hidden"/>
+        <result property="nxGoodsSubNames" column="nx_goods_sub_names"/>
+        <result property="isDownload" column="is_download"/>
+        <result property="nxGoodsSonsSort" column="nx_goods_sons_sort"/>
+        <result property="nxDepartmentGoodsId" column="nx_department_goods_id"/>
+        <result property="nxDepartmentGoodsPrice" column="nx_department_goods_price"/>
+        <result property="nxGoodsDetail" column="nx_goods_detail"/>
+        <result property="nxGoodsFileBig" column="nx_goods_file_big"/>
+        <result property="nxGoodsStandardAmount" column="nx_goods_standard_amount"/>
+        <result property="nxGoodsStandardWeight" column="nx_goods_standard_weight"/>
+        <result property="subAmount" column="sub_amount"/>
+        <result property="nxGoodsQuantityDays" column="nx_goods_quantity_days"/>
+        <result property="nxGoodsCartonUnit" column="nx_goods_carton_unit"/>
+        <result property="nxGoodsItemsPerCarton" column="nx_goods_items_per_carton"/>
+        
+        <!-- 分销商商品关联 -->
+        <association property="gbDistributerGoodsEntity" javaType="com.nongxinle.entity.GbDistributerGoodsEntity">
+            <id property="gbDistributerGoodsId" column="gb_distributer_goods_id"/>
+            <result property="gbDgNxGoodsId" column="gb_dg_nx_goods_id"/>
+            <result property="gbDgGoodsName" column="gb_dg_goods_name"/>
+            <result property="gbDgGoodsStandardname" column="gb_dg_goods_standardname"/>
+            <result property="gbDgGoodsDetail" column="gb_dg_goods_detail"/>
+            <result property="gbDgGoodsPlace" column="gb_dg_goods_place"/>
+            <result property="gbDgGoodsBrand" column="gb_dg_goods_brand"/>
+            <result property="gbDgGoodsStandardWeight" column="gb_dg_goods_standard_weight"/>
+            <result property="gbDgGoodsPrice" column="gb_dg_goods_price"/>
+            <result property="gbDgSellingPrice" column="gb_dg_selling_price"/>
+            <result property="gbDgDistributerId" column="gb_dg_distributer_id"/>
+            <result property="gbDgNxDistributerId" column="gb_dg_nx_distributer_id"/>
+            <result property="gbDgNxFatherImg" column="gb_dg_nx_father_img"/>
+            <result property="gbDgNxFatherImgLarge" column="gb_dg_nx_father_img_large"/>
+            <result property="gbDgGoodsType" column="gb_dg_goods_type"/>
+            <result property="gbDgIsSelfControl" column="gb_dg_is_self_control"/>
+            <result property="gbDgSelfPrice" column="gb_dg_self_price"/>
+            <result property="gbDgPullOff" column="gb_dg_pull_off"/>
+        </association>
+        
+        <!-- 部门分销商品关联 -->
+        <association property="gbDepartmentDisGoodsEntity" javaType="com.nongxinle.entity.GbDepartmentDisGoodsEntity">
+            <id property="gbDepartmentDisGoodsId" column="gb_department_dis_goods_id"/>
+            <result property="gbDDGDepartmentId" column="gb_DDG_department_id"/>
+            <result property="gbDDGNxDistributerId" column="gb_DDG_nx_distributer_id"/>
+            <result property="gbDDGNxGoodsId" column="gb_DDG_nx_goods_id"/>
+            <result property="gbDDGDisGoodsId" column="gb_DDG_dis_goods_id"/>
+            <result property="gbDDGDepGoodsName" column="gb_DDG_dep_goods_name"/>
+            <result property="gbDDGDepGoodsStandardname" column="gb_DDG_dep_goods_standardname"/>
+            <result property="gbDDGOrderPrice" column="gb_DDG_order_price"/>
+            <result property="gbDDGSellingPrice" column="gb_DDG_selling_price"/>
+            <result property="gbDDGGbDisId" column="gb_DDG_gb_dis_id"/>
+        </association>
+        
+        <!-- 部门订单关联 -->
+        <association property="gbDepartmentOrdersEntity" javaType="com.nongxinle.entity.GbDepartmentOrdersEntity">
+            <id property="gbDepartmentOrdersId" column="gb_department_orders_id"/>
+            <result property="gbDoGoodsName" column="gb_do_goods_name"/>
+            <result property="gbDONxGoodsId" column="gb_DO_nx_goods_id"/>
+            <result property="gbDODisGoodsId" column="gb_DO_dis_goods_id"/>
+            <result property="gbDODepartmentId" column="gb_DO_department_id"/>
+            <result property="gbDODistributerId" column="gb_DO_distributer_id"/>
+            <result property="gbDOStatus" column="gb_DO_status"/>
+            <result property="gbDOPrice" column="gb_DO_price"/>
+            <result property="gbDOQuantity" column="gb_DO_quantity"/>
+            <result property="gbDOSubtotal" column="gb_DO_subtotal"/>
+            <result property="gbDOSellingPrice" column="gb_DO_selling_price"/>
+        </association>
+    </resultMap>
+
+    <resultMap id="nxGoodsCateList" type="com.nongxinle.entity.NxGoodsEntity">
+        <id property="nxGoodsId" column="nx_goods_id"/>
+        <result property="nxGoodsName" column="nx_goods_name"/>
+        <result property="nxGoodsFile" column="nx_goods_file"/>
+        <result property="nxGoodsSort" column="nx_goods_sort"/>
+        <result property="nxGoodsSonsSort" column="nx_goods_sons_sort"/>
+        <result property="subNxGoodsId" column="sub_nx_goods_id"/>
+        <result property="subNxGoodsName" column="sub_nx_goods_name"/>
+        <result property="subNxGoodsDetail" column="sub_nx_goods_detail"/>
+        <result property="subNxGoodsFile" column="sub_nx_goods_file"/>
+        <result property="subNxGoodsFatherId" column="sub_nx_goods_father_id"/>
+        <result property="subNxGoodsSort" column="sub_nx_goods_sort"/>
+    </resultMap>
+
+    <!-- ========== 老项目迁移: 完整的商品查询 ResultMap ========== -->
+
+    <!-- 老项目迁移: Father分类 ResultMap (对应 fatherGoods) -->
+    <resultMap id="father" type="com.nongxinle.entity.NxGoodsEntity">
+        <id property="nxGoodsId" column="f_nx_goods_id"/>
+        <result property="nxGoodsName" column="f_nx_goods_name"/>
+        <result property="nxGoodsFile" column="f_nx_goods_file"/>
+        <result property="nxGoodsFileBig" column="f_nx_goods_file_big"/>
+        <result property="nxGoodsFatherId" column="f_nx_goods_father_id"/>
+        <result property="nxGoodsGrandId" column="f_nx_goods_grand_id"/>
+        <result property="nxGoodsSort" column="f_nx_goods_sort"/>
+        <result property="nxGoodsSonsSort" column="f_nx_goods_sons_sort"/>
+        <result property="nxGoodsIsHidden" column="f_nx_goods_is_hidden"/>
+        <result property="nxGoodsQuantityDays" column="f_nx_goods_quantity_days"/>
+        <!-- Father 也有自己的父级 (GrandGoods) -->
+        <association property="fatherGoods" resultMap="grandGoods"/>
+    </resultMap>
+
+    <!-- 老项目迁移: Grand分类 ResultMap (对应 grandGoods) -->
+    <resultMap id="grandGoods" type="com.nongxinle.entity.NxGoodsEntity">
+        <id property="nxGoodsId" column="grand_nx_goods_id"/>
+        <result property="nxGoodsName" column="grand_nx_goods_name"/>
+        <result property="nxGoodsFile" column="grand_nx_goods_file"/>
+        <result property="nxGoodsFileBig" column="grand_nx_goods_file_big"/>
+        <result property="nxGoodsFatherId" column="grand_nx_goods_father_id"/>
+        <result property="nxGoodsSort" column="grand_nx_goods_sort"/>
+        <result property="nxGoodsSonsSort" column="grand_nx_goods_sons_sort"/>
+        <result property="nxGoodsQuantityDays" column="grand_nx_goods_quantity_days"/>
+        <!-- Grand 也有自己的父级 (GreatGrandGoods) -->
+        <association property="fatherGoods" resultMap="greatGrandGoods"/>
+    </resultMap>
+
+    <!-- 老项目迁移: GreatGrand分类 ResultMap (对应 greatGrandGoods) -->
+    <resultMap id="greatGrandGoods" type="com.nongxinle.entity.NxGoodsEntity">
+        <id property="nxGoodsId" column="greatgrand_nx_goods_id"/>
+        <result property="nxGoodsName" column="greatgrand_nx_goods_name"/>
+        <result property="nxGoodsFile" column="greatgrand_nx_goods_file"/>
+        <result property="nxGoodsFileBig" column="greatgrand_nx_goods_file_big"/>
+        <result property="nxGoodsSort" column="greatgrand_nx_goods_sort"/>
+        <result property="nxGoodsSonsSort" column="greatgrand_nx_goods_sons_sort"/>
+    </resultMap>
+
+    <!-- 老项目迁移: nxGoods ResultMap (完整的父子级联) -->
+    <resultMap id="nxGoods" type="com.nongxinle.entity.NxGoodsEntity">
+        <id property="nxGoodsId" column="nx_goods_id"/>
+        <result property="nxGoodsName" column="nx_goods_name"/>
+        <result property="nxGoodsDetail" column="nx_goods_detail"/>
+        <result property="nxGoodsPlace" column="nx_goods_place"/>
+        <result property="nxGoodsBrand" column="nx_goods_brand"/>
+        <result property="nxGoodsFile" column="nx_goods_file"/>
+        <result property="nxGoodsFileBig" column="nx_goods_file_big"/>
+        <result property="nxGoodsStandardname" column="nx_goods_standardname"/>
+        <result property="nxGoodsStandardWeight" column="nx_goods_standard_weight"/>
+        <result property="nxGoodsFatherId" column="nx_goods_father_id"/>
+        <result property="nxGoodsStandardAmount" column="nx_goods_standard_amount"/>
+        <result property="nxGoodsPinyin" column="nx_goods_pinyin"/>
+        <result property="nxGoodsPy" column="nx_goods_py"/>
+        <result property="nxGoodsIsOldestSon" column="nx_goods_is_oldest_son"/>
+        <result property="nxGoodsSonsSort" column="nx_goods_sons_sort"/>
+        <result property="nxGoodsGrandId" column="nx_goods_grand_id"/>
+        <result property="nxGoodsLevel" column="nx_goods_level"/>
+        <result property="nxGoodsSort" column="nx_goods_sort"/>
+        <result property="nxGoodsIsHidden" column="nx_goods_is_hidden"/>
+        <result property="nxGoodsQuantityDays" column="nx_goods_quantity_days"/>
+        <result property="nxGoodsCartonUnit" column="nx_goods_carton_unit"/>
+        <result property="nxGoodsItemsPerCarton" column="nx_goods_items_per_carton"/>
+        <!-- 父子级联关联 -->
+        <association property="fatherGoods" resultMap="father"/>
+        <association property="grandGoods" resultMap="grandGoods"/>
+        <association property="greatGrandGoods" resultMap="greatGrandGoods"/>
+        <!-- 规格和别名 -->
+        <collection property="nxGoodsStandardEntities" resultMap="standardList"/>
+        <collection property="nxAliasEntities" resultMap="aliasList"/>
+    </resultMap>
+
+    <!-- 老项目迁移: queryObject SQL (包含父子级联) -->
+    <select id="queryObject" resultMap="nxGoods">
+        select g.nx_goods_id,
+               g.nx_goods_name,
+               g.nx_goods_detail,
+               g.nx_goods_brand,
+               g.nx_goods_place,
+               g.nx_goods_standardname,
+               g.nx_goods_standard_weight,
+               g.nx_goods_file,
+               g.nx_goods_file_big,
+               g.nx_goods_standard_amount,
+               g.nx_goods_father_id,
+               g.nx_goods_pinyin,
+               g.nx_goods_py,
+               g.nx_goods_is_oldest_son,
+               g.nx_goods_sons_sort,
+               g.nx_goods_grand_id,
+               g.nx_goods_level,
+               g.nx_goods_sort,
+               g.nx_goods_is_hidden,
+               g.nx_goods_quantity_days,
+               g.nx_goods_carton_unit,
+               g.nx_goods_items_per_carton,
+
+               f.nx_goods_id as f_nx_goods_id,
+               f.nx_goods_name as f_nx_goods_name,
+               f.nx_goods_file as f_nx_goods_file,
+               f.nx_goods_file_big as f_nx_goods_file_big,
+               f.nx_goods_father_id as f_nx_goods_father_id,
+               f.nx_goods_grand_id as f_nx_goods_grand_id,
+               f.nx_goods_sort as f_nx_goods_sort,
+               f.nx_goods_sons_sort as f_nx_goods_sons_sort,
+               f.nx_goods_is_hidden as f_nx_goods_is_hidden,
+               f.nx_goods_quantity_days as f_nx_goods_quantity_days,
+
+               grand.nx_goods_id as grand_nx_goods_id,
+               grand.nx_goods_name as grand_nx_goods_name,
+               grand.nx_goods_father_id as grand_nx_goods_father_id,
+               grand.nx_goods_file as grand_nx_goods_file,
+               grand.nx_goods_file_big as grand_nx_goods_file_big,
+               grand.nx_goods_sort as grand_nx_goods_sort,
+               grand.nx_goods_sons_sort as grand_nx_goods_sons_sort,
+               grand.nx_goods_quantity_days as grand_nx_goods_quantity_days,
+
+               greatgrand.nx_goods_id as greatgrand_nx_goods_id,
+               greatgrand.nx_goods_name as greatgrand_nx_goods_name,
+               greatgrand.nx_goods_sort as greatgrand_nx_goods_sort,
+               greatgrand.nx_goods_sons_sort as greatgrand_nx_goods_sons_sort,
+               greatgrand.nx_goods_file as greatgrand_nx_goods_file,
+               greatgrand.nx_goods_file_big as greatgrand_nx_goods_file_big
+        from nx_goods g
+        left join nx_goods f on f.nx_goods_id = g.nx_goods_father_id
+        left join nx_goods grand on grand.nx_goods_id = f.nx_goods_father_id
+        left join nx_goods greatgrand on greatgrand.nx_goods_id = grand.nx_goods_father_id
+        where g.nx_goods_id = #{nxGoodsId}
+    </select>
+
+    <!-- 商品规格列表 ResultMap -->
+    <resultMap id="standardList" type="com.nongxinle.entity.NxStandardEntity">
+        <id property="nxStandardId" column="nx_standard_id"/>
+        <result property="nxSGoodsId" column="nx_s_goods_id"/>
+        <result property="nxStandardName" column="nx_standard_name"/>
+        <result property="nxStandardScale" column="nx_standard_scale"/>
+        <result property="nxStandardFilePath" column="nx_standard_file_path"/>
+    </resultMap>
+
+    <!-- 商品别名列表 ResultMap -->
+    <resultMap id="aliasList" type="com.nongxinle.entity.NxAliasEntity">
+        <id property="nxAliasId" column="nx_alias_id"/>
+        <result property="nxAliasName" column="nx_alias_name"/>
+        <result property="nxAlsGoodsId" column="nx_als_goods_id"/>
+    </resultMap>
+
+    <!-- 批发商商品 ResultMap -->
+    <resultMap id="gbDisGoods" type="com.nongxinle.entity.GbDistributerGoodsEntity">
+        <id property="gbDistributerGoodsId" column="gb_distributer_goods_id"/>
+        <result property="gbDgNxGoodsId" column="gb_dg_nx_goods_id"/>
+        <result property="gbDgGoodsName" column="gb_dg_goods_name"/>
+        <result property="gbDgGoodsStandardname" column="gb_dg_goods_standardname"/>
+        <result property="gbDgGoodsDetail" column="gb_dg_goods_detail"/>
+        <result property="gbDgGoodsPlace" column="gb_dg_goods_place"/>
+        <result property="gbDgGoodsBrand" column="gb_dg_goods_brand"/>
+        <result property="gbDgGoodsStandardWeight" column="gb_dg_goods_standard_weight"/>
+        <result property="gbDgGoodsPrice" column="gb_dg_goods_price"/>
+        <result property="gbDgGoodsLowestPrice" column="gb_dg_goods_lowest_price"/>
+        <result property="gbDgGoodsHighestPrice" column="gb_dg_goods_highest_price"/>
+        <result property="gbDgControlPrice" column="gb_dg_control_price"/>
+        <result property="gbDgControlFresh" column="gb_dg_control_fresh"/>
+        <result property="gbDgFreshWarnHour" column="gb_dg_fresh_warn_hour"/>
+        <result property="gbDgFreshWasteHour" column="gb_dg_fresh_waste_hour"/>
+        <result property="gbDgGoodsInventoryType" column="gb_dg_goods_inventory_type"/>
+        <result property="gbDgGoodsType" column="gb_dg_goods_type"/>
+        <result property="gbDgIsFranchisePrice" column="gb_dg_is_franchise_price"/>
+        <result property="gbDgFranchisePriceOne" column="gb_dg_franchise_price_one"/>
+        <result property="gbDgFranchisePriceTwo" column="gb_dg_franchise_price_two"/>
+        <result property="gbDgFranchisePriceThree" column="gb_dg_franchise_price_three"/>
+        <result property="gbDgIsSelfControl" column="gb_dg_is_self_control"/>
+        <result property="gbDgSelfPrice" column="gb_dg_self_price"/>
+        <result property="gbDgGoodsSort" column="gb_dg_goods_sort"/>
+        <result property="gbDgGoodsSonsSort" column="gb_dg_goods_sons_sort"/>
+        <result property="gbDgNxFatherImg" column="gb_dg_nx_father_img"/>
+        <result property="gbDgNxFatherImgLarge" column="gb_dg_nx_father_img_large"/>
+        <result property="gbDgGbSupplierId" column="gb_dg_gb_supplier_id"/>
+        <result property="gbDgNxDistributerId" column="gb_dg_nx_distributer_id"/>
+        <result property="gbDgNxDistributerGoodsId" column="gb_dg_nx_distributer_goods_id"/>
+        <result property="gbDgDistributerId" column="gb_dg_distributer_id"/>
+        <result property="gbDgSellingPrice" column="gb_dg_selling_price"/>
+        <result property="gbDgPullOff" column="gb_dg_pull_off"/>
+        <result property="gbDgDfgGoodsFatherId" column="gb_dg_dfg_goods_father_id"/>
+        <result property="gbDgDfgGoodsGrandId" column="gb_dg_dfg_goods_grand_id"/>
+        <result property="gbDgDfgGoodsGreatId" column="gb_dg_dfg_goods_great_id"/>
+        <result property="gbDgGoodsIsWeight" column="gb_dg_goods_is_weight"/>
+        <collection property="gbDistributerStandardEntities" resultMap="gbStandard"/>
+        <collection property="gbDistributerAliasEntities" resultMap="gbAlias"/>
+    </resultMap>
+
+    <!-- 批发商规格 ResultMap -->
+    <resultMap id="gbStandard" type="com.nongxinle.entity.GbDistributerStandardEntity">
+        <id property="gbDistributerStandardId" column="gb_distributer_standard_id"/>
+        <result property="gbDsStandardName" column="gb_DS_standard_name"/>
+        <result property="gbDsStandardScale" column="gb_DS_standard_scale"/>
+        <result property="gbDsDisGoodsId" column="gb_DS_dis_goods_id"/>
+    </resultMap>
+
+    <!-- 批发商别名 ResultMap -->
+    <resultMap id="gbAlias" type="com.nongxinle.entity.GbDistributerAliasEntity">
+        <id property="gbDistributerAliasId" column="gb_distributer_alias_id"/>
+        <result property="gbDaAliasName" column="gb_da_alias_name"/>
+        <result property="gbDaDisGoodsId" column="gb_da_dis_goods_id"/>
+    </resultMap>
+
+    <!-- 部门批发商商品 ResultMap -->
+    <resultMap id="gbDepGoods" type="com.nongxinle.entity.GbDepartmentDisGoodsEntity">
+        <id property="gbDepartmentDisGoodsId" column="gb_department_dis_goods_id"/>
+        <result property="gbDdgOrderGoodsName" column="gb_DDG_order_goods_name"/>
+        <result property="gbDdgOrderPriceLevel" column="gb_DDG_order_price_level"/>
+        <result property="gbDdgPrintStandard" column="gb_DDG_print_standard"/>
+        <result property="gbDdgDepGoodsName" column="gb_DDG_dep_goods_name"/>
+        <result property="gbDdgDepGoodsStandardname" column="gb_DDG_dep_goods_standardname"/>
+        <result property="gbDdgGoodsType" column="gb_DDG_goods_type"/>
+        <result property="gbDdgDepartmentId" column="gb_DDG_department_id"/>
+        <result property="gbDdgNxDistributerId" column="gb_DDG_nx_distributer_id"/>
+        <result property="gbDdgNxDistributerGoodsId" column="gb_DDG_nx_distributer_goods_id"/>
+        <result property="gbDdgDisGoodsId" column="gb_DDG_dis_goods_id"/>
+        <result property="gbDdgDisGoodsFatherId" column="gb_DDG_dis_goods_father_id"/>
+        <result property="gbDdgDisGoodsGrandId" column="gb_DDG_dis_goods_grand_id"/>
+        <result property="gbDdgDisGoodsGreatId" column="gb_DDG_dis_goods_great_id"/>
+        <result property="gbDdgGbDisId" column="gb_DDG_gb_dis_id"/>
+        <result property="gbDdgStockTotalSubtotal" column="gb_DDG_stock_total_subtotal"/>
+        <result property="gbDdgStockTotalWeight" column="gb_DDG_stock_total_weight"/>
+        <result property="gbDdgPrepareTotalWeight" column="gb_DDG_prepare_total_weight"/>
+        <result property="gbDdgShowStandardId" column="gb_DDG_show_standard_id"/>
+        <result property="gbDdgShowStandardName" column="gb_DDG_show_standard_name"/>
+        <result property="gbDdgShowStandardScale" column="gb_DDG_show_standard_scale"/>
+        <result property="gbDdgSellingPrice" column="gb_DDG_selling_price"/>
+        <result property="gbDdgOrderDate" column="gb_DDG_order_date"/>
+        <result property="gbDdgOrderPrice" column="gb_DDG_order_price"/>
+        <result property="gbDdgOrderQuantity" column="gb_DDG_order_quantity"/>
+        <result property="gbDdgOrderRemark" column="gb_DDG_order_remark"/>
+        <result property="gbDdgOrderStandard" column="gb_DDG_order_standard"/>
+        <result property="gbDdgOrderWeight" column="gb_DDG_order_weight"/>
+        <result property="gbDdgInventoryDate" column="gb_DDG_inventory_date"/>
+        <result property="gbDdgInventoryFullTime" column="gb_DDG_inventory_full_time"/>
+        <result property="gbDdgPrepareStatus" column="gb_DDG_prepare_status"/>
+        <result property="gbDdgDepartmentFatherId" column="gb_DDG_department_father_id"/>
+        <collection property="gbDepartmentGoodsStockEntities" resultMap="gbDepStock"/>
+    </resultMap>
+
+    <!-- 部门商品库存 ResultMap -->
+    <resultMap id="gbDepStock" type="com.nongxinle.entity.GbDepartmentGoodsStockEntity">
+        <id property="gbDepartmentGoodsStockId" column="gb_department_goods_stock_id"/>
+        <result property="gbDgsGbDisGoodsId" column="gb_dgs_gb_dis_goods_id"/>
+        <result property="gbDgsGbDepDisGoodsId" column="gb_dgs_gb_dep_dis_goods_id"/>
+        <result property="gbDgsGbDepartmentId" column="gb_dgs_gb_department_id"/>
+        <result property="gbDgsRestWeight" column="gb_dgs_rest_weight"/>
+        <result property="gbDgsRestSubtotal" column="gb_dgs_rest_subtotal"/>
+        <result property="gbDgsWeight" column="gb_dgs_weight"/>
+        <result property="gbDgsSubtotal" column="gb_dgs_subtotal"/>
+        <result property="gbDgsPrice" column="gb_dgs_price"/>
+        <result property="gbDgsDate" column="gb_dgs_date"/>
+        <result property="gbDgsStatus" column="gb_dgs_status"/>
+        <result property="gbDgsInventoryDate" column="gb_dgs_inventory_date"/>
+        <result property="gbDgsInventoryFullTime" column="gb_dgs_inventory_full_time"/>
+        <result property="gbDgsInventoryWeek" column="gb_dgs_inventory_week"/>
+        <result property="gbDgsInventoryMonth" column="gb_dgs_inventory_month"/>
+        <result property="gbDgsProduceWeight" column="gb_dgs_produce_weight"/>
+        <result property="gbDgsProduceSubtotal" column="gb_dgs_produce_subtotal"/>
+        <result property="gbDgsLossWeight" column="gb_dgs_loss_weight"/>
+        <result property="gbDgsLossSubtotal" column="gb_dgs_loss_subtotal"/>
+        <result property="gbDgsWasteWeight" column="gb_dgs_waste_weight"/>
+        <result property="gbDgsWasteSubtotal" column="gb_dgs_waste_subtotal"/>
+        <result property="gbDgsReturnWeight" column="gb_dgs_return_weight"/>
+        <result property="gbDgsReturnSubtotal" column="gb_dgs_return_subtotal"/>
+        <result property="gbDgsSellingPrice" column="gb_dgs_selling_price"/>
+        <result property="gbDgsSellingSubtotal" column="gb_dgs_selling_subtotal"/>
+        <result property="gbDgsGbDistributerId" column="gb_dgs_gb_distributer_id"/>
+        <result property="gbDgsNxDistributerId" column="gb_dgs_nx_distributer_id"/>
+        <result property="gbDgsGbDisGoodsFatherId" column="gb_dgs_gb_dis_goods_father_id"/>
+        <result property="gbDgsGbDisGoodsGrandId" column="gb_dgs_gb_dis_goods_grand_id"/>
+        <result property="gbDgsGbDisGoodsGreatId" column="gb_dgs_gb_dis_goods_great_id"/>
+        <result property="gbDgsReceiveUserId" column="gb_dgs_receive_user_id"/>
+        <result property="gbDgsWarnFullTime" column="gb_dgs_warn_full_time"/>
+        <result property="gbDgsWasteFullTime" column="gb_dgs_waste_full_time"/>
+        <result property="gbDgsFullTime" column="gb_dgs_full_time"/>
+        <result property="gbDgsDoWasteFullTime" column="gb_dgs_do_waste_full_time"/>
+        <result property="gbDgsOutFullTime" column="gb_dgs_out_full_time"/>
+        <result property="gbDgsProfitWeight" column="gb_dgs_profit_weight"/>
+        <result property="gbDgsProfitSubtotal" column="gb_dgs_profit_subtotal"/>
+        <result property="gbDgsBetweenPrice" column="gb_dgs_between_price"/>
+        <result property="gbDgsWarnTimeQuantumName" column="gb_dgs_warn_time_quantum_name"/>
+        <result property="gbDgsWasteTimeQuantumName" column="gb_dgs_waste_time_quantum_name"/>
+        <result property="gbDgsGbPurGoodsId" column="gb_dgs_gb_pur_goods_id"/>
+        <result property="gbDgsGbPriceGoodsId" column="gb_dgs_gb_price_goods_id"/>
+        <result property="gbDgsGbPriceSubtotal" column="gb_dgs_gb_price_subtotal"/>
+        <result property="gbDgsAfterProfitSubtotal" column="gb_dgs_after_profit_subtotal"/>
+        <result property="gbDgsProfitSubtotal" column="gb_dgs_profit_subtotal"/>
+        <result property="gbDgsRestWeightShowStandard" column="gb_dgs_rest_weight_show_standard"/>
+        <result property="gbDgsRestWeightShowStandardName" column="gb_dgs_rest_weight_show_standard_name"/>
+    </resultMap>
+
+    <!-- 部门订单 ResultMap -->
+    <resultMap id="gbOrder" type="com.nongxinle.entity.GbDepartmentOrdersEntity">
+        <id property="gbDepartmentOrdersId" column="gb_department_orders_id"/>
+        <result property="gbDoGoodsName" column="gb_do_goods_name"/>
+        <result property="gbDoNxGoodsId" column="gb_DO_nx_goods_id"/>
+        <result property="gbDoDisGoodsId" column="gb_DO_dis_goods_id"/>
+        <result property="gbDoDisGoodsFatherId" column="gb_DO_dis_goods_father_id"/>
+        <result property="gbDoDepDisGoodsId" column="gb_DO_dep_dis_goods_id"/>
+        <result property="gbDoDepartmentId" column="gb_DO_department_id"/>
+        <result property="gbDoDistributerId" column="gb_DO_distributer_id"/>
+        <result property="gbDoStatus" column="gb_DO_status"/>
+        <result property="gbDoPrice" column="gb_DO_price"/>
+        <result property="gbDoWeight" column="gb_DO_weight"/>
+        <result property="gbDoSubtotal" column="gb_DO_subtotal"/>
+        <result property="gbDoQuantity" column="gb_DO_quantity"/>
+        <result property="gbDoStandard" column="gb_DO_standard"/>
+        <result property="gbDoRemark" column="gb_DO_remark"/>
+        <result property="gbDoApplyDate" column="gb_DO_apply_date"/>
+        <result property="gbDoApplyFullTime" column="gb_DO_apply_full_time"/>
+        <result property="gbDoArriveDate" column="gb_DO_arrive_date"/>
+        <result property="gbDoArriveWhatDay" column="gb_DO_arrive_what_day"/>
+        <result property="gbDoScaleWeight" column="gb_DO_scale_weight"/>
+        <result property="gbDoScalePrice" column="gb_DO_scale_price"/>
+        <result property="gbDoBuyStatus" column="gb_DO_buy_status"/>
+        <result property="gbDoGoodsType" column="gb_DO_goods_type"/>
+        <result property="gbDoOrderType" column="gb_DO_order_type"/>
+        <result property="gbDoSellingPrice" column="gb_DO_selling_price"/>
+        <result property="gbDoSellingSubtotal" column="gb_DO_selling_subtotal"/>
+        <result property="gbDoPrintStandard" column="gb_do_print_standard"/>
+        <result property="gbDoCostPriceLevel" column="gb_do_cost_price_level"/>
+        <result property="gbDoDsStandardScale" column="gb_DO_ds_standard_scale"/>
+        <result property="gbDoDsStandardId" column="gb_DO_ds_standard_id"/>
+        <result property="gbDoNxGoodsGrandId" column="gb_do_nx_goods_grand_id"/>
+        <result property="gbDoNxGoodsGreatId" column="gb_do_nx_goods_great_id"/>
+        <result property="gbDoNxGoodsFatherId" column="gb_DO_nx_goods_father_id"/>
+        <result property="gbDoDepartmentFatherId" column="gb_DO_department_father_id"/>
+    </resultMap>
+
+    <!-- 主 ResultMap: 包含所有关联对象 -->
+    <!-- 老项目: queryGbDepNxGrandGoodsByGreatId -->
+    <resultMap id="goodsWithGbOrder" type="com.nongxinle.entity.NxGoodsEntity">
+        <id property="nxGoodsId" column="nx_goods_id"/>
+        <result property="nxGoodsItemsPerCarton" column="nx_goods_items_per_carton"/>
+        <result property="nxGoodsCartonUnit" column="nx_goods_carton_unit"/>
+        <result property="nxGoodsQuantityDays" column="nx_goods_quantity_days"/>
+        <result property="nxGoodsIsHidden" column="nx_goods_is_hidden"/>
+        <result property="nxGoodsDetail" column="nx_goods_detail"/>
+        <result property="nxGoodsPlace" column="nx_goods_place"/>
+        <result property="nxGoodsSonsSort" column="nx_goods_sons_sort"/>
+        <result property="nxGoodsSort" column="nx_goods_sort"/>
+        <result property="nxGoodsBrand" column="nx_goods_brand"/>
+        <result property="nxGoodsIsOldestSon" column="nx_goods_is_oldest_son"/>
+        <result property="nxGoodsLevel" column="nx_goods_level"/>
+        <result property="nxGoodsName" column="nx_goods_name"/>
+        <result property="nxGoodsFatherId" column="nx_goods_father_id"/>
+        <result property="nxGoodsGrandId" column="nx_goods_grand_id"/>
+        <result property="nxGoodsGreatGrandId" column="nx_goods_great_grand_id"/>
+        <result property="nxGoodsFile" column="nx_goods_file"/>
+        <result property="nxGoodsFileBig" column="nx_goods_file_big"/>
+        <result property="nxGoodsStandardname" column="nx_goods_standardname"/>
+        <result property="nxGoodsStandardWeight" column="nx_goods_standard_weight"/>
+        
+        <!-- 分销商商品关联（内联方式） -->
+        <association property="gbDistributerGoodsEntity" javaType="com.nongxinle.entity.GbDistributerGoodsEntity">
+            <id property="gbDistributerGoodsId" column="gb_distributer_goods_id"/>
+            <result property="gbDgNxGoodsId" column="gb_dg_nx_goods_id"/>
+            <result property="gbDgGoodsName" column="gb_dg_goods_name"/>
+            <result property="gbDgGoodsStandardname" column="gb_dg_goods_standardname"/>
+            <result property="gbDgGoodsPrice" column="gb_dg_goods_price"/>
+            <result property="gbDgSellingPrice" column="gb_dg_selling_price"/>
+            <result property="gbDgDistributerId" column="gb_dg_distributer_id"/>
+        </association>
+        
+        <!-- 部门商品关联（内联方式） -->
+        <association property="gbDepartmentDisGoodsEntity" javaType="com.nongxinle.entity.GbDepartmentDisGoodsEntity">
+            <id property="gbDepartmentDisGoodsId" column="gb_department_dis_goods_id"/>
+            <result property="gbDdgDepGoodsName" column="gb_DDG_dep_goods_name"/>
+            <result property="gbDdgOrderPrice" column="gb_DDG_order_price"/>
+            <result property="gbDdgSellingPrice" column="gb_DDG_selling_price"/>
+            <result property="gbDdgDepartmentId" column="gb_DDG_department_id"/>
+        </association>
+        
+        <!-- 部门订单关联（内联方式） -->
+        <association property="gbDepartmentOrdersEntity" javaType="com.nongxinle.entity.GbDepartmentOrdersEntity">
+            <id property="gbDepartmentOrdersId" column="gb_department_orders_id"/>
+            <result property="gbDoGoodsName" column="gb_do_goods_name"/>
+            <result property="gbDoPrice" column="gb_DO_price"/>
+            <result property="gbDoQuantity" column="gb_DO_quantity"/>
+            <result property="gbDoDepartmentId" column="gb_DO_department_id"/>
+        </association>
+        
+        <!-- 集合对象 -->
+        <collection property="nxGoodsStandardEntities" resultMap="standardList"/>
+        <collection property="nxAliasEntities" resultMap="aliasList"/>
+    </resultMap>
+
+    <!-- 获取商品分类列表 -->
+    <select id="getNxGoodsCateList" resultMap="nxGoodsCateList">
+        select g.nx_goods_id         as nx_goods_id,
+               g.nx_goods_name       as nx_goods_name,
+               g.nx_goods_file       as nx_goods_file,
+               g.nx_goods_sort       as nx_goods_sort,
+               g.nx_goods_sons_sort  as nx_goods_sons_sort,
+               gg.nx_goods_id        as sub_nx_goods_id,
+               gg.nx_goods_name      as sub_nx_goods_name,
+               gg.nx_goods_detail    as sub_nx_goods_detail,
+               gg.nx_goods_file      as sub_nx_goods_file,
+               gg.nx_goods_father_id as sub_nx_goods_father_id,
+               gg.nx_goods_sort      as sub_nx_goods_sort
+        from nx_goods as g
+        left join nx_goods as gg on g.nx_goods_id = gg.nx_goods_father_id
+        where g.nx_goods_father_id = 0
+        order by g.nx_goods_sort, g.nx_goods_sons_sort, gg.nx_goods_sort, gg.nx_goods_sons_sort
+    </select>
+
+    <!-- 查询商品ID列表 -->
+    <select id="queryOnlyGoodsIds" resultType="java.lang.Integer">
+        select dg.nx_goods_id
+        from nx_goods as dg
+        left join nx_goods as f on f.nx_goods_id = dg.nx_goods_father_id
+        left join nx_goods as g on g.nx_goods_id = f.nx_goods_father_id
+        left join nx_goods as gg on gg.nx_goods_id = g.nx_goods_father_id
+        <where>
+            <if test="isHidden != null">
+                AND dg.nx_goods_is_hidden = #{isHidden}
+            </if>
+            <if test="greatGrandId != null">
+                AND dg.nx_goods_great_grand_id = #{greatGrandId}
+            </if>
+            and dg.nx_goods_level = 3
+        </where>
+        ORDER BY
+        gg.nx_goods_sort,
+        g.nx_goods_sort,
+        f.nx_goods_sort,
+        dg.nx_goods_sort,
+        dg.nx_goods_sons_sort
+    </select>
+
+    <!-- 根据一级分类(greatGrandId)查询商品数量 -->
+    <!-- 原方法名: queryNxGoodsCountByFatherId（已废弃） -->
+    <select id="queryNxGoodsCountByGreatGrandId" resultType="java.lang.Integer">
+        select count(*)
+        from nx_goods
+        where nx_goods_great_grand_id = #{greatGrandId}
+        and nx_goods_level = 3
+        and nx_goods_is_hidden = 0
+    </select>
+
+    <!-- 根据一级分类(greatGrandId)分页查询商品 -->
+    <!-- 原方法名: queryNxGoodsPageByFatherId（已废弃） -->
+    <select id="queryNxGoodsPageByGreatGrandId" resultMap="BaseResultMap">
+        select *
+        from nx_goods
+        where nx_goods_great_grand_id = #{greatGrandId}
+        and nx_goods_level = 3
+        and nx_goods_is_hidden = 0
+        order by nx_goods_sort, nx_goods_sons_sort
+        limit #{limit} offset #{offset}
+    </select>
+
+    <!-- ========== 老项目迁移: queryGbDepNxGrandGoodsByGreatId ========== -->
+    <!-- 根据一级分类(greatGrandId/grandId)查询商品，包含批发商商品、部门商品、订单、库存等完整信息 -->
+    <select id="queryGbDepNxGrandGoodsByGreatId" parameterType="map" resultMap="goodsWithGbOrder">
+        SELECT
+            limited_goods.*,
+            ns.nx_standard_id,
+            ns.nx_s_goods_id,
+            ns.nx_standard_name,
+            ns.nx_standard_scale,
+            ns.nx_standard_file_path,
+            na.nx_alias_id,
+            na.nx_alias_name,
+            na.nx_als_goods_id,
+            gdg.gb_distributer_goods_id,
+            gdg.gb_dg_nx_goods_id,
+            gdg.gb_dg_goods_name,
+            gdg.gb_dg_goods_standardname,
+            gdg.gb_dg_goods_detail,
+            gdg.gb_dg_goods_place,
+            gdg.gb_dg_goods_brand,
+            gdg.gb_dg_goods_standard_weight,
+            gdg.gb_dg_goods_price,
+            gdg.gb_dg_goods_lowest_price,
+            gdg.gb_dg_goods_highest_price,
+            gdg.gb_dg_control_price,
+            gdg.gb_dg_control_fresh,
+            gdg.gb_dg_fresh_warn_hour,
+            gdg.gb_dg_fresh_waste_hour,
+            gdg.gb_dg_goods_inventory_type,
+            gdg.gb_dg_goods_type,
+            gdg.gb_dg_is_franchise_price,
+            gdg.gb_dg_franchise_price_one,
+            gdg.gb_dg_franchise_price_two,
+            gdg.gb_dg_franchise_price_three,
+            gdg.gb_dg_is_self_control,
+            gdg.gb_dg_self_price,
+            gdg.gb_dg_goods_sort,
+            gdg.gb_dg_goods_sons_sort,
+            gdg.gb_dg_nx_father_img,
+            gdg.gb_dg_nx_father_img_large,
+            gdg.gb_dg_gb_supplier_id,
+            gdg.gb_dg_nx_distributer_id,
+            gdg.gb_dg_nx_distributer_goods_id,
+            gdg.gb_dg_distributer_id,
+            gdg.gb_dg_selling_price,
+            gdg.gb_dg_pull_off,
+            gdg.gb_dg_dfg_goods_father_id,
+            gdg.gb_dg_dfg_goods_grand_id,
+            gdg.gb_dg_dfg_goods_great_id,
+            gdg.gb_dg_goods_is_weight,
+            gs.gb_distributer_standard_id AS gb_distributer_standard_id,
+            gs.gb_DS_standard_name,
+            gs.gb_DS_standard_scale,
+            gs.gb_DS_dis_goods_id,
+            ga.gb_distributer_alias_id,
+            ga.gb_da_alias_name,
+            ga.gb_da_dis_goods_id,
+            gddg.gb_department_dis_goods_id,
+            gddg.gb_DDG_order_goods_name,
+            gddg.gb_DDG_order_price_level,
+            gddg.gb_DDG_print_standard,
+            gddg.gb_DDG_dep_goods_name,
+            gddg.gb_DDG_dep_goods_standardname,
+            gddg.gb_DDG_goods_type,
+            gddg.gb_DDG_department_id,
+            gddg.gb_DDG_nx_distributer_id,
+            gddg.gb_DDG_nx_distributer_goods_id,
+            gddg.gb_DDG_dis_goods_id,
+            gddg.gb_DDG_dis_goods_father_id,
+            gddg.gb_DDG_dis_goods_grand_id,
+            gddg.gb_DDG_dis_goods_great_id,
+            gddg.gb_DDG_gb_dis_id,
+            gddg.gb_DDG_stock_total_subtotal,
+            gddg.gb_DDG_stock_total_weight,
+            gddg.gb_DDG_prepare_total_weight,
+            gddg.gb_DDG_show_standard_id,
+            gddg.gb_DDG_show_standard_name,
+            gddg.gb_DDG_show_standard_scale,
+            gddg.gb_DDG_selling_price,
+            gddg.gb_DDG_order_date,
+            gddg.gb_DDG_order_price,
+            gddg.gb_DDG_order_quantity,
+            gddg.gb_DDG_order_remark,
+            gddg.gb_DDG_order_standard,
+            gddg.gb_DDG_order_weight,
+            gddg.gb_DDG_inventory_date,
+            gddg.gb_DDG_inventory_full_time,
+            gddg.gb_DDG_prepare_status,
+            gddg.gb_DDG_department_father_id,
+            gds.gb_department_goods_stock_id,
+            gds.gb_dgs_gb_dis_goods_id,
+            gds.gb_dgs_gb_dep_dis_goods_id,
+            gds.gb_dgs_gb_department_id,
+            gds.gb_dgs_rest_weight,
+            gds.gb_dgs_rest_subtotal,
+            gds.gb_dgs_weight,
+            gds.gb_dgs_subtotal,
+            gds.gb_dgs_price,
+            gds.gb_dgs_date,
+            gds.gb_dgs_status,
+            gdo.gb_department_orders_id,
+            gdo.gb_do_goods_name,
+            gdo.gb_DO_nx_goods_id,
+            gdo.gb_DO_dis_goods_id,
+            gdo.gb_DO_dis_goods_father_id,
+            gdo.gb_DO_dep_dis_goods_id,
+            gdo.gb_DO_department_id,
+            gdo.gb_DO_distributer_id,
+            gdo.gb_DO_status,
+            gdo.gb_DO_price,
+            gdo.gb_DO_weight,
+            gdo.gb_DO_subtotal,
+            gdo.gb_DO_quantity,
+            gdo.gb_DO_standard,
+            gdo.gb_DO_remark,
+            gdo.gb_DO_apply_date,
+            gdo.gb_DO_apply_full_time,
+            gdo.gb_DO_arrive_date,
+            gdo.gb_DO_arrive_what_day,
+            gdo.gb_DO_scale_weight,
+            gdo.gb_DO_scale_price,
+            gdo.gb_DO_buy_status,
+            gdo.gb_DO_goods_type,
+            gdo.gb_DO_order_type,
+            gdo.gb_DO_selling_price,
+            gdo.gb_DO_selling_subtotal
+        FROM (
+            SELECT
+                ng.nx_goods_id AS nx_goods_id,
+                ng.nx_goods_name AS nx_goods_name,
+                ng.nx_goods_standardname AS nx_goods_standardname,
+                ng.nx_goods_standard_weight AS nx_goods_standard_weight,
+                ng.nx_goods_father_id AS nx_goods_father_id,
+                ng.nx_goods_grand_id AS nx_goods_grand_id,
+                ng.nx_goods_great_grand_id AS nx_goods_great_grand_id,
+                ng.nx_goods_sort AS nx_goods_sort,
+                ng.nx_goods_sons_sort AS nx_goods_sons_sort,
+                ng.nx_goods_file AS nx_goods_file,
+                ng.nx_goods_file_big AS nx_goods_file_big,
+                ng.nx_goods_detail AS nx_goods_detail,
+                ng.nx_goods_brand AS nx_goods_brand,
+                ng.nx_goods_level AS nx_goods_level,
+                ng.nx_goods_is_hidden AS nx_goods_is_hidden,
+                ng.nx_goods_is_oldest_son AS nx_goods_is_oldest_son,
+                ng.nx_goods_place AS nx_goods_place,
+                ng.nx_goods_quantity_days AS nx_goods_quantity_days,
+                ng.nx_goods_carton_unit AS nx_goods_carton_unit,
+                ng.nx_goods_items_per_carton AS nx_goods_items_per_carton
+            FROM nx_goods AS ng
+            LEFT JOIN nx_goods AS f ON f.nx_goods_id = ng.nx_goods_father_id
+            LEFT JOIN nx_goods AS g ON g.nx_goods_id = f.nx_goods_father_id
+            LEFT JOIN nx_goods AS gg ON gg.nx_goods_id = g.nx_goods_father_id
+            <where>
+                <!-- 只查第3级商品（真正的商品，不是分类目录） -->
+                ng.nx_goods_level = 3
+                <if test="greatGrandId != null">
+                    AND gg.nx_goods_id = #{greatGrandId}
+                </if>
+                <if test="grandId != null">
+                    AND g.nx_goods_id = #{grandId}
+                </if>
+                <if test="fatherId != null">
+                    AND ng.nx_goods_father_id = #{fatherId}
+                </if>
+                <if test="isHidden != null">
+                    AND ng.nx_goods_is_hidden = #{isHidden}
+                </if>
+            </where>
+            ORDER BY
+                gg.nx_goods_sort,
+                g.nx_goods_sort,
+                f.nx_goods_sort,
+                ng.nx_goods_sort,
+                ng.nx_goods_sons_sort
+            <if test="offset != null and limit != null">
+                LIMIT #{offset}, #{limit}
+            </if>
+        ) AS limited_goods
+
+        LEFT JOIN nx_standard AS ns ON ns.nx_s_goods_id = limited_goods.nx_goods_id
+        LEFT JOIN nx_alias AS na ON na.nx_als_goods_id = limited_goods.nx_goods_id
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_dg_nx_goods_id = limited_goods.nx_goods_id
+            AND gdg.gb_dg_distributer_id = #{gbDisId}
+        LEFT JOIN gb_distributer_standard AS gs ON gs.gb_DS_dis_goods_id = gdg.gb_distributer_goods_id
+        LEFT JOIN gb_distributer_alias AS ga ON ga.gb_da_dis_goods_id = gdg.gb_distributer_goods_id
+        LEFT JOIN gb_department_dis_goods AS gddg ON gddg.gb_DDG_dis_goods_id = gdg.gb_distributer_goods_id
+            AND gddg.gb_DDG_department_id = #{gbDepId}
+        LEFT JOIN gb_department_goods_stock AS gds ON gds.gb_dgs_gb_dep_dis_goods_id = gddg.gb_department_dis_goods_id
+        LEFT JOIN gb_department_orders AS gdo ON gdo.gb_DO_nx_goods_id = limited_goods.nx_goods_id
+            AND gdo.gb_DO_status &lt; 3
+            AND gdo.gb_DO_department_id = #{gbDepId}
+
+        ORDER BY
+            limited_goods.nx_goods_sort,
+            limited_goods.nx_goods_sons_sort
+    </select>
+
+</mapper>

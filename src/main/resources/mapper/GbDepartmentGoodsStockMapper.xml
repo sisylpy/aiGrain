@@ -1,0 +1,466 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbDepartmentGoodsStockMapper">
+
+    <!-- 根据参数查询部门库存 -->
+    <select id="queryGoodsStockByParams" resultType="com.nongxinle.entity.GbDepartmentGoodsStockEntity">
+        SELECT gdgs.*,
+        gdg.gb_dg_goods_name as 'goodsName',
+        gdg.gb_dg_goods_standardname as 'goodsStandardName',
+        gdg.gb_dg_goods_standard_weight as 'goodsStandard',
+        gdg.gb_dg_goods_price as 'goodsPrice',
+        (SELECT COUNT(*)
+         FROM gb_department_goods_stock gdgs2
+         WHERE gdgs2.gb_dgs_gb_dis_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+         AND gdgs2.gb_dgs_waste_subtotal > 0
+        ) as 'wasteGoodsCount'
+        FROM gb_department_goods_stock AS gdgs
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+        <where>
+            <if test="depId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="purUserId != null">
+                AND gdgs.gb_dgs_pur_user_id = #{purUserId}
+            </if>
+            <if test="stockDepId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{stockDepId}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryGoodsStockCount" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM gb_department_goods_stock AS gdgs
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+        LEFT JOIN gb_department AS gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_id
+        <where>
+            <if test="depType != null">
+                AND gd.gb_department_type = #{depType}
+            </if>
+            <if test="disId != null">
+                AND gdgs.gb_dgs_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                AND gdg.gb_dg_dfg_goods_great_id = #{disGoodsGreatId}
+            </if>
+            <if test="depId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="purUserId != null">
+                AND gdgs.gb_dgs_pur_user_id = #{purUserId}
+            </if>
+            <if test="date != null">
+                AND gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="startDate != null">
+                AND gdgs.gb_dgs_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="dayuStatus != null">
+                AND gdgs.gb_dgs_status &gt; #{dayuStatus}
+            </if>
+            <if test="purUserId != null">
+                AND gdgs.gb_dgs_pur_user_id = #{purUserId}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsRestTotal" resultType="java.lang.Double">
+        SELECT IFNULL(SUM(gdgs.gb_dgs_rest_subtotal), 0) FROM gb_department_goods_stock AS gdgs
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+        LEFT JOIN gb_department AS gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_id
+        <where>
+            <if test="depType != null">
+                AND gd.gb_department_type = #{depType}
+            </if>
+            <if test="disId != null">
+                AND gdgs.gb_dgs_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                AND gdg.gb_dg_dfg_goods_great_id = #{disGoodsGreatId}
+            </if>
+            <if test="depId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="purUserId != null">
+                AND gdgs.gb_dgs_pur_user_id = #{purUserId}
+            </if>
+            <if test="date != null">
+                AND gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="startDate != null">
+                AND gdgs.gb_dgs_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="dayuStatus != null">
+                AND gdgs.gb_dgs_status &gt; #{dayuStatus}
+            </if>
+        </where>
+    </select>
+
+    <!-- ResultMap定义 -->
+    <resultMap id="fatherGoods" type="com.nongxinle.entity.GbDistributerFatherGoodsEntity">
+        <id property="gbDistributerFatherGoodsId" column="ndfgGrant_gb_distributer_father_goods_id"/>
+        <result property="gbDfgFathersFatherId" column="ndfgGrant_gb_dfg_fathers_father_id"/>
+        <result property="gbDfgFatherGoodsName" column="ndfgGrant_gb_dfg_father_goods_name"/>
+        <result property="gbDfgFatherGoodsSort" column="ndfgGrant_gb_dfg_father_goods_sort"/>
+        <collection property="fatherGoodsEntities" resultMap="childFatherGoods"/>
+    </resultMap>
+
+    <resultMap id="childFatherGoods" type="com.nongxinle.entity.GbDistributerFatherGoodsEntity">
+        <id property="gbDistributerFatherGoodsId" column="ndfg_gb_distributer_father_goods_id"/>
+        <result property="gbDfgFathersFatherId" column="ndfg_gb_dfg_fathers_father_id"/>
+        <result property="gbDfgFatherGoodsName" column="ndfg_gb_dfg_father_goods_name"/>
+        <result property="gbDfgFatherGoodsSort" column="ndfg_gb_dfg_father_goods_sort"/>
+    </resultMap>
+
+    <resultMap id="greatGrandGoods" type="com.nongxinle.entity.GbDistributerFatherGoodsEntity">
+        <id property="gbDistributerFatherGoodsId" column="ndfgGreatGrand_gb_distributer_father_goods_id"/>
+        <result property="gbDfgFathersFatherId" column="ndfgGreatGrand_gb_dfg_fathers_father_id"/>
+        <result property="gbDfgFatherGoodsName" column="ndfgGreatGrand_gb_dfg_father_goods_name"/>
+        <result property="gbDfgFatherGoodsColor" column="ndfgGreatGrand_gb_dfg_father_goods_color"/>
+        <result property="gbDfgFatherGoodsImg" column="ndfgGreatGrand_gb_dfg_father_goods_img"/>
+        <result property="gbDfgFatherGoodsImgLarge" column="ndfgGreatGrand_gb_dfg_father_goods_img_large"/>
+        <result property="gbDfgFatherGoodsSort" column="ndfgGreatGrand_gb_dfg_father_goods_sort"/>
+        <collection property="fatherGoodsEntities" resultMap="fatherGoods"/>
+    </resultMap>
+
+    <select id="queryDepStockTreeFatherGoodsByParams" resultMap="greatGrandGoods">
+        SELECT * ,
+        ndfgGrant.gb_distributer_father_goods_id 'ndfgGrant_gb_distributer_father_goods_id',
+        ndfgGrant.gb_dfg_fathers_father_id 'ndfgGrant_gb_dfg_fathers_father_id',
+        ndfgGrant.gb_dfg_father_goods_name 'ndfgGrant_gb_dfg_father_goods_name',
+        ndfgGrant.gb_dfg_father_goods_sort 'ndfgGrant_gb_dfg_father_goods_sort',
+        ndfg.gb_distributer_father_goods_id 'ndfg_gb_distributer_father_goods_id',
+        ndfg.gb_dfg_fathers_father_id 'ndfg_gb_dfg_fathers_father_id',
+        ndfg.gb_dfg_father_goods_name 'ndfg_gb_dfg_father_goods_name',
+        ndfg.gb_dfg_father_goods_sort 'ndfg_gb_dfg_father_goods_sort',
+        ndfgGreatGrand.gb_distributer_father_goods_id 'ndfgGreatGrand_gb_distributer_father_goods_id',
+        ndfgGreatGrand.gb_dfg_fathers_father_id 'ndfgGreatGrand_gb_dfg_fathers_father_id',
+        ndfgGreatGrand.gb_dfg_father_goods_color 'ndfgGreatGrand_gb_dfg_father_goods_color',
+        ndfgGreatGrand.gb_dfg_father_goods_img 'ndfgGreatGrand_gb_dfg_father_goods_img',
+        ndfgGreatGrand.gb_dfg_father_goods_img_large 'ndfgGreatGrand_gb_dfg_father_goods_img_large',
+        ndfgGreatGrand.gb_dfg_father_goods_color 'ndfgGreatGrand_gb_dfg_father_goods_color',
+        ndfgGreatGrand.gb_dfg_father_goods_name 'ndfgGreatGrand_gb_dfg_father_goods_name'
+        FROM gb_department_goods_stock AS gdgs
+        LEFT JOIN gb_distributer_father_goods AS ndfg ON ndfg.gb_distributer_father_goods_id = gdgs.gb_dgs_gb_dis_goods_father_id
+        LEFT JOIN gb_distributer_father_goods AS ndfgGrant ON ndfgGrant.gb_distributer_father_goods_id = ndfg.gb_dfg_fathers_father_id
+        LEFT JOIN gb_distributer_father_goods AS ndfgGreatGrand ON ndfgGreatGrand.gb_distributer_father_goods_id = ndfgGrant.gb_dfg_fathers_father_id
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+        LEFT JOIN gb_department AS gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_father_id
+        <where>
+            <if test="disId != null">
+                and gdgs.gb_dgs_gb_distributer_id = #{disId}
+            </if>
+            <if test="purGoodsId != null">
+                and gb_dgs_gb_pur_goods_id = #{purGoodsId}
+            </if>
+            <if test="depFatherId != null">
+                and gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="depId != null">
+                and gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="restWeight != null">
+                and gdgs.gb_dgs_rest_weight &gt; #{restWeight}
+            </if>
+            <if test="loss != null">
+                and gdgs.gb_dgs_loss_weight &gt; #{loss}
+            </if>
+            <if test="dayuStatus != null">
+                and gdgs.gb_dgs_status &gt; #{dayuStatus}
+            </if>
+            <if test="disGoodsId != null">
+                and gdgs.gb_dgs_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                and gdgs.gb_dgs_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                and gdgs.gb_dgs_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                and gdg.gb_dg_dfg_goods_great_id = #{disGoodsGreatId}
+            </if>
+            <if test="startDate != null">
+                and gdgs.gb_dgs_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="date != null">
+                and gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="depType != null">
+                and gd.gb_department_type = #{depType}
+            </if>
+            <if test="depFatherIds != null and depFatherIds.size() &gt; 0">
+                and gdgs.gb_dgs_gb_department_father_id IN
+                <foreach item="id" collection="depFatherIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
+        </where>
+        ORDER BY ndfgGreatGrand.gb_dfg_father_goods_sort, ndfgGrant.gb_dfg_father_goods_sort, ndfg.gb_dfg_father_goods_sort
+    </select>
+
+    <!-- 根据参数查询分销商商品库存 -->
+    <select id="queryDisGoodsStockByParams" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        SELECT DISTINCT dg.*,
+        (SELECT IFNULL(SUM(gdgs2.gb_dgs_rest_subtotal), 0)
+         FROM gb_department_goods_stock gdgs2
+         WHERE gdgs2.gb_dgs_gb_dis_goods_id = dg.gb_distributer_goods_id
+         AND gdgs2.gb_dgs_rest_weight > 0
+         <if test="startDate != null">
+             AND gdgs2.gb_dgs_date >= #{startDate}
+         </if>
+         <if test="stopDate != null">
+             AND gdgs2.gb_dgs_date &lt;= #{stopDate}
+         </if>
+         <if test="date != null">
+             AND gdgs2.gb_dgs_date = #{date}
+         </if>
+         ) as 'goodsStockTotal',
+        (SELECT IFNULL(SUM(gdgs2.gb_dgs_rest_weight), 0)
+         FROM gb_department_goods_stock gdgs2
+         WHERE gdgs2.gb_dgs_gb_dis_goods_id = dg.gb_distributer_goods_id
+         AND gdgs2.gb_dgs_rest_weight > 0
+         <if test="startDate != null">
+             AND gdgs2.gb_dgs_date >= #{startDate}
+         </if>
+         <if test="stopDate != null">
+             AND gdgs2.gb_dgs_date &lt;= #{stopDate}
+         </if>
+         <if test="date != null">
+             AND gdgs2.gb_dgs_date = #{date}
+         </if>
+         ) as 'goodsStockWeightTotal',
+        (SELECT IFNULL(SUM(gdgs2.gb_dgs_waste_subtotal), 0)
+         FROM gb_department_goods_stock gdgs2
+         WHERE gdgs2.gb_dgs_gb_dis_goods_id = dg.gb_distributer_goods_id
+         <if test="startDate != null">
+             AND gdgs2.gb_dgs_date >= #{startDate}
+         </if>
+         <if test="stopDate != null">
+             AND gdgs2.gb_dgs_date &lt;= #{stopDate}
+         </if>
+         <if test="date != null">
+             AND gdgs2.gb_dgs_date = #{date}
+         </if>
+         ) as 'goodsWasteTotal'
+        FROM gb_distributer_goods AS dg
+        LEFT JOIN gb_department_goods_stock AS gdgs ON gdgs.gb_dgs_gb_dis_goods_id = dg.gb_distributer_goods_id
+        <where>
+            <if test="disId != null">
+                AND gdgs.gb_dgs_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                AND dg.gb_dg_dfg_goods_great_id = #{disGoodsGreatId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                AND dg.gb_dg_dfg_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND dg.gb_dg_dfg_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="startDate != null">
+                AND gdgs.gb_dgs_date >= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="date != null">
+                AND gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="dayuStatus != null">
+                AND gdgs.gb_dgs_status > #{dayuStatus}
+            </if>
+            <if test="restWeight != null">
+                AND gdgs.gb_dgs_rest_weight > #{restWeight}
+            </if>
+        </where>
+        <if test="orderByGoodsStockTotal != null">
+            ORDER BY CAST(goodsStockTotal AS DECIMAL(10,2)) DESC, dg.gb_distributer_goods_id DESC
+        </if>
+        <if test="orderByGoodsStockTotal == null">
+            ORDER BY dg.gb_distributer_goods_id DESC
+        </if>
+    </select>
+
+    <!-- 查询部门商品损耗总量 -->
+    <select id="queryDepGoodsWasteTotal" resultType="java.lang.Double">
+        SELECT IFNULL(SUM(gdgs.gb_dgs_rest_subtotal), 0)
+        FROM gb_department_goods_stock AS gdgs
+        LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+        <where>
+            <if test="disId != null">
+                AND gdgs.gb_dgs_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                AND dg.gb_dg_dfg_goods_great_id = #{disGoodsGreatId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                AND dg.gb_dg_dfg_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND dg.gb_dg_dfg_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="startDate != null">
+                AND gdgs.gb_dgs_date >= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="date != null">
+                AND gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="dayuStatus != null">
+                AND gdgs.gb_dgs_status > #{dayuStatus}
+            </if>
+            <if test="restWeight != null">
+                AND gdgs.gb_dgs_rest_weight > #{restWeight}
+            </if>
+        </where>
+    </select>
+
+    <!-- 查询分销库存商品数量 -->
+    <select id="queryDisStockGoodsCount" resultType="java.lang.Integer">
+        SELECT COUNT(DISTINCT gb_dgs_gb_dis_goods_id)
+        FROM gb_department_goods_stock AS gdgs
+        LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+        <where>
+            <if test="disId != null">
+                AND gdgs.gb_dgs_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                AND dg.gb_dg_dfg_goods_great_id = #{disGoodsGreatId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                AND dg.gb_dg_dfg_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND dg.gb_dg_dfg_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="startDate != null">
+                AND gdgs.gb_dgs_date >= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="date != null">
+                AND gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="dayuStatus != null">
+                AND gdgs.gb_dgs_status > #{dayuStatus}
+            </if>
+            <if test="restWeight != null">
+                AND gdgs.gb_dgs_rest_weight > #{restWeight}
+            </if>
+        </where>
+    </select>
+
+    <!-- 根据参数查询部门库存（简化版，一次性JOIN所有关联数据） -->
+    <select id="queryGoodsStockSimpleByParams" resultType="com.nongxinle.entity.GbDepartmentGoodsStockSimpleEntity">
+        SELECT
+            gdgs.*,
+            gd.gb_department_name as 'gbDepartmentName',
+            gd.gb_department_file_path as 'gbDepartmentImg',
+            gdg.gb_dg_goods_name as 'goodsName',
+            gdg.gb_dg_goods_standardname as 'goodsStandardName',
+            gdg.gb_dg_goods_standard_weight as 'goodsStandard',
+            gdg.gb_dg_goods_price as 'goodsPrice',
+            gdg.gb_dg_nx_father_img as 'goodsImg',
+            (SELECT COUNT(*)
+             FROM gb_department_goods_stock gdgs2
+             WHERE gdgs2.gb_dgs_gb_dis_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+             AND gdgs2.gb_dgs_waste_subtotal > 0
+            ) as 'wasteGoodsCount',
+            (SELECT IFNULL(SUM(gdgs2.gb_dgs_waste_subtotal), 0)
+             FROM gb_department_goods_stock gdgs2
+             WHERE gdgs2.gb_dgs_gb_dis_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+            ) as 'wasteTotal'
+        FROM gb_department_goods_stock AS gdgs
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+        LEFT JOIN gb_department AS gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_id
+        <where>
+            <if test="depId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_great_id = #{disGoodsGreatId}
+            </if>
+            <if test="purUserId != null">
+                AND gdgs.gb_dgs_pur_user_id = #{purUserId}
+            </if>
+            <if test="stockDepId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{stockDepId}
+            </if>
+            <if test="date != null">
+                AND gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="startDate != null">
+                AND gdgs.gb_dgs_date >= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="restWeight != null">
+                AND gdgs.gb_dgs_rest_weight > #{restWeight}
+            </if>
+            <if test="dayuStatus != null">
+                AND gdgs.gb_dgs_status > #{dayuStatus}
+            </if>
+        </where>
+        ORDER BY gdgs.gb_department_goods_stock_id DESC
+    </select>
+
+</mapper>

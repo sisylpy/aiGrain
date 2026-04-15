@@ -1,0 +1,159 @@
+package com.nongxinle.controller;
+
+import com.nongxinle.entity.*;
+import com.nongxinle.service.*;
+import com.nongxinle.utils.R;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static com.nongxinle.utils.GbTypeUtils.getGbDepartmentTypeMendian;
+import static com.nongxinle.utils.PinYin4jUtils.getHeadStringByString;
+
+/**
+ * 订货部门Controller
+ */
+@RestController
+@RequestMapping("gbdepartment")
+public class GbDepartmentController {
+
+    @Autowired
+    private GbDepartmentService gbDepartmentService;
+    @Autowired
+    private GbDistributerUserService gbDistributerUserService;
+    @Autowired
+    private GbDepartmentUserService gbDepartmentUserService;
+    @Autowired
+    private GbDistributerService gbDistributerService;
+    @Autowired
+    private SysCityMarketService sysCityMarketService;
+    @Autowired
+    private GbDepartmentOrdersService gbDepartmentOrdersService;
+    @Autowired
+    private GbDepartmentDisGoodsService gbDepartmentDisGoodsService;
+    @Autowired
+    private NxJrdhSupplierService nxJrdhSupplierService;
+    @Autowired
+    private GbDistributerPurchaseBatchService gbDPBService;
+    @Autowired
+    private GbDepartmentGoodsStockService gbDepartmentGoodsStockService;
+
+
+
+    @RequestMapping(value = "/getSubDepartmentsGb/{depId}")
+    @ResponseBody
+    public R getSubDepartmentsGb(@PathVariable Integer depId) {
+        System.out.println(depId);
+        List<GbDepartmentEntity> departmentEntities = gbDepartmentService.querySubDepartments(depId);
+        return R.ok().put("data", departmentEntities);
+    }
+
+
+
+    @RequestMapping(value = "/purUserSaveMendain", method = RequestMethod.POST)
+    @ResponseBody
+    public R purUserSaveMendain(@RequestBody GbDepartmentEntity depart) {
+        depart.setGbDepartmentSubAmount(depart.getGbDepartmentEntityList() != null ? depart.getGbDepartmentEntityList().size() : 0);
+        String gbDepartmentName = depart.getGbDepartmentName();
+        String headPinyin = getHeadStringByString(gbDepartmentName, false, null);
+        depart.setGbDepartmentNamePy(headPinyin);
+        depart.setGbDepartmentAttrName(depart.getGbDepartmentName());
+        depart.setGbDepartmentPrintName("ApplyHalfPanel");
+        depart.setGbDepartmentPrintSet(0);
+        GbDepartmentEntity departmentEntity = gbDepartmentService.saveNewDepartmentGb(depart);
+        Integer gbDepartmentDisId = departmentEntity.getGbDepartmentDisId();
+        // 保存门店后只需要基础信息，不需要查询所有部门（性能优化）
+        GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerBaseInfo(gbDepartmentDisId);
+
+        return R.ok().put("data", gbDistributerEntity);
+    }
+
+    @RequestMapping(value = "/getDisDepartmentGbMendianJing/{disId}")
+    @ResponseBody
+    public R getDisDepartmentGbMendianJing(@PathVariable Integer disId) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("disId", disId);
+        map.put("depType", getGbDepartmentTypeMendian());
+        List<GbDepartmentEntity> gbDepartmentEntities = gbDepartmentService.queryGroupDepsByDisId(map);
+
+        return R.ok().put("data", gbDepartmentEntities);
+    }
+
+    @RequestMapping(value = "/getDepInfoGb/{depId}")
+    @ResponseBody
+    public R getDepInfoGb(@PathVariable Integer depId) {
+        System.out.println(depId + "idiid");
+        GbDepartmentEntity gbDepartmentEntity = gbDepartmentService.queryDepInfoGb(depId);
+        return R.ok().put("data", gbDepartmentEntity);
+    }
+
+    @RequestMapping(value = "/updateGroupNameGb", method = RequestMethod.POST)
+    @ResponseBody
+    public R updateGroupNameGb(@RequestBody GbDepartmentEntity departmentEntity) {
+        departmentEntity.setGbDepartmentAttrName(departmentEntity.getGbDepartmentName());
+        departmentEntity.setGbDepartmentPrintName("ApplyHalfPanel");
+        String gbDepartmentName = departmentEntity.getGbDepartmentName();
+        String headPinyin = getHeadStringByString(gbDepartmentName, false, null);
+        departmentEntity.setGbDepartmentNamePy(headPinyin);
+        gbDepartmentService.updateById(departmentEntity);
+
+        GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerInfo(departmentEntity.getGbDepartmentDisId());
+        return R.ok().put("data", gbDistributerEntity);
+    }
+
+    @RequestMapping(value = "/deleteDepartment/{depId}")
+    @ResponseBody
+    public R deleteDepartment(@PathVariable Integer depId) {
+        List<GbDepartmentUserEntity> gbDepartmentUserEntities = gbDepartmentUserService.queryAllUsersByDepId(depId);
+        System.out.println("depusueureeee" + gbDepartmentUserEntities);
+        Map<String, Object> map = new HashMap<>();
+        map.put("depId", depId);
+        System.out.println("mapapa" + map);
+
+        GbDepartmentEntity departmentEntity = gbDepartmentService.queryDepInfoGb(depId);
+        List<GbDepartmentOrdersEntity> ordersEntities = gbDepartmentOrdersService.queryDisOrdersListByParams(map);
+        List<GbDepartmentGoodsStockEntity> departmentGoodsStockEntities = gbDepartmentGoodsStockService.queryGoodsStockByParams(map);
+        if (gbDepartmentUserEntities.size() > 0 || ordersEntities.size() > 0 || departmentGoodsStockEntities.size() > 0) {
+            return R.error(-1, "有部门相关数据，暂无法删除。");
+        } else {
+            List<GbDepartmentDisGoodsEntity> departmentDisGoodsEntities = gbDepartmentDisGoodsService.queryGbDepDisGoodsByParams(map);
+            if (departmentDisGoodsEntities.size() > 0) {
+                for (GbDepartmentDisGoodsEntity departmentDisGoodsEntity : departmentDisGoodsEntities) {
+                    gbDepartmentDisGoodsService.removeById(departmentDisGoodsEntity.getGbDepartmentDisGoodsId());
+                }
+            }
+
+            Integer gbDepartmentFatherId = departmentEntity.getGbDepartmentFatherId();
+            GbDepartmentEntity fatherDep = gbDepartmentService.queryDepInfoGb(gbDepartmentFatherId);
+            fatherDep.setGbDepartmentSubAmount(fatherDep.getGbDepartmentSubAmount() - 1);
+            gbDepartmentService.updateById(fatherDep);
+
+            Integer gbDepartmentDisId = departmentEntity.getGbDepartmentDisId();
+            GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerInfo(gbDepartmentDisId);
+            gbDepartmentService.removeById(depId);
+
+            return R.ok().put("data", gbDistributerEntity);
+        }
+    }
+
+    /**
+     * 获取部门用户列表（带采购统计）
+     */
+    @RequestMapping(value = "/getDepUsersByFatherIdGb", method = RequestMethod.POST)
+    @ResponseBody
+    public R getDepUsersByFatherIdGb(String startDate, String stopDate, Integer depId) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("startDate", startDate);
+        map.put("stopDate", stopDate);
+        map.put("purDepId", depId);
+        System.out.println("mapapUUUUUUUU" + map);
+
+        List<GbDepartmentUserEntity> userEntities = gbDepartmentUserService.queryAllUsersByDepId(depId);
+
+        return R.ok().put("data", userEntities);
+    }
+
+}

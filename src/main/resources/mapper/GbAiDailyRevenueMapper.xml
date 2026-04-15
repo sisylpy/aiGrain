@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbAiDailyRevenueMapper">
+
+	<resultMap id="BaseResultMap" type="com.nongxinle.entity.GbAiDailyRevenueEntity">
+		<id column="gb_ai_daily_revenue_id" property="gbAiDailyRevenueId" />
+		<result column="gb_ai_daily_revenue_department_id" property="gbAiDailyRevenueDepartmentId" />
+		<result column="gb_ai_daily_revenue_distributer_id" property="gbAiDailyRevenueDistributerId" />
+		<result column="gb_ai_daily_revenue_record_date" property="gbAiDailyRevenueRecordDate" />
+		<result column="gb_ai_daily_revenue_dine_in_revenue" property="gbAiDailyRevenueDineInRevenue" />
+		<result column="gb_ai_daily_revenue_dine_in_orders" property="gbAiDailyRevenueDineInOrders" />
+		<result column="gb_ai_daily_revenue_dine_in_customers" property="gbAiDailyRevenueDineInCustomers" />
+		<result column="gb_ai_daily_revenue_takeout_revenue" property="gbAiDailyRevenueTakeoutRevenue" />
+		<result column="gb_ai_daily_revenue_takeout_orders" property="gbAiDailyRevenueTakeoutOrders" />
+		<result column="gb_ai_daily_revenue_platform_fee" property="gbAiDailyRevenuePlatformFee" />
+		<result column="gb_ai_daily_revenue_weekday" property="gbAiDailyRevenueWeekday" />
+		<result column="gb_ai_daily_revenue_holiday" property="gbAiDailyRevenueHoliday" />
+		<result column="gb_ai_daily_revenue_gross_revenue" property="gbAiDailyRevenueGrossRevenue" />
+		<result column="gb_ai_daily_revenue_net_revenue" property="gbAiDailyRevenueNetRevenue" />
+		<result column="gb_ai_daily_revenue_notes" property="gbAiDailyRevenueNotes" />
+		<result column="gb_ai_daily_revenue_create_time" property="gbAiDailyRevenueCreateTime" />
+		<result column="gb_ai_daily_revenue_update_time" property="gbAiDailyRevenueUpdateTime" />
+	</resultMap>
+
+	<!-- 查询日营业额列表 -->
+	<select id="queryDailyRevenueListByParams" resultMap="BaseResultMap">
+		SELECT * FROM gb_ai_daily_revenue
+		WHERE 1=1
+		<if test="departmentId != null">
+			AND gb_ai_daily_revenue_department_id = #{departmentId}
+		</if>
+		<if test="startDate != null">
+			AND gb_ai_daily_revenue_record_date &gt;= #{startDate}
+		</if>
+		<if test="endDate != null">
+			AND gb_ai_daily_revenue_record_date &lt;= #{endDate}
+		</if>
+		ORDER BY gb_ai_daily_revenue_record_date ASC
+	</select>
+
+	<!-- 查询营业额统计 -->
+	<select id="selectStatsByDepartmentId" resultType="java.util.Map">
+		SELECT
+			COUNT(*) as days,
+			COALESCE(AVG(gb_ai_daily_revenue_gross_revenue), 0) as avg_daily_revenue,
+			COALESCE(SUM(gb_ai_daily_revenue_gross_revenue), 0) as total_revenue,
+			COALESCE(SUM(gb_ai_daily_revenue_dine_in_orders + gb_ai_daily_revenue_takeout_orders), 0) as total_orders,
+			COALESCE(AVG(gb_ai_daily_revenue_dine_in_orders + gb_ai_daily_revenue_takeout_orders), 0) as avg_order_count,
+			COALESCE(AVG((gb_ai_daily_revenue_dine_in_revenue + gb_ai_daily_revenue_takeout_revenue) / NULLIF((gb_ai_daily_revenue_dine_in_customers + gb_ai_daily_revenue_takeout_orders), 0)), 0) as avg_per_customer,
+			COALESCE(SUM(gb_ai_daily_revenue_platform_fee), 0) as total_coupon_amount,
+			0 as total_refund_amount,
+			COALESCE(MAX(gb_ai_daily_revenue_gross_revenue), 0) as max_daily_revenue,
+			COALESCE(MIN(gb_ai_daily_revenue_gross_revenue), 0) as min_daily_revenue,
+			-- 新增外卖相关统计
+			COALESCE(SUM(gb_ai_daily_revenue_takeout_revenue), 0) as total_takeout_revenue,
+			COALESCE(AVG(gb_ai_daily_revenue_takeout_revenue), 0) as avg_takeout_revenue,
+			COALESCE(SUM(gb_ai_daily_revenue_takeout_revenue - gb_ai_daily_revenue_platform_fee), 0) as total_takeout_net,
+			COALESCE(AVG(gb_ai_daily_revenue_takeout_revenue - gb_ai_daily_revenue_platform_fee), 0) as avg_takeout_net
+		FROM gb_ai_daily_revenue
+		WHERE gb_ai_daily_revenue_department_id = #{departmentId}
+	</select>
+
+</mapper>

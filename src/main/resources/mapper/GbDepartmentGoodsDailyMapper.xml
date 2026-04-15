@@ -1,0 +1,770 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbDepartmentGoodsDailyMapper">
+
+    <select id="queryDepGoodsDailyItem" resultType="com.nongxinle.entity.GbDepartmentGoodsDailyEntity">
+        select * from gb_department_goods_daily as gdgd
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        <where>
+            <if test="disGoodsId != null">
+                and gdgd.gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+        </where>
+        LIMIT 1
+    </select>
+
+    <select id="queryDepGoodsDailyCount" resultType="java.lang.Integer">
+        select COUNT(*) from gb_department_goods_daily as gdgd
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        left join gb_department as gd on gd.gb_department_id = gdgd.gb_dgd_gb_department_id
+        <where>
+            <if test="depType != null">
+                and gd.gb_department_type = #{depType}
+            </if>
+            <if test="status != null">
+                and gdgd.gb_dgd_status = #{status}
+            </if>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                and gdgd.gb_dgd_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                and gdgd.gb_dgd_gb_dis_goods_great_grand_id = #{disGoodsGreatId}
+            </if>
+            <if test="disGoodsId != null">
+                and gdgd.gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depGoodsId != null">
+                and gdgd.gb_dgd_gb_dep_dis_goods_id = #{depGoodsId}
+            </if>
+            <if test="depFatherId != null">
+                and gdgd.gb_dgd_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+            <if test="week != null">
+                and gdgd.gb_dgd_week = #{week}
+            </if>
+            <if test="month != null">
+                and gdgd.gb_dgd_month = #{month}
+            </if>
+            <if test="year != null">
+                and gdgd.gb_dgd_year = #{year}
+            </if>
+            <if test="startDate != null">
+                and gdgd.gb_dgd_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgd.gb_dgd_date &lt;= #{stopDate}
+            </if>
+            <if test="dayuStatus != null">
+                and gdgd.gb_dgd_status &gt; #{dayuStatus}
+            </if>
+            <if test="restWeight != null">
+                and gdgd.gb_dgd_rest_weight &gt; #{restWeight}
+            </if>
+            <if test="produce != null">
+                and gdgd.gb_dgd_produce_weight &gt; #{produce}
+            </if>
+            <if test="loss != null">
+                and gdgd.gb_dgd_loss_weight &gt; #{loss}
+            </if>
+            <if test="waste != null">
+                and gdgd.gb_dgd_waste_weight &gt; #{waste}
+            </if>
+            <if test="controlFresh != null">
+                and gdg.gb_dg_control_fresh = #{controlFresh}
+            </if>
+            <if test="toDepId != null">
+                and gdg.gb_dg_gb_department_id = #{toDepId}
+            </if>
+            <if test="nxDisId != null">
+                and gdg.gb_dg_nx_distributer_id = #{nxDisId}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailyProduceSubtotal" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_produce_subtotal), 0) from gb_department_goods_daily as gdgd
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        left join gb_department as gd on gd.gb_department_id = gdgd.gb_dgd_gb_department_id
+        <where>
+            <if test="depType != null">
+                and gd.gb_department_type = #{depType}
+            </if>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                and gdgd.gb_dgd_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                and gdgd.gb_dgd_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                and gdgd.gb_dgd_gb_dis_goods_great_grand_id = #{disGoodsGreatId}
+            </if>
+            <if test="disGoodsId != null">
+                and gdgd.gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depGoodsId != null">
+                and gdgd.gb_dgd_gb_dep_dis_goods_id = #{depGoodsId}
+            </if>
+            <if test="depFatherId != null">
+                and gdgd.gb_dgd_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+            <if test="week != null">
+                and gdgd.gb_dgd_week = #{week}
+            </if>
+            <if test="month != null">
+                and gdgd.gb_dgd_month = #{month}
+            </if>
+            <if test="year != null">
+                and gdgd.gb_dgd_year = #{year}
+            </if>
+            <if test="startDate != null">
+                and gdgd.gb_dgd_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgd.gb_dgd_date &lt;= #{stopDate}
+            </if>
+            <if test="dayuStatus != null">
+                and gdgd.gb_dgd_status &gt; #{dayuStatus}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailyWasteSubtotal" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_waste_subtotal), 0) from gb_department_goods_daily as gdgd
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        left join gb_department as gd on gd.gb_department_id = gdgd.gb_dgd_gb_department_id
+        <where>
+            <if test="depType != null">
+                and gd.gb_department_type = #{depType}
+            </if>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                and gdgd.gb_dgd_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                and gdgd.gb_dgd_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                and gdgd.gb_dgd_gb_dis_goods_great_grand_id = #{disGoodsGreatId}
+            </if>
+            <if test="disGoodsId != null">
+                and gdgd.gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depGoodsId != null">
+                and gdgd.gb_dgd_gb_dep_dis_goods_id = #{depGoodsId}
+            </if>
+            <if test="depFatherId != null">
+                and gdgd.gb_dgd_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+            <if test="week != null">
+                and gdgd.gb_dgd_week = #{week}
+            </if>
+            <if test="month != null">
+                and gdgd.gb_dgd_month = #{month}
+            </if>
+            <if test="year != null">
+                and gdgd.gb_dgd_year = #{year}
+            </if>
+            <if test="startDate != null">
+                and gdgd.gb_dgd_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgd.gb_dgd_date &lt;= #{stopDate}
+            </if>
+            <if test="dayuStatus != null">
+                and gdgd.gb_dgd_status &gt; #{dayuStatus}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailyLossSubtotal" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_loss_subtotal), 0) from gb_department_goods_daily as gdgd
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        left join gb_department as gd on gd.gb_department_id = gdgd.gb_dgd_gb_department_id
+        <where>
+            <if test="depType != null">
+                and gd.gb_department_type = #{depType}
+            </if>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                and gdgd.gb_dgd_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                and gdgd.gb_dgd_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                and gdgd.gb_dgd_gb_dis_goods_great_grand_id = #{disGoodsGreatId}
+            </if>
+            <if test="disGoodsId != null">
+                and gdgd.gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depGoodsId != null">
+                and gdgd.gb_dgd_gb_dep_dis_goods_id = #{depGoodsId}
+            </if>
+            <if test="depFatherId != null">
+                and gdgd.gb_dgd_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+            <if test="week != null">
+                and gdgd.gb_dgd_week = #{week}
+            </if>
+            <if test="month != null">
+                and gdgd.gb_dgd_month = #{month}
+            </if>
+            <if test="year != null">
+                and gdgd.gb_dgd_year = #{year}
+            </if>
+            <if test="startDate != null">
+                and gdgd.gb_dgd_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgd.gb_dgd_date &lt;= #{stopDate}
+            </if>
+            <if test="dayuStatus != null">
+                and gdgd.gb_dgd_status &gt; #{dayuStatus}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepDailyGoodsFatherTypeByParamsTree" resultType="com.nongxinle.entity.GbDistributerFatherGoodsEntity">
+        select distinct
+        ndfgGrant.gb_distributer_father_goods_id 'ndfgGrant_gb_distributer_father_goods_id',
+        ndfgGrant.gb_dfg_fathers_father_id 'ndfgGrant_gb_dfg_fathers_father_id',
+        ndfgGrant.gb_dfg_father_goods_name 'ndfgGrant_gb_dfg_father_goods_name',
+        ndfgGrant.gb_dfg_father_goods_color 'ndfgGrant_gb_dfg_father_goods_color',
+        ndfgGrant.gb_dfg_father_goods_img 'ndfgGrant_gb_dfg_father_goods_img',
+        ndfgGrant.gb_dfg_father_goods_sort 'ndfgGrant_gb_dfg_father_goods_sort',
+        ndfgGrant.gb_dfg_nx_goods_id 'ndfgGrant_gb_dfg_nx_goods_id',
+        ndfgGreatGrand.gb_distributer_father_goods_id 'ndfgGreatGrand_gb_distributer_father_goods_id',
+        ndfgGreatGrand.gb_dfg_fathers_father_id 'ndfgGreatGrand_gb_dfg_fathers_father_id',
+        ndfgGreatGrand.gb_dfg_father_goods_name 'ndfgGreatGrand_gb_dfg_father_goods_name',
+        ndfgGreatGrand.gb_dfg_father_goods_color 'ndfgGreatGrand_gb_dfg_father_goods_color',
+        ndfgGreatGrand.gb_dfg_father_goods_img 'ndfgGreatGrand_gb_dfg_father_goods_img',
+        ndfgGreatGrand.gb_dfg_father_goods_sort 'ndfgGreatGrand_gb_dfg_father_goods_sort',
+        ndfgGreatGrand.gb_dfg_nx_goods_id 'ndfgGreatGrand_gb_dfg_nx_goods_id'
+        from gb_department_goods_daily as gdgd
+        left join gb_distributer_father_goods as ndfg on ndfg.gb_distributer_father_goods_id = gdgd.gb_dgd_gb_dis_goods_father_id
+        left join gb_distributer_father_goods as ndfgGrant on ndfgGrant.gb_distributer_father_goods_id = ndfg.gb_dfg_fathers_father_id
+        left join gb_distributer_father_goods as ndfgGreatGrand on ndfgGreatGrand.gb_distributer_father_goods_id = ndfgGrant.gb_dfg_fathers_father_id
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        left join gb_department as gd on gd.gb_department_id = gdgd.gb_dgd_gb_department_id
+        <where>
+            <if test="depType != null">
+                and gd.gb_department_type = #{depType}
+            </if>
+            <if test="disGoodsFatherId != null">
+                and gdgd.gb_dgd_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                and gdgd.gb_dgd_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                and gdgd.gb_dgd_gb_dis_goods_great_grand_id = #{disGoodsGreatId}
+            </if>
+            <if test="disGoodsId != null">
+                and gdgd.gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="depFatherId != null">
+                and gdgd.gb_dgd_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+            <if test="startDate != null">
+                and gdgd.gb_dgd_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgd.gb_dgd_date &lt;= #{stopDate}
+            </if>
+            <if test="dayuStatus != null">
+                and gdgd.gb_dgd_status &gt; #{dayuStatus}
+            </if>
+        </where>
+        order by ndfgGreatGrand.gb_dfg_father_goods_sort, ndfgGrant.gb_dfg_father_goods_sort
+    </select>
+
+    <select id="queryDepGoodsDailyListByParams" resultType="com.nongxinle.entity.GbDepartmentGoodsDailyEntity">
+        select * from gb_department_goods_daily as gdgd
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        <where>
+            <if test="disGoodsId != null">
+                and gdgd.gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depGoodsId != null">
+                and gdgd.gb_dgd_gb_dep_dis_goods_id = #{depGoodsId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+            <if test="startDate != null">
+                and gdgd.gb_dgd_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgd.gb_dgd_date &lt;= #{stopDate}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailyProfitSubtotal" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_profit_subtotal), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailySalesSubtotal" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_sell_subtotal), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailySalesProfitSubtotal" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_sell_profit), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepDailyGoodsFatherTypeByParams" resultType="com.nongxinle.entity.GbDistributerFatherGoodsEntity">
+        select * from gb_department_goods_daily as gdgd
+        left join gb_distributer_father_goods as ndfg on ndfg.gb_distributer_father_goods_id = gdgd.gb_dgd_gb_dis_goods_father_id
+        <where>
+            <if test="disGoodsId != null">
+                and gdgd.gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+            <if test="startDate != null">
+                and gdgd.gb_dgd_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgd.gb_dgd_date &lt;= #{stopDate}
+            </if>
+        </where>
+        GROUP BY gdgd.gb_dgd_gb_dis_goods_father_id
+    </select>
+
+    <select id="queryDisGoodsTreesetByParams" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        select * from gb_department_goods_daily as gdgd
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        <where>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+            <if test="startDate != null">
+                and gdgd.gb_dgd_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgd.gb_dgd_date &lt;= #{stopDate}
+            </if>
+        </where>
+        GROUP BY gdgd.gb_dgd_gb_dis_goods_id
+    </select>
+
+    <select id="queryWhichDepsHasProduceDepGoodsDaily" resultType="com.nongxinle.entity.GbDepartmentEntity">
+        select * from gb_department_goods_daily as gdgd
+        left join gb_department as gd on gd.gb_department_id = gdgd.gb_dgd_gb_department_id
+        <where>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+        </where>
+        GROUP BY gdgd.gb_dgd_gb_department_id
+    </select>
+
+    <select id="queryDepGoodsDailyProduceWeight" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_produce_weight), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailyLossWeight" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_loss_weight), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailyWasteWeight" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_waste_weight), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryFreshFatherGoods" resultType="com.nongxinle.entity.GbDistributerFatherGoodsEntity">
+        select distinct ndfg.* from gb_department_goods_daily as gdgd
+        left join gb_distributer_father_goods as ndfg on ndfg.gb_distributer_father_goods_id = gdgd.gb_dgd_gb_dis_goods_father_id
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        <where>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="controlFresh != null">
+                and gdg.gb_dg_control_fresh = #{controlFresh}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+        </where>
+        order by ndfg.gb_dfg_father_goods_sort
+    </select>
+
+    <select id="queryDepGoodsDailyRestWeight" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_rest_weight), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepDisGoodsTreeByParams" resultType="com.nongxinle.entity.GbDepartmentEntity">
+        select distinct gd.* from gb_department_goods_daily as gdgd
+        left join gb_department as gd on gd.gb_department_id = gdgd.gb_dgd_gb_department_id
+        <where>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+        </where>
+        order by gd.gb_department_sort
+    </select>
+
+    <select id="queryDepGoodsDailyWeight" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_produce_weight + gb_dgd_loss_weight + gb_dgd_waste_weight), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailyLastWeight" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_rest_weight), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date &lt; #{date}
+            </if>
+        </where>
+        order by gb_dgd_date desc limit 1
+    </select>
+
+    <select id="queryClearFatherGoods" resultType="com.nongxinle.entity.GbDistributerFatherGoodsEntity">
+        select distinct ndfg.* from gb_department_goods_daily as gdgd
+        left join gb_distributer_father_goods as ndfg on ndfg.gb_distributer_father_goods_id = gdgd.gb_dgd_gb_dis_goods_father_id
+        <where>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="clear != null">
+                and gdgd.gb_dgd_sell_clear_hour &gt; #{clear}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+        </where>
+        order by ndfg.gb_dfg_father_goods_sort
+    </select>
+
+    <select id="queryDepGoodsDailySubtotal" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_produce_subtotal), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailyReturnSubtotal" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_return_subtotal), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailyReturnWeight" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_return_weight), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryWhichDepsHasProduceDepGoodsDailyNew" resultType="com.nongxinle.entity.GbDepartmentEntity">
+        select distinct gd.* from gb_department_goods_daily as gdgd
+        left join gb_department as gd on gd.gb_department_id = gdgd.gb_dgd_gb_department_id
+        <where>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="depFatherId != null">
+                and gdgd.gb_dgd_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+        </where>
+        order by gd.gb_department_sort
+    </select>
+
+    <select id="queryDepGoodsDailyListWithGoodsByParams" resultType="com.nongxinle.entity.GbDepartmentGoodsDailyEntity">
+        select * from gb_department_goods_daily as gdgd
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        <where>
+            <if test="disGoodsId != null">
+                and gdgd.gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+            <if test="startDate != null">
+                and gdgd.gb_dgd_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgd.gb_dgd_date &lt;= #{stopDate}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsDailyListWithReduceByParams" resultType="com.nongxinle.entity.GbDepartmentGoodsDailyEntity">
+        select * from gb_department_goods_daily as gdgd
+        left join gb_department_goods_reduce as gdgr on gdgr.gb_dgr_gb_department_goods_daily_id = gdgd.gb_department_goods_daily_id
+        <where>
+            <if test="disGoodsId != null">
+                and gdgd.gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+            <if test="startDate != null">
+                and gdgd.gb_dgd_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgd.gb_dgd_date &lt;= #{stopDate}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDisGoodsWithBusinessDep" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        select distinct gdg.* from gb_department_goods_daily as gdgd
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        <where>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+        </where>
+        order by gdg.gb_dg_goods_sort
+    </select>
+
+    <select id="queryDisGoodsTreeByParams" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        select distinct gdg.* from gb_department_goods_daily as gdgd
+        left join gb_distributer_goods as gdg on gdg.gb_distributer_goods_id = gdgd.gb_dgd_gb_dis_goods_id
+        <where>
+            <if test="disId != null">
+                and gdgd.gb_dgd_gb_distributer_id = #{disId}
+            </if>
+            <if test="depId != null">
+                and gdgd.gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                and gdgd.gb_dgd_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="date != null">
+                and gdgd.gb_dgd_date = #{date}
+            </if>
+            <if test="startDate != null">
+                and gdgd.gb_dgd_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgd.gb_dgd_date &lt;= #{stopDate}
+            </if>
+        </where>
+        order by gdg.gb_dg_goods_sort
+    </select>
+
+    <select id="queryDepGoodsDailyRestSubtotal" resultType="java.lang.Double">
+        select IFNULL(SUM(gb_dgd_rest_subtotal), 0) from gb_department_goods_daily
+        <where>
+            <if test="disGoodsId != null">
+                and gb_dgd_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depId != null">
+                and gb_dgd_gb_department_id = #{depId}
+            </if>
+            <if test="date != null">
+                and gb_dgd_date = #{date}
+            </if>
+        </where>
+    </select>
+
+</mapper>

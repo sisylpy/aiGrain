@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>编辑知识</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .form-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .form-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        .form-group.full-width {
+            flex: 100%;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .form-group textarea {
+            min-height: 200px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #4ECDC4;
+        }
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #4ECDC4;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #3dbdb5;
+        }
+        .btn-secondary {
+            background: #ddd;
+            color: #333;
+        }
+        .btn-secondary:hover {
+            background: #ccc;
+        }
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+            justify-content: center;
+        }
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            background: #4ECDC4;
+            color: white;
+            border-radius: 4px;
+            display: none;
+            z-index: 1000;
+        }
+        .toast.error {
+            background: #ff6b6b;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 15px;
+            color: #4ECDC4;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .info-text {
+            color: #999;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/api/knowledge-manager.html" class="back-link">← 返回知识库管理</a>
+        <h1>✏️ 编辑知识</h1>
+        
+        <div class="card" id="loadingCard">
+            <div class="loading">加载中...</div>
+        </div>
+
+        <div class="card" id="formCard" style="display:none">
+            <form id="editForm">
+                <input type="hidden" id="editId">
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>标题 *</label>
+                        <input type="text" id="editTitle" required placeholder="输入知识标题">
+                    </div>
+                    <div class="form-group">
+                        <label>分类</label>
+                        <select id="editCategory">
+                            <option value="coupon">优惠券营销</option>
+                            <option value="menu">菜单设计</option>
+                            <option value="decorate">餐厅装修</option>
+                            <option value="staff">人员管理</option>
+                            <option value="cost">成本控制</option>
+                            <option value="traffic">获客引流</option>
+                            <option value="customer">客户运营</option>
+                            <option value="festival">节日营销</option>
+                            <option value="supply">供应链</option>
+                            <option value="legal">法律合规</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>类型</label>
+                        <select id="editType">
+                            <option value="0">通用</option>
+                            <option value="1">促销活动</option>
+                            <option value="2">公众号</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>状态</label>
+                        <select id="editStatus">
+                            <option value="0">草稿</option>
+                            <option value="1">启用</option>
+                            <option value="2">下架</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>作者/专家</label>
+                        <input type="text" id="editAuthor" placeholder="如：钱多多">
+                    </div>
+                    <div class="form-group">
+                        <label>来源</label>
+                        <input type="text" id="editOrigin" placeholder="知识来源">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>摘要</label>
+                        <input type="text" id="editSummary" placeholder="1-3句话概括">
+                    </div>
+                    <div class="form-group">
+                        <label>标签（逗号分隔）</label>
+                        <input type="text" id="editTags" placeholder="如：满减,节日,低成本">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>适用预算</label>
+                        <input type="text" id="editBudget" placeholder="如：低预算/中预算/高预算">
+                    </div>
+                    <div class="form-group">
+                        <label>适用季节</label>
+                        <input type="text" id="editSeason" placeholder="如：全年适用/旺季/淡季">
+                    </div>
+                    <div class="form-group">
+                        <label>适用餐厅</label>
+                        <input type="text" id="editRestaurant" placeholder="如：所有类型/快餐/火锅">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>效果评分</label>
+                        <input type="number" id="editEffectRating" min="0" max="5" placeholder="0-5分">
+                    </div>
+                    <div class="form-group">
+                        <label>应用案例数</label>
+                        <input type="number" id="editEffectCases" placeholder="实际应用案例数量">
+                    </div>
+                    <div class="form-group full-width">
+                        <label>效果说明</label>
+                        <input type="text" id="editEffectNote" placeholder="使用效果说明">
+                    </div>
+                </div>
+
+                <div class="form-group full-width">
+                    <label>详细内容</label>
+                    <textarea id="editContent" placeholder="输入完整的知识内容..."></textarea>
+                </div>
+
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-primary">💾 保存更新</button>
+                    <button type="button" class="btn btn-secondary" onclick="history.back()">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:8090/api/ai/knowledge';
+
+        // 从URL获取ID
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get('id');
+
+        if (!id) {
+            alert('缺少知识ID参数');
+            window.location.href = '/api/knowledge-manager.html';
+        }
+
+        // 页面加载时获取数据
+        document.addEventListener('DOMContentLoaded', () => loadKnowledge(id));
+
+        // 加载知识数据
+        async function loadKnowledge(id) {
+            try {
+                const res = await fetch(`${API_BASE}/detail/${id}`);
+                const result = await res.json();
+                const item = result.data;
+                
+                if (!item) {
+                    alert('知识不存在');
+                    window.location.href = '/api/knowledge-manager.html';
+                    return;
+                }
+
+                document.getElementById('loadingCard').style.display = 'none';
+                document.getElementById('formCard').style.display = 'block';
+
+                // 填充表单
+                document.getElementById('editId').value = item.gbAiKnowledgeId;
+                document.getElementById('editTitle').value = item.gbAiKnowledgeTitle || '';
+                document.getElementById('editCategory').value = item.gbAiKnowledgeCategory || 'coupon';
+                document.getElementById('editType').value = item.gbAiKnowledgeType || 0;
+                document.getElementById('editStatus').value = item.gbAiKnowledgeStatus || 1;
+                document.getElementById('editAuthor').value = item.gbAiKnowledgeAuthor || '';
+                document.getElementById('editOrigin').value = item.gbAiKnowledgeOrigin || '';
+                document.getElementById('editSummary').value = item.gbAiKnowledgeSummary || '';
+                document.getElementById('editTags').value = item.gbAiKnowledgeTags || '';
+                document.getElementById('editBudget').value = item.gbAiKnowledgeSuitableBudget || '';
+                document.getElementById('editSeason').value = item.gbAiKnowledgeSuitableSeason || '';
+                document.getElementById('editRestaurant').value = item.gbAiKnowledgeSuitableRestaurant || '';
+                document.getElementById('editEffectRating').value = item.gbAiKnowledgeEffectRating || 0;
+                document.getElementById('editEffectCases').value = item.gbAiKnowledgeEffectCases || 0;
+                document.getElementById('editEffectNote').value = item.gbAiKnowledgeEffectNote || '';
+                document.getElementById('editContent').value = item.gbAiKnowledgeContent || '';
+
+            } catch (err) {
+                document.getElementById('loadingCard').innerHTML = '<div class="loading">加载失败: ' + err.message + '</div>';
+            }
+        }
+
+        // 表单提交
+        document.getElementById('editForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const data = {
+                gbAiKnowledgeId: document.getElementById('editId').value,
+                gbAiKnowledgeTitle: document.getElementById('editTitle').value,
+                gbAiKnowledgeCategory: document.getElementById('editCategory').value,
+                gbAiKnowledgeType: parseInt(document.getElementById('editType').value),
+                gbAiKnowledgeStatus: parseInt(document.getElementById('editStatus').value),
+                gbAiKnowledgeAuthor: document.getElementById('editAuthor').value,
+                gbAiKnowledgeOrigin: document.getElementById('editOrigin').value,
+                gbAiKnowledgeSummary: document.getElementById('editSummary').value,
+                gbAiKnowledgeTags: document.getElementById('editTags').value,
+                gbAiKnowledgeSuitableBudget: document.getElementById('editBudget').value,
+                gbAiKnowledgeSuitableSeason: document.getElementById('editSeason').value,
+                gbAiKnowledgeSuitableRestaurant: document.getElementById('editRestaurant').value,
+                gbAiKnowledgeEffectRating: parseInt(document.getElementById('editEffectRating').value) || 0,
+                gbAiKnowledgeEffectCases: parseInt(document.getElementById('editEffectCases').value) || 0,
+                gbAiKnowledgeEffectNote: document.getElementById('editEffectNote').value,
+                gbAiKnowledgeContent: document.getElementById('editContent').value
+            };
+
+            try {
+                const res = await fetch(`${API_BASE}/update`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (result.code === 0 || result.code === 200) {
+                    showToast('更新成功！');
+                    setTimeout(() => {
+                        window.location.href = '/api/knowledge-manager.html';
+                    }, 1000);
+                } else {
+                    showToast('更新失败: ' + (result.msg || result.message), true);
+                }
+            } catch (err) {
+                showToast('请求失败: ' + err.message, true);
+            }
+        });
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.className = 'toast' + (isError ? ' error' : '');
+            toast.style.display = 'block';
+            setTimeout(() => toast.style.display = 'none', 3000);
+        }
+    </script>
+</body>
+</html>

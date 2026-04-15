@@ -1,0 +1,605 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbDepartmentDisGoodsMapper">
+
+    <!-- Great-Grand 分类 ResultMap (一级分类) -->
+    <resultMap id="ggDisgoods" type="com.nongxinle.entity.GbDistributerFatherGoodsEntity">
+        <id property="gbDistributerFatherGoodsId" column="gg_gb_distributer_father_goods_id"/>
+        <result property="gbDfgFathersFatherId" column="gg_gb_dfg_fathers_father_id"/>
+        <result property="gbDfgFatherGoodsName" column="gg_gb_dfg_father_goods_name"/>
+        <result property="gbDfgFatherGoodsImg" column="gg_gb_dfg_father_goods_img"/>
+        <result property="gbDfgFatherGoodsImgLarge" column="gg_gb_dfg_father_goods_img_large"/>
+        <result property="gbDfgFatherGoodsSort" column="gg_gb_dfg_father_goods_sort"/>
+        <!-- 嵌套二级分类 -->
+        <collection property="fatherGoodsEntities" resultMap="gDisgoods"/>
+    </resultMap>
+
+    <!-- Grand 分类 ResultMap (二级分类) -->
+    <!-- 注意：老项目结构是二级嵌套 (gg -> g -> 部门商品)，不是三级 -->
+    <resultMap id="gDisgoods" type="com.nongxinle.entity.GbDistributerFatherGoodsEntity">
+        <id property="gbDistributerFatherGoodsId" column="g_gb_distributer_father_goods_id"/>
+        <result property="gbDfgFathersFatherId" column="g_gb_dfg_fathers_father_id"/>
+        <result property="gbDfgFatherGoodsName" column="g_gb_dfg_father_goods_name"/>
+        <result property="gbDfgFatherGoodsSort" column="g_gb_dfg_father_goods_sort"/>
+        <result property="gbDfgNxGoodsId" column="g_gb_dfg_nx_goods_id"/>
+        <!-- 直接嵌套部门商品（二级嵌套结构） -->
+        <collection property="gbDepartmentDisGoodsEntities" resultMap="depGoodsWithStocks"/>
+    </resultMap>
+
+    <!-- 部门商品 ResultMap -->
+    <resultMap id="depGoodsWithStocks" type="com.nongxinle.entity.GbDepartmentDisGoodsEntity">
+        <id property="gbDepartmentDisGoodsId" column="gb_department_dis_goods_id"/>
+        <result property="gbDdgDepGoodsName" column="gb_DDG_dep_goods_name"/>
+        <result property="gbDdgDepartmentId" column="gb_DDG_department_id"/>
+        <result property="gbDdgDisGoodsId" column="gb_DDG_dis_goods_id"/>
+        <result property="gbDdgDisGoodsGrandId" column="gb_DDG_dis_goods_grand_id"/>
+        <result property="gbDdgDisGoodsGreatId" column="gb_DDG_dis_goods_great_id"/>
+        <result property="gbDdgDepartmentFatherId" column="gb_DDG_department_father_id"/>
+        <result property="gbDdgGoodsType" column="gb_DDG_goods_type"/>
+        <result property="gbDdgGbDisId" column="gb_DDG_gb_dis_id"/>
+        <result property="gbDdgNxDistributerId" column="gb_DDG_nx_distributer_id"/>
+        <result property="gbDdgNxDistributerGoodsId" column="gb_DDG_nx_distributer_goods_id"/>
+        <result property="gbDdgOrderGoodsName" column="gb_DDG_order_goods_name"/>
+        <result property="gbDdgOrderPriceLevel" column="gb_DDG_order_price_level"/>
+        <result property="gbDdgPrintStandard" column="gb_DDG_print_standard"/>
+        <result property="gbDdgShowStandardId" column="gb_DDG_show_standard_id"/>
+        <result property="gbDdgShowStandardName" column="gb_DDG_show_standard_name"/>
+        <result property="gbDdgShowStandardScale" column="gb_DDG_show_standard_scale"/>
+        <result property="gbDdgSellingPrice" column="gb_DDG_selling_price"/>
+        <result property="gbDdgOrderDate" column="gb_DDG_order_date"/>
+        <result property="gbDdgOrderPrice" column="gb_DDG_order_price"/>
+        <result property="gbDdgOrderQuantity" column="gb_DDG_order_quantity"/>
+        <result property="gbDdgOrderRemark" column="gb_DDG_order_remark"/>
+        <result property="gbDdgOrderStandard" column="gb_DDG_order_standard"/>
+        <result property="gbDdgOrderWeight" column="gb_DDG_order_weight"/>
+        <result property="gbDdgStockTotalSubtotal" column="gb_DDG_stock_total_subtotal"/>
+        <result property="gbDdgStockTotalWeight" column="gb_DDG_stock_total_weight"/>
+        <result property="gbDdgPrepareTotalWeight" column="gb_DDG_prepare_total_weight"/>
+        <!-- 批发商商品关联，使用 association -->
+        <association property="gbDistributerGoodsEntity" javaType="com.nongxinle.entity.GbDistributerGoodsEntity">
+            <result property="gbDistributerGoodsId" column="gb_distributer_goods_id"/>
+            <result property="gbDgGoodsName" column="gb_dg_goods_name"/>
+            <result property="gbDgGoodsStandardname" column="gb_dg_goods_standardname"/>
+            <result property="gbDgGoodsStandardWeight" column="gb_dg_goods_standard_weight"/>
+            <result property="gbDgControlFresh" column="gb_dg_control_fresh"/>
+            <result property="gbDgFreshWasteHour" column="gb_dg_fresh_waste_hour"/>
+            <result property="gbDgGoodsPrice" column="gb_dg_goods_price"/>
+            <result property="gbDgGoodsLowestPrice" column="gb_dg_goods_lowest_price"/>
+            <result property="gbDgGoodsHighestPrice" column="gb_dg_goods_highest_price"/>
+            <result property="gbDgControlPrice" column="gb_dg_control_price"/>
+            <result property="gbDgFreshWarnHour" column="gb_dg_fresh_warn_hour"/>
+            <result property="gbDgGoodsInventoryType" column="gb_dg_goods_inventory_type"/>
+            <result property="gbDgGoodsType" column="gb_dg_goods_type"/>
+            <result property="gbDgIsFranchisePrice" column="gb_dg_is_franchise_price"/>
+            <result property="gbDgFranchisePriceOne" column="gb_dg_franchise_price_one"/>
+            <result property="gbDgFranchisePriceTwo" column="gb_dg_franchise_price_two"/>
+            <result property="gbDgFranchisePriceThree" column="gb_dg_franchise_price_three"/>
+            <result property="gbDgIsSelfControl" column="gb_dg_is_self_control"/>
+            <result property="gbDgSelfPrice" column="gb_dg_self_price"/>
+            <result property="gbDgGoodsSort" column="gb_dg_goods_sort"/>
+            <result property="gbDgGoodsSonsSort" column="gb_dg_goods_sons_sort"/>
+            <result property="gbDgNxFatherImg" column="gb_dg_nx_father_img"/>
+            <result property="gbDgNxFatherImgLarge" column="gb_dg_nx_father_img_large"/>
+            <result property="gbDgGbSupplierId" column="gb_dg_gb_supplier_id"/>
+            <result property="gbDgNxDistributerId" column="gb_dg_nx_distributer_id"/>
+            <result property="gbDgNxDistributerGoodsId" column="gb_dg_nx_distributer_goods_id"/>
+        </association>
+    </resultMap>
+
+    <!-- 返回给前端的主 ResultMap (depDisGoodsCataGb) -->
+    <!-- 老项目结构：gg (一级分类) -> g (二级分类) -> 部门商品（二级嵌套） -->
+    <resultMap id="depDisGoodsCataGb" type="com.nongxinle.entity.GbDistributerFatherGoodsEntity">
+        <id property="gbDistributerFatherGoodsId" column="gg_gb_distributer_father_goods_id"/>
+        <result property="gbDfgFathersFatherId" column="gg_gb_dfg_fathers_father_id"/>
+        <result property="gbDfgFatherGoodsName" column="gg_gb_dfg_father_goods_name"/>
+        <result property="gbDfgFatherGoodsImg" column="gg_gb_dfg_father_goods_img"/>
+        <result property="gbDfgFatherGoodsImgLarge" column="gg_gb_dfg_father_goods_img_large"/>
+        <result property="gbDfgFatherGoodsSort" column="gg_gb_dfg_father_goods_sort"/>
+        <!-- 嵌套二级分类 collection -->
+        <collection property="fatherGoodsEntities" resultMap="gDisgoods"/>
+    </resultMap>
+
+    <resultMap id="depDisGoodsForAi" type="com.nongxinle.entity.GbDepartmentDisGoodsEntity">
+        <id property="gbDepartmentDisGoodsId" column="gb_department_dis_goods_id"/>
+        <result property="gbDdgOrderGoodsName" column="gb_DDG_order_goods_name"/>
+        <result property="gbDdgOrderPriceLevel" column="gb_DDG_order_price_level"/>
+        <result property="gbDdgPrintStandard" column="gb_DDG_print_standard"/>
+        <result property="gbDdgDepartmentId" column="gb_DDG_department_id"/>
+        <result property="gbDdgDepartmentFatherId" column="gb_DDG_departmment_father_id"/>
+        <result property="gbDdgGbDisId" column="gb_DDG_gb_dis_id"/>
+        <result property="gbDdgDepGoodsName" column="gb_DDG_dep_goods_name"/>
+        <result property="gbDdgDepGoodsDetail" column="gb_dg_goods_detail"/>
+        <result property="gbDdgDisGoodsId" column="gb_DDG_dis_goods_id"/>
+        <result property="gbDdgDisGoodsFatherId" column="gb_DDG_dis_goods_father_id"/>
+        <result property="gbDdgDisGoodsGrandId" column="gb_DDG_dis_goods_grand_id"/>
+        <result property="gbDdgDisGoodsGreatId" column="gb_DDG_dis_goods_great_id"/>
+        <result property="gbDdgGoodsType" column="gb_DDG_goods_type"/>
+        <result property="gbDdgNxDistributerId" column="gb_DDG_nx_distributer_id"/>
+        <result property="gbDdgNxDistributerGoodsId" column="gb_DDG_nx_distributer_goods_id"/>
+        <result property="gbDdgGbDepartmentId" column="gb_DDG_gb_department_id"/>
+        <result property="gbDdgGbSupplierId" column="gb_DDG_gb_supplier_id"/>
+        <result property="gbDdgStockTotalSubtotal" column="gb_DDG_stock_total_subtotal"/>
+        <result property="gbDdgStockTotalWeight" column="gb_DDG_stock_total_weight"/>
+        <result property="gbDdgPrepareTotalWeight" column="gb_DDG_prepare_total_weight"/>
+        <result property="gbDdgShowStandardId" column="gb_DDG_show_standard_id"/>
+        <result property="gbDdgShowStandardName" column="gb_DDG_show_standard_name"/>
+        <result property="gbDdgShowStandardScale" column="gb_DDG_show_standard_scale"/>
+        <result property="gbDdgSellingPrice" column="gb_DDG_selling_price"/>
+        <result property="gbDdgOrderDate" column="gb_DDG_order_date"/>
+        <result property="gbDdgOrderPrice" column="gb_DDG_order_price"/>
+        <result property="gbDdgOrderQuantity" column="gb_DDG_order_quantity"/>
+        <result property="gbDdgOrderRemark" column="gb_DDG_order_remark"/>
+        <result property="gbDdgOrderStandard" column="gb_DDG_order_standard"/>
+        <result property="gbDdgOrderWeight" column="gb_DDG_order_weight"/>
+        <!-- 批发商商品关联 -->
+        <association property="gbDistributerGoodsEntity" javaType="com.nongxinle.entity.GbDistributerGoodsEntity">
+            <result property="gbDistributerGoodsId" column="gb_distributer_goods_id"/>
+            <result property="gbDgGoodsName" column="gb_dg_goods_name"/>
+            <result property="gbDgGoodsStandardname" column="gb_dg_goods_standardname"/>
+            <result property="gbDgNxFatherImg" column="gb_dg_nx_father_img"/>
+            <result property="gbDgNxFatherImgLarge" column="gb_dg_nx_father_img_large"/>
+            <result property="gbDgGoodsStandardWeight" column="gb_dg_goods_standard_weight"/>
+            <result property="gbDgControlFresh" column="gb_dg_control_fresh"/>
+            <result property="gbDgFreshWasteHour" column="gb_dg_fresh_waste_hour"/>
+        </association>
+        <association property="gbDepartmentOrdersEntity" resultMap="depOrders"/>
+        <collection property="gbDepartmentGoodsStockEntities" resultMap="depStockForAi"/>
+        <collection property="gbDistributerStandardEntities" resultMap="disStandards"/>
+    </resultMap>
+
+    <resultMap id="depOrders" type="com.nongxinle.entity.GbDepartmentOrdersEntity">
+        <id property="gbDepartmentOrdersId" column="gb_department_orders_id"/>
+        <result property="gbDoDisGoodsId" column="gb_DO_dis_goods_id"/>
+        <result property="gbDoDepartmentId" column="gb_DO_department_id"/>
+        <result property="gbDoStatus" column="gb_DO_status"/>
+    </resultMap>
+
+    <resultMap id="depStock" type="com.nongxinle.entity.GbDepartmentGoodsStockEntity">
+        <id property="gbDepartmentGoodsStockId" column="gb_department_goods_stock_id"/>
+        <result property="gbDgsGbDisGoodsId" column="gb_dgs_gb_dis_goods_id"/>
+        <result property="gbDgsDepartmentId" column="gb_dgs_department_id"/>
+        <result property="gbDgsRestWeight" column="gb_dgs_rest_weight"/>
+        <result property="gbDgsDate" column="gb_dgs_date"/>
+        <result property="gbDgsWeek" column="gb_dgs_week"/>
+        <result property="gbDgsStatus" column="gb_dgs_status"/>
+    </resultMap>
+
+    <!-- 部门商品库存 collection resultMap（inventoryStock 带 inventory_ 前缀别名） -->
+    <resultMap id="depStockForAi" type="com.nongxinle.entity.GbDepartmentGoodsStockEntity">
+        <id property="gbDepartmentGoodsStockId" column="inventory_gb_department_goods_stock_id"/>
+        <result property="gbDgsGbDepDisGoodsId" column="inventory_gb_dgs_gb_dep_dis_goods_id"/>
+        <result property="gbDgsGbDisGoodsId" column="inventory_gb_dgs_gb_dis_goods_id"/>
+        <result property="gbDgsGbDisGoodsFatherId" column="inventory_gb_dgs_gb_dis_goods_father_id"/>
+        <result property="gbDgsGbDisGoodsGrandId" column="inventory_gb_dgs_gb_dis_goods_grand_id"/>
+        <result property="gbDgsGbDisGoodsGreatId" column="inventory_gb_dgs_gb_dis_goods_great_id"/>
+        <result property="gbDgsGbDistributerId" column="inventory_gb_dgs_gb_distributer_id"/>
+        <result property="gbDgsGbDepartmentId" column="inventory_gb_dgs_gb_department_id"/>
+        <result property="gbDgsGbDepartmentFatherId" column="inventory_gb_dgs_gb_department_father_id"/>
+        <result property="gbDgsWeight" column="inventory_gb_dgs_weight"/>
+        <result property="gbDgsRestWeight" column="inventory_gb_dgs_rest_weight"/>
+        <result property="gbDgsSubtotal" column="inventory_gb_dgs_subtotal"/>
+        <result property="gbDgsRestSubtotal" column="inventory_gb_dgs_rest_subtotal"/>
+        <result property="gbDgsPrice" column="inventory_gb_dgs_price"/>
+        <result property="gbDgsDate" column="inventory_gb_dgs_date"/>
+        <result property="gbDgsWeek" column="inventory_gb_dgs_week"/>
+        <result property="gbDgsMonth" column="inventory_gb_dgs_month"/>
+        <result property="gbDgsYear" column="inventory_gb_dgs_year"/>
+        <result property="gbDgsStatus" column="inventory_gb_dgs_status"/>
+    </resultMap>
+
+    <resultMap id="disStandards" type="com.nongxinle.entity.GbDistributerStandardEntity">
+        <id property="gbDistributerStandardId" column="gb_distributer_standard_id"/>
+        <result property="gbDsDisGoodsId" column="gb_DS_dis_goods_id"/>
+    </resultMap>
+
+    <!-- disGetDepDisGoodsCataGb: 获取部门商品分类（二级嵌套结构） -->
+    <!-- 老项目结构：great-grand (gg/一级分类) -> grand (g/二级分类) -> 部门商品 -->
+    <select id="disGetDepDisGoodsCataGb" resultMap="depDisGoodsCataGb">
+        SELECT
+               gg.gb_distributer_father_goods_id       AS 'gg_gb_distributer_father_goods_id',
+               gg.gb_dfg_fathers_father_id             AS 'gg_gb_dfg_fathers_father_id',
+               gg.gb_dfg_father_goods_name             AS 'gg_gb_dfg_father_goods_name',
+               gg.gb_dfg_father_goods_img_large        AS 'gg_gb_dfg_father_goods_img_large',
+               gg.gb_dfg_father_goods_img              AS 'gg_gb_dfg_father_goods_img',
+               gg.gb_dfg_father_goods_sort             AS 'gg_gb_dfg_father_goods_sort',
+               g.gb_distributer_father_goods_id        AS 'g_gb_distributer_father_goods_id',
+               g.gb_dfg_fathers_father_id              AS 'g_gb_dfg_fathers_father_id',
+               g.gb_dfg_nx_goods_id                   AS 'g_gb_dfg_nx_goods_id',
+               g.gb_dfg_father_goods_name              AS 'g_gb_dfg_father_goods_name',
+               g.gb_dfg_father_goods_sort              AS 'g_gb_dfg_father_goods_sort',
+               ddg.gb_department_dis_goods_id          AS 'gb_department_dis_goods_id',
+               ddg.gb_DDG_department_id                AS 'gb_DDG_department_id',
+               ddg.gb_DDG_department_father_id        AS 'gb_DDG_department_father_id',
+               ddg.gb_DDG_dis_goods_id                 AS 'gb_DDG_dis_goods_id',
+               ddg.gb_DDG_dis_goods_father_id          AS 'gb_DDG_dis_goods_father_id',
+               ddg.gb_DDG_dis_goods_grand_id           AS 'gb_DDG_dis_goods_grand_id',
+               ddg.gb_DDG_dis_goods_great_id           AS 'gb_DDG_dis_goods_great_id',
+               ddg.gb_DDG_gb_dis_id                    AS 'gb_DDG_gb_dis_id',
+               ddg.gb_DDG_nx_distributer_id            AS 'gb_DDG_nx_distributer_id',
+               ddg.gb_DDG_nx_distributer_goods_id      AS 'gb_DDG_nx_distributer_goods_id',
+               ddg.gb_DDG_dep_goods_name                AS 'gb_DDG_dep_goods_name',
+               ddg.gb_DDG_order_goods_name             AS 'gb_DDG_order_goods_name',
+               ddg.gb_DDG_order_price_level            AS 'gb_DDG_order_price_level',
+               ddg.gb_DDG_print_standard               AS 'gb_DDG_print_standard',
+               ddg.gb_DDG_show_standard_id            AS 'gb_DDG_show_standard_id',
+               ddg.gb_DDG_show_standard_name          AS 'gb_DDG_show_standard_name',
+               ddg.gb_DDG_show_standard_scale         AS 'gb_DDG_show_standard_scale',
+               ddg.gb_DDG_selling_price                AS 'gb_DDG_selling_price',
+               ddg.gb_DDG_order_date                   AS 'gb_DDG_order_date',
+               ddg.gb_DDG_order_price                  AS 'gb_DDG_order_price',
+               ddg.gb_DDG_order_quantity               AS 'gb_DDG_order_quantity',
+               ddg.gb_DDG_order_remark                 AS 'gb_DDG_order_remark',
+               ddg.gb_DDG_order_standard               AS 'gb_DDG_order_standard',
+               ddg.gb_DDG_order_weight                 AS 'gb_DDG_order_weight',
+               ddg.gb_DDG_goods_type                   AS 'gb_DDG_goods_type',
+               ddg.gb_DDG_stock_total_subtotal         AS 'gb_DDG_stock_total_subtotal',
+               ddg.gb_DDG_stock_total_weight           AS 'gb_DDG_stock_total_weight',
+               ddg.gb_DDG_prepare_total_weight         AS 'gb_DDG_prepare_total_weight',
+               dg.gb_distributer_goods_id              AS 'gb_distributer_goods_id',
+               dg.gb_dg_goods_name                     AS 'gb_dg_goods_name',
+               dg.gb_dg_goods_standardname             AS 'gb_dg_goods_standardname',
+               dg.gb_dg_goods_standard_weight          AS 'gb_dg_goods_standard_weight',
+               dg.gb_dg_goods_price                    AS 'gb_dg_goods_price',
+               dg.gb_dg_goods_lowest_price             AS 'gb_dg_goods_lowest_price',
+               dg.gb_dg_goods_highest_price            AS 'gb_dg_goods_highest_price',
+               dg.gb_dg_control_price                  AS 'gb_dg_control_price',
+               dg.gb_dg_control_fresh                  AS 'gb_dg_control_fresh',
+               dg.gb_dg_fresh_warn_hour                AS 'gb_dg_fresh_warn_hour',
+               dg.gb_dg_fresh_waste_hour               AS 'gb_dg_fresh_waste_hour',
+               dg.gb_dg_goods_inventory_type           AS 'gb_dg_goods_inventory_type',
+               dg.gb_dg_goods_type                     AS 'gb_dg_goods_type',
+               dg.gb_dg_is_franchise_price             AS 'gb_dg_is_franchise_price',
+               dg.gb_dg_franchise_price_one            AS 'gb_dg_franchise_price_one',
+               dg.gb_dg_franchise_price_two            AS 'gb_dg_franchise_price_two',
+               dg.gb_dg_franchise_price_three          AS 'gb_dg_franchise_price_three',
+               dg.gb_dg_is_self_control                AS 'gb_dg_is_self_control',
+               dg.gb_dg_self_price                     AS 'gb_dg_self_price',
+               dg.gb_dg_goods_sort                     AS 'gb_dg_goods_sort',
+               dg.gb_dg_goods_sons_sort                AS 'gb_dg_goods_sons_sort',
+               dg.gb_dg_nx_father_img                  AS 'gb_dg_nx_father_img',
+               dg.gb_dg_nx_father_img_large            AS 'gb_dg_nx_father_img_large',
+               dg.gb_dg_gb_supplier_id                AS 'gb_dg_gb_supplier_id',
+               dg.gb_dg_nx_distributer_id              AS 'gb_dg_nx_distributer_id',
+               dg.gb_dg_nx_distributer_goods_id        AS 'gb_dg_nx_distributer_goods_id'
+        FROM gb_department_dis_goods AS ddg
+        LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = ddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = ddg.gb_DDG_dis_goods_grand_id
+        LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
+        <where>
+            <if test="depFatherId != null">
+                AND ddg.gb_DDG_department_father_id = #{depFatherId}
+            </if>
+            <if test="depId != null">
+                AND ddg.gb_DDG_department_id = #{depId}
+            </if>
+            <if test="pull != null">
+                AND dg.gb_dg_pull_off = #{pull}
+            </if>
+            <if test="supplierId != null">
+                AND dg.gb_dg_gb_supplier_id = #{supplierId}
+            </if>
+            <if test="disId != null">
+                AND g.gb_dfg_distributer_id = #{disId} AND gg.gb_dfg_distributer_id = #{disId}
+            </if>
+            <if test="goodsType != null">
+                AND dg.gb_dg_goods_type = #{goodsType}
+            </if>
+            <if test="price != null">
+                AND dg.gb_dg_control_price = #{price}
+            </if>
+            <if test="fresh != null">
+                AND dg.gb_dg_control_fresh = #{fresh}
+            </if>
+            <if test="isPrice != null">
+                AND dg.gb_dg_is_franchise_price = #{isPrice}
+            </if>
+            <if test="isSelf != null">
+                AND dg.gb_dg_is_self_control = #{isSelf}
+            </if>
+        </where>
+        ORDER BY gg.gb_dfg_father_goods_sort, g.gb_dfg_father_goods_sort, ddg.gb_DDG_department_id
+    </select>
+
+    <!-- queryDepGoodsCount: 获取部门商品总数 -->
+    <select id="queryDepGoodsCount" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM gb_department_dis_goods AS gddg
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
+        <where>
+            <if test="depId != null">
+                AND gddg.gb_DDG_department_id = #{depId}
+            </if>
+            <if test="disId != null">
+                AND gddg.gb_DDG_gb_dis_id = #{disId}
+            </if>
+            <if test="pull != null">
+                AND gdg.gb_dg_pull_off = #{pull}
+            </if>
+            <if test="notLinshi != null and notLinshi == 1">
+                AND gdg.gb_dg_dfg_goods_father_id IS NOT NULL
+            </if>
+        </where>
+    </select>
+
+    <!-- queryOnlyDepGoodsIds: 获取部门商品ID列表 -->
+    <select id="queryOnlyDepGoodsIds" resultType="java.lang.Integer">
+        SELECT gb_department_dis_goods_id
+        FROM gb_department_dis_goods AS ddg
+        LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = ddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_distributer_father_goods AS f ON f.gb_distributer_father_goods_id = dg.gb_dg_dfg_goods_father_id
+        LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = f.gb_dfg_fathers_father_id
+        LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
+        <where>
+            <if test="depId != null">
+                AND ddg.gb_DDG_department_id = #{depId}
+            </if>
+            <if test="disId != null">
+                AND ddg.gb_DDG_gb_dis_id = #{disId}
+            </if>
+            <if test="pull != null">
+                AND dg.gb_dg_pull_off = #{pull}
+            </if>
+            <if test="notLinshi != null and notLinshi == 1">
+                AND dg.gb_dg_dfg_goods_father_id IS NOT NULL
+            </if>
+            <if test="notLinshi != null and notLinshi == -1">
+                AND dg.gb_dg_dfg_goods_father_id IS NULL
+            </if>
+        </where>
+        ORDER BY
+            gg.gb_dfg_father_goods_sort,
+            g.gb_dfg_father_goods_sort,
+            f.gb_dfg_father_goods_sort,
+            dg.gb_dg_goods_sort
+    </select>
+
+    <!-- depQueryDepGoodsWithOrderForAi: 分页查询部门商品（AI用，含库存批次） -->
+    <select id="depQueryDepGoodsWithOrderForAi" resultMap="depDisGoodsForAi">
+        SELECT
+            ddg.*,
+            dg.*,
+            s.*,
+            dfg.*,
+            great.*,
+            greatGrand.*,
+            greatGrand.gb_distributer_father_goods_id AS greatFatherId,
+            ng.*,
+            dor.*,
+            inventoryStock.gb_department_goods_stock_id 'inventory_gb_department_goods_stock_id',
+            inventoryStock.gb_dgs_gb_dep_dis_goods_id 'inventory_gb_dgs_gb_dep_dis_goods_id',
+            inventoryStock.gb_dgs_gb_dis_goods_id 'inventory_gb_dgs_gb_dis_goods_id',
+            inventoryStock.gb_dgs_gb_dis_goods_father_id 'inventory_gb_dgs_gb_dis_goods_father_id',
+            inventoryStock.gb_dgs_gb_dis_goods_grand_id 'inventory_gb_dgs_gb_dis_goods_grand_id',
+            inventoryStock.gb_dgs_gb_dis_goods_great_id 'inventory_gb_dgs_gb_dis_goods_great_id',
+            inventoryStock.gb_dgs_gb_distributer_id 'inventory_gb_dgs_gb_distributer_id',
+            inventoryStock.gb_dgs_gb_department_id 'inventory_gb_dgs_gb_department_id',
+            inventoryStock.gb_dgs_gb_department_father_id 'inventory_gb_dgs_gb_department_father_id',
+            inventoryStock.gb_dgs_weight 'inventory_gb_dgs_weight',
+            inventoryStock.gb_dgs_rest_weight 'inventory_gb_dgs_rest_weight',
+            inventoryStock.gb_dgs_subtotal 'inventory_gb_dgs_subtotal',
+            inventoryStock.gb_dgs_rest_subtotal 'inventory_gb_dgs_rest_subtotal',
+            inventoryStock.gb_dgs_price 'inventory_gb_dgs_price',
+            inventoryStock.gb_dgs_date 'inventory_gb_dgs_date',
+            inventoryStock.gb_dgs_week 'inventory_gb_dgs_week',
+            inventoryStock.gb_dgs_month 'inventory_gb_dgs_month',
+            inventoryStock.gb_dgs_year 'inventory_gb_dgs_year',
+            inventoryStock.gb_dgs_status 'inventory_gb_dgs_status'
+        FROM (
+            SELECT ddg.gb_department_dis_goods_id
+            FROM gb_department_dis_goods AS ddg
+            LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = ddg.gb_DDG_dis_goods_id
+            LEFT JOIN gb_distributer_father_goods AS dfg ON dfg.gb_distributer_father_goods_id = ddg.gb_DDG_dis_goods_father_id
+            LEFT JOIN gb_distributer_father_goods AS great ON great.gb_distributer_father_goods_id = dfg.gb_dfg_fathers_father_id
+            LEFT JOIN gb_distributer_father_goods AS greatGrand ON greatGrand.gb_distributer_father_goods_id = great.gb_dfg_fathers_father_id
+            <where>
+                <if test="depId != null">
+                    AND ddg.gb_DDG_department_id = #{depId}
+                </if>
+                <if test="disId != null">
+                    AND ddg.gb_DDG_gb_dis_id = #{disId}
+                </if>
+                <if test="pull != null">
+                    AND dg.gb_dg_pull_off = #{pull}
+                </if>
+                <if test="notLinshi != null and notLinshi == 1">
+                    AND dg.gb_dg_dfg_goods_father_id IS NOT NULL
+                </if>
+            </where>
+            ORDER BY
+                greatGrand.gb_dfg_father_goods_sort,
+                great.gb_dfg_father_goods_sort,
+                dfg.gb_dfg_father_goods_sort,
+                dg.gb_dg_goods_sort
+            <if test="limit != null and offset != null">
+                LIMIT #{limit} OFFSET #{offset}
+            </if>
+        ) AS base
+        INNER JOIN gb_department_dis_goods AS ddg ON ddg.gb_department_dis_goods_id = base.gb_department_dis_goods_id
+        LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = ddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_distributer_standard AS s ON s.gb_DS_dis_goods_id = dg.gb_distributer_goods_id
+        LEFT JOIN gb_distributer_father_goods AS dfg ON dfg.gb_distributer_father_goods_id = ddg.gb_DDG_dis_goods_father_id
+        LEFT JOIN gb_distributer_father_goods AS great ON great.gb_distributer_father_goods_id = dfg.gb_dfg_fathers_father_id
+        LEFT JOIN gb_distributer_father_goods AS greatGrand ON greatGrand.gb_distributer_father_goods_id = great.gb_dfg_fathers_father_id
+        LEFT JOIN nx_goods AS ng ON ng.nx_goods_id = great.gb_dfg_nx_goods_id
+        LEFT JOIN gb_department_orders AS dor ON dor.gb_DO_dis_goods_id = ddg.gb_DDG_dis_goods_id
+            AND dor.gb_DO_status &lt; #{status}
+            AND dor.gb_DO_status &gt; -1
+            AND dor.gb_DO_department_id = #{depId}
+            AND dor.gb_DO_order_type != 9
+        LEFT JOIN gb_department_goods_stock AS inventoryStock ON inventoryStock.gb_dgs_gb_dep_dis_goods_id = ddg.gb_department_dis_goods_id
+            AND inventoryStock.gb_dgs_status &gt; -1
+        ORDER BY
+            greatGrand.gb_dfg_father_goods_sort,
+            great.gb_dfg_father_goods_sort,
+            dfg.gb_dfg_father_goods_sort,
+            dg.gb_dg_goods_sort,
+            inventoryStock.gb_dgs_date
+    </select>
+
+    <!-- 根据参数查询部门商品 -->
+    <select id="queryGbDepDisGoodsByParams" resultType="com.nongxinle.entity.GbDepartmentDisGoodsEntity">
+        SELECT * FROM gb_department_dis_goods AS gddg
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_department_goods_stock AS gdgs ON gdgs.gb_dgs_gb_dep_dis_goods_id = gddg.gb_department_dis_goods_id
+        LEFT JOIN gb_department AS gd ON gd.gb_department_id = gddg.gb_DDG_department_id
+        <where>
+            <if test="depId != null">
+                AND gddg.gb_DDG_department_id = #{depId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gddg.gb_DDG_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="depFatherId != null">
+                AND gddg.gb_DDG_department_father_id = #{depFatherId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND gddg.gb_DDG_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+        </where>
+    </select>
+
+    <!-- 查询分销商商品ID列表 -->
+    <select id="queryOnlyDisGoodsIds" resultType="java.lang.Integer">
+        SELECT dg.gb_distributer_goods_id
+        FROM gb_department_dis_goods AS ddg
+        LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = ddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_distributer_father_goods AS f ON f.gb_distributer_father_goods_id = dg.gb_dg_dfg_goods_father_id
+        LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = f.gb_dfg_fathers_father_id
+        LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
+        <where>
+            <if test="depId != null">
+                AND ddg.gb_DDG_department_id = #{depId}
+            </if>
+            <if test="disId != null">
+                AND dg.gb_dg_distributer_id = #{disId}
+            </if>
+            <if test="pull != null">
+                AND dg.gb_dg_pull_off = #{pull}
+            </if>
+            <if test="goodsType != null">
+                AND dg.gb_dg_goods_type = #{goodsType}
+            </if>
+            <if test="price != null">
+                AND dg.gb_dg_control_price = #{price}
+            </if>
+            <if test="fresh != null">
+                AND dg.gb_dg_control_fresh = #{fresh}
+            </if>
+            <if test="supplierId != null">
+                AND dg.gb_dg_gb_supplier_id = #{supplierId}
+            </if>
+        </where>
+        GROUP BY dg.gb_distributer_goods_id
+        ORDER BY MIN(gg.gb_dfg_father_goods_sort), MIN(g.gb_dfg_father_goods_sort), MIN(f.gb_dfg_father_goods_sort), MIN(dg.gb_dg_goods_sort)
+    </select>
+
+    <!-- queryDepartmentGoodsForAi: 根据参数查询部门商品（AI用） -->
+    <select id="queryDepartmentGoodsForAi" resultMap="depDisGoodsForAi">
+        SELECT * FROM gb_department_dis_goods AS gddg
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_department_orders AS dor ON gddg.gb_department_dis_goods_id = dor.gb_DO_dep_dis_goods_id
+            AND dor.gb_Do_status &lt; #{orderStatus}
+            AND dor.gb_Do_order_type != 9
+        LEFT JOIN gb_department_goods_stock AS gdgs ON gdgs.gb_dgs_gb_dis_goods_id = gdg.gb_distributer_goods_id
+            AND gdgs.gb_dgs_rest_weight &gt; #{restWeight}
+        <where>
+            <if test="disGoodsId != null">
+                AND gddg.gb_DDG_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="gbDepId != null">
+                AND gddg.gb_DDG_gb_department_id = #{gbDepId}
+            </if>
+            <if test="depId != null">
+                AND gddg.gb_DDG_department_id = #{depId}
+            </if>
+        </where>
+        ORDER BY gdgs.gb_department_goods_stock_id
+    </select>
+
+    <!-- 按批发商分页查询商品数量 -->
+    <select id="queryDisGoodsCount" resultType="java.lang.Integer">
+        SELECT COUNT(DISTINCT gddg.gb_DDG_dis_goods_id)
+        FROM gb_department_dis_goods AS gddg
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
+        <where>
+            <if test="disId != null">
+                AND gdg.gb_dg_distributer_id = #{disId}
+            </if>
+            <if test="goodsType != null and goodsType &lt; 99">
+                AND gdg.gb_dg_goods_type = #{goodsType}
+            </if>
+            <if test="goodsType != null and goodsType == 101">
+                AND gdg.gb_dg_fresh = 1
+            </if>
+            <if test="goodsType != null and goodsType == 102">
+                AND gdg.gb_dg_pull_off = 1
+            </if>
+        </where>
+    </select>
+
+    <!-- 按批发商分页查询商品 -->
+    <select id="disQueryDisGoodsWithOrderForAi" resultType="com.nongxinle.entity.GbDepartmentDisGoodsEntity">
+        SELECT gddg.*, ggfg.gb_dfg_father_goods_sort AS ggfg_sort, gdfg.gb_dfg_father_goods_sort AS gdfg_sort
+        FROM gb_department_dis_goods AS gddg
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_distributer_father_goods AS gdfg ON gdfg.gb_distributer_father_goods_id = gdg.gb_dg_dfg_goods_father_id
+        LEFT JOIN gb_distributer_father_goods AS ggfg ON ggfg.gb_distributer_father_goods_id = gdfg.gb_dfg_fathers_father_id
+        <where>
+            <if test="disId != null">
+                AND gdg.gb_dg_distributer_id = #{disId}
+            </if>
+            <if test="goodsType != null and goodsType &lt; 99">
+                AND gdg.gb_dg_goods_type = #{goodsType}
+            </if>
+            <if test="goodsType != null and goodsType == 101">
+                AND gdg.gb_dg_fresh = 1
+            </if>
+            <if test="goodsType != null and goodsType == 102">
+                AND gdg.gb_dg_pull_off = 1
+            </if>
+        </where>
+        GROUP BY gddg.gb_department_dis_goods_id
+        ORDER BY ggfg_sort, gdfg_sort, gddg.gb_department_dis_goods_id DESC
+        <if test="limit != null">
+            LIMIT #{limit} OFFSET #{offset}
+        </if>
+    </select>
+
+    <!-- 按批发商分页查询商品（返回批发商商品实体，TreeSet用） -->
+    <select id="disQueryDisGoodsWithOrderForAiTree" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        SELECT DISTINCT gdg.*, ggfg.gb_dfg_father_goods_sort AS ggfg_sort, gdfg.gb_dfg_father_goods_sort AS gdfg_sort,
+        IFNULL(stockStats.goodsStockTotal, 0) as 'goodsStockTotal',
+        IFNULL(stockStats.goodsStockWeightTotal, 0) as 'goodsStockWeightTotal'
+        FROM gb_distributer_goods AS gdg
+        LEFT JOIN gb_department_dis_goods AS gddg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_distributer_father_goods AS gdfg ON gdfg.gb_distributer_father_goods_id = gdg.gb_dg_dfg_goods_father_id
+        LEFT JOIN gb_distributer_father_goods AS ggfg ON ggfg.gb_distributer_father_goods_id = gdfg.gb_dfg_fathers_father_id
+        LEFT JOIN (
+            SELECT gb_dgs_gb_dis_goods_id,
+                   SUM(gb_dgs_rest_subtotal) as goodsStockTotal,
+                   SUM(gb_dgs_rest_weight) as goodsStockWeightTotal
+            FROM gb_department_goods_stock
+            WHERE gb_dgs_rest_weight > 0
+            GROUP BY gb_dgs_gb_dis_goods_id
+        ) AS stockStats ON stockStats.gb_dgs_gb_dis_goods_id = gdg.gb_distributer_goods_id
+        <where>
+            <if test="disId != null">
+                AND gdg.gb_dg_distributer_id = #{disId}
+            </if>
+            <if test="goodsType != null and goodsType &lt; 99">
+                AND gdg.gb_dg_goods_type = #{goodsType}
+            </if>
+            <if test="goodsType != null and goodsType == 101">
+                AND gdg.gb_dg_fresh = 1
+            </if>
+            <if test="goodsType != null and goodsType == 102">
+                AND gdg.gb_dg_pull_off = 1
+            </if>
+        </where>
+        ORDER BY ggfg_sort, gdfg_sort, gdg.gb_distributer_goods_id DESC
+        <if test="limit != null">
+            LIMIT #{limit} OFFSET #{offset}
+        </if>
+    </select>
+
+</mapper>

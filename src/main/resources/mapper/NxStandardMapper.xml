@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.NxStandardMapper">
+
+    <resultMap id="BaseResultMap" type="com.nongxinle.entity.NxStandardEntity">
+        <id property="nxStandardId" column="nx_standard_id"/>
+        <result property="nxStandardName" column="nx_standard_name"/>
+        <result property="nxSGoodsId" column="nx_s_goods_id"/>
+        <result property="nxStandardFilePath" column="nx_standard_file_path"/>
+        <result property="nxStandardScale" column="nx_standard_scale"/>
+        <result property="nxStandardError" column="nx_standard_error"/>
+        <result property="nxStandardSort" column="nx_standard_sort"/>
+        <result property="nxStandardWeight" column="nx_standard_weight"/>
+    </resultMap>
+
+    <!-- 根据商品ID查询规格列表 -->
+    <select id="queryGoodsStandardListByGoodsId" resultMap="BaseResultMap">
+        SELECT * FROM nx_standard
+        WHERE nx_s_goods_id = #{nxGoodsId}
+        ORDER BY nx_standard_sort
+    </select>
+
+    <!-- 根据商品ID查询规格列表 -->
+    <select id="queryList" resultMap="BaseResultMap">
+        SELECT * FROM nx_standard
+        WHERE nx_s_goods_id = #{nxGoodsId}
+        ORDER BY nx_standard_sort
+    </select>
+
+</mapper>

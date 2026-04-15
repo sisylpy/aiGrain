@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbAiKnowledgeMapper">
+
+    <resultMap id="BaseResultMap" type="com.nongxinle.entity.GbAiKnowledgeEntity">
+        <id column="gb_ai_knowledge_id" property="gbAiKnowledgeId" />
+        <result column="gb_ai_knowledge_uuid" property="gbAiKnowledgeUuid" />
+        <result column="gb_ai_knowledge_type" property="gbAiKnowledgeType" />
+        <result column="gb_ai_knowledge_category" property="gbAiKnowledgeCategory" />
+        <result column="gb_ai_knowledge_title" property="gbAiKnowledgeTitle" />
+        <result column="gb_ai_knowledge_summary" property="gbAiKnowledgeSummary" />
+        <result column="gb_ai_knowledge_content" property="gbAiKnowledgeContent" />
+        <result column="gb_ai_knowledge_source_url" property="gbAiKnowledgeSourceUrl" />
+        <result column="gb_ai_knowledge_tags" property="gbAiKnowledgeTags" />
+        <result column="gb_ai_knowledge_author" property="gbAiKnowledgeAuthor" />
+        <result column="gb_ai_knowledge_origin" property="gbAiKnowledgeOrigin" />
+        <result column="gb_ai_knowledge_effect_rating" property="gbAiKnowledgeEffectRating" />
+        <result column="gb_ai_knowledge_effect_cases" property="gbAiKnowledgeEffectCases" />
+        <result column="gb_ai_knowledge_effect_note" property="gbAiKnowledgeEffectNote" />
+        <result column="gb_ai_knowledge_suitable_restaurant" property="gbAiKnowledgeSuitableRestaurant" />
+        <result column="gb_ai_knowledge_suitable_budget" property="gbAiKnowledgeSuitableBudget" />
+        <result column="gb_ai_knowledge_suitable_season" property="gbAiKnowledgeSuitableSeason" />
+        <result column="gb_ai_knowledge_view_count" property="gbAiKnowledgeViewCount" />
+        <result column="gb_ai_knowledge_use_count" property="gbAiKnowledgeUseCount" />
+        <result column="gb_ai_knowledge_status" property="gbAiKnowledgeStatus" />
+        <result column="gb_ai_knowledge_publish_time" property="gbAiKnowledgePublishTime" />
+        <result column="gb_ai_knowledge_create_time" property="gbAiKnowledgeCreateTime" />
+        <result column="gb_ai_knowledge_update_time" property="gbAiKnowledgeUpdateTime" />
+    </resultMap>
+
+    <!-- 摘要列表查询（不含详细内容） -->
+    <select id="selectSummaryList" resultMap="BaseResultMap">
+        SELECT
+            gb_ai_knowledge_id,
+            gb_ai_knowledge_uuid,
+            gb_ai_knowledge_type,
+            gb_ai_knowledge_category,
+            gb_ai_knowledge_title,
+            gb_ai_knowledge_summary,
+            gb_ai_knowledge_tags,
+            gb_ai_knowledge_author,
+            gb_ai_knowledge_origin,
+            gb_ai_knowledge_effect_rating,
+            gb_ai_knowledge_effect_cases,
+            gb_ai_knowledge_effect_note,
+            gb_ai_knowledge_suitable_restaurant,
+            gb_ai_knowledge_suitable_budget,
+            gb_ai_knowledge_suitable_season
+        FROM gb_ai_knowledge
+        WHERE gb_ai_knowledge_status = 1
+        <if test="category != null and category != ''">
+            AND gb_ai_knowledge_category = #{category}
+        </if>
+        <if test="type != null">
+            AND gb_ai_knowledge_type = #{type}
+        </if>
+        <if test="tags != null and tags != ''">
+            AND (
+                <foreach collection="tags.split(',')" item="tag" separator=" OR ">
+                    FIND_IN_SET(#{tag}, gb_ai_knowledge_tags) > 0
+                </foreach>
+            )
+        </if>
+        ORDER BY gb_ai_knowledge_use_count DESC, gb_ai_knowledge_effect_rating DESC
+    </select>
+
+    <!-- 获取所有分类 -->
+    <select id="selectAllCategories" resultType="java.lang.String">
+        SELECT DISTINCT gb_ai_knowledge_category
+        FROM gb_ai_knowledge
+        WHERE gb_ai_knowledge_status = 1
+        AND gb_ai_knowledge_category IS NOT NULL
+        ORDER BY gb_ai_knowledge_category
+    </select>
+
+    <!-- 增加使用次数 -->
+    <update id="incrementUseCount">
+        UPDATE gb_ai_knowledge
+        SET gb_ai_knowledge_use_count = gb_ai_knowledge_use_count + 1
+        WHERE gb_ai_knowledge_id = #{id}
+    </update>
+
+    <!-- 增加查看次数 -->
+    <update id="incrementViewCount">
+        UPDATE gb_ai_knowledge
+        SET gb_ai_knowledge_view_count = gb_ai_knowledge_view_count + 1
+        WHERE gb_ai_knowledge_id = #{id}
+    </update>
+
+</mapper>
