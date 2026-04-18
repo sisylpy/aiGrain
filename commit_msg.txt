@@ -1,6 +1,0 @@
-feat(ai-chat): skill routing and grounded business facts
-
-Add orchestration (skill selection parse/fallback, skill_handoff parse).
-Inject inventory, purchase, self-purchase, supplier unsettled totals into
-GbAiChatServiceImpl prompts with anti-hallucination rules. Update cost/revenue
-skill markdown. Minor GbAiChatController and GbAiMemoryServiceImpl changes.
