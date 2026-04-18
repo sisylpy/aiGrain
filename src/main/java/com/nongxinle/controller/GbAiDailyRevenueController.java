@@ -94,14 +94,14 @@ public class GbAiDailyRevenueController {
 
         result.put("统计天数", days);
         BigDecimal avgDailyRevenue = toDecimal(stats.get("avg_daily_revenue"));
-        result.put("日均营业额", avgDailyRevenue);
-        result.put("总营业额", toDecimal(stats.get("total_revenue")));
-        result.put("日均订单数", toDecimal(stats.get("avg_order_count")));
-        result.put("客单价", toDecimal(stats.get("avg_per_customer")));
-        result.put("平台费合计", toDecimal(stats.get("total_coupon_amount")));
-        result.put("退款合计", toDecimal(stats.get("total_refund_amount")));
-        result.put("最高日营业额", toDecimal(stats.get("max_daily_revenue")));
-        result.put("最低日营业额", toDecimal(stats.get("min_daily_revenue")));
+        result.put("日均营业额", formatStatNumber(avgDailyRevenue));
+        result.put("总营业额", formatStatNumber(toDecimal(stats.get("total_revenue"))));
+        result.put("日均订单数", formatStatNumber(toDecimal(stats.get("avg_order_count"))));
+        result.put("客单价", formatStatNumber(toDecimal(stats.get("avg_per_customer"))));
+        result.put("平台费合计", formatStatNumber(toDecimal(stats.get("total_coupon_amount"))));
+        result.put("退款合计", formatStatNumber(toDecimal(stats.get("total_refund_amount"))));
+        result.put("最高日营业额", formatStatNumber(toDecimal(stats.get("max_daily_revenue"))));
+        result.put("最低日营业额", formatStatNumber(toDecimal(stats.get("min_daily_revenue"))));
 
         BigDecimal monthlyWage = profile.getGbAiRestaurantProfileMonthlyWage() != null
                 ? profile.getGbAiRestaurantProfileMonthlyWage() : BigDecimal.ZERO;
@@ -112,20 +112,20 @@ public class GbAiDailyRevenueController {
         BigDecimal dailyWage = monthlyWage.divide(BigDecimal.valueOf(30), 2, RoundingMode.HALF_UP);
         BigDecimal dailyRent = monthlyRent.divide(BigDecimal.valueOf(30), 2, RoundingMode.HALF_UP);
 
-        result.put("日均固定开支", dailyFixedCost);
-        result.put("月工资", monthlyWage);
-        result.put("月租金", monthlyRent);
+        result.put("日均固定开支", formatStatNumber(dailyFixedCost));
+        result.put("月工资", formatStatNumber(monthlyWage));
+        result.put("月租金", formatStatNumber(monthlyRent));
 
         BigDecimal totalCoupon = toDecimal(stats.get("total_coupon_amount"));
         BigDecimal totalRefund = toDecimal(stats.get("total_refund_amount"));
         BigDecimal avgNetRevenue = avgDailyRevenue.subtract(totalCoupon.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP));
-        result.put("日均净收入", avgNetRevenue);
+        result.put("日均净收入", formatStatNumber(avgNetRevenue));
 
-        result.put("外卖营业额合计", toDecimal(stats.get("total_takeout_revenue")));
+        result.put("外卖营业额合计", formatStatNumber(toDecimal(stats.get("total_takeout_revenue"))));
         BigDecimal avgTakeoutRevenue = toDecimal(stats.get("avg_takeout_revenue"));
-        result.put("日均外卖营业额", avgTakeoutRevenue);
-        result.put("外卖净收合计", toDecimal(stats.get("total_takeout_net")));
-        result.put("日均外卖净收", toDecimal(stats.get("avg_takeout_net")));
+        result.put("日均外卖营业额", formatStatNumber(avgTakeoutRevenue));
+        result.put("外卖净收合计", formatStatNumber(toDecimal(stats.get("total_takeout_net"))));
+        result.put("日均外卖净收", formatStatNumber(toDecimal(stats.get("avg_takeout_net"))));
 
         Map<String, Object> costParams = new HashMap<>();
         costParams.put("departmentFatherId", departmentId);
@@ -139,14 +139,16 @@ public class GbAiDailyRevenueController {
         BigDecimal totalCost = productionCost.add(returnCost);
         // 部门库存核销：制作(1)+损耗(2)+废弃/损失(3)，不含退货(4)；按营业额统计天数摊日均
         BigDecimal avgDepartmentReduceDaily = productionCost.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
+        BigDecimal expenseDailyTotal = dailyWage.add(dailyRent).add(avgDepartmentReduceDaily);
 
-        result.put("生产成本", produceCost);
-        result.put("损耗成本", wasteCost);
-        result.put("损失成本", lossCost);
-        result.put("退货成本", returnCost);
-        result.put("制作成本合计", productionCost);
-        result.put("部门核销制作损耗废弃日均", avgDepartmentReduceDaily);
-        result.put("总成本", totalCost);
+        result.put("生产成本", formatStatNumber(produceCost));
+        result.put("损耗成本", formatStatNumber(wasteCost));
+        result.put("损失成本", formatStatNumber(lossCost));
+        result.put("退货成本", formatStatNumber(returnCost));
+        result.put("制作成本合计", formatStatNumber(productionCost));
+        result.put("部门核销制作损耗废弃日均", formatStatNumber(avgDepartmentReduceDaily));
+        result.put("日均支出合计", formatStatNumber(expenseDailyTotal));
+        result.put("总成本", formatStatNumber(totalCost));
 
         BigDecimal grossProfitMargin = BigDecimal.ZERO;
         BigDecimal totalNetRevenue = toDecimal(stats.get("total_revenue")).subtract(totalCoupon);
@@ -155,10 +157,10 @@ public class GbAiDailyRevenueController {
                     .multiply(BigDecimal.valueOf(100))
                     .divide(totalNetRevenue, 2, RoundingMode.HALF_UP);
         }
-        result.put("利润率", grossProfitMargin);
-        result.put("利润率说明", grossProfitMargin + "%");
+        result.put("利润率", formatStatNumber(grossProfitMargin));
+        result.put("利润率说明", ((BigDecimal) formatStatNumber(grossProfitMargin)).toPlainString() + "%");
 
-        result.put("参考日均固定开支", dailyFixedCost);
+        result.put("参考日均固定开支", formatStatNumber(dailyFixedCost));
 
         BigDecimal avgDailyStockCost = totalCost.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
         BigDecimal profitAfterCost = avgNetRevenue.subtract(avgDailyStockCost).subtract(dailyFixedCost);
@@ -181,9 +183,9 @@ public class GbAiDailyRevenueController {
         }
         result.put("盈亏状态码", status);
         result.put("盈亏状态", statusDesc);
-        result.put("日均利润未扣库存", profit);
-        result.put("日均利润含库存成本", profitAfterCost);
-        result.put("实际日均利润", actualProfit);
+        result.put("日均利润未扣库存", formatStatNumber(profit));
+        result.put("日均利润含库存成本", formatStatNumber(profitAfterCost));
+        result.put("实际日均利润", formatStatNumber(actualProfit));
 
         BigDecimal totalPlatformFee = stats.get("total_platform_fee") != null
                 ? toDecimal(stats.get("total_platform_fee")) : totalCoupon;
@@ -239,18 +241,18 @@ public class GbAiDailyRevenueController {
         ));
         Map<String, Object> dineRatioBar = new LinkedHashMap<>();
         dineRatioBar.put("label", "堂食占堂食+外卖比例");
-        dineRatioBar.put("percent", dineInRatio);
+        dineRatioBar.put("percent", formatStatNumber(dineInRatio));
         incomePanel.put("ratioBar", dineRatioBar);
         scaleBeam.put("income", incomePanel);
 
         Map<String, Object> expensePanel = new LinkedHashMap<>();
         expensePanel.put("sectionKey", "scale_expense");
         expensePanel.put("title", "支出端");
-        expensePanel.put("summary", labeledRow("日均固定开支", "日均固定开支（工资+租金÷30）", dailyFixedCost));
+        expensePanel.put("summary", labeledRow("日均支出合计", "日均支出合计（工资+租金+部门核销日均）", expenseDailyTotal));
         expensePanel.put("rows", Arrays.asList(
                 labeledRow("工资日均", "工资（日均）", dailyWage),
                 labeledRow("租金日均", "租金（日均）", dailyRent),
-                labeledRow("部门核销支出日均", "部门核销（制作+损耗+废弃）日均", avgDepartmentReduceDaily)
+                labeledRow("支出日均", "支出(日均)", avgDepartmentReduceDaily)
         ));
         scaleBeam.put("expense", expensePanel);
 
@@ -285,7 +287,7 @@ public class GbAiDailyRevenueController {
         Map<String, Object> riskRow = new LinkedHashMap<>();
         riskRow.put("label", "抗风险倍数");
         riskRow.put("hint", isProfit ? "相对日均总支出的盈利倍数" : "相对日均总支出的亏损倍数");
-        riskRow.put("value", riskMultiple);
+        riskRow.put("value", formatStatNumber(riskMultiple));
         riskRow.put("unit", "x");
         riskRow.put("isProfit", isProfit);
         healthCard.put("riskMultiple", riskRow);
@@ -358,46 +360,46 @@ public class GbAiDailyRevenueController {
         dashboard.put("costBreakdown", costBreakdown);
 
         Map<String, Object> bindings = new LinkedHashMap<>();
-        bindings.put("avgDailyRevenue", avgDailyRevenue);
-        bindings.put("avgDineInRevenue", avgDineInRevenue);
-        bindings.put("avgTakeoutRevenue", avgTakeoutRevenue);
-        bindings.put("dineInRatio", dineInRatio);
-        bindings.put("avgFixedCost", dailyFixedCost);
-        bindings.put("dailyWage", dailyWage);
-        bindings.put("dailyRent", dailyRent);
-        bindings.put("avgPlatformFee", avgPlatformFee);
-        bindings.put("avgDepartmentReduceDaily", avgDepartmentReduceDaily);
+        bindings.put("avgDailyRevenue", formatStatNumber(avgDailyRevenue));
+        bindings.put("avgDineInRevenue", formatStatNumber(avgDineInRevenue));
+        bindings.put("avgTakeoutRevenue", formatStatNumber(avgTakeoutRevenue));
+        bindings.put("dineInRatio", formatStatNumber(dineInRatio));
+        bindings.put("avgFixedCost", formatStatNumber(expenseDailyTotal));
+        bindings.put("dailyWage", formatStatNumber(dailyWage));
+        bindings.put("dailyRent", formatStatNumber(dailyRent));
+        bindings.put("avgPlatformFee", formatStatNumber(avgPlatformFee));
+        bindings.put("avgDepartmentReduceDaily", formatStatNumber(avgDepartmentReduceDaily));
         bindings.put("dateStr", dateHeader.get("dateStr"));
         bindings.put("weekdayStr", dateHeader.get("weekdayStr"));
         bindings.put("currentMonth", currentMonth);
-        bindings.put("monthProgress", monthProgressBd);
+        bindings.put("monthProgress", formatStatNumber(monthProgressBd));
         bindings.put("daysPassed", daysPassed);
         bindings.put("monthDays", monthDays);
-        bindings.put("profitMargin", grossProfitMargin);
-        bindings.put("healthPercent", healthPercent);
+        bindings.put("profitMargin", formatStatNumber(grossProfitMargin));
+        bindings.put("healthPercent", formatStatNumber(healthPercent));
         bindings.put("healthColor", healthColor);
         bindings.put("safetyLevel", safety.get("level"));
         bindings.put("safetyText", safety.get("text"));
         bindings.put("safetyDesc", safety.get("desc"));
         bindings.put("isProfit", isProfit);
-        bindings.put("riskMultiple", riskMultiple);
-        bindings.put("absEstimatedProfit", absEstimatedProfit);
+        bindings.put("riskMultiple", formatStatNumber(riskMultiple));
+        bindings.put("absEstimatedProfit", formatStatNumber(absEstimatedProfit));
         bindings.put("vsIndustryPercent", null);
         bindings.put("staffCount", staffCount != null ? staffCount : 0);
         bindings.put("seatCount", seatCount != null ? seatCount : 0);
         bindings.put("competitorCount", competitorCount != null ? competitorCount : 0);
-        bindings.put("avgPrice", avgPrice);
+        bindings.put("avgPrice", formatStatNumber(avgPrice));
         bindings.put("days", days);
-        bindings.put("totalRevenue", toDecimal(stats.get("total_revenue")));
-        bindings.put("dailyNetRevenue", avgNetRevenue);
-        bindings.put("breakEvenPoint", dailyFixedCost);
-        bindings.put("dailyProfit", profitAfterCost);
-        bindings.put("produceCost", produceCost);
-        bindings.put("wasteCost", wasteCost);
-        bindings.put("lossCost", lossCost);
-        bindings.put("productionCost", productionCost);
-        bindings.put("returnCost", returnCost);
-        bindings.put("totalCost", totalCost);
+        bindings.put("totalRevenue", formatStatNumber(toDecimal(stats.get("total_revenue"))));
+        bindings.put("dailyNetRevenue", formatStatNumber(avgNetRevenue));
+        bindings.put("breakEvenPoint", formatStatNumber(dailyFixedCost));
+        bindings.put("dailyProfit", formatStatNumber(profitAfterCost));
+        bindings.put("produceCost", formatStatNumber(produceCost));
+        bindings.put("wasteCost", formatStatNumber(wasteCost));
+        bindings.put("lossCost", formatStatNumber(lossCost));
+        bindings.put("productionCost", formatStatNumber(productionCost));
+        bindings.put("returnCost", formatStatNumber(returnCost));
+        bindings.put("totalCost", formatStatNumber(totalCost));
         bindings.put("statusClass", statusClass);
         bindings.put("statusLabel", statusLabel);
         bindings.put("statusText", statusDesc);
@@ -536,11 +538,33 @@ public class GbAiDailyRevenueController {
         return new BigDecimal(value.toString());
     }
 
+    /**
+     * 统计接口展示用：有小数则保留 1 位（四舍五入），整数不带小数位。
+     */
+    private static Object formatStatNumber(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof String) {
+            return value;
+        }
+        if (value instanceof Integer || value instanceof Long) {
+            return value;
+        }
+        if (value instanceof BigDecimal bd) {
+            return bd.setScale(1, RoundingMode.HALF_UP).stripTrailingZeros();
+        }
+        if (value instanceof Number n) {
+            return new BigDecimal(n.toString()).setScale(1, RoundingMode.HALF_UP).stripTrailingZeros();
+        }
+        return value;
+    }
+
     private static Map<String, Object> labeledRow(String key, String label, Object value) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("key", key);
         row.put("label", label);
-        row.put("value", value);
+        row.put("value", formatStatNumber(value));
         return row;
     }
 
