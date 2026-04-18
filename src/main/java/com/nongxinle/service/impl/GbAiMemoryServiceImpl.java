@@ -82,10 +82,12 @@ public class GbAiMemoryServiceImpl implements GbAiMemoryService {
             return;
         }
 
-        // 标记消息已处理
+        // 仅更新 memory_extracted，避免 updateById 把整条 content 再写回库（日志重复、无意义 IO）
         for (GbAiMessageEntity msg : messages) {
-            msg.setGbAiMessageMemoryExtracted(1);
-            messageMapper.updateById(msg);
+            messageMapper.update(null,
+                    new LambdaUpdateWrapper<GbAiMessageEntity>()
+                            .eq(GbAiMessageEntity::getGbAiMessageId, msg.getGbAiMessageId())
+                            .set(GbAiMessageEntity::getGbAiMessageMemoryExtracted, 1));
         }
 
         log.info("对话 {} 消息已标记处理", conversationId);

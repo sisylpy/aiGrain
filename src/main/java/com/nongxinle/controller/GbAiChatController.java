@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -18,6 +19,7 @@ import java.util.List;
 /**
  * AI对话接口
  */
+@Slf4j
 @RestController
 @RequestMapping("ai/chat")
 @Tag(name = "AI对话接口")
@@ -53,7 +55,16 @@ public class GbAiChatController {
                          @RequestBody SendMessageDTO body) {
         String message = body.getMessage();
         Long userId = body.getUserId();
+        int msgLen = message != null ? message.length() : 0;
+        String preview = message == null ? "" : (msgLen <= 200 ? message : message.substring(0, 200) + "…");
+        log.info("[AI-CHAT][send] step=entry conversationId={} userId={} messageChars={} messagePreview={}",
+                conversationId, userId, msgLen, preview);
         GbAiMessageEntity reply = chatService.chat(conversationId, userId, message);
+        String replyContent = reply != null ? reply.getGbAiMessageContent() : null;
+        int replyLen = replyContent != null ? replyContent.length() : 0;
+        String replyPreview = replyContent == null ? "" : (replyLen <= 300 ? replyContent : replyContent.substring(0, 300) + "…");
+        log.info("[AI-CHAT][send] step=exit conversationId={} replyMessageId={} replyChars={} replyPreview={}",
+                conversationId, reply != null ? reply.getGbAiMessageId() : null, replyLen, replyPreview);
         return R.ok().put("data", reply);
     }
 
@@ -68,6 +79,10 @@ public class GbAiChatController {
                                  @RequestBody SendMessageDTO body) {
         String message = body.getMessage();
         Long userId = body.getUserId();
+        int msgLen = message != null ? message.length() : 0;
+        String preview = message == null ? "" : (msgLen <= 200 ? message : message.substring(0, 200) + "…");
+        log.info("[AI-CHAT][stream] step=entry conversationId={} userId={} messageChars={} messagePreview={}",
+                conversationId, userId, msgLen, preview);
         return chatService.streamChat(conversationId, userId, message);
     }
 
