@@ -30,11 +30,11 @@ public class NxGoodsController {
 
     /**
      * 获取农鑫商品分类和商品ID列表
-     * 接口: /nxgoods/gbDepGetNxCataGoods
+     * 接口: /nxgoods/gbGetNxGoodsCataGoods
      */
     @Operation(summary = "获取商品分类树", description = "获取农鑫商品的一级和二级分类树结构，以及一级分类下包含的所有商品ID列表")
-    @RequestMapping(value = "/gbDepGetNxCataGoods", method = RequestMethod.POST)
-    public R gbDepGetNxCataGoods() {
+    @RequestMapping(value = "/gbGetNxGoodsCataGoods", method = RequestMethod.POST)
+    public R gbGetNxGoodsCataGoods() {
         // 获取分类（平铺数据：一级分类+二级分类）
         List<NxGoodsEntity> nxGoodsEntities = nxGoodsService.getiBookCoverData();
         
@@ -83,14 +83,8 @@ public class NxGoodsController {
         return R.ok().put("data", mapR);
     }
 
+
     /**
-     * 根据父级分类获取商品分页列表
-     * 接口: /nxgoods/gbDepGetNxFatherGoods
-     */
-    /**
-     * 按一级分类分页查询商品
-     * 
-     * 原接口: gbDepGetNxFatherGoods（已废弃，名称有误导性）
      * 
      * @param greatGrandId 一级分类ID
      * @param depId 部门ID

@@ -25,8 +25,8 @@ public class GbDistributerPurchaseBatchServiceImpl extends ServiceImpl<GbDistrib
     }
 
     @Override
-    public List<GbDistributerPurchaseBatchEntity> queryDisPurchaseBatch(Map<String, Object> map) {
-        return gbDistributerPurchaseBatchMapper.queryDisPurchaseBatch(map);
+    public List<GbDistributerPurchaseBatchEntity> queryDisPurchaseBatchInfo(Map<String, Object> map) {
+        return gbDistributerPurchaseBatchMapper.queryDisPurchaseBatchInfo(map);
     }
 
     @Override
@@ -40,8 +40,10 @@ public class GbDistributerPurchaseBatchServiceImpl extends ServiceImpl<GbDistrib
     }
 
     @Override
-    public List<GbDistributerPurchaseBatchEntity> queryDisPurchaseBatchInfo(Map<String, Object> map) {
-        return gbDistributerPurchaseBatchMapper.queryDisPurchaseBatchInfo(map);
+    public List<GbDistributerPurchaseBatchEntity> queryDisPurchaseBatchListWithOrders(Map<String, Object> map) {
+
+        return gbDistributerPurchaseBatchMapper.queryDisPurchaseBatchListWithOrders(map);
     }
+
 
 }

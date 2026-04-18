@@ -6,7 +6,6 @@ import com.nongxinle.entity.GbDistributerGoodsEntity;
 import com.nongxinle.entity.GbDistributerPurchaseGoodsEntity;
 import com.nongxinle.entity.NxJrdhSupplierEntity;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 import java.util.Map;
@@ -23,11 +22,24 @@ public interface GbDistributerPurchaseGoodsMapper extends BaseMapper<GbDistribut
 
     List<NxJrdhSupplierEntity> queryDisPurGoodsSupplierList(Map<String, Object> map);
 
-    Integer queryPurchaseGoodsCount(@Param("params") Map<String, Object> map);
+    Integer queryPurchaseGoodsCount(Map<String, Object> map);
 
-    Double queryPurchaseGoodsSubTotal(@Param("params") Map<String, Object> map);
+    Double queryPurchaseGoodsSubTotal(Map<String, Object> map);
 
     Integer queryGbPurchaseGoodsCount(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 条件一致，汇总采购重量（{@code gb_DPG_buy_quantity}）。
+     */
+    Double queryPurchaseGoodsWeightTotal(Map<String, Object> map);
+
+    String queryPurGoodsMaxPrice(Map<String, Object> map);
+
+    String queryPurGoodsMinPrice(Map<String, Object> map);
+
+    String queryPurchaseGoodsPrice(Map<String, Object> map);
+
+    String queryPurchaseGoodsWeight(Map<String, Object> map);
 
     Integer queryGbGoodsCount(Map<String, Object> map);
 
@@ -49,6 +61,16 @@ public interface GbDistributerPurchaseGoodsMapper extends BaseMapper<GbDistribut
 
     List<GbDistributerPurchaseGoodsEntity> queryPurchaseGoodsWithDetailByParams(Map<String, Object> map);
 
+    /** 按 batchId + status 查采购商品 + 部门订单（供货商称重等），非小程序库存明细。 */
+    List<GbDistributerPurchaseGoodsEntity> queryPurchaseGoodsWithOrdersByBatch(Map<String, Object> map);
+
     List<GbDistributerPurchaseGoodsEntity> queryOnlyPurGoods(Map<String, Object> map);
+
+    /**
+     * 按与树形列表相同的筛选条件，批量查询多个商品的采购单及入库库存（用于 wastePurGoodsEntities）。
+     * <p>Map 须含 {@code disGoodsIds}（List&lt;Integer&gt;），以及 {@code disId}、日期、{@code dayuStatus}、
+     * {@code typeNotEqual}、{@code supplierBuy}、{@code purUserId} 或 {@code supplierId} 等与树查询一致的条件。
+     */
+    List<GbDistributerPurchaseGoodsEntity> queryPurchaseGoodsWithStocksDetailForGoodsIds(Map<String, Object> map);
 
 }

@@ -1,15 +1,17 @@
 package com.nongxinle.entity;
-import com.baomidou.mybatisplus.annotation.TableName;
 
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
 
 
-@Setter@Getter@ToString
-
+@Data
+@EqualsAndHashCode(callSuper = false)
 @TableName("gb_dep_food_goods_sales")
 public class GbDepFoodGoodsSalesEntity implements Serializable {
 	private static final long serialVersionUID = 1L;
@@ -17,6 +19,7 @@ public class GbDepFoodGoodsSalesEntity implements Serializable {
 	/**
 	 *  供货商id
 	 */
+	@TableId(type = IdType.AUTO)
 	private Integer gbDepFoodGoodsSalesId;
 	/**
 	 *  供货商名称
@@ -52,5 +55,15 @@ public class GbDepFoodGoodsSalesEntity implements Serializable {
 	 */
 	private String gbDfgsFullDate;
 
-   private GbDistributerFoodGoodsEntity gbDistributerFoodGoodsEntity;
+	/**
+	 *  星期几
+	 */
+	private Integer gbDfgsRevenueWeekday;
+	/**
+	 *  节假日
+	 */
+	private String gbDfgsRevenueHoliday;
+
+	@TableField(exist = false)
+	private GbDistributerFoodGoodsEntity gbDistributerFoodGoodsEntity;
 }

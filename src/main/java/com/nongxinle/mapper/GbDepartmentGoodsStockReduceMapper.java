@@ -26,6 +26,17 @@ public interface GbDepartmentGoodsStockReduceMapper extends BaseMapper<GbDepartm
     Double queryReduceCostSubtotal(@Param("params") Map<String, Object> map);
 
     /**
+     * 与 {@link #queryReduceCostSubtotal} 条件一致，汇总 {@code gb_dgsr_weight}
+     */
+    Double queryReduceWeightSum(@Param("params") Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryReduceTypeCount} 条件一致，按 gb_dgsr_type 汇总重量（produce/loss/waste/return）。
+     * 返回键：produceWeight、lossWeight、wasteWeight、returnWeight。
+     */
+    Map<String, Object> queryReduceTypeWeightTotalsByScope(@Param("params") Map<String, Object> map);
+
+    /**
      * 根据 type 查询 subtotal 总和 (1=produce, 2=waste, 3=loss, 4=return)
      */
     Double queryReduceByTypeTotal(@Param("params") Map<String, Object> map);
@@ -44,5 +55,17 @@ public interface GbDepartmentGoodsStockReduceMapper extends BaseMapper<GbDepartm
      * 按日查询支出
      */
     List<Map<String, Object>> queryGbPurchaseGoodsTopDay(@Param("params") Map<String, Object> map);
+
+    /**
+     * 去重商品种数（分页 totalCount）
+     */
+    Integer queryReduceDistinctGoodsCount(@Param("params") Map<String, Object> map);
+
+    /**
+     * 成本统计分页：按商品聚合 reduce 的 produce / waste / loss 小计
+     */
+    List<GbDistributerGoodsEntity> queryGoodsCostGoodsPageByReduce(@Param("params") Map<String, Object> map);
+
+    List<GbDepartmentGoodsStockReduceEntity> queryReduceCostDetailRows(@Param("params") Map<String, Object> map);
 
 }

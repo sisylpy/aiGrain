@@ -135,21 +135,15 @@ public class GbDepartmentOrdersEntity implements Serializable, Comparable {
 
     private String gbDoOperationTime;
     private String gbDoPrintStandard;
-
     private String gbDoArriveWhatDay;
-
     private Integer gbDoIsAgent;
-
     private Integer gbDoNxGoodsGrandId;
     private Integer gbDoNxGoodsGreatId;
-
     private String gbDoApplyOnlyTime;
     private String gbDoCostPrice;
     private String gbDoCostWeight;
     private String gbDoCostSubtotal;
     private String gbDoPriceDifferent;
-
-
     private Integer gbDoNxDistributerId;
     private Integer gbDoNxDistributerGoodsId;
     private Integer gbDoNxDepartmentOrderId;
@@ -165,9 +159,15 @@ public class GbDepartmentOrdersEntity implements Serializable, Comparable {
     private String gbDoScalePrice;
     private String gbDoGoodsName;
 
+    /** 订货部门名称（关联查询填充，非表字段） */
+    @TableField(exist = false)
+    private String gbDoOrderDepartmentName;
+    /** 父级部门名称（关联查询填充，非表字段） */
+    @TableField(exist = false)
+    private String gbDoParentDepartmentName;
 
     // ============ 非数据库字段（关联对象） ============
-
+    
     @TableField(exist = false)
     private NxGoodsEntity nxGoodsEntity;
 
@@ -228,7 +228,6 @@ public class GbDepartmentOrdersEntity implements Serializable, Comparable {
 
     @TableField(exist = false)
     private GbDepartmentGoodsStockEntity selfControlStockEntity;
-//    private NxDepartmentOrdersEntity nxDepartmentOrdersEntity;
 
 
     @Override

@@ -33,6 +33,7 @@ public class GbDepFoodController {
 	@RequestMapping(value = "/downLoadDepFood", method = RequestMethod.POST)
 	@ResponseBody
 	public R downLoadDepFood(@RequestBody GbDepFoodEntity depFood) {
+		System.out.println("saveFood");
 		gbDepFoodService.save(depFood);
 		return R.ok();
 	}

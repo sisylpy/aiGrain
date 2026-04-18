@@ -19,5 +19,7 @@ public interface GbAiRestaurantProfileMapper extends BaseMapper<GbAiRestaurantPr
 	List<GbAiRestaurantProfileEntity> queryRestaurantProfileListByParams(Map<String, Object> params);
 
 	GbAiRestaurantProfileEntity selectByDepartmentId(Long departmentId);
-	
+
+	GbAiRestaurantProfileEntity selectByDistributerId(Long distributerId);
+
 }

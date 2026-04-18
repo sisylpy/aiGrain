@@ -3,6 +3,7 @@ package com.nongxinle.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 import java.util.Map;
@@ -27,4 +28,7 @@ public interface GbDistributerFoodGoodsMapper extends BaseMapper<GbDistributerFo
     List<GbDistributerFoodGoodsEntity> queryFoodGoodsByParams(Map<String, Object> map);
 
     List<GbDistributerFoodGoodsEntity> queryFoodGoodsByFoodId(Integer gbDfgFoodId);
+
+    List<GbDistributerFoodGoodsEntity> queryFoodGoodsByDisGoodsId(@Param("disGoodsId") Integer disGoodsId,
+            @Param("disId") Integer disId);
 }

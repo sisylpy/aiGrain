@@ -19,19 +19,24 @@ public class GbDepFoodEntity implements Serializable {
     @TableId(type = IdType.AUTO)
     private Integer gbDepFoodId;
     private Integer gbDfDepId;
+    /**
+     * 批发商侧菜品 id（gb_distributer_food.gb_distributer_food_id），与配方 gb_distributer_food_goods.gb_dfg_food_id 对应
+     */
+    private Integer gbDfFoodId;
     private Integer gbDfNxFoodId;
     private String gbDfFoodName;
     private String gbDfFoodPrice;
     private Integer gbDfStatus;
     private String gbDfFoodPinyin;
     private String gbDfFoodPy;
+    private String gbDfDepFatherId;
     private Integer gbDfFoodFatherId;
     private String gbDfFoodImg;
     private String gbDfFoodImgLarge;
     private String gbDfFoodMethod;
     private String gbDfFoodDetail;
     private Integer gbDfGoodsSort;
-    private Integer gbDfGbDistributerId;
+    private Integer gbDfDistributerId;
 
     @TableField(exist = false)
     private GbDistributerFoodEntity gbDistributerFoodEntity;

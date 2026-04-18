@@ -1,22 +1,10 @@
 package com.nongxinle.controller;
 
-import com.nongxinle.entity.GbDepartmentEntity;
-import com.nongxinle.entity.GbDepartmentOrdersEntity;
-import com.nongxinle.entity.GbDistributerFatherGoodsEntity;
-import com.nongxinle.entity.GbDistributerPurchaseGoodsEntity;
-import com.nongxinle.entity.GbDistributerPurchaseBatchEntity;
-import com.nongxinle.service.GbDepartmentOrdersService;
-import com.nongxinle.service.GbDepartmentService;
-import com.nongxinle.service.GbDistributerPurchaseGoodsService;
-import com.nongxinle.service.GbDistributerPurchaseBatchService;
+import com.nongxinle.entity.*;
+import com.nongxinle.service.*;
 import com.nongxinle.utils.R;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -24,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.nongxinle.utils.DateUtils.*;
 import static com.nongxinle.utils.GbTypeUtils.*;
 
 /**
@@ -41,6 +30,26 @@ public class GbDepartmentOrdersController {
     private GbDistributerPurchaseGoodsService gbDistributerPurchaseGoodsService;
     @Autowired
     private GbDistributerPurchaseBatchService gbDistributerPurchaseBatchService;
+    @Autowired
+    private GbDistributerGoodsService gbDistributerGoodsService;
+    @Autowired
+    private GbDistributerFatherGoodsService gbDistributerFatherGoodsService;
+    @Autowired
+    private GbDepartmentDisGoodsService gbDepartmentDisGoodsService;
+    @Autowired
+    private NxJrdhSupplierService jrdhSupplierService;
+    @Autowired
+    private GbDistributerPurchaseBatchService gbDPBService;
+    @Autowired
+    private GbDistributerService gbDistributerService;
+    @Autowired
+    private GbDepartmentUserService gbDepartmentUserService;
+    @Autowired
+    private NxJrdhUserService nxJrdhUserService;
+    @Autowired
+    private GbDepartmentGoodsStockLedgerService gbDepartmentGoodsStockLedgerService;
+    @Autowired
+    private GbJjOrderPurchaseLinkService gbJjOrderPurchaseLinkService;
 
     /**
      * 获取部门父级AI申请订单
@@ -163,7 +172,7 @@ public class GbDepartmentOrdersController {
 
         GbDepartmentOrdersEntity gbDepartmentOrdersEntity = gbDepartmentOrdersService.queryObject(orderId);
         Integer purchaseGoodsId = gbDepartmentOrdersEntity.getGbDoPurchaseGoodsId();
-        GbDistributerPurchaseGoodsEntity purchaseGoodsEntity = gbDistributerPurchaseGoodsService.queryObject(purchaseGoodsId);
+        GbDistributerPurchaseGoodsEntity purchaseGoodsEntity = gbDistributerPurchaseGoodsService.getById(purchaseGoodsId);
 
         System.out.println("ordstats" + gbDepartmentOrdersEntity.getGbDoStatus());
         if(gbDepartmentOrdersEntity.getGbDoStatus() == 0){
@@ -193,7 +202,7 @@ public class GbDepartmentOrdersController {
             gbDepartmentOrdersEntity.setGbDoBuyStatus(getGbOrderBuyStatusPrepareing());
         }
         gbDepartmentOrdersService.update(gbDepartmentOrdersEntity);
-        gbDistributerPurchaseGoodsService.update(purchaseGoodsEntity);
+        gbDistributerPurchaseGoodsService.updateById(purchaseGoodsEntity);
 
         System.out.println("aaaaaaaaaaaaaaaaaaaaa");
         Map<String, Object> map = new HashMap<>();
@@ -210,7 +219,7 @@ public class GbDepartmentOrdersController {
                 double subtotalTotal = gbDepartmentOrdersService.queryGbOrdersSubtotal(map);
                 purchaseGoodsEntity.setGbDpgBuySubtotal(String.format("%.1f", subtotalTotal));
             }
-            gbDistributerPurchaseGoodsService.update(purchaseGoodsEntity);
+            gbDistributerPurchaseGoodsService.updateById(purchaseGoodsEntity);
 
             Integer gbDpgBatchId = purchaseGoodsEntity.getGbDpgBatchId();
             Map<String, Object> mapBatch = new HashMap<>();
@@ -218,13 +227,325 @@ public class GbDepartmentOrdersController {
             Integer integer1 = gbDistributerPurchaseGoodsService.queryGbPurchaseGoodsCount(mapBatch);
             if(integer1 > 0){
                 Double subTotal = gbDistributerPurchaseGoodsService.queryPurchaseGoodsSubTotal(mapBatch);
-                GbDistributerPurchaseBatchEntity batchEntity = gbDistributerPurchaseBatchService.queryObject(gbDpgBatchId);
+                GbDistributerPurchaseBatchEntity batchEntity = gbDistributerPurchaseBatchService.getById(gbDpgBatchId);
                 batchEntity.setGbDpbSubtotal(String.format("%.1f", subTotal));
-                gbDistributerPurchaseBatchService.update(batchEntity);
+                gbDistributerPurchaseBatchService.updateById(batchEntity);
             }
         }
 
         return R.ok();
+    }
+
+
+
+    @ResponseBody
+    /**
+     * 已有批发商商品时：新建部门商品并保存订货单与采购行关联。
+     * <p>路径 {@code /saveOrdersGbJjAndSaveDepGoods} 不变。
+     */
+    @RequestMapping("/createDepartmentOrderWithNewDepDisGoods")
+    public R createDepartmentOrderWithNewDepDisGoods(@RequestBody GbDepartmentOrdersEntity gbDepartmentOrders) {
+
+
+        Integer gbDoDisGoodsId = gbDepartmentOrders.getGbDoDisGoodsId();
+        GbDistributerGoodsEntity gbDistributerGoodsEntity = gbDistributerGoodsService.getById(gbDoDisGoodsId);
+        GbDepartmentDisGoodsEntity mendianDisGoodsEntity =
+                gbDepartmentDisGoodsService.createDepDisGoodsForJjOrderFromExistingDisGoods(
+                        gbDepartmentOrders, gbDistributerGoodsEntity);
+        gbDepartmentOrders.setGbDoDepDisGoodsId(mendianDisGoodsEntity.getGbDepartmentDisGoodsId());
+        gbJjOrderPurchaseLinkService.applyDisGoodsCategoryHierarchyToOrder(
+                gbDepartmentOrders, gbDistributerGoodsEntity.getGbDgDfgGoodsFatherId());
+        gbJjOrderPurchaseLinkService.applyJjOrderTimestamps(gbDepartmentOrders);
+        gbDepartmentOrdersService.save(gbDepartmentOrders);
+
+        gbJjOrderPurchaseLinkService.resolvePurchaseGoodsLineForJjOrder(
+                gbDepartmentOrders,
+                gbDistributerGoodsEntity,
+                GbJjOrderPurchaseLinkService.PurchaseGoodsLinkMode.MERGE_BY_PUR_DEPARTMENT);
+        Integer gbDoDepartmentFatherId = gbDepartmentOrders.getGbDoDepartmentFatherId();
+        GbDepartmentEntity departmentEntity = gbDepartmentService.getById(gbDoDepartmentFatherId);
+
+        if (gbDistributerGoodsEntity.getGbDgGbSupplierId() != null && gbDistributerGoodsEntity.getGbDgGbSupplierId() != -1) {
+
+            Map<String, Object> mapData = gbJjOrderPurchaseLinkService.ensureSupplierPurchaseBatchForJjOrder(gbDepartmentOrders, gbDistributerGoodsEntity);
+            Integer batchId = (Integer) mapData.get("batchId");
+            Integer gbDepartmentDisId = departmentEntity.getGbDepartmentDisId();
+            GbDistributerEntity gbDistributerEntity = gbDistributerService.getById(gbDepartmentDisId);
+
+            NxJrdhSupplierEntity supplierEntity = jrdhSupplierService.getById(gbDistributerGoodsEntity.getGbDgGbSupplierId());
+
+            if (supplierEntity.getNxJrdhsUserId() != null) {
+//                Map<String, TemplateData> mapNotice = new HashMap<>();
+//                mapNotice.put("time2", new TemplateData(formatWhatDayTime(0)));
+//                mapNotice.put("thing13", new TemplateData(departmentEntity.getGbDepartmentName()));
+//                mapNotice.put("thing8", new TemplateData(gbDistributerGoodsEntity.getGbDgGoodsName()));
+//                mapNotice.put("thing10", new TemplateData("订货"));
+//                Integer gbDoOrderUserId = gbDepartmentOrders.getGbDoOrderUserId();
+//                GbDepartmentUserEntity gbDepartmentUserEntity = gbDepartmentUserService.getById(gbDoOrderUserId);
+//                mapNotice.put("thing9", new TemplateData(gbDepartmentUserEntity.getGbDuWxNickName()));
+//                System.out.println("nociiciiiicicautotootototoototo" + mapNotice);
+//                Integer nxJrdhsUserId = supplierEntity.getNxJrdhsUserId();
+//                NxJrdhUserEntity nxJrdhUserEntity = nxJrdhUserService.queryObject(nxJrdhsUserId);
+//
+//                StringBuilder pathBuilder = new StringBuilder("subPackage/pages/gbMarket/gbReceiveBatch/gbReceiveBatch");
+//                pathBuilder.append("?batchId=").append(batchId);
+//                pathBuilder.append("&retName=").append(gbDistributerEntity.getGbDistributerName());
+//                pathBuilder.append("&from=notification"); // 添加这个参数
+//
+//                String path = pathBuilder.toString();
+//                System.out.println("Encoded URLARRRRRRRRRR00000000: " + path);
+//                WeNoticeService.autoGbSuppliertixingMessageJj(nxJrdhUserEntity.getNxJrdhWxOpenId(), path, mapNotice);
+            }
+
+        }
+
+
+        GbDepartmentOrdersEntity gbDepartmentOrdersEntity = gbDepartmentOrdersService.queryObject(gbDepartmentOrders.getGbDepartmentOrdersId());
+        Map<String, Object> mapG = new HashMap<>();
+        mapG.put("disGoodsId", gbDoDisGoodsId);
+        GbDistributerGoodsEntity goodsEntity = gbDistributerGoodsService.getById(gbDoDisGoodsId);
+        gbDepartmentOrdersEntity.setGbDistributerGoodsEntity(goodsEntity);
+        return R.ok().put("data", gbDepartmentOrdersEntity);
+
+    }
+
+
+
+    /**
+     * ORDER
+     * 删除申请
+     *
+     * @param gbDepartmentOrdersId 订货申请id
+     * @return ok
+     */
+    @ResponseBody
+    @RequestMapping("/deleteOrderGb/{gbDepartmentOrdersId}")
+    public R deleteOrderGb(@PathVariable Integer gbDepartmentOrdersId) {
+        GbDepartmentOrdersEntity ordersEntity = gbDepartmentOrdersService.queryObject(gbDepartmentOrdersId);
+
+
+        Integer gbDoDisGoodsId = ordersEntity.getGbDoDisGoodsId();
+        if (ordersEntity.getGbDoStatus() != -2 && ordersEntity.getGbDoPurchaseGoodsId() != -1) {
+            Integer gbDoPurchaseGoodsId = ordersEntity.getGbDoPurchaseGoodsId();
+            GbDistributerPurchaseGoodsEntity gbDistributerPurchaseGoodsEntity = gbDistributerPurchaseGoodsService.getById(gbDoPurchaseGoodsId);
+            if (gbDistributerPurchaseGoodsEntity != null) {
+                Integer gbDpgOrdersAmount = gbDistributerPurchaseGoodsEntity.getGbDpgOrdersAmount();
+                if (gbDpgOrdersAmount > 1) {
+                    gbDistributerPurchaseGoodsEntity.setGbDpgOrdersAmount(gbDpgOrdersAmount - 1);
+                    BigDecimal subtract = new BigDecimal(gbDistributerPurchaseGoodsEntity.getGbDpgQuantity()).subtract(new BigDecimal(ordersEntity.getGbDoQuantity()));
+                    gbDistributerPurchaseGoodsEntity.setGbDpgQuantity(subtract.toString());
+                    gbDistributerPurchaseGoodsService.updateById(gbDistributerPurchaseGoodsEntity);
+                } else {
+                    //订货批次是否是最后一个采购商品
+                    Integer gbDpgBatchId = gbDistributerPurchaseGoodsEntity.getGbDpgBatchId();
+                    Integer oldSupplierId = gbDistributerPurchaseGoodsEntity.getGbDpgPurchaseNxSupplierId();
+                    Integer gbDpgDistributerId1 = gbDistributerPurchaseGoodsEntity.getGbDpgDistributerId();
+                    Map<String, Object> mapBatch = new HashMap<>();
+                    mapBatch.put("batchId", gbDpgBatchId);
+                    List<GbDistributerPurchaseGoodsEntity> goodsEntities = gbDistributerPurchaseGoodsService.queryOnlyPurGoods(mapBatch);
+                    if (goodsEntities.size() == 1) {
+                        gbDPBService.removeById(gbDistributerPurchaseGoodsEntity.getGbDpgBatchId());
+                    }
+                    gbDistributerPurchaseGoodsService.removeById(gbDoPurchaseGoodsId);
+
+                    System.out.println("s删除订单提醒供货商");
+                    if (oldSupplierId != -1) {
+                        NxJrdhSupplierEntity supplierEntity = jrdhSupplierService.getById(oldSupplierId);
+                        Integer jrdhsUserId = supplierEntity.getNxJrdhsUserId();
+                        NxJrdhUserEntity nxJrdhUserEntity = nxJrdhUserService.queryObject(jrdhsUserId);
+                        GbDistributerEntity gbDistributerEntity = gbDistributerService.getById(gbDpgDistributerId1);
+                        System.out.println("tuuihuouonoticeeiee");
+//                        if (supplierEntity.getNxJrdhsUserId() != null) {
+//                            Map<String, TemplateData> mapNotice = new HashMap<>();
+//                            mapNotice.put("date7", new TemplateData(formatWhatDayTime(0)));
+//                            mapNotice.put("thing12", new TemplateData("删除订货" + gbDistributerGoodsEntity.getGbDgGoodsName()));
+//                            if (goodsEntities.size() == 1) {
+//                                mapNotice.put("phrase9", new TemplateData("订单取消"));
+//                            } else {
+//                                mapNotice.put("phrase9", new TemplateData("订单变更"));
+//                            }
+//
+//                            StringBuilder pathBuilder = new StringBuilder("subPackage/pages/gbMarket/gbReceiveBatch/gbReceiveBatch");
+//                            pathBuilder.append("?batchId=").append(gbDpgBatchId);
+//                            pathBuilder.append("&retName=").append(gbDistributerEntity.getGbDistributerName());
+//                            pathBuilder.append("&from=notification"); // 添加这个参数
+//                            String path = pathBuilder.toString();
+//                            WeNoticeService.changeOrderSuppliertixingMessageJj(nxJrdhUserEntity.getNxJrdhWxOpenId(), path, mapNotice);
+//                        }
+
+                    }
+                }
+            }
+        }
+
+
+
+        gbDepartmentOrdersService.removeById(gbDepartmentOrdersId);
+        return R.ok();
+
+    }
+
+
+
+
+    /**
+     * 按批发商商品发起部门订货（Jj），并解析/合并采购商品行。
+     * <p>路径 {@code /saveOrdersGbJj} 不变。
+     */
+    @ResponseBody
+    @RequestMapping("/createDepartmentOrderForJj")
+    public R createDepartmentOrderForJj(@RequestBody GbDepartmentOrdersEntity gbDepartmentOrders) {
+
+        System.out.println("autottototot" + gbDepartmentOrders);
+
+        if (Boolean.TRUE.equals(gbDepartmentOrders.getStockIsZero())) {
+            gbDepartmentGoodsStockLedgerService.clearDepGoodsStockWhenJjStockIsZero(gbDepartmentOrders);
+        }
+
+        Integer gbDoDisGoodsId = gbDepartmentOrders.getGbDoDisGoodsId();
+        GbDistributerGoodsEntity gbDistributerGoodsEntity = gbDistributerGoodsService.queryObject(gbDoDisGoodsId);
+
+        gbDepartmentOrders.setGbDoNxGoodsId(gbDistributerGoodsEntity.getGbDgNxGoodsId());
+        gbDepartmentOrders.setGbDoNxGoodsFatherId(gbDistributerGoodsEntity.getGbDgNxFatherId());
+        gbDepartmentOrders.setGbDoDistributerId(gbDistributerGoodsEntity.getGbDgDistributerId());
+        gbDepartmentOrders.setGbDoToDepartmentId(gbDistributerGoodsEntity.getGbDgGbDepartmentId());
+        gbDepartmentOrders.setGbDoOrderType(gbDistributerGoodsEntity.getGbDgGoodsType());
+        gbDepartmentOrders.setGbDoGoodsType(gbDistributerGoodsEntity.getGbDgGoodsType());
+        gbDepartmentOrders.setGbDoPurchaseGoodsId(-1);
+        gbDepartmentOrders.setGbDoGoodsName(gbDistributerGoodsEntity.getGbDgGoodsName());
+        gbJjOrderPurchaseLinkService.applyJjOrderTimestamps(gbDepartmentOrders);
+        Integer gbDoDisGoodsFatherId = gbDepartmentOrders.getGbDoDisGoodsFatherId();
+        gbJjOrderPurchaseLinkService.applyDisGoodsCategoryHierarchyToOrder(gbDepartmentOrders, gbDoDisGoodsFatherId);
+        gbDepartmentOrdersService.save(gbDepartmentOrders);
+
+        gbJjOrderPurchaseLinkService.resolvePurchaseGoodsLineForJjOrder(
+                gbDepartmentOrders,
+                gbDistributerGoodsEntity,
+                GbJjOrderPurchaseLinkService.PurchaseGoodsLinkMode.MERGE_BY_SUPPLIER_OR_STATUS);
+
+        Integer gbDoDepartmentFatherId = gbDepartmentOrders.getGbDoDepartmentFatherId();
+        GbDepartmentEntity departmentEntity = gbDepartmentService.getById(gbDoDepartmentFatherId);
+
+        if (gbDistributerGoodsEntity.getGbDgGbSupplierId() != null && gbDistributerGoodsEntity.getGbDgGbSupplierId() != -1) {
+
+            Map<String, Object> mapData = gbJjOrderPurchaseLinkService.ensureSupplierPurchaseBatchForJjOrder(gbDepartmentOrders, gbDistributerGoodsEntity);
+            Integer batchId = (Integer) mapData.get("batchId");
+            Integer gbDepartmentDisId = departmentEntity.getGbDepartmentDisId();
+            GbDistributerEntity gbDistributerEntity = gbDistributerService.getById(gbDepartmentDisId);
+
+            NxJrdhSupplierEntity supplierEntity = jrdhSupplierService.getById(gbDistributerGoodsEntity.getGbDgGbSupplierId());
+
+            if (supplierEntity.getNxJrdhsUserId() != null) {
+//                Map<String, TemplateData> mapNotice = new HashMap<>();
+//                mapNotice.put("time2", new TemplateData(formatWhatDayTime(0)));
+//                mapNotice.put("thing13", new TemplateData(departmentEntity.getGbDepartmentName()));
+//                mapNotice.put("thing8", new TemplateData(gbDistributerGoodsEntity.getGbDgGoodsName()));
+//                mapNotice.put("thing10", new TemplateData("订货"));
+//                Integer gbDoOrderUserId = gbDepartmentOrders.getGbDoOrderUserId();
+//                GbDepartmentUserEntity gbDepartmentUserEntity = gbDepartmentUserService.queryObject(gbDoOrderUserId);
+//                mapNotice.put("thing9", new TemplateData(gbDepartmentUserEntity.getGbDuWxNickName()));
+//                System.out.println("nociiciiiicicautotootototoototo" + mapNotice);
+//                Integer nxJrdhsUserId = supplierEntity.getNxJrdhsUserId();
+//                NxJrdhUserEntity nxJrdhUserEntity = nxJrdhUserService.queryObject(nxJrdhsUserId);
+//
+//                StringBuilder pathBuilder = new StringBuilder("subPackage/pages/gbMarket/gbReceiveBatch/gbReceiveBatch");
+//                pathBuilder.append("?batchId=").append(batchId);
+//                pathBuilder.append("&retName=").append(gbDistributerEntity.getGbDistributerName());
+//                pathBuilder.append("&from=notification"); // 添加这个参数
+//                String path = pathBuilder.toString();
+//                System.out.println("Encoded URLARRRRRRRRRR00000000saveOrdersGbJj: " + path);
+//                WeNoticeService.autoGbSuppliertixingMessageJj(nxJrdhUserEntity.getNxJrdhWxOpenId(), path, mapNotice);
+            }
+        }
+
+
+        gbDepartmentOrdersService.update(gbDepartmentOrders);
+        GbDepartmentOrdersEntity gbDepartmentOrdersEntity = gbDepartmentOrdersService.queryObject(gbDepartmentOrders.getGbDepartmentOrdersId());
+        Map<String, Object> mapG = new HashMap<>();
+        mapG.put("disGoodsId", gbDoDisGoodsId);
+        GbDistributerGoodsEntity goodsEntity = gbDistributerGoodsService.getById(gbDoDisGoodsId);
+        gbDepartmentOrdersEntity.setGbDistributerGoodsEntity(goodsEntity);
+
+        return R.ok().put("data", gbDepartmentOrdersEntity);
+    }
+
+
+
+    @RequestMapping(value = "/getDisGoodsOrderDayJingjinig", method = RequestMethod.POST)
+    @ResponseBody
+    public R getDisGoodsOrderDayJingjinig(Integer disGoodsId, String startDate, String stopDate, Integer depId, Integer searchDepIds) {
+
+        Integer howManyDaysInPeriod = 0;
+        if (!startDate.equals(stopDate)) {
+            howManyDaysInPeriod = getHowManyDaysInPeriod(stopDate, startDate);
+        }
+
+        List<Map<String, Object>> list = new ArrayList<>();
+        if (howManyDaysInPeriod > 0) {
+            for (int i = 0; i < howManyDaysInPeriod + 1; i++) {
+                // dateList
+                String whichDay = "";
+                if (i == 0) {
+                    whichDay = startDate;
+                } else {
+                    whichDay = afterWhatDay(startDate, i);
+                }
+                Map<String, Object> mapResult = new HashMap<>();
+                mapResult.put("date", whichDay);
+                double total = 0;
+                Map<String, Object> mapDisGoods = new HashMap<>();
+                mapDisGoods.put("disGoodsId", disGoodsId);
+                mapDisGoods.put("arriveDate", whichDay);
+                mapDisGoods.put("equalStatus", 4);
+                if (searchDepIds != -1) {
+                    mapDisGoods.put("depIds", searchDepIds);
+                }
+                List<GbDepartmentOrdersEntity> ordersEntities = new ArrayList<>();
+
+                System.out.println("deptyytt11111" + mapDisGoods);
+                Integer count = gbDepartmentOrdersService.queryGbDepartmentOrderAmount(mapDisGoods);
+                System.out.println("coudndndhdnddd" + count);
+                if (count > 0) {
+                    ordersEntities = gbDepartmentOrdersService.queryDisOrdersListByParams(mapDisGoods);
+                    total = gbDepartmentOrdersService.queryGbOrdersSubtotal(mapDisGoods);
+                }
+
+                mapResult.put("arr", ordersEntities);
+                mapResult.put("total", total);
+                if (ordersEntities.size() > 0) {
+                    list.add(mapResult);
+                }
+
+            }
+        } else {
+            Map<String, Object> mapResult = new HashMap<>();
+            mapResult.put("arriveDate", startDate);
+            double total = 0;
+            Map<String, Object> mapDisGoods = new HashMap<>();
+            mapDisGoods.put("disGoodsId", disGoodsId);
+            mapDisGoods.put("equalStatus", 3);
+            if (searchDepIds != -1) {
+                mapDisGoods.put("depIds", searchDepIds);
+            }
+
+            List<GbDepartmentOrdersEntity> ordersEntities = new ArrayList<>();
+            Integer count = gbDepartmentOrdersService.queryGbDepartmentOrderAmount(mapDisGoods);
+
+            if (count > 0) {
+                ordersEntities = gbDepartmentOrdersService.queryDisOrdersListByParams(mapDisGoods);
+                total = gbDepartmentOrdersService.queryGbOrdersSubtotal(mapDisGoods);
+            }
+            mapResult.put("total", total);
+            mapResult.put("arr", ordersEntities);
+            if (ordersEntities.size() > 0) {
+                list.add(mapResult);
+            }
+            if (ordersEntities.size() > 0) {
+                list.add(mapResult);
+            }
+        }
+        return R.ok().put("data", list);
+
     }
 
 }

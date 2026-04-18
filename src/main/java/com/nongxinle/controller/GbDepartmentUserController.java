@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.nongxinle.common.result.Result;
 import com.nongxinle.entity.*;
 import com.nongxinle.service.*;
+import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.MyAPPIDConfig;
 import com.nongxinle.utils.WeChatUtil;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -116,18 +117,15 @@ public class GbDepartmentUserController {
         String openId = jsonObject.get("openid").toString();
 
         if (openId != null && !openId.trim().isEmpty()) {
-            Map<String, Object> mapB = new HashMap<>();
-            mapB.put("batchId", batchId);
             GbDistributerPurchaseBatchEntity batchEntity = gbDisPurchaseBatchService.getById(batchId);
             Map<String, Object> map = new HashMap<>();
             GbDistributerEntity gbDistributerEntity = gbDistributerService.getById(gbDisId);
-
             map.put("disInfo", gbDistributerEntity);
 
             // 首先判断是不是dis 用户
             Map<String, Object> mapUser = new HashMap<>();
             mapUser.put("openId", openId);
-            mapUser.put("admin", 2);
+            mapUser.put("admin", GbConstants.DepartmentUserRole.STORE_MANAGER_APP);
             GbDepartmentUserEntity caigouUser = gbDepartmentUserService.queryDepUsersByOpenIdAndAdmin(mapUser);
             if (caigouUser != null) {
                 map.put("userInfo", caigouUser);
@@ -137,7 +135,7 @@ public class GbDepartmentUserController {
             } else {
                 Map<String, Object> mapUserSell = new HashMap<>();
                 mapUserSell.put("openId", openId);
-                mapUserSell.put("admin", 3);
+                mapUserSell.put("admin", GbConstants.NxJrdhUserAdminType.GB_SELLER);
                 NxJrdhUserEntity jrdhUserEntitySell = nxJrdhUserService.queryJrdhUserByParams(mapUserSell);
                 if (jrdhUserEntitySell != null) {
                     Map<String, Object> mapS = new HashMap<>();

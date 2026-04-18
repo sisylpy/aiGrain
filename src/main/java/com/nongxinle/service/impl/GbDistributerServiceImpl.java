@@ -6,7 +6,7 @@ import com.nongxinle.entity.*;
 import com.nongxinle.mapper.GbDistributerMapper;
 import com.nongxinle.service.*;
 import com.nongxinle.utils.DateUtils;
-import com.nongxinle.utils.GbTypeUtils;
+import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.PinYin4jUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -31,13 +31,7 @@ public class GbDistributerServiceImpl extends ServiceImpl<GbDistributerMapper, G
     public GbDistributerEntity queryDistributerBaseInfo(Integer disId) {
 
         GbDistributerEntity distributer = getById(disId);
-        // 查询门店部门 (type=1)
-        LambdaQueryWrapper<GbDepartmentEntity> mendianWrapper = new LambdaQueryWrapper<>();
-        mendianWrapper.eq(GbDepartmentEntity::getGbDepartmentDisId, disId)
-                .eq(GbDepartmentEntity::getGbDepartmentType, GbTypeUtils.GB_DEPARTMENT_TYPE_MENDIAN)
-                .eq(GbDepartmentEntity::getGbDepartmentIsGroupDep, 1);
-        List<GbDepartmentEntity> mendianList = gbDepartmentService.list(mendianWrapper);
-        distributer.setMendianDepartmentList(mendianList);
+        distributer.setMendianDepartmentList(loadParentDepartmentsWithSubs(disId, GbConstants.DepartmentType.STORE));
         return distributer;
     }
 
@@ -48,46 +42,40 @@ public class GbDistributerServiceImpl extends ServiceImpl<GbDistributerMapper, G
             return null;
         }
 
-        // 查询门店部门 (type=1)
-        LambdaQueryWrapper<GbDepartmentEntity> mendianWrapper = new LambdaQueryWrapper<>();
-        mendianWrapper.eq(GbDepartmentEntity::getGbDepartmentDisId, disId)
-                .eq(GbDepartmentEntity::getGbDepartmentType, GbTypeUtils.GB_DEPARTMENT_TYPE_MENDIAN)
-                .eq(GbDepartmentEntity::getGbDepartmentIsGroupDep, 1);
-        List<GbDepartmentEntity> mendianList = gbDepartmentService.list(mendianWrapper);
-        distributer.setMendianDepartmentList(mendianList);
+        distributer.setMendianDepartmentList(loadParentDepartmentsWithSubs(disId, GbConstants.DepartmentType.STORE));
 
         // 查询集采部门 (type=2)
         LambdaQueryWrapper<GbDepartmentEntity> purWrapper = new LambdaQueryWrapper<>();
         purWrapper.eq(GbDepartmentEntity::getGbDepartmentDisId, disId)
-                .eq(GbDepartmentEntity::getGbDepartmentType, GbTypeUtils.GB_DEPARTMENT_TYPE_JICAI);
+                .eq(GbDepartmentEntity::getGbDepartmentType, GbConstants.DepartmentType.GROUP_PURCHASE);
         List<GbDepartmentEntity> purList = gbDepartmentService.list(purWrapper);
         distributer.setPurDepartmentList(purList);
 
         // 查询库房部门 (type=3)
         LambdaQueryWrapper<GbDepartmentEntity> stockWrapper = new LambdaQueryWrapper<>();
         stockWrapper.eq(GbDepartmentEntity::getGbDepartmentDisId, disId)
-                .eq(GbDepartmentEntity::getGbDepartmentType, GbTypeUtils.GB_DEPARTMENT_TYPE_KUFANG);
+                .eq(GbDepartmentEntity::getGbDepartmentType, GbConstants.DepartmentType.WAREHOUSE);
         List<GbDepartmentEntity> stockList = gbDepartmentService.list(stockWrapper);
         distributer.setStockDepartmentList(stockList);
 
         // 查询厨房部门 (type=4)
         LambdaQueryWrapper<GbDepartmentEntity> kitchenWrapper = new LambdaQueryWrapper<>();
         kitchenWrapper.eq(GbDepartmentEntity::getGbDepartmentDisId, disId)
-                .eq(GbDepartmentEntity::getGbDepartmentType, GbTypeUtils.GB_DEPARTMENT_TYPE_KITCHEN);
+                .eq(GbDepartmentEntity::getGbDepartmentType, GbConstants.DepartmentType.CENTRAL_KITCHEN);
         List<GbDepartmentEntity> kitchenList = gbDepartmentService.list(kitchenWrapper);
         distributer.setKitchenDepartmentList(kitchenList);
 
         // 查询加盟部门 (type=11)
         LambdaQueryWrapper<GbDepartmentEntity> franchWrapper = new LambdaQueryWrapper<>();
         franchWrapper.eq(GbDepartmentEntity::getGbDepartmentDisId, disId)
-                .eq(GbDepartmentEntity::getGbDepartmentType, GbTypeUtils.GB_DEPARTMENT_TYPE_JIAMENG);
+                .eq(GbDepartmentEntity::getGbDepartmentType, GbConstants.DepartmentType.FRANCHISE);
         List<GbDepartmentEntity> franchList = gbDepartmentService.list(franchWrapper);
         distributer.setFranchiseeDepartmentList(franchList);
 
         // 查询配送商部门 (type=5) - 单个
         LambdaQueryWrapper<GbDepartmentEntity> appSuppWrapper = new LambdaQueryWrapper<>();
         appSuppWrapper.eq(GbDepartmentEntity::getGbDepartmentDisId, disId)
-                .eq(GbDepartmentEntity::getGbDepartmentType, GbTypeUtils.GB_DEPARTMENT_TYPE_APP_SUPPLIER).last("LIMIT 1");
+                .eq(GbDepartmentEntity::getGbDepartmentType, GbConstants.DepartmentType.DELIVERY_SUPPLIER).last("LIMIT 1");
         GbDepartmentEntity appSupp = gbDepartmentService.getOne(appSuppWrapper);
         distributer.setAppSupplierDepartment(appSupp);
 
@@ -119,11 +107,8 @@ public class GbDistributerServiceImpl extends ServiceImpl<GbDistributerMapper, G
         gbDistributerModuleEntity.setGbDmDistributerId(gbDistributerEntity.getGbDistributerId());
         gbDistributerModuleService.save(gbDistributerModuleEntity);
 
-        System.out.println("bucbaocuun");
-
         //保存门店模块
-        saveDepartmentSingleMendian(gbDistributerEntity, GbTypeUtils.GB_DEPARTMENT_TYPE_MENDIAN);
-//        saveDepartment(gbDistributerEntity, "配送部门", GbTypeUtils.GB_DEPARTMENT_TYPE_APP_SUPPLIER);
+        saveDepartmentSingleMendian(gbDistributerEntity);
 
         //保存临时商品
         saveLinshiFatherGoods(gbDistributerEntity);
@@ -136,20 +121,42 @@ public class GbDistributerServiceImpl extends ServiceImpl<GbDistributerMapper, G
         return queryDistributerWithAllDepartments(gbDepartmentDisId);
     }
 
-    private void saveDepartmentSingleMendian(GbDistributerEntity gbDistributerEntity, Integer type) {
+    /**
+     * 按批发商与部门类型加载「父级部门」列表：仅 {@code is_group_dep = 1} 的父节点；
+     * 每个父节点下挂同类型、{@code father_id = 父部门 id} 的子部门到 {@link GbDepartmentEntity#getGbDepartmentEntityList()}。
+     * 门店、库房、集采等只要同一套父子规则均可传入对应 {@code departmentType} 复用。
+     */
+    private List<GbDepartmentEntity> loadParentDepartmentsWithSubs(Integer disId, Integer departmentType) {
+        LambdaQueryWrapper<GbDepartmentEntity> mainWrapper = new LambdaQueryWrapper<>();
+        mainWrapper.eq(GbDepartmentEntity::getGbDepartmentDisId, disId)
+                .eq(GbDepartmentEntity::getGbDepartmentType, departmentType)
+                .eq(GbDepartmentEntity::getGbDepartmentIsGroupDep, 1)
+                .orderByAsc(GbDepartmentEntity::getGbDepartmentId);
+        List<GbDepartmentEntity> parents = gbDepartmentService.list(mainWrapper);
+        for (GbDepartmentEntity parent : parents) {
+            LambdaQueryWrapper<GbDepartmentEntity> subWrapper = new LambdaQueryWrapper<>();
+            subWrapper.eq(GbDepartmentEntity::getGbDepartmentDisId, disId)
+                    .eq(GbDepartmentEntity::getGbDepartmentType, departmentType)
+                    .eq(GbDepartmentEntity::getGbDepartmentFatherId, parent.getGbDepartmentId())
+                    .orderByAsc(GbDepartmentEntity::getGbDepartmentId);
+            parent.setGbDepartmentEntityList(gbDepartmentService.list(subWrapper));
+        }
+        return parents;
+    }
+
+    private void saveDepartmentSingleMendian(GbDistributerEntity gbDistributerEntity) {
         GbDepartmentEntity departmentEntity = new GbDepartmentEntity();
         departmentEntity.setGbDepartmentDisId(gbDistributerEntity.getGbDistributerId());
         departmentEntity.setGbDepartmentFatherId(0);
-        departmentEntity.setGbDepartmentType(type);
+        departmentEntity.setGbDepartmentType(GbConstants.DepartmentType.STORE);
         departmentEntity.setGbDepartmentSettleFullTime(DateUtils.formatFullTime());
         departmentEntity.setGbDepartmentSettleDate(DateUtils.formatWhatDay(0));
         departmentEntity.setGbDepartmentSettleMonth(DateUtils.formatWhatMonth(0));
         departmentEntity.setGbDepartmentSettleWeek(DateUtils.getWeekOfYear(0).toString());
         departmentEntity.setGbDepartmentSettleYear(DateUtils.formatWhatYear(0));
         departmentEntity.setGbDepartmentSettleTimes("0");
-        departmentEntity.setGbDepartmentSubAmount(0);
+        departmentEntity.setGbDepartmentSubAmount(1);
         departmentEntity.setGbDepartmentIsGroupDep(1);
-        departmentEntity.setGbDepartmentType(type);
         departmentEntity.setGbDepartmentAttrName(gbDistributerEntity.getGbDistributerName());
         departmentEntity.setGbDepartmentName(gbDistributerEntity.getGbDistributerName() );
         departmentEntity.setGbDepartmentPrintSet(0);
@@ -164,7 +171,6 @@ public class GbDistributerServiceImpl extends ServiceImpl<GbDistributerMapper, G
         gbDepartmentUserEntity.setGbDuLoginTimes(0);
         gbDepartmentUserEntity.setGbDuWxPhone(gbDistributerEntity.getGbDistributerPhone());
         gbDepartmentUserEntity.setGbDuDistributerId(gbDistributerEntity.getGbDistributerId());
-        gbDepartmentUserEntity.setGbDuAdmin(2);
         gbDepartmentUserEntity.setGbDuUrlChange(1);
         gbDepartmentUserEntity.setGbDuJoinDate(DateUtils.formatWhatDay(0));
         gbDepartmentUserEntity.setGbDuPrintBillDeviceId("-1");
@@ -177,10 +183,9 @@ public class GbDistributerServiceImpl extends ServiceImpl<GbDistributerMapper, G
         profile.setGbAiRestaurantProfileDistributerId(Long.valueOf(gbDistributerEntity.getGbDistributerId()));
         profile.setGbAiRestaurantProfileRestaurantName(departmentEntity.getGbDepartmentName());
         profile.setGbAiRestaurantProfileAddress(gbDistributerEntity.getGbDistributerAddress());
-        gbAiRestaurantProfileService.save(profile);
+        gbAiRestaurantProfileService.saveOrUpdateProfile(profile);
 
-
-        saveSubDepartment(gbDistributerEntity, departmentEntity.getGbDepartmentId(), type);
+        saveSubDepartment(gbDistributerEntity, departmentEntity.getGbDepartmentId(),GbConstants.DepartmentType.STORE);
     }
 
     private void saveSubDepartment(GbDistributerEntity gbDistributerEntity, Integer fatherId, Integer type) {

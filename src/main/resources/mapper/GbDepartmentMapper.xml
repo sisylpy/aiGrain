@@ -98,7 +98,6 @@
         <result property="gbDuUrlChange" column="gb_DU_url_change"/>
         <result property="gbDuDepartmentId" column="gb_DU_department_id"/>
         <result property="gbDuDepartmentFatherId" column="gb_DU_departmnt_father_id"/>
-        <association property="gbDepartmentEntity" resultMap="userDep"/>
     </resultMap>
 
     <resultMap id="depInfo" type="com.nongxinle.entity.GbDepartmentEntity">

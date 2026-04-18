@@ -30,4 +30,5 @@ public interface NxJrdhSupplierService extends IService<NxJrdhSupplierEntity> {
      */
     List<NxJrdhSupplierEntity> queryJrdhSupplerWithDisByUserId(Map<String, Object> map);
 
+    List<NxJrdhSupplierEntity> queryJrdhSupplerByParams(Map<String, Object> map3);
 }

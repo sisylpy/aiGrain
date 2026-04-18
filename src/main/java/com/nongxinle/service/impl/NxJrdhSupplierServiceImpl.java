@@ -33,4 +33,10 @@ public class NxJrdhSupplierServiceImpl extends ServiceImpl<NxJrdhSupplierMapper,
         return baseMapper.queryJrdhSupplerWithDisByUserId(map);
     }
 
+    @Override
+    public List<NxJrdhSupplierEntity> queryJrdhSupplerByParams(Map<String, Object> map3) {
+
+        return baseMapper.queryJrdhSupplerByParams(map3);
+    }
+
 }

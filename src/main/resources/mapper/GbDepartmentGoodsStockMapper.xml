@@ -35,6 +35,92 @@
             <if test="stockDepId != null">
                 AND gdgs.gb_dgs_gb_department_id = #{stockDepId}
             </if>
+            <if test="depGoodsId != null">
+                AND gdgs.gb_dgs_gb_dep_dis_goods_id = #{depGoodsId}
+            </if>
+            <if test="dayuStatus != null">
+                AND gdgs.gb_dgs_status &gt; #{dayuStatus}
+            </if>
+            <if test="restWeight != null">
+                AND gdgs.gb_dgs_rest_weight &gt; #{restWeight}
+            </if>
+            <if test="equalRestWeight != null">
+                AND gdgs.gb_dgs_rest_weight = #{equalRestWeight}
+            </if>
+            <if test="date != null">
+                AND gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="startDate != null">
+                AND gdgs.gb_dgs_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+        </where>
+    </select>
+
+    <!-- 门店时段统计：与 queryDepStockTreeFatherGoodsByParams 相同过滤条件，一次查出库存行（避免按父类 N 次查询） -->
+    <select id="queryGoodsStockListForMendianPeriod" resultType="com.nongxinle.entity.GbDepartmentGoodsStockEntity">
+        SELECT gdgs.*,
+        gdg.gb_dg_goods_name as 'goodsName',
+        gdg.gb_dg_goods_standardname as 'goodsStandardName',
+        gdg.gb_dg_goods_standard_weight as 'goodsStandard',
+        gdg.gb_dg_goods_price as 'goodsPrice'
+        FROM gb_department_goods_stock AS gdgs
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+        LEFT JOIN gb_department AS gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_father_id
+        <where>
+            <if test="disId != null">
+                and gdgs.gb_dgs_gb_distributer_id = #{disId}
+            </if>
+            <if test="purGoodsId != null">
+                and gb_dgs_gb_pur_goods_id = #{purGoodsId}
+            </if>
+            <if test="depFatherId != null">
+                and gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="depId != null">
+                and gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="restWeight != null">
+                and gdgs.gb_dgs_rest_weight &gt; #{restWeight}
+            </if>
+            <if test="loss != null">
+                and gdgs.gb_dgs_loss_weight &gt; #{loss}
+            </if>
+            <if test="dayuStatus != null">
+                and gdgs.gb_dgs_status &gt; #{dayuStatus}
+            </if>
+            <if test="disGoodsId != null">
+                and gdgs.gb_dgs_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                and gdgs.gb_dgs_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                and gdgs.gb_dgs_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                and gdg.gb_dg_dfg_goods_great_id = #{disGoodsGreatId}
+            </if>
+            <if test="startDate != null">
+                and gdgs.gb_dgs_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="date != null">
+                and gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="depType != null">
+                and gd.gb_department_type = #{depType}
+            </if>
+            <if test="depFatherIds != null and depFatherIds.size() &gt; 0">
+                and gdgs.gb_dgs_gb_department_father_id IN
+                <foreach item="id" collection="depFatherIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
         </where>
     </select>
 
@@ -131,6 +217,76 @@
             </if>
             <if test="dayuStatus != null">
                 AND gdgs.gb_dgs_status &gt; #{dayuStatus}
+            </if>
+            <!-- 仅统计「采购单采购日」为 purchaseLinkDate 的采购行所挂的库存剩余（与 gb_DPG_purchase_date 对齐）；purDayuStatus 对应采购行 gb_DPG_status &gt; purDayuStatus -->
+            <if test="purchaseLinkDate != null">
+                AND EXISTS (
+                    SELECT 1 FROM gb_distributer_purchase_goods dpg
+                    WHERE dpg.gb_distributer_purchase_goods_id = gdgs.gb_dgs_gb_pur_goods_id
+                      AND dpg.gb_DPG_distributer_id = #{disId}
+                      AND dpg.gb_DPG_purchase_date = #{purchaseLinkDate}
+                    <if test="purDayuStatus != null">
+                      AND dpg.gb_DPG_status &gt; #{purDayuStatus}
+                    </if>
+                )
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsRestWeightTotal" resultType="java.lang.Double">
+        SELECT IFNULL(SUM(CAST(gdgs.gb_dgs_rest_weight AS DECIMAL(18,4))), 0) FROM gb_department_goods_stock AS gdgs
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+        LEFT JOIN gb_department AS gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_id
+        <where>
+            <if test="depType != null">
+                AND gd.gb_department_type = #{depType}
+            </if>
+            <if test="disId != null">
+                AND gdgs.gb_dgs_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                AND gdg.gb_dg_dfg_goods_great_id = #{disGoodsGreatId}
+            </if>
+            <if test="depId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="purUserId != null">
+                AND gdgs.gb_dgs_pur_user_id = #{purUserId}
+            </if>
+            <if test="date != null">
+                AND gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="startDate != null">
+                AND gdgs.gb_dgs_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="dayuStatus != null">
+                AND gdgs.gb_dgs_status &gt; #{dayuStatus}
+            </if>
+            <if test="purchaseLinkDate != null">
+                AND EXISTS (
+                    SELECT 1 FROM gb_distributer_purchase_goods dpg
+                    WHERE dpg.gb_distributer_purchase_goods_id = gdgs.gb_dgs_gb_pur_goods_id
+                      AND dpg.gb_DPG_distributer_id = #{disId}
+                      AND dpg.gb_DPG_purchase_date = #{purchaseLinkDate}
+                    <if test="purDayuStatus != null">
+                      AND dpg.gb_DPG_status &gt; #{purDayuStatus}
+                    </if>
+                )
             </if>
         </where>
     </select>
@@ -315,6 +471,12 @@
             <if test="restWeight != null">
                 AND gdgs.gb_dgs_rest_weight > #{restWeight}
             </if>
+            <if test="depId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
         </where>
         <if test="orderByGoodsStockTotal != null">
             ORDER BY CAST(goodsStockTotal AS DECIMAL(10,2)) DESC, dg.gb_distributer_goods_id DESC
@@ -357,6 +519,12 @@
             <if test="restWeight != null">
                 AND gdgs.gb_dgs_rest_weight > #{restWeight}
             </if>
+            <if test="depId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
         </where>
     </select>
 
@@ -392,6 +560,12 @@
             </if>
             <if test="restWeight != null">
                 AND gdgs.gb_dgs_rest_weight > #{restWeight}
+            </if>
+            <if test="depId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
             </if>
         </where>
     </select>

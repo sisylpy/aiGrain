@@ -12,6 +12,7 @@ import java.util.Date;
 import java.util.List;
 
 import com.alibaba.fastjson2.annotation.JSONField;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -127,6 +128,7 @@ public class GbDepartmentGoodsStockEntity implements Serializable,Comparable {
 	private Integer gbDgsGbFromDepartmentId;
 	@TableField(exist = false)
 	@JSONField(name = "gbDepartmentEntity")
+	@JsonProperty("gbDepartmentEntity")
 	private GbDepartmentEntity gbDepartmentEntity;
 	private String gbDgsInventoryDate;
 	private String gbDgsInventoryWeek;

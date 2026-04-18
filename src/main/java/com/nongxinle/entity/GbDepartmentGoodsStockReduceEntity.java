@@ -19,12 +19,13 @@ public class GbDepartmentGoodsStockReduceEntity implements Serializable {
 	
 	@TableId(type = IdType.AUTO)
 	private Integer gbDepartmentGoodsStockReduceId;
-	private Integer gbDgsrDepartmentId;
-	private Integer gbDgsrDepartmentFatherId;
-	private Integer gbDgsrDistributerId;
-	private Integer gbDgsrDisGoodsId;
-	private Integer gbDgsrDepDisGoodsId;
-	private Integer gbDgsrGoodsStockId;
+	private Integer gbDgsrGbDepartmentId;
+	private Integer gbDgsrGbDepartmentFatherId;
+	private Integer gbDgsrGbDistributerId;
+	private Integer gbDgsrGbDisGoodsId;
+	private Integer gbDgsrGbDepDisGoodsId;
+	private Integer gbDgsrGbGoodsStockId;
+
 	private Integer gbDgsrType;
 	private String gbDgsrWeight;
 	private String gbDgsrSubtotal;
@@ -35,6 +36,18 @@ public class GbDepartmentGoodsStockReduceEntity implements Serializable {
 	private String gbDgsrWeek;
 	private String gbDgsrMonth;
 	private String gbDgsrYear;
+
+
+	/**
+	 *
+	 */
+	private Integer gbDgsrGbDisGoodsFatherId;
+	private Integer gbDgsrGbDisGoodsGrandId;
+	private Integer gbDgsrGbDisGoodsGreatId;
+	private Integer gbDgsrStockNxSupplierId;
+	private Integer gbDgsrStatus;
+	private Integer gbDgsrStockPurUserId;
+	private Integer gbDgsrGbPurGoodsId;
 	
 	// 字段重构说明：
 	// 原表结构设计有独立字段：cost_weight、cost_subtotal、waste_weight、waste_subtotal、
@@ -45,6 +58,24 @@ public class GbDepartmentGoodsStockReduceEntity implements Serializable {
 	// 
 	// 这一变化简化了表结构，提高代码可维护性，避免字段重复冗余
 	// 在业务逻辑中通过type参数区分不同业务场景的重量和金额计算
+
+	/** 小程序展示用：与 gbDgsrType 对应，仅一对有值（由 gbDgsrWeight/gbDgsrSubtotal 回填） */
+	@TableField(exist = false)
+	private String gbDgsrProduceWeight;
+	@TableField(exist = false)
+	private String gbDgsrProduceSubtotal;
+	@TableField(exist = false)
+	private String gbDgsrWasteWeight;
+	@TableField(exist = false)
+	private String gbDgsrWasteSubtotal;
+	@TableField(exist = false)
+	private String gbDgsrLossWeight;
+	@TableField(exist = false)
+	private String gbDgsrLossSubtotal;
+	@TableField(exist = false)
+	private String gbDgsrReturnWeight;
+	@TableField(exist = false)
+	private String gbDgsrReturnSubtotal;
 
     @TableField(exist = false)
     private GbDepartmentEntity gbDepartmentEntity;

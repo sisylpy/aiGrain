@@ -32,15 +32,7 @@ public class GbDistributerFoodController {
 	private GbDepFoodService gbDepFoodService;
 
 
-	@RequestMapping(value = "/depGetAllFood", method = RequestMethod.POST)
-	@ResponseBody
-	public R depGetAllFood (Integer disId, Integer depFatherId) {
-		Map<String, Object> map = new HashMap<>();
-		map.put("disId", disId);
-		map.put("depFatherId", depFatherId);
-		List<GbDistributerFoodEntity> foodEntities = gbDistributerFoodService.queryDisAllFood(map);
-		return R.ok().put("data", foodEntities);
-	}
+
 
 
 	@RequestMapping(value = "/getDisAllFood/{disId}")

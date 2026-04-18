@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.nongxinle.utils.DateUtils.*;
 import static com.nongxinle.utils.GbTypeUtils.getGbDepartmentTypeMendian;
 import static com.nongxinle.utils.PinYin4jUtils.getHeadStringByString;
 
@@ -40,8 +41,46 @@ public class GbDepartmentController {
     private GbDistributerPurchaseBatchService gbDPBService;
     @Autowired
     private GbDepartmentGoodsStockService gbDepartmentGoodsStockService;
+    @Autowired
+    private GbDistributerPurchaseGoodsService gbDistributerPurchaseGoodsService;
 
 
+
+
+    @RequestMapping(value = "/saveSubDepartment", method = RequestMethod.POST)
+    @ResponseBody
+    public R saveSubDepartment(@RequestBody GbDepartmentEntity subDeps) {
+
+        Integer gbDepartmentFatherId = subDeps.getGbDepartmentFatherId();
+        GbDepartmentEntity departmentEntity = gbDepartmentService.getById(gbDepartmentFatherId);
+
+        subDeps.setGbDepartmentSettleFullTime(formatFullTime());
+        subDeps.setGbDepartmentSettleDate(formatWhatDay(0));
+        subDeps.setGbDepartmentSettleMonth(formatWhatMonth(0));
+        subDeps.setGbDepartmentSettleWeek(getWeekOfYear(0).toString());
+        subDeps.setGbDepartmentSettleYear(formatWhatYear(0));
+        subDeps.setGbDepartmentSettleTimes("0");
+        subDeps.setGbDepartmentSubAmount(0);
+        subDeps.setGbDepartmentIsGroupDep(0);
+        subDeps.setGbDepartmentAttrName(subDeps.getGbDepartmentName());
+        Integer gbDepartmentDisId = departmentEntity.getGbDepartmentDisId();
+        GbDistributerEntity gbDistributerEntity = gbDistributerService.getById(gbDepartmentDisId);
+        subDeps.setGbDepartmentPrintName(gbDistributerEntity.getGbDistributerPrintName());
+        String gbDepartmentName = subDeps.getGbDepartmentName();
+        String headPinyin = getHeadStringByString(gbDepartmentName, false, null);
+        subDeps.setGbDepartmentNamePy(headPinyin);
+        subDeps.setGbDepartmentType(departmentEntity.getGbDepartmentType());
+        subDeps.setGbDepartmentDisId(departmentEntity.getGbDepartmentDisId());
+        subDeps.setGbDepartmentFatherId(departmentEntity.getGbDepartmentId());
+        subDeps.setGbDepartmentDepSettleId(-1);
+        subDeps.setGbDepartmentLevel(1);
+        gbDepartmentService.save(subDeps);
+
+        departmentEntity.setGbDepartmentSubAmount(departmentEntity.getGbDepartmentSubAmount() + 1);
+        gbDepartmentService.updateById(departmentEntity);
+        return R.ok().put("data", gbDistributerService.queryDistributerInfo(departmentEntity.getGbDepartmentDisId()));
+
+    }
 
     @RequestMapping(value = "/getSubDepartmentsGb/{depId}")
     @ResponseBody
@@ -152,8 +191,40 @@ public class GbDepartmentController {
         System.out.println("mapapUUUUUUUU" + map);
 
         List<GbDepartmentUserEntity> userEntities = gbDepartmentUserService.queryAllUsersByDepId(depId);
+        GbDepartmentEntity dep = gbDepartmentService.getById(depId);
+        Integer depDisId = dep != null ? dep.getGbDepartmentDisId() : null;
+
+        for (GbDepartmentUserEntity user : userEntities) {
+            Integer disId = user.getGbDuDistributerId() != null ? user.getGbDuDistributerId() : depDisId;
+            Map<String, Object> base = new HashMap<>();
+            base.put("disId", disId);
+            base.put("purDepId", depId);
+            base.put("purUserId", user.getGbDepartmentUserId());
+            base.put("startDate", startDate);
+            base.put("stopDate", stopDate);
+            base.put("dayuStatus", 2);
+            base.put("supplierBuy", -1);
+            base.put("useStockFinishDate", true);
+
+            Map<String, Object> billMap = new HashMap<>(base);
+            billMap.put("typeNotEqual", 9);
+            double bill = toSubtotalDouble(gbDistributerPurchaseGoodsService.queryPurchaseGoodsSubTotal(billMap));
+
+            Map<String, Object> returnMap = new HashMap<>(base);
+            returnMap.put("purchaseType", 9);
+            double ret = toSubtotalDouble(gbDistributerPurchaseGoodsService.queryPurchaseGoodsSubTotal(returnMap));
+
+            Map<String, Object> itemData = new HashMap<>();
+            itemData.put("billTotal", String.format("%.1f", bill));
+            itemData.put("returnPayTotal", String.format("%.1f", ret));
+            user.setItemData(itemData);
+        }
 
         return R.ok().put("data", userEntities);
+    }
+
+    private static double toSubtotalDouble(Double v) {
+        return v != null ? v : 0.0;
     }
 
 }

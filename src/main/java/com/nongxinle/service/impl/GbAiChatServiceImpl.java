@@ -19,6 +19,7 @@ import com.nongxinle.mapper.GbDepartmentGoodsStockReduceMapper;
 import com.nongxinle.mapper.GbDepartmentMapper;
 import com.nongxinle.service.GbAiChatService;
 import com.nongxinle.service.GbAiMemoryService;
+import com.nongxinle.service.GbAiRestaurantProfileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
@@ -50,6 +51,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     private final GbAiMemoryService memoryService;
     private final GbDepartmentMapper departmentMapper;
     private final GbAiRestaurantProfileMapper restaurantProfileMapper;
+    private final GbAiRestaurantProfileService gbAiRestaurantProfileService;
     private final GbAiDailyRevenueMapper dailyRevenueMapper;
     private final GbDepartmentGoodsStockReduceMapper stockReduceMapper;
 
@@ -612,7 +614,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
 
         // 构建查询条件并打印SQL
         LambdaQueryWrapper<GbDepartmentGoodsStockReduceEntity> queryWrapper = new LambdaQueryWrapper<GbDepartmentGoodsStockReduceEntity>()
-                .eq(GbDepartmentGoodsStockReduceEntity::getGbDgsrDepartmentFatherId, departmentId)
+                .eq(GbDepartmentGoodsStockReduceEntity::getGbDgsrGbDepartmentFatherId, departmentId)
                 .between(GbDepartmentGoodsStockReduceEntity::getGbDgsrDate, monthStart.toString(), monthEnd.toString());
 
         String sql = "SELECT * FROM gb_department_goods_stock_reduce WHERE gb_dgsr_department_father_id = " + departmentId +
@@ -792,7 +794,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         sb.append("【本月库存减少数据】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
 
         LambdaQueryWrapper<GbDepartmentGoodsStockReduceEntity> queryWrapper = new LambdaQueryWrapper<GbDepartmentGoodsStockReduceEntity>()
-                .eq(GbDepartmentGoodsStockReduceEntity::getGbDgsrDepartmentFatherId, departmentId)
+                .eq(GbDepartmentGoodsStockReduceEntity::getGbDgsrGbDepartmentFatherId, departmentId)
                 .between(GbDepartmentGoodsStockReduceEntity::getGbDgsrDate, monthStart.toString(), monthEnd.toString());
 
         List<GbDepartmentGoodsStockReduceEntity> reduces = stockReduceMapper.selectList(queryWrapper);
@@ -1084,6 +1086,10 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             if (profile == null) {
                 profile = new GbAiRestaurantProfileEntity();
                 profile.setGbAiRestaurantProfileDepartmentId(departmentId);
+                GbDepartmentEntity dep = departmentMapper.selectById(departmentId);
+                if (dep != null && dep.getGbDepartmentDisId() != null) {
+                    profile.setGbAiRestaurantProfileDistributerId(dep.getGbDepartmentDisId().longValue());
+                }
                 log.info("创建新的餐厅画像记录");
             }
 
@@ -1129,14 +1135,8 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 }
             }
 
-            // 保存到数据库
-            if (profile.getGbAiRestaurantProfileId() != null) {
-                restaurantProfileMapper.updateById(profile);
-                log.info("餐厅画像更新成功");
-            } else {
-                restaurantProfileMapper.insert(profile);
-                log.info("餐厅画像创建成功");
-            }
+            gbAiRestaurantProfileService.saveOrUpdateProfile(profile);
+            log.info("餐厅画像保存成功");
 
         } catch (Exception e) {
             log.error("数据保存失败: {}", e.getMessage(), e);

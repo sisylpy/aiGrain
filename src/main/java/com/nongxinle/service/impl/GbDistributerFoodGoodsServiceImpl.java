@@ -61,8 +61,13 @@ public class GbDistributerFoodGoodsServiceImpl implements GbDistributerFoodGoods
     @Override
     public List<GbDistributerFoodGoodsEntity> queryFoodGoodsByFoodId(Integer foodId) {
         Map<String, Object> map = new HashMap<>();
-        map.put("gbDfgFoodId", foodId);
+        map.put("foodId", foodId);
         return gbDistributerFoodGoodsMapper.queryFoodGoodsByParams(map);
+    }
+
+    @Override
+    public List<GbDistributerFoodGoodsEntity> queryFoodGoodsByDisGoodsId(Integer disGoodsId, Integer disId) {
+        return gbDistributerFoodGoodsMapper.queryFoodGoodsByDisGoodsId(disGoodsId, disId);
     }
 
 }

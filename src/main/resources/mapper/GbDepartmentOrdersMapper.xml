@@ -6,10 +6,6 @@
         <id property="gbDepartmentOrdersId" column="gb_department_orders_id"/>
         <result property="gbDoDepartmentId" column="gb_DO_department_id"/>
         <result property="gbDoDepartmentFatherId" column="gb_DO_department_father_id"/>
-        <result property="gbDoDisId" column="gb_DO_distributer_id"/>
-        <result property="gbDoUserId" column="gb_DO_order_user_id"/>
-        <result property="gbDoPurUserId" column="gb_DO_purchase_user_id"/>
-        <result property="gbDoGbDisId" column="gb_DO_nx_distributer_id"/>
         <result property="gbDoStatus" column="gb_DO_status"/>
         <result property="gbDoOrderType" column="gb_DO_order_type"/>
         <result property="gbDoBuyStatus" column="gb_DO_buy_status"/>

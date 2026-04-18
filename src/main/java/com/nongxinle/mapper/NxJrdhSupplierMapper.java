@@ -26,4 +26,5 @@ public interface NxJrdhSupplierMapper extends BaseMapper<NxJrdhSupplierEntity> {
      */
     List<NxJrdhSupplierEntity> queryJrdhSupplerWithDisByUserId(Map<String, Object> map);
 
+    List<NxJrdhSupplierEntity> queryJrdhSupplerByParams(Map<String, Object> map3);
 }

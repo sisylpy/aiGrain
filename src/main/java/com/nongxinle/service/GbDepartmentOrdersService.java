@@ -68,4 +68,9 @@ public interface GbDepartmentOrdersService extends IService<GbDepartmentOrdersEn
         return getById(orderId);
     }
 
+    /**
+     * 退货流程：按库存扣减记录 ID 查找关联的部门订单（gb_do_dgsr_return_id）。
+     */
+    GbDepartmentOrdersEntity queryReturnOrderByReduceId(Integer reduceId);
+
 }

@@ -150,10 +150,6 @@ public class GbDepartmentEntity implements Serializable {
      */
     private String gbDepartmentLongitude;
 
-    /**
-     * 父级id
-     */
-    private Integer gbDbDepFatherId;
 
     // ========== 非数据库字段 ==========
 
@@ -180,4 +176,10 @@ public class GbDepartmentEntity implements Serializable {
 
     @TableField(exist = false)
     private List<GbDepartmentUserEntity> gbDepartmentUserEntities;
+
+    /**
+     * 成本页：该部门下 reduce 明细列表（与小程序 wasteReduceList 对应）
+     */
+    @TableField(exist = false)
+    private List<GbDepartmentGoodsStockReduceEntity> wasteReduceList;
 }

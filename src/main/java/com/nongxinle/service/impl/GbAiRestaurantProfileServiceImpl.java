@@ -35,14 +35,21 @@ public class GbAiRestaurantProfileServiceImpl extends ServiceImpl<GbAiRestaurant
 		if (profile.getGbAiRestaurantProfileDepartmentId() == null) {
 			throw new IllegalArgumentException("部门ID不能为空");
 		}
-		
-		// 先查询是否存在
+
 		GbAiRestaurantProfileEntity existing = baseMapper.selectByDepartmentId(profile.getGbAiRestaurantProfileDepartmentId());
-		if (existing != null) {
-			// 存在则更新ID
-			profile.setGbAiRestaurantProfileId(existing.getGbAiRestaurantProfileId());
+		if (existing == null && profile.getGbAiRestaurantProfileDistributerId() != null) {
+			existing = baseMapper.selectByDistributerId(profile.getGbAiRestaurantProfileDistributerId());
 		}
-		// 创建或更新
+		if (existing != null) {
+			profile.setGbAiRestaurantProfileId(existing.getGbAiRestaurantProfileId());
+			if (profile.getGbAiRestaurantProfileDistributerId() == null) {
+				profile.setGbAiRestaurantProfileDistributerId(existing.getGbAiRestaurantProfileDistributerId());
+			}
+			// 表上按批发商唯一：合并到已有行时保留原部门锚点，避免子部门会话改写主部门关联
+			if (!existing.getGbAiRestaurantProfileDepartmentId().equals(profile.getGbAiRestaurantProfileDepartmentId())) {
+				profile.setGbAiRestaurantProfileDepartmentId(existing.getGbAiRestaurantProfileDepartmentId());
+			}
+		}
 		saveOrUpdate(profile);
 	}
 }

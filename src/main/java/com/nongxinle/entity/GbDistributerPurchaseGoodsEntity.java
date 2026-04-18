@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.alibaba.fastjson2.annotation.JSONField;
 import lombok.Data;
 
@@ -113,10 +114,10 @@ public class GbDistributerPurchaseGoodsEntity implements Serializable {
     private String  gbDpgStockRestWeightTotal;
 	@TableField(exist = false)
     private String  gbDpgStockReturnWeightTotal;
-	@TableField(exist = false)
-    private String  gbDpgSupplierFinishDate;
-	@TableField(exist = false)
-    private String  gbDpgStockFinishDate;
+    /** 表字段 gb_DPG_supplier_finish_date */
+    private String gbDpgSupplierFinishDate;
+    /** 表字段 gb_DPG_stock_finish_date */
+    private String gbDpgStockFinishDate;
 
 	@TableField(exist = false)
 	private String gbDistributerGoodsName;
@@ -138,7 +139,7 @@ public class GbDistributerPurchaseGoodsEntity implements Serializable {
     private GbDistributerGoodsPriceEntity gbDistributerGoodsPriceEntity;
 
 	@TableField(exist = false)
-	@JsonIgnore
+	@JsonProperty("nxJrdhSupplierEntity")
 	@JSONField(name = "nxJrdhSupplierEntity")
     private NxJrdhSupplierEntity nxJrdhSupplierEntity;
 
@@ -158,7 +159,7 @@ public class GbDistributerPurchaseGoodsEntity implements Serializable {
 	private GbDepartmentEntity purchaseDepartmentEntity;
 
 	@TableField(exist = false)
-	@JsonIgnore
+	@JsonProperty("purchaseDepartmentUser")
 	@JSONField(name = "purchaseDepartmentUser")
 	private GbDepartmentUserEntity purchaseDepartmentUser;
 
@@ -167,7 +168,7 @@ public class GbDistributerPurchaseGoodsEntity implements Serializable {
 	private List<GbDepartmentEntity> wasteDepartmentEntities;
 
 	@TableField(exist = false)
-	@JsonIgnore
+	@JsonProperty("gbDepartmentGoodsStockEntities")
 	private List<GbDepartmentGoodsStockEntity> gbDepartmentGoodsStockEntities;
 
 }

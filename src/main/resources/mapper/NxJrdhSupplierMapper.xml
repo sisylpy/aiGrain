@@ -3,6 +3,17 @@
 
 <mapper namespace="com.nongxinle.mapper.NxJrdhSupplierMapper">
 
+    <resultMap id="jrdhSupplier" type="com.nongxinle.entity.NxJrdhSupplierEntity">
+        <id property="nxJrdhSupplierId" column="nx_jrdh_supplier_id"/>
+        <result property="nxJrdhsNxDistributerId" column="nx_jrdhs_nx_distributer_id"/>
+        <result property="nxJrdhsGbDistributerId" column="nx_jrdhs_gb_distributer_id"/>
+        <result property="nxJrdhsGbDepartmentId" column="nx_jrdhs_gb_department_id"/>
+        <result property="nxJrdhsSupplierName" column="nx_jrdhs_supplier_name"/>
+        <result property="nxJrdhsUserId" column="nx_jrdhs_user_id"/>
+        <result property="nxJrdhsNxPurUserId" column="nx_jrdhs_nx_pur_user_id"/>
+        <result property="nxJrdhsNxCommunityId" column="nx_jrdhs_nx_community_id"/>
+    </resultMap>
+
     <resultMap id="jrdhSupplierWithDis" type="com.nongxinle.entity.NxJrdhSupplierEntity">
         <id property="nxJrdhSupplierId" column="nx_jrdh_supplier_id"/>
         <result property="nxJrdhsNxDistributerId" column="nx_jrdhs_nx_distributer_id"/>
@@ -30,6 +41,18 @@
             </if>
             <if test="gbDisId != null">
                 and njs.nx_jrdhs_gb_distributer_id = #{gbDisId}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryJrdhSupplerByParams" resultMap="jrdhSupplier">
+        select * from nx_jrdh_supplier as njs
+        <where>
+            <if test="userId != null">
+                and njs.nx_jrdhs_user_id = #{userId}
+            </if>
+            <if test="gbDepId != null">
+                and njs.nx_jrdhs_gb_department_id = #{gbDepId}
             </if>
         </where>
     </select>

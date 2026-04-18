@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.nongxinle.entity.*;
 import com.nongxinle.mapper.GbDistributerPurchaseGoodsMapper;
 import com.nongxinle.service.*;
+import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.R;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,17 +35,95 @@ public class GbDistributerPurchaseGoodsController {
     @Autowired
     private GbDistributerGoodsService gbDistributerGoodsService;
     @Autowired
-    private GbDepartmentDisGoodsService gbDepartmentDisGoodsService;
-    @Autowired
     private GbDepartmentGoodsStockService gbDepartmentGoodsStockService;
     @Autowired
     private GbDepartmentGoodsStockReduceService gbDepartmentStockReduceService;
     @Autowired
-    private GbDepartmentGoodsDailyService gbDepGoodsDailyService;
-    @Autowired
     private GbDistributerFatherGoodsService gbDistributerFatherGoodsService;
     @Autowired
     private GbDistributerPurchaseBatchService gbDPBService;
+    @Autowired
+    private GbJjOrderPurchaseLinkService gbJjOrderPurchaseLinkService;
+    @Autowired
+    private GbDepartmentUserService gbDepartmentUserService;
+
+
+
+
+
+    @RequestMapping(value = "/getGbPurGoodsDetailList", method = RequestMethod.POST)
+    @ResponseBody
+    public R getGbPurGoodsDetailList(
+
+            @RequestParam Integer disGoodsId,
+            @RequestParam String startDate,
+            @RequestParam String stopDate) {
+
+        Integer howManyDaysInPeriod = 0;
+        if (!startDate.equals(stopDate)) {
+            howManyDaysInPeriod = getHowManyDaysInPeriod(stopDate, startDate);
+        }
+        Map<String, Object> mapResult = new HashMap<>();
+
+        try {
+            // 构建查询参数
+            Map<String, Object> queryMap = new HashMap<>();
+            queryMap.put("disGoodsId", disGoodsId);
+            queryMap.put("startDate", startDate);
+            queryMap.put("stopDate", stopDate);
+            queryMap.put("dayuStatus", 2);
+            queryMap.put("typeNotEqual", 9);
+            GbDistributerGoodsEntity disGoodsForQuery = gbDistributerGoodsService.queryObject(disGoodsId);
+            if (disGoodsForQuery != null && disGoodsForQuery.getGbDgDistributerId() != null) {
+                queryMap.put("disId", disGoodsForQuery.getGbDgDistributerId());
+            }
+
+            // 获取商品列表
+            System.out.println("查询商品map" + queryMap);
+            System.out.println("开始查询商品列表..."); // 新增日志
+            List<GbDistributerPurchaseGoodsEntity> purchaseGoodsEntityList = gbDpgService.queryPurchaseGoodsWithDetailByParams(queryMap);
+
+            List<Map<String, Object>> purchaseDayValue = new ArrayList<>();
+
+            if (howManyDaysInPeriod > 0) {
+                // top
+                for (int i = 0; i < howManyDaysInPeriod + 1; i++) {
+                    Map<String, Object> mapEvery = new HashMap<>();
+
+                    // dateList
+                    String whichDay = "";
+                    if (i == 0) {
+                        whichDay = startDate;
+                    } else {
+                        whichDay = afterWhatDay(startDate, i);
+                    }
+                    Map<String, Object> mapDay = new HashMap<>();
+                    mapDay.put("date", whichDay);
+                    mapDay.put("disGoodsId", disGoodsId);
+                    mapDay.put("typeNotEqual", 9);
+                    Integer integer1 = gbDpgService.queryGbPurchaseGoodsCount(mapDay);
+                    mapEvery.put("date", whichDay);
+                    if (integer1 > 0) {
+                        Double subTotal = gbDpgService.queryPurchaseGoodsSubTotal(mapDay);
+                        mapEvery.put("purSubtotal", String.format("%.1f", subTotal));
+                    } else {
+                        mapEvery.put("purSubtotal", 0);
+                    }
+                    purchaseDayValue.add(mapEvery);
+                }
+            }
+
+            mapResult.put("arr", purchaseGoodsEntityList);
+            mapResult.put("itemList", purchaseDayValue);
+            return R.ok().put("data", mapResult);
+
+        } catch (Exception e) {
+            System.out.println("查询商品列表异常: " + e.getMessage());
+            e.printStackTrace();
+            return R.error("获取商品列表失败：" + e.getMessage());
+        }
+    }
+
 
     /**
      * DISTRIBUTE
@@ -108,7 +187,6 @@ public class GbDistributerPurchaseGoodsController {
         }
     }
 
-
     @RequestMapping(value = "/finishPurGoodsToStock", method = RequestMethod.POST)
     @ResponseBody
     public R finishPurGoodsToStock(@RequestBody GbDistributerPurchaseGoodsEntity purGoods) {
@@ -121,39 +199,33 @@ public class GbDistributerPurchaseGoodsController {
             if (hasChoice) {
                 finishOrder = finishOrder + 1;
                 GbDepartmentOrdersEntity gbDepartmentOrdersEntity = gbDepartmentOrdersService.getById(orders.getGbDepartmentOrdersId());
-
                 gbDepartmentOrdersEntity.setGbDoPrice(orders.getGbDoPrice());
                 gbDepartmentOrdersEntity.setGbDoWeight(orders.getGbDoWeight());
                 gbDepartmentOrdersEntity.setGbDoSubtotal(orders.getGbDoSubtotal());
                 gbDepartmentOrdersEntity.setGbDoStatus(getGbOrderStatusReceived());
-                gbDepartmentOrdersEntity.setGbDoBuyStatus(getGbOrderBuyStatusHavePayFinish());
+                gbDepartmentOrdersEntity.setGbDoBuyStatus(GbConstants.OrderBuyStatus.PAID_FINISHED);
                 gbDepartmentOrdersEntity.setGbDoPurchaseUserId(purGoods.getGbDpgPurUserId());
                 gbDepartmentOrdersEntity.setGbDoArriveDate(formatWhatDay(0));
                 gbDepartmentOrdersEntity.setGbDoArriveOnlyDate(formatWhatDate(0));
-                gbDepartmentOrdersEntity.setGbDoApplyFullTime(formatFullTime());
                 gbDepartmentOrdersEntity.setGbDoArriveWhatDay(getWeek(0));
-                gbDepartmentOrdersEntity.setGbDoApplyOnlyTime(formatWhatTime(0));
                 gbDepartmentOrdersEntity.setGbDoArriveWeeksYear(getWeekOfYear(0));
-
                 gbDepartmentOrdersService.update(gbDepartmentOrdersEntity);
 
             } else {
-                System.out.println("unchoiciciic" + orders.getGbDepartmentOrdersId());
                 unChoiceOrderList.add(orders);
             }
         }
 
         GbDistributerPurchaseGoodsEntity purchaseGoodsEntity = gbDpgMapper.selectById(purGoods.getGbDistributerPurchaseGoodsId());
-
         purchaseGoodsEntity.setGbDpgBuyPrice(purGoods.getGbDpgBuyPrice());
         purchaseGoodsEntity.setGbDpgBuyQuantity(purGoods.getGbDpgBuyQuantity());
         purchaseGoodsEntity.setGbDpgBuySubtotal(purGoods.getGbDpgBuySubtotal());
         purchaseGoodsEntity.setGbDpgPurUserId(purGoods.getGbDpgPurUserId());
         purchaseGoodsEntity.setGbDpgPurchaseDepartmentId(purGoods.getGbDpgPurchaseDepartmentId());
         purchaseGoodsEntity.setGbDpgBatchId(-1);
-        purchaseGoodsEntity.setGbDpgStatus(4);
-        purchaseGoodsEntity.setGbDpgPayType(0);
-        purchaseGoodsEntity.setGbDpgPurchaseType(1);
+        purchaseGoodsEntity.setGbDpgStatus(GbConstants.PurchaseGoodsStatus.STOCK_FINISHED);
+        purchaseGoodsEntity.setGbDpgPayType(GbConstants.PurchaseGoodsStatus.PAY_FINISHED);
+        purchaseGoodsEntity.setGbDpgPurchaseType(GbConstants.PurchaseOrderType.SELF_PURCHASE);
         purchaseGoodsEntity.setGbDpgTime(formatWhatTime(0));
         purchaseGoodsEntity.setGbDpgPurchaseDate(formatWhatDay(0));
         purchaseGoodsEntity.setGbDpgStockFinishDate(formatWhatDay(0));
@@ -167,7 +239,7 @@ public class GbDistributerPurchaseGoodsController {
 
         System.out.println("apbccccc" + gbDistributerGoodsEntity.getGbDgControlPrice());
         if (gbDistributerGoodsEntity.getGbDgControlPrice() != null && gbDistributerGoodsEntity.getGbDgControlPrice() == 1) {
-            checkPurGoodsPrice(purGoods);
+            gbDpgService.annotatePurchaseGoodsPriceReason(purchaseGoodsEntity);
         }
 
         // 判断是否有保鲜时间参数
@@ -211,145 +283,24 @@ public class GbDistributerPurchaseGoodsController {
         if (purchaseGoodsEntity.getGbDpgWasteFullTime() != null) {
             updateWrapper.set(GbDistributerPurchaseGoodsEntity::getGbDpgWasteFullTime, purchaseGoodsEntity.getGbDpgWasteFullTime());
         }
+        if (purchaseGoodsEntity.getGbDpgBuyPriceReason() != null && !purchaseGoodsEntity.getGbDpgBuyPriceReason().trim().isEmpty()) {
+            updateWrapper.set(GbDistributerPurchaseGoodsEntity::getGbDpgBuyPriceReason, purchaseGoodsEntity.getGbDpgBuyPriceReason());
+        }
         gbDpgMapper.update(null, updateWrapper);
 
         System.out.println("unspsosos" + unChoiceOrderList);
-        if (unChoiceOrderList.size() > 0) {
-            Integer gbDepartmentOrdersId = unChoiceOrderList.get(0).getGbDepartmentOrdersId();
-            GbDepartmentOrdersEntity ordersEntity = gbDepartmentOrdersService.getById(gbDepartmentOrdersId);
-            GbDistributerPurchaseGoodsEntity disGoods = new GbDistributerPurchaseGoodsEntity();
-            disGoods.setGbDpgDistributerId(purchaseGoodsEntity.getGbDpgDistributerId());
-            disGoods.setGbDpgPayType(0);
-            disGoods.setGbDpgDisGoodsGrandId(purchaseGoodsEntity.getGbDpgDisGoodsGrandId());
-            disGoods.setGbDpgDisGoodsGreatId(purchaseGoodsEntity.getGbDpgDisGoodsGreatId());
-            disGoods.setGbDpgDisGoodsFatherId(ordersEntity.getGbDoDisGoodsFatherId());
-            disGoods.setGbDpgDisGoodsId(ordersEntity.getGbDoDisGoodsId());
-            disGoods.setGbDpgApplyDate(formatWhatDay(0));
-            disGoods.setGbDpgStatus(0);
-            disGoods.setGbDpgBuyScale("-1");
-            disGoods.setGbDpgStandard(ordersEntity.getGbDoStandard());
-            disGoods.setGbDpgOrdersAmount(unChoiceOrderList.size());
-            disGoods.setGbDpgOrdersFinishAmount(0);
-            disGoods.setGbDpgOrdersWeightAmount(0);
-            disGoods.setGbDpgOrdersBillAmount(0);
-            disGoods.setGbDpgPurchaseWeek(getWeek(0));
-            disGoods.setGbDpgPurchaseWeekYear(getWeekOfYear(0).toString());
-            disGoods.setGbDpgIsCheck(0);
-            disGoods.setGbDpgPurchaseType(1);
-            disGoods.setGbDpgPurchaseNxSupplierId(-1);
-            gbDpgService.save(disGoods);
-            for (GbDepartmentOrdersEntity unChoiceOrder : unChoiceOrderList) {
-                Integer gbDistributerPurchaseGoodsId = disGoods.getGbDistributerPurchaseGoodsId();
-                Integer gbDepartmentOrdersId1 = unChoiceOrder.getGbDepartmentOrdersId();
-                GbDepartmentOrdersEntity ordersEntity1 = gbDepartmentOrdersService.getById(gbDepartmentOrdersId1);
-                ordersEntity1.setGbDoPurchaseGoodsId(gbDistributerPurchaseGoodsId);
-                gbDepartmentOrdersService.update(ordersEntity1);
-
-                BigDecimal purQuantity = new BigDecimal(disGoods.getGbDpgQuantity());
-                BigDecimal orderQuantity = new BigDecimal(ordersEntity1.getGbDoQuantity());
-                BigDecimal add = purQuantity.add(orderQuantity).setScale(2, BigDecimal.ROUND_HALF_UP);
-                disGoods.setGbDpgQuantity(add.toString());
-                if (gbDistributerGoodsEntity.getGbDgGoodsStandardname().equals(ordersEntity.getGbDoStandard())) {
-                    disGoods.setGbDpgBuyQuantity(add.toString());
-                }
-                gbDpgService.updateById(disGoods);
-            }
+        if (!unChoiceOrderList.isEmpty()) {
+            gbJjOrderPurchaseLinkService.moveUnconfirmedOrdersToNewPurchaseGoods(
+                    purchaseGoodsEntity, unChoiceOrderList, gbDistributerGoodsEntity);
         }
 
         Map<String, Object> map = new HashMap<>();
         map.put("purGoodsId", purGoods.getGbDistributerPurchaseGoodsId());
         List<GbDepartmentOrdersEntity> gbDepartmentOrdersEntities = gbDepartmentOrdersService.queryDisOrdersByParams(map);
-        saveDepStockDataByPurchase(gbDepartmentOrdersEntities, purGoods.getGbDistributerPurchaseGoodsId());
+        gbDpgService.saveDepartmentStockEntriesByPurchase(
+                gbDepartmentOrdersEntities, purGoods.getGbDistributerPurchaseGoodsId());
 
         return R.ok();
-    }
-
-
-    private void saveDepStockDataByPurchase(List<GbDepartmentOrdersEntity> ordersEntityList, Integer purGoodsId) {
-        GbDistributerPurchaseGoodsEntity purchaseGoodsEntity = gbDpgService.getById(purGoodsId);
-
-        for (GbDepartmentOrdersEntity order : ordersEntityList) {
-            System.out.println("upddodididufidfuaisf");
-            Integer gbDepartmentOrdersId = order.getGbDepartmentOrdersId();
-            Integer gbDoDepDisGoodsId = order.getGbDoDepDisGoodsId();
-            GbDepartmentDisGoodsEntity departmentDisGoodsEntity = gbDepartmentDisGoodsService.getById(gbDoDepDisGoodsId);
-            GbDepartmentOrdersEntity ordersEntity = gbDepartmentOrdersService.getById(gbDepartmentOrdersId);
-            Integer gbDoStatus = ordersEntity.getGbDoStatus();
-            // 判断没有被别人收货
-            // 0,修改订单上次价格涨幅
-            if (departmentDisGoodsEntity.getGbDdgOrderDate() != null && !departmentDisGoodsEntity.getGbDdgOrderDate().trim().isEmpty()) {
-                if (order.getGbDoPrice() != null && !order.getGbDoPrice().trim().isEmpty()) {
-                    BigDecimal decimal = new BigDecimal(departmentDisGoodsEntity.getGbDdgOrderPrice());
-                    BigDecimal decimal1 = new BigDecimal(order.getGbDoPrice());
-                    BigDecimal subtract1 = decimal1.subtract(decimal);
-                    order.setGbDoPriceDifferent(subtract1.toString());
-                } else {
-                    order.setGbDoPriceDifferent("0");
-                }
-            }
-            GbDepartmentGoodsStockEntity stockEntity = new GbDepartmentGoodsStockEntity();
-            stockEntity.setGbDgsGbDepartmentId(order.getGbDoDepartmentId());
-            stockEntity.setGbDgsGbDepartmentFatherId(order.getGbDoDepartmentFatherId());
-            stockEntity.setGbDgsGbPurGoodsId(order.getGbDoPurchaseGoodsId());
-            stockEntity.setGbDgsGbDistributerId(order.getGbDoDistributerId());
-            stockEntity.setGbDgsWeight(order.getGbDoWeight());
-            stockEntity.setGbDgsPrice(order.getGbDoPrice());
-            stockEntity.setGbDgsSubtotal(order.getGbDoSubtotal());
-            stockEntity.setGbDgsRestWeight(order.getGbDoWeight());
-            stockEntity.setGbDgsRestSubtotal(order.getGbDoSubtotal());
-            stockEntity.setGbDgsGbDisGoodsId(order.getGbDoDisGoodsId());
-            stockEntity.setGbDgsNxSupplierId(-1);
-            stockEntity.setGbDgsStatus(0);
-            stockEntity.setGbDgsPurUserId(purchaseGoodsEntity.getGbDpgPurUserId());
-            stockEntity.setGbDgsNxDistributerId(-1);
-
-            Integer gbDoDisGoodsId = order.getGbDoDisGoodsId();
-            GbDistributerGoodsEntity goodsEntity = gbDistributerGoodsService.getById(gbDoDisGoodsId);
-            stockEntity.setGbDgsGbDisGoodsFatherId(goodsEntity.getGbDgDfgGoodsFatherId());
-            stockEntity.setGbDgsGbDisGoodsGrandId(goodsEntity.getGbDgDfgGoodsGrandId());
-            stockEntity.setGbDgsGbDisGoodsGreatId(goodsEntity.getGbDgDfgGoodsGreatId());
-            stockEntity.setGbDgsGbDepDisGoodsId(order.getGbDoDepDisGoodsId());
-            stockEntity.setGbDgsDate(formatWhatDay(0));
-            stockEntity.setGbDgsTimeStamp(getTimeStamp());
-            stockEntity.setGbDgsWeek(getWeek(0));
-            stockEntity.setGbDgsMonth(formatWhatMonth(0));
-            stockEntity.setGbDgsYear(formatWhatYear(0));
-            stockEntity.setGbDgsFullTime(formatFullTime());
-            gbDepartmentGoodsStockService.save(stockEntity);
-        }
-    }
-
-
-    private GbDistributerPurchaseGoodsEntity checkPurGoodsPrice(GbDistributerPurchaseGoodsEntity purchaseGoodsEntity) {
-        System.out.println("checkkckGoododopriidd" + purchaseGoodsEntity.getGbDpgDisGoodsId());
-        Integer gbDpgDisGoodsId = purchaseGoodsEntity.getGbDpgDisGoodsId();
-        BigDecimal buyPrice = new BigDecimal(purchaseGoodsEntity.getGbDpgBuyPrice());
-        Integer gbDpgDisGoodsPriceId = purchaseGoodsEntity.getGbDpgDisGoodsPriceId();
-        GbDistributerGoodsEntity gbDistributerGoodsEntity = gbDistributerGoodsService.getById(gbDpgDisGoodsId);
-
-        BigDecimal weight = new BigDecimal(purchaseGoodsEntity.getGbDpgBuyQuantity());
-        BigDecimal goodsHighest = new BigDecimal(gbDistributerGoodsEntity.getGbDgGoodsHighestPrice());
-        BigDecimal goodsLowest = new BigDecimal(gbDistributerGoodsEntity.getGbDgGoodsLowestPrice());
-        String priceTotal = buyPrice.multiply(weight).setScale(1, BigDecimal.ROUND_HALF_UP).toString();
-
-        if (buyPrice.compareTo(goodsHighest) == 1 && purchaseGoodsEntity.getGbDpgBuyQuantity() != null && !purchaseGoodsEntity.getGbDpgBuyQuantity().trim().isEmpty()) {
-            // 高于最高价
-            BigDecimal higherWhatPrice = buyPrice.subtract(goodsHighest);
-            BigDecimal highertotal = higherWhatPrice.multiply(weight).setScale(2, BigDecimal.ROUND_HALF_UP);
-            BigDecimal multiply = higherWhatPrice.divide(goodsHighest, 4, BigDecimal.ROUND_HALF_DOWN);
-            BigDecimal highestTotal = goodsHighest.multiply(weight).setScale(1, BigDecimal.ROUND_HALF_UP);
-            purchaseGoodsEntity.setGbDpgBuyPriceReason("价格偏高");
-        } else if (buyPrice.compareTo(goodsLowest) == -1) {
-            // 低于最低价
-            BigDecimal lowerWhatPrice = goodsLowest.subtract(buyPrice);
-            BigDecimal lowerTotal = lowerWhatPrice.multiply(weight).setScale(2, BigDecimal.ROUND_HALF_UP);
-            BigDecimal multiply = lowerWhatPrice.divide(goodsLowest, 4, BigDecimal.ROUND_HALF_DOWN);
-            BigDecimal lowestTotal = goodsLowest.multiply(weight).setScale(1, BigDecimal.ROUND_HALF_UP);
-            purchaseGoodsEntity.setGbDpgBuyPriceReason("价格偏低");
-        } else {
-            purchaseGoodsEntity.setGbDpgBuyPriceReason("价格正常");
-        }
-return purchaseGoodsEntity;
     }
 
     /**
@@ -415,9 +366,8 @@ return purchaseGoodsEntity;
             map.put("disId", disId);
             map.put("dayuStatus", 1); // 已完成的采购
 
-            // 1. 自采数据 (purchaseType = 0, inputType = 2)
-            map.put("purchaseType", 0);
-            // map.put("equalInputType", 2);
+            // 1. 自采数据
+            map.put("purchaseType", GbConstants.PurchaseOrderType.SELF_PURCHASE);
             Integer zicaiCount = gbDpgService.queryPurchaseGoodsCount(map);
             BigDecimal zicaiTotal = new BigDecimal(0);
             if (zicaiCount > 0) {
@@ -429,7 +379,7 @@ return purchaseGoodsEntity;
             map.remove("purchaseType");
 
             // 2. 订货数据
-            map.put("purchaseType", 1);
+            map.put("purchaseType", GbConstants.PurchaseOrderType.DELIVERY_SUPPLIER);
             Integer dinghuoCount = gbDpgService.queryPurchaseGoodsCount(map);
             BigDecimal dinghuoTotal = new BigDecimal(0);
             if (dinghuoCount > 0) {
@@ -438,28 +388,10 @@ return purchaseGoodsEntity;
             }
             dayMap.put("dinghuo", dinghuoTotal);
             System.out.println("订货金额: " + dinghuoTotal);
-            map.remove("purchaseType");
-
-            // 3. 直接入库的采购统计 (purchaseType = 10)
-            Map<String, Object> mapDirectStock = new HashMap<>();
-            mapDirectStock.put("date", whichDay);
-            mapDirectStock.put("disId", disId);
-            mapDirectStock.put("dayuStatus", 1);
-            mapDirectStock.put("purchaseType", 10);
-            Integer directStockCount = gbDpgService.queryPurchaseGoodsCount(mapDirectStock);
-            BigDecimal directStockTotal = new BigDecimal(0);
-            if (directStockCount > 0) {
-                Double aDouble = gbDpgService.queryPurchaseGoodsSubTotal(mapDirectStock);
-                directStockTotal = new BigDecimal(aDouble).setScale(2, BigDecimal.ROUND_HALF_UP);
-            }
-            dayMap.put("directStock", directStockTotal);
-            System.out.println("直接入库采购金额: " + directStockTotal);
-
-            // 4. 所有入库的总和（包括自采、订货、直接入库）
+            // 3. 所有入库的总和（包括自采、订货）
             Map<String, Object> mapAllStock = new HashMap<>();
             mapAllStock.put("date", whichDay);
             mapAllStock.put("disId", disId);
-            // mapAllStock.put("equalInputType", 2);
             mapAllStock.put("dayuStatus", 1);
             Integer allStockCount = gbDpgService.queryPurchaseGoodsCount(mapAllStock);
             BigDecimal allStockTotal = new BigDecimal(0);
@@ -468,7 +400,16 @@ return purchaseGoodsEntity;
                 allStockTotal = new BigDecimal(aDouble).setScale(2, BigDecimal.ROUND_HALF_UP);
             }
             dayMap.put("allStock", allStockTotal);
-            System.out.println("所有入库采购金额: " + allStockTotal);
+            // 4. 当天采购（采购日=whichDay，与上面对齐）对应部门库存行上「剩余成本」合计 ∑gb_dgs_rest_subtotal（非采购金额）
+            Map<String, Object> restMap = new HashMap<>();
+            restMap.put("disId", disId);
+            restMap.put("purchaseLinkDate", whichDay);
+            restMap.put("purDayuStatus", 1);
+            Double restDouble = gbDepartmentGoodsStockService.queryDepGoodsRestTotal(restMap);
+            BigDecimal restStockTotal = new BigDecimal(restDouble != null ? restDouble : 0)
+                    .setScale(2, BigDecimal.ROUND_HALF_UP);
+            dayMap.put("restStock", restStockTotal);
+            System.out.println("所有入库采购金额: " + allStockTotal + ", 当日采购关联库存剩余金额: " + restStockTotal);
 
             // 5. 当日支出统计（3种类型）
             // 5.1 销售支出 (type = 0, 1)
@@ -541,7 +482,7 @@ return purchaseGoodsEntity;
         System.out.println("总采购金额: " + purchaseTotal);
 
         // 自采总额
-        mapTotal.put("purchaseType", 0);
+        mapTotal.put("purchaseType", GbConstants.PurchaseOrderType.SELF_PURCHASE);
         BigDecimal zicaiTotalSum = new BigDecimal(0);
         Integer zicaiCountSum = gbDpgService.queryPurchaseGoodsCount(mapTotal);
         if (zicaiCountSum > 0) {
@@ -551,7 +492,7 @@ return purchaseGoodsEntity;
         mapTotal.remove("purchaseType");
 
         // 订货总额
-        mapTotal.put("purchaseType", 1);
+        mapTotal.put("purchaseType", GbConstants.PurchaseOrderType.DELIVERY_SUPPLIER);
         System.out.println("dingdhuomapappapap" + mapTotal);
         BigDecimal dinghuoTotalSum = new BigDecimal(0);
         Integer dinghuoCountSum = gbDpgService.queryPurchaseGoodsCount(mapTotal);
@@ -687,14 +628,17 @@ return purchaseGoodsEntity;
             }
         }
 
-        // 支出总额
-        Integer integer2 = gbDepGoodsDailyService.queryDepGoodsDailyCount(mapDep);
+        // 支出总额（gb_department_goods_stock_reduce：生产/废弃/损耗）
+        Map<String, Object> reduceTotalsAll = gbDepartmentStockReduceService.queryReduceAllTypesTotal(mapDep);
         double totalCost = 0.0;
-        if (integer2 > 0) {
-            double produceSubtotal = gbDepGoodsDailyService.queryDepGoodsDailyProduceSubtotal(mapDep);
-            double wasteSubtotal = gbDepGoodsDailyService.queryDepGoodsDailyWasteSubtotal(mapDep);
-            double lossSubtotal = gbDepGoodsDailyService.queryDepGoodsDailyLossSubtotal(mapDep);
-            totalCost = produceSubtotal + wasteSubtotal + lossSubtotal;
+        if (reduceTotalsAll != null) {
+            double produceAll = reduceTotalsAll.get("produceTotal") != null
+                    ? Double.parseDouble(reduceTotalsAll.get("produceTotal").toString()) : 0;
+            double wasteAll = reduceTotalsAll.get("wasteTotal") != null
+                    ? Double.parseDouble(reduceTotalsAll.get("wasteTotal").toString()) : 0;
+            double lossAll = reduceTotalsAll.get("lossTotal") != null
+                    ? Double.parseDouble(reduceTotalsAll.get("lossTotal").toString()) : 0;
+            totalCost = produceAll + wasteAll + lossAll;
         }
 
         mapDep.put("startDate", startDate);
@@ -711,6 +655,10 @@ return purchaseGoodsEntity;
             System.out.println("查询成功，返回记录数: " + fatherGoodsTreeSet.size());
 
             for (GbDistributerFatherGoodsEntity greatEntity : fatherGoodsTreeSet) {
+
+                System.out.println("goodsName" + greatEntity.getGbDfgFatherGoodsName());
+                System.out.println("goodsNamegetGbDistributerFatherGoodsId" + greatEntity.getGbDistributerFatherGoodsId());
+                System.out.println("goodsNamegetGbDfgFathersFatherId" + greatEntity.getGbDfgFathersFatherId());
                 // dayMap
                 Map<String, Object> cataMap = new HashMap<>();
 
@@ -731,9 +679,8 @@ return purchaseGoodsEntity;
                 cataMap.put("greatPurTotal", batchBillTotal);
                 cataMap.put("greatPercent", divide);
                 cataMap.put("purTotal", purchaseTotal);
-
-                mapDep.put("supplierBuy", -1);
                 mapDep.put("dayuStatus", 2);
+                mapDep.put("purchaseType", GbConstants.PurchaseOrderType.SELF_PURCHASE);
                 // 自采数据
                 Integer integerZicai = gbDpgService.queryGbPurchaseGoodsCount(mapDep);
                 BigDecimal batchBillTotalZicai = new BigDecimal(0);
@@ -744,10 +691,8 @@ return purchaseGoodsEntity;
                 cataMap.put("zicai", batchBillTotalZicai);
 
                 // 订货数据
-                mapDep.put("supplierBuy", 1);
+                mapDep.put("purchaseType", GbConstants.PurchaseOrderType.DELIVERY_SUPPLIER);
                 mapDep.put("dayuStatus", 2);
-                mapDep.put("batchDayuStatus", 2);
-
                 Integer integerDh = gbDpgService.queryGbPurchaseGoodsCount(mapDep);
                 BigDecimal batchBillTotalDh = new BigDecimal(0);
                 if (integerDh > 0) {
@@ -769,21 +714,16 @@ return purchaseGoodsEntity;
                 Double wasteTotal = 0.0;
                 Double lossTotal = 0.0;
                 System.out.println("cosssoososososointeger4integer4" + mapDepCost);
-                Integer integer4 = gbDepGoodsDailyService.queryDepGoodsDailyCount(mapDepCost);
-                if (integer4 > 0) {
-                    produceSubtotal = gbDepGoodsDailyService.queryDepGoodsDailyProduceSubtotal(mapDepCost);
-
+                Map<String, Object> reduceTotalsGreat = gbDepartmentStockReduceService.queryReduceAllTypesTotal(mapDepCost);
+                if (reduceTotalsGreat != null) {
+                    produceSubtotal = reduceTotalsGreat.get("produceTotal") != null
+                            ? Double.parseDouble(reduceTotalsGreat.get("produceTotal").toString()) : 0.0;
                     System.out.println("cossisisis" + produceSubtotal);
-                    wasteTotal = gbDepGoodsDailyService.queryDepGoodsDailyWasteSubtotal(mapDepCost);
-                    lossTotal = gbDepGoodsDailyService.queryDepGoodsDailyLossSubtotal(mapDepCost);
+                    wasteTotal = reduceTotalsGreat.get("wasteTotal") != null
+                            ? Double.parseDouble(reduceTotalsGreat.get("wasteTotal").toString()) : 0.0;
+                    lossTotal = reduceTotalsGreat.get("lossTotal") != null
+                            ? Double.parseDouble(reduceTotalsGreat.get("lossTotal").toString()) : 0.0;
                     add = produceSubtotal + wasteTotal + lossTotal;
-                }
-
-                // 所有库存
-                Double allDouble = 0.0;
-                Integer integer1 = gbDepartmentGoodsStockService.queryGoodsStockCount(mapDepCost);
-                if (integer1 > 0) {
-                    allDouble = gbDepartmentGoodsStockService.queryDepGoodsRestTotal(mapDepCost);
                 }
 
                 // 本期库存
@@ -838,186 +778,95 @@ return purchaseGoodsEntity;
         return R.ok().put("data", map123);
     }
 
-    /**
-     * GB系统采购明细分类统计（按采购用户或供应商）
-     * @param disId 批发商ID
-     * @param purUserIds 采购用户ID列表（逗号分隔）
-     * @param type 类型：0-按采购用户统计，1-按供应商统计
-     * @param greatId 商品大类ID
-     * @param startDate 开始日期
-     * @param stopDate 结束日期
-     * @param supplierIds 供应商ID列表（逗号分隔）
-     * @return 明细统计数据
-     */
-    @RequestMapping(value = "/disGetPurchaseDetailType", method = RequestMethod.POST)
-    @ResponseBody
-    public R disGetPurchaseDetailType(Integer disId, String purUserIds, Integer type, Integer greatId,
-                                      String startDate, String stopDate, String supplierIds) {
-
-        Map<String, Object> map = new HashMap<>();
-        map.put("disId", disId);
-        System.out.println("初始map: " + map);
-        if (!purUserIds.equals("-1")) {
-            String[] arrGb = purUserIds.split(",");
-            List<String> idsGb = new ArrayList<>();
-            for (String idGb : arrGb) {
-                idsGb.add(idGb);
-                if (idsGb.size() > 0) {
-                    map.put("purUserIds", idsGb);
-                }
-            }
-        }
-
-        if (!supplierIds.equals("-1")) {
-            String[] arrGb = supplierIds.split(",");
-            List<String> idsGb = new ArrayList<>();
-            for (String idGb : arrGb) {
-                idsGb.add(idGb);
-                if (idsGb.size() > 0) {
-                    map.put("supplierIds", idsGb);
-                }
-            }
-        }
-
-        Map<String, Object> mapR = new HashMap<>();
-        List<Map<String, Object>> result = new ArrayList<>();
-
-        if (type == 0) {
-            map.put("typeNotEqual", 9);
-            map.put("supplierBuy", -1);
-            map.put("dayuStatus", 2);
-            map.put("startDate", startDate);
-            map.put("stopDate", stopDate);
-            if (greatId != -1) {
-                map.put("disGoodsGreatId", greatId);
-            }
-            Double subTotal = 0.0;
-            Integer integer1 = gbDpgService.queryGbPurchaseGoodsCount(map);
-            System.out.println("subslslslsl" + map);
-            if (integer1 > 0) {
-                subTotal = gbDpgService.queryPurchaseGoodsSubTotal(map);
-            }
-
-            List<GbDepartmentUserEntity> purUserList = gbDpgService.queryPurUserList(map);
-
-            if (purUserList.size() > 0) {
-                for (GbDepartmentUserEntity userEntity : purUserList) {
-                    Map<String, Object> mapUser = new HashMap<>();
-                    mapUser.put("user", userEntity);
-
-                    // 创建新的查询参数Map，避免参数污染
-                    Map<String, Object> queryMap = new HashMap<>();
-                    queryMap.put("typeNotEqual", 9);
-                    queryMap.put("supplierBuy", -1);
-                    queryMap.put("dayuStatus", 2);
-                    queryMap.put("startDate", startDate);
-                    queryMap.put("stopDate", stopDate);
-                    queryMap.put("disId", map.get("disId"));
-                    queryMap.put("purUserId", userEntity.getGbDepartmentUserId());
-                    queryMap.put("offset", 0);
-                    queryMap.put("limit", 100);
-                    if (greatId != -1) {
-                        queryMap.put("disGoodsGreatId", greatId);
-                    }
-
-                    System.out.println("mapppppppp" + queryMap);
-                    Integer integer = gbDpgService.queryGbDisGoodsTreeCount(queryMap);
-                    List<GbDistributerGoodsEntity> goodsList = gbDpgService.queryDisTreeGoodsWithPurList(queryMap);
-                    Double subTotal1 = gbDpgService.queryPurchaseGoodsSubTotal(queryMap);
-                    mapUser.put("arr", goodsList);
-                    mapUser.put("count", integer);
-                    mapUser.put("purSubtotal", String.format("%.1f", subTotal1));
-                    result.add(mapUser);
-
-                }
-                System.out.println("subslslsls" + map);
-            }
-
-            BigDecimal total = new BigDecimal(subTotal).setScale(1, BigDecimal.ROUND_HALF_UP);
-            mapR.put("total", total);
-            mapR.put("purUserArr", result);
-
-        } else if (type == 1) {
-            System.out.println("=== 执行type=1分支 ===");
-
-            map.put("startDate", startDate);
-            map.put("stopDate", stopDate);
-            map.put("supplierBuy", 1);
-            if (greatId != -1) {
-                map.put("disGoodsGreatId", greatId);
-            }
-            Double subTotal = 0.0;
-            Integer integer1 = gbDpgService.queryGbPurchaseGoodsCount(map);
-            System.out.println("subslslslsl" + map);
-            if (integer1 > 0) {
-                subTotal = gbDpgService.queryPurchaseGoodsSubTotal(map);
-            }
-            List<NxJrdhSupplierEntity> supplierEntities = gbDpgService.queryDisPurGoodsSupplierList(map);
-
-            if (supplierEntities.size() > 0) {
-
-                for (NxJrdhSupplierEntity supplierEntity : supplierEntities) {
-                    Map<String, Object> mapUser = new HashMap<>();
-                    mapUser.put("user", supplierEntity);
-
-                    // 创建新的查询参数Map，避免参数污染
-                    Map<String, Object> queryMap = new HashMap<>();
-                    queryMap.put("typeNotEqual", 9);
-                    queryMap.put("supplierBuy", 1);
-                    queryMap.put("dayuStatus", 2);
-                    queryMap.put("startDate", startDate);
-                    queryMap.put("stopDate", stopDate);
-                    queryMap.put("disId", map.get("disId"));
-                    queryMap.put("supplierId", supplierEntity.getNxJrdhSupplierId());
-                    queryMap.put("offset", 0);
-                    queryMap.put("limit", 100);
-                    if (greatId != -1) {
-                        queryMap.put("disGoodsGreatId", greatId);
-                    }
-
-                    System.out.println("mappppppppSuppp" + queryMap);
-                    Integer integer = gbDpgService.queryGbDisGoodsTreeCount(queryMap);
-                    List<GbDistributerGoodsEntity> goodsList = gbDpgService.queryDisTreeGoodsWithPurList(queryMap);
-                    Double subTotal1 = gbDpgService.queryPurchaseGoodsSubTotal(queryMap);
-                    mapUser.put("arr", goodsList);
-                    mapUser.put("count", integer);
-                    mapUser.put("purSubtotal", String.format("%.1f", subTotal1));
-                    result.add(mapUser);
-                }
-            }
-
-            BigDecimal total = new BigDecimal(subTotal).setScale(1, BigDecimal.ROUND_HALF_UP);
-            mapR.put("supplierArr", result);
-            mapR.put("total", total);
-        }
-
-        return R.ok().put("data", mapR);
-    }
 
     /**
-     * 获取采购用户日期列表
+     * 单个采购员在日期区间内每日采购汇总（自采 zicai、订货 dinghuo）。
+     * 仅返回区间内<strong>有采购记录</strong>的日期，无采购日不放入列表。
      * 接口: /gbdistributerpurchasegoods/getPurUserDate
+     *
+     * @param purUserId 部门用户 id（gb_department_user），非部门 id
      */
     @RequestMapping(value = "/getPurUserDate", method = RequestMethod.POST)
     @ResponseBody
     public R getPurUserDate(@RequestParam String startDate, @RequestParam String stopDate,
-                            @RequestParam Integer disId, @RequestParam(required = false) Integer purDepId) {
-        Map<String, Object> map = new HashMap<>();
-        map.put("startDate", startDate);
-        map.put("stopDate", stopDate);
-        map.put("disId", disId);
-        if (purDepId != null) {
-            map.put("purDepId", purDepId);
+                            @RequestParam Integer disId, @RequestParam Integer purUserId) {
+        GbDepartmentUserEntity user = gbDepartmentUserService.getById(purUserId);
+        if (user == null) {
+            return R.error("采购员不存在");
         }
-        map.put("dayuStatus", 4); // 已完成的采购 status > 4
+        if (user.getGbDuDistributerId() != null && !user.getGbDuDistributerId().equals(disId)) {
+            return R.error("采购员不属于该批发商");
+        }
 
-        log.info("【getPurUserDate】查询参数: disId={}, purDepId={}, startDate={}, stopDate={}",
-                disId, purDepId, startDate, stopDate);
+        log.info("【getPurUserDate】disId={}, purUserId={}, startDate={}, stopDate={}",
+                disId, purUserId, startDate, stopDate);
 
-        List<GbDepartmentUserEntity> userEntities = gbDpgService.queryPurUserList(map);
-        log.info("【getPurUserDate】采购用户数量: {}", userEntities != null ? userEntities.size() : 0);
+        int daySpan = 0;
+        if (!startDate.equals(stopDate)) {
+            daySpan = getHowManyDaysInPeriod(stopDate, startDate);
+        }
 
-        return R.ok().put("data", userEntities);
+        List<Map<String, Object>> zicaiArr = new ArrayList<>();
+        for (int i = 0; i < daySpan + 1; i++) {
+            String whichDay = i == 0 ? startDate : afterWhatDay(startDate, i);
+
+            Map<String, Object> dayMap = new HashMap<>();
+            dayMap.put("day", whichDay);
+
+            Map<String, Object> dayQuery = new HashMap<>();
+            dayQuery.put("date", whichDay);
+            dayQuery.put("disId", disId);
+            dayQuery.put("dayuStatus", 1);
+            dayQuery.put("purUserId", purUserId);
+
+            dayQuery.put("purchaseType", GbConstants.PurchaseOrderType.SELF_PURCHASE);
+            BigDecimal zicaiTotal = BigDecimal.ZERO;
+            Integer zicaiCount = gbDpgService.queryPurchaseGoodsCount(dayQuery);
+            if (zicaiCount != null && zicaiCount > 0) {
+                Double z = gbDpgService.queryPurchaseGoodsSubTotal(dayQuery);
+                zicaiTotal = new BigDecimal(z != null ? z : 0).setScale(2, BigDecimal.ROUND_HALF_UP);
+            }
+            dayMap.put("zicai", zicaiTotal);
+            dayQuery.remove("purchaseType");
+
+            dayQuery.put("purchaseType", GbConstants.PurchaseOrderType.DELIVERY_SUPPLIER);
+            BigDecimal dinghuoTotal = BigDecimal.ZERO;
+            Integer dinghuoCount = gbDpgService.queryPurchaseGoodsCount(dayQuery);
+            if (dinghuoCount != null && dinghuoCount > 0) {
+                Double d = gbDpgService.queryPurchaseGoodsSubTotal(dayQuery);
+                dinghuoTotal = new BigDecimal(d != null ? d : 0).setScale(2, BigDecimal.ROUND_HALF_UP);
+            }
+            dayMap.put("dinghuo", dinghuoTotal);
+
+            boolean hasPurchase = (zicaiCount != null && zicaiCount > 0)
+                    || (dinghuoCount != null && dinghuoCount > 0);
+            if (hasPurchase) {
+                zicaiArr.add(dayMap);
+            }
+        }
+        user.setZicaiArr(zicaiArr);
+
+        return R.ok().put("data", user);
+    }
+
+
+
+    @RequestMapping(value = "/getPurchaseUserGoods", method = RequestMethod.POST)
+    @ResponseBody
+    public R getPurchaseUserGoods(String purUserId,  String startDate, String stopDate) {
+
+        Map<String, Object> queryMap = new HashMap<>();
+        queryMap.put("typeNotEqual", 9);
+        queryMap.put("dayuStatus", 2);
+        queryMap.put("startDate", startDate);
+        queryMap.put("stopDate", stopDate);
+        queryMap.put("purUserId", purUserId);
+        queryMap.put("dateOrder", 1);
+        System.out.println("pururrus" + queryMap);
+        List<GbDistributerGoodsEntity> goodsList = gbDpgService.queryDisTreeGoodsWithPurList(queryMap);
+        gbDpgService.fillWastePurGoodsForDisTreeGoods(goodsList, queryMap);
+        return R.ok().put("data", goodsList);
+
     }
 
     /**
@@ -1255,9 +1104,9 @@ return purchaseGoodsEntity;
         Map<String, Object> map = new HashMap<>();
         map.put("batchId", batchId);
         // 状态 3 表示称重完成
-        map.put("status", 0);
+        map.put("status", 1);
         System.out.println("supplierGetUnWeightOutPurGoods: " + map);
-        List<GbDistributerPurchaseGoodsEntity> purchaseGoodsEntityList = gbDpgService.queryPurchaseGoodsWithDetailByParams(map);
+        List<GbDistributerPurchaseGoodsEntity> purchaseGoodsEntityList = gbDpgService.queryPurchaseGoodsWithOrdersByBatch(map);
         return R.ok().put("data", purchaseGoodsEntityList);
     }
 
@@ -1277,7 +1126,7 @@ return purchaseGoodsEntity;
             }
         }
 
-        gbDpgService.update(purchaseGoodsEntity);
+        gbDpgService.updateById(purchaseGoodsEntity);
         List<GbDepartmentOrdersEntity> gbDepartmentOrdersEntities = purchaseGoodsEntity.getGbDepartmentOrdersEntities();
         for (GbDepartmentOrdersEntity orders : gbDepartmentOrdersEntities) {
             System.out.println("wieieieieiieieiieie" + orders.getGbDoWeight());
@@ -1297,11 +1146,172 @@ return purchaseGoodsEntity;
         Integer gbDpgBatchId = purchaseGoodsEntity.getGbDpgBatchId();
         map.put("batchId", gbDpgBatchId);
         Double subTotal = gbDpgService.queryPurchaseGoodsSubTotal(map);
-        GbDistributerPurchaseBatchEntity batchEntity = gbDPBService.queryObject(gbDpgBatchId);
+        GbDistributerPurchaseBatchEntity batchEntity = gbDPBService.getById(gbDpgBatchId);
         batchEntity.setGbDpbSubtotal(String.format("%.1f", subTotal));
-        gbDPBService.update(batchEntity);
+        gbDPBService.updateById(batchEntity);
 
         return R.ok().put("data", purchaseGoodsEntity);
     }
+
+
+
+
+    @RequestMapping(value = "/getGbPurGoodsStatisticsSeachDate", method = RequestMethod.POST)
+    @ResponseBody
+    public R getGbPurGoodsStatisticsSeachDate(@RequestParam Integer supplierId,
+                                              @RequestParam Integer purUserId,
+                                              @RequestParam Integer disId,
+                                              @RequestParam String startDate,
+                                              @RequestParam String stopDate,
+                                              @RequestParam Integer greatId
+
+    ) {
+
+        try {
+            // 构建查询参数
+            Map<String, Object> map = new HashMap<>();
+
+            if (purUserId != -1) {
+                map.put("purUserId", purUserId);
+            } else if (supplierId != -1) {
+                map.put("supplierId", supplierId);
+            }
+            if (greatId != -1) {
+                map.put("disGoodsGreatId", greatId);
+            }
+            map.put("disId", disId);
+            map.put("startDate", startDate);
+            map.put("stopDate", stopDate);
+            map.put("dayuStatus", 2);
+            map.put("typeNotEqual", 9);
+
+            // 获取本期采购统计
+            Integer purCount = gbDpgService.queryGbPurchaseGoodsCount(map);
+            if (purCount == 0) {
+                System.out.println("rriirr0000000");
+                return R.error(-1, "没有数据");
+            }
+
+            Double allDouble = gbDpgService.queryPurchaseGoodsSubTotal(map);
+
+            List<GbDepartmentUserEntity> departmentUserEntities = gbDpgService.queryPurUserList(map);
+            List<NxJrdhSupplierEntity> supplierEntities = gbDpgService.queryDisPurGoodsSupplierList(map);
+
+            map.put("supplierBuy", -1);
+            map.put("dayuStatus", 2);
+            //自采数据
+            Integer integerZicai = gbDpgService.queryGbPurchaseGoodsCount(map);
+            BigDecimal batchBillTotalZicai = new BigDecimal(0);
+            int zicaiGoodsCount = 0;
+            if (integerZicai > 0) {
+                Double aDouble = gbDpgService.queryPurchaseGoodsSubTotal(map);
+                batchBillTotalZicai = new BigDecimal(aDouble).setScale(2, BigDecimal.ROUND_HALF_UP);
+                System.out.println("ziciagouttt" + map);
+                zicaiGoodsCount = gbDpgService.queryGbGoodsCount(map);
+                System.out.println("自采商品数量查询结果: " + zicaiGoodsCount + " 个不同商品");
+            }
+
+            //订货数据
+            map.put("supplierBuy", 1);
+            map.put("dayuStatus", 2);
+            map.put("batchDayuStatus", 2);
+            Integer integerDh = gbDpgService.queryGbPurchaseGoodsCount(map);
+            int dinghuoGoodsCount = 0;
+            BigDecimal batchBillTotalDh = new BigDecimal(0);
+            if (integerDh > 0) {
+                Double aDouble = gbDpgService.queryPurchaseGoodsSubTotal(map);
+                batchBillTotalDh = new BigDecimal(aDouble).setScale(2, BigDecimal.ROUND_HALF_UP);
+                dinghuoGoodsCount = gbDpgService.queryGbGoodsCount(map);
+            }
+
+
+            //kuun
+            map.put("dayuStatus", null);
+            Double aDouble = gbDepartmentGoodsStockService.queryDepGoodsRestTotal(map);
+            map.put("restWeight", 0);
+            Integer stockCount = gbDepartmentGoodsStockService.queryDisStockGoodsCount(map);
+            // 构建返回数据
+            Map<String, Object> result = new HashMap<>();
+            result.put("allDouble", String.format("%.1f", allDouble));
+            result.put("dinghuo", batchBillTotalDh);
+            result.put("dinghuoCount", dinghuoGoodsCount);
+            result.put("zicai", batchBillTotalZicai);
+            result.put("zicaiCount", zicaiGoodsCount);
+            result.put("stockTotal", String.format("%.1f", aDouble));
+            result.put("stockCount", stockCount);
+            result.put("supplierArr", supplierEntities);
+            result.put("depUserArr", departmentUserEntities);
+            return R.ok().put("data", result);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return R.error("获取统计信息失败：" + e.getMessage());
+        }
+    }
+
+
+
+    @RequestMapping(value = "/getGbPurGoodsListSearchDate", method = RequestMethod.POST)
+    @ResponseBody
+    public R getGbPurGoodsListSearchDate(
+
+            @RequestParam Integer disId,
+            @RequestParam Integer greatId,
+            @RequestParam String startDate,
+            @RequestParam String stopDate,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer limit) {
+
+        try {
+            // 构建查询参数
+            Map<String, Object> queryMap = new HashMap<>();
+            queryMap.put("disId", disId);
+            queryMap.put("startDate", startDate);
+            queryMap.put("stopDate", stopDate);
+            queryMap.put("typeNotEqual", 9);
+            queryMap.put("dayuStatus", 2);
+            queryMap.put("offset", (page - 1) * limit);
+            queryMap.put("limit", limit);
+            if (greatId != -1) {
+                queryMap.put("disGoodsGreatId", greatId);
+            }
+
+            System.out.println("lisisisiisisisnnnn00000000aaa" + queryMap);
+            // 获取商品总数
+            Integer totalCount = gbDpgService.queryGbDisGoodsTreeCount(queryMap);
+            System.out.println("totalCount: " + totalCount); // 新增日志
+            Integer totalPages = (int) Math.ceil((double) totalCount / limit);
+
+            // 获取商品列表
+            queryMap.put("dateOrder", 1);
+            System.out.println("查询商品map" + queryMap);
+            System.out.println("开始查询商品列表..."); // 新增日志
+            List<GbDistributerGoodsEntity> goodsList = gbDpgService.queryDisTreeGoodsWithPurList(queryMap);
+            gbDpgService.fillWastePurGoodsForDisTreeGoods(goodsList, queryMap);
+            System.out.println("商品列表查询完成，数量: " + (goodsList != null ? goodsList.size() : "null")); // 新增日志
+
+
+            // 构建返回数据
+            Map<String, Object> result = new HashMap<>();
+            result.put("totalCount", totalCount);
+            result.put("totalPages", totalPages);
+            result.put("currentPage", page);
+            result.put("goodsList", goodsList);
+            System.out.println("reuslt" );
+            System.out.println("reuslt" + result);
+
+            return R.ok().put("data", result);
+
+        } catch (Exception e) {
+            System.out.println("查询商品列表异常: " + e.getMessage());
+            e.printStackTrace();
+            return R.error("获取商品列表失败：" + e.getMessage());
+        }
+    }
+
+
+
+
+
 
 }

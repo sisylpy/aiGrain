@@ -24,4 +24,6 @@ public interface GbDistributerFoodGoodsService {
     List<GbDistributerFoodGoodsEntity> queryFoodGoodsByParams(Map<String, Object> map);
 
     List<GbDistributerFoodGoodsEntity> queryFoodGoodsByFoodId(Integer foodId);
+
+    List<GbDistributerFoodGoodsEntity> queryFoodGoodsByDisGoodsId(Integer disGoodsId, Integer disId);
 }

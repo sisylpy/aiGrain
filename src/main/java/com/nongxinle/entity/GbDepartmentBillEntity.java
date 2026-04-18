@@ -27,7 +27,6 @@ public class GbDepartmentBillEntity implements Serializable {
 	 *  
 	 */
 	private Integer gbDbDepId;
-	private Integer gbDbDepFatherId;
 	/**
 	 *  
 	 */

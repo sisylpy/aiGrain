@@ -1,8 +1,11 @@
 package com.nongxinle.controller;
 
+import com.nongxinle.entity.GbDistributerGoodsEntity;
 import com.nongxinle.entity.NxJrdhSupplierEntity;
 import com.nongxinle.service.GbDistributerPurchaseGoodsService;
 import com.nongxinle.service.GbDistributerPurchaseBatchService;
+import com.nongxinle.service.GbDistributerGoodsService;
+import com.nongxinle.service.NxJrdhSupplierService;
 import com.nongxinle.utils.R;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -22,6 +25,10 @@ public class NxJrdhSupplierController {
     private GbDistributerPurchaseGoodsService purchaseGoodsService;
     @Autowired
     private GbDistributerPurchaseBatchService gbPurBatchService;
+    @Autowired
+    private NxJrdhSupplierService nxJrdhSupplierService;
+    @Autowired
+    private GbDistributerGoodsService gbDistributerGoodsService;
 
     /**
      * 获取部门的供应商列表
@@ -93,5 +100,55 @@ public class NxJrdhSupplierController {
         }
         return R.ok().put("data", nxJrdhSupplierEntities);
     }
+
+
+
+    @RequestMapping(value = "/deleteGbDisSuppler/{id}")
+    @ResponseBody
+    public R deleteGbDisSuppler(@PathVariable Integer id) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("supplierId", id);
+        map.put("status", 4);
+        int i = gbPurBatchService.queryDisPurchaseBatchCount(map);
+
+        if (i > 0 ) {
+            return R.error(-1, "有未结账账单");
+        } else {
+            NxJrdhSupplierEntity supplierEntity = nxJrdhSupplierService.getById(id);
+            Map<String, Object> mapS = new HashMap<>();
+            mapS.put("supplierId", supplierEntity.getNxJrdhSupplierId());
+            mapS.put("disId", supplierEntity.getNxJrdhsGbDistributerId());
+            List<GbDistributerGoodsEntity> gbDistributerGoodsEntities = gbDistributerGoodsService.queryDisGoodsByParams(mapS);
+            if(gbDistributerGoodsEntities.size() > 0){
+                for(GbDistributerGoodsEntity distributerGoodsEntity: gbDistributerGoodsEntities){
+                    distributerGoodsEntity.setGbDgGbSupplierId(null);
+                    distributerGoodsEntity.setGbDgNxDistributerId(-1);
+                    distributerGoodsEntity.setGbDgNxDistributerGoodsId(-1);
+                    gbDistributerGoodsService.update(distributerGoodsEntity);
+                }
+            }
+
+
+            supplierEntity.setNxJrdhsGbDepartmentId(-1);
+            nxJrdhSupplierService.updateById(supplierEntity);
+
+            return R.ok();
+
+        }
+    }
+
+
+    @RequestMapping(value = "/depGetAllSupplier/{depId}")
+    @ResponseBody
+    public R depGetAllSupplier(@PathVariable  Integer depId) {
+        Map<String, Object> map3 = new HashMap<>();
+        map3.put("gbDepId", depId);
+        List<NxJrdhSupplierEntity> nxJrdhSupplierEntities = nxJrdhSupplierService.queryJrdhSupplerByParams(map3);
+
+        return R.ok().put("data", nxJrdhSupplierEntities);
+    }
+
+
+
 
 }

@@ -132,6 +132,10 @@ public class GbDistributerGoodsEntity implements Serializable, Comparable {
     private List<GbDistributerPurchaseGoodsEntity> returnPurGoodsEntities;
     @TableField(exist = false)
     private List<GbDepartmentEntity> wasteDepartmentEntities;
+
+    /** 成本页：是否展开明细（reduce 按部门树） */
+    @TableField(exist = false)
+    private Boolean showCostList;
     @TableField(exist = false)
     private TreeSet<GbDepartmentEntity> stockDepartmentEntities;
     @TableField(exist = false)

@@ -46,5 +46,11 @@ public interface GbDistributerFatherGoodsService {
 
     List<GbDistributerFatherGoodsEntity> queryDisGoodsCataWithFilter(Map<String, Object> mapG);
 
+    /**
+     * 按采购筛选条件，列出涉及到的「曾祖父」级批发商商品分类（分类树最高层级，即最大一级类目）。
+     * <p>数据来自 {@code gb_DPG_dis_goods_father_id} 与 {@code gb_distributer_father_goods} 的关联。
+     *
+     * @param map 与采购统计一致，常用：{@code disId}、{@code startDate}、{@code stopDate}、{@code dayuStatus}、{@code typeNotEqual}
+     */
     TreeSet<GbDistributerFatherGoodsEntity> queryPurchaseGoodsFatherTypes(Map<String, Object> map);
 }

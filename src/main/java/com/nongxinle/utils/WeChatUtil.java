@@ -1,15 +1,11 @@
 package com.nongxinle.utils;
 
 import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.URL;
-import java.security.cert.X509Certificate;
 
 /**
  * 微信工具类
@@ -18,25 +14,6 @@ public class WeChatUtil {
 
     private static final int CONNECT_TIMEOUT = 10000; // 连接超时 10秒
     private static final int READ_TIMEOUT = 10000;    // 读取超时 10秒
-
-    static {
-        // 信任所有证书（解决某些环境的SSL问题）
-        try {
-            TrustManager[] trustAllCerts = new TrustManager[]{
-                new X509TrustManager() {
-                    public X509Certificate[] getAcceptedIssuers() { return null; }
-                    public void checkClientTrusted(X509Certificate[] certs, String authType) {}
-                    public void checkServerTrusted(X509Certificate[] certs, String authType) {}
-                }
-            };
-            SSLContext sc = SSLContext.getInstance("SSL");
-            sc.init(null, trustAllCerts, new java.security.SecureRandom());
-            HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-            HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
 
     public static String httpRequest(String requestUrl, String requestMethod, String output) {
         System.out.println("requestUrl-====" + requestUrl);

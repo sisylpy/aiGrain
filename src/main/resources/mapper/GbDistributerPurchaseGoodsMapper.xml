@@ -2,6 +2,109 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.nongxinle.mapper.GbDistributerPurchaseGoodsMapper">
 
+    <!-- 采购表 gdpg：自采(-1)/订货(1)，不含 supplierId（采购员列表等场景不传 supplierId） -->
+    <sql id="purGoodsWhereGbSupplierBuyOnly">
+            <if test="supplierBuy != null and supplierBuy == -1">
+                AND gdpg.gb_DPG_purchase_nx_supplier_id = -1
+            </if>
+            <if test="supplierBuy != null and supplierBuy == 1">
+                AND gdpg.gb_DPG_purchase_nx_supplier_id != -1
+            </if>
+    </sql>
+
+    <sql id="purGoodsWhereGbSupplierIdEq">
+            <if test="supplierId != null">
+                AND gdpg.gb_DPG_purchase_nx_supplier_id = #{supplierId}
+            </if>
+    </sql>
+
+    <!-- 自采/订货 + 指定供货商（统计列表等） -->
+    <sql id="purGoodsWhereGbSupplierBuySupplierId">
+            <include refid="purGoodsWhereGbSupplierBuyOnly"/>
+            <include refid="purGoodsWhereGbSupplierIdEq"/>
+    </sql>
+
+    <sql id="purGoodsWhereGbDisGoodsHierarchy">
+            <if test="disGoodsId != null">
+                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND gdpg.gb_DPG_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                AND gdpg.gb_DPG_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                AND gdpg.gb_DPG_dis_goods_great_id = #{disGoodsGreatId}
+            </if>
+    </sql>
+
+    <!-- 入库完成日 gb_DPG_stock_finish_date：单日/区间（与 queryGbPurchaseGoodsCount 一致） -->
+    <sql id="purGoodsWhereGbStockFinishDateFlexible">
+            <if test="finishDate != null and (date == null)">
+                AND gdpg.gb_DPG_stock_finish_date = #{finishDate}
+            </if>
+            <if test="date != null and (finishDate == null)">
+                AND gdpg.gb_DPG_stock_finish_date = #{date}
+            </if>
+            <if test="startDate != null">
+                AND gdpg.gb_DPG_stock_finish_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdpg.gb_DPG_stock_finish_date &lt;= #{stopDate}
+            </if>
+    </sql>
+
+    <!-- 仅 stock_finish 起止（无单日互斥逻辑），用于大类查询等 -->
+    <sql id="purGoodsWhereGbStockFinishStartStop">
+            <if test="startDate != null">
+                AND gdpg.gb_DPG_stock_finish_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdpg.gb_DPG_stock_finish_date &lt;= #{stopDate}
+            </if>
+    </sql>
+
+    <!-- 状态 + 采购单 batch_id + 批次表状态 + 采购类型 + 部门/采购员/供货商多选（仅用于已 LEFT JOIN gdpb 的统计 SQL） -->
+    <sql id="purGoodsWhereGbPurchaseCountJoinTail">
+            <if test="equalStatus != null">
+                AND gdpg.gb_DPG_status = #{equalStatus}
+            </if>
+            <if test="status != null">
+                AND gdpg.gb_DPG_status &lt; #{status}
+            </if>
+            <if test="dayuStatus != null">
+                AND gdpg.gb_DPG_status &gt; #{dayuStatus}
+            </if>
+            <if test="batchId != null">
+                AND gdpg.gb_DPG_batch_id = #{batchId}
+            </if>
+            <if test="batchDayuStatus != null">
+                AND gdpb.gb_DPB_status &gt; #{batchDayuStatus}
+            </if>
+            <if test="typeNotEqual != null">
+                AND gdpg.gb_DPG_purchase_type != #{typeNotEqual}
+            </if>
+            <if test="purDepIds != null and purDepIds.size() &gt; 0">
+                AND gdpg.gb_DPG_purchase_department_id IN
+                <foreach item="id" collection="purDepIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
+            <if test="purUserIds != null and purUserIds.size() &gt; 0">
+                AND gdpg.gb_DPG_pur_user_id IN
+                <foreach item="id" collection="purUserIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
+            <if test="supplierIds != null and supplierIds.size() &gt; 0">
+                AND gdpg.gb_DPG_purchase_nx_supplier_id IN
+                <foreach item="id" collection="supplierIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
+    </sql>
+
     <!-- 根据ID查询 -->
     <select id="selectById" resultType="com.nongxinle.entity.GbDistributerPurchaseGoodsEntity">
         SELECT * FROM gb_distributer_purchase_goods WHERE gb_distributer_purchase_goods_id = #{id}
@@ -66,11 +169,14 @@
         <result property="gbDoDepartmentFatherId" column="gb_DO_department_father_id"/>
         <result property="gbDoDisGoodsId" column="gb_DO_dis_goods_id"/>
         <result property="gbDoQuantity" column="gb_DO_quantity"/>
-        <result property="gbDoStandard" column="gb_CO_standard"/>
+        <result property="gbDoStandard" column="gb_DO_standard"/>
+        <result property="gbDoDsStandardScale" column="gb_DO_ds_standard_scale"/>
         <result property="gbDoStatus" column="gb_DO_status"/>
         <result property="gbDoBuyStatus" column="gb_DO_buy_status"/>
         <result property="gbDoPurchaseGoodsId" column="gb_DO_purchase_goods_id"/>
         <result property="gbDoApplyFullTime" column="gb_DO_apply_full_time"/>
+        <result property="gbDoOrderDepartmentName" column="gb_DO_order_department_name"/>
+        <result property="gbDoParentDepartmentName" column="gb_DO_parent_department_name"/>
     </resultMap>
 
     <select id="querySimplePurGoods" resultMap="purchaseGoodsSimple">
@@ -92,13 +198,12 @@
         greatGrand.gb_dfg_father_goods_sort 'greatGrand_gb_dfg_father_goods_sort',
         greatGrand.gb_dfg_nx_goods_id 'greatGrand_gb_dfg_nx_goods_id',
 
-        ds.gb_department_id 'ds_gb_department_id',
-        ds.gb_department_father_id 'ds_gb_department_id',
-        ds.gb_department_name 'ds_gb_department_name',
-        ds.gb_department_father_id 'ds_gb_department_father_id',
-        df.gb_department_id 'df_gb_department_id',
-        df.gb_department_name 'df_gb_department_name',
-        df.gb_department_attr_name 'df_gb_department_attr_name'
+        ds.gb_department_id AS ds_gb_department_id,
+        ds.gb_department_father_id AS ds_gb_department_father_id,
+        ds.gb_department_name AS gb_DO_order_department_name,
+        df.gb_department_id AS df_gb_department_id,
+        df.gb_department_name AS gb_DO_parent_department_name,
+        df.gb_department_attr_name AS df_gb_department_attr_name
         from gb_distributer_purchase_goods as gdpg
         left join gb_distributer_goods as dg on dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
         left join gb_distributer_father_goods as grand on grand.gb_distributer_father_goods_id =
@@ -197,37 +302,48 @@
     <select id="queryPurchaseGoodsCount" resultType="java.lang.Integer">
         select count(*) from gb_distributer_purchase_goods as gdpg
         <where>
-            <if test="params.disId != null">
-                and gdpg.gb_DPG_distributer_id = #{params.disId}
+            <if test="disId != null">
+                and gdpg.gb_DPG_distributer_id = #{disId}
             </if>
-            <if test="params.dayuStatus != null">
-                and gdpg.gb_DPG_status &gt; #{params.dayuStatus}
+            <if test="purDepId != null">
+                and gdpg.gb_DPG_purchase_department_id = #{purDepId}
             </if>
-            <if test="params.status != null">
-                and gdpg.gb_DPG_status &lt; #{params.status}
+            <if test="purUserId != null">
+                and gdpg.gb_DPG_pur_user_id = #{purUserId}
             </if>
-            <if test="params.equalStatus != null">
-                and gdpg.gb_DPG_status = #{params.equalStatus}
+            <include refid="purGoodsWhereGbSupplierBuyOnly"/>
+            <include refid="purGoodsWhereGbSupplierIdEq"/>
+            <if test="typeNotEqual != null">
+                and gdpg.gb_DPG_purchase_type != #{typeNotEqual}
             </if>
-            <if test="params.purchaseType != null">
-                and gdpg.gb_DPG_purchase_type = #{params.purchaseType}
+            <if test="dayuStatus != null">
+                and gdpg.gb_DPG_status &gt; #{dayuStatus}
             </if>
-            <if test="params.date != null">
-                and gdpg.gb_DPG_purchase_date = #{params.date}
+            <if test="status != null">
+                and gdpg.gb_DPG_status &lt; #{status}
             </if>
-            <if test="params.startDate != null">
-                and gdpg.gb_DPG_purchase_date &gt;= #{params.startDate}
+            <if test="equalStatus != null">
+                and gdpg.gb_DPG_status = #{equalStatus}
             </if>
-            <if test="params.stopDate != null">
-                and gdpg.gb_DPG_purchase_date &lt;= #{params.stopDate}
+            <if test="purchaseType != null">
+                and gdpg.gb_DPG_purchase_type = #{purchaseType}
             </if>
-            <if test="params.equalInputType != null">
-                and gdpg.gb_DPG_input_type = #{params.equalInputType}
+            <if test="date != null">
+                and gdpg.gb_DPG_purchase_date = #{date}
             </if>
-            <if test="params.batchId != null and params.batchId == 1">
+            <if test="startDate != null">
+                and gdpg.gb_DPG_purchase_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdpg.gb_DPG_purchase_date &lt;= #{stopDate}
+            </if>
+            <if test="equalInputType != null">
+                and gdpg.gb_DPG_input_type = #{equalInputType}
+            </if>
+            <if test="batchId != null and batchId == 1">
                 and gdpg.gb_DPG_batch_id &gt; 0
             </if>
-            <if test="params.batchId != null and params.batchId == -1">
+            <if test="batchId != null and batchId == -1">
                 and gdpg.gb_DPG_batch_id is null
             </if>
         </where>
@@ -236,31 +352,63 @@
     <select id="queryPurchaseGoodsSubTotal" resultType="java.lang.Double">
         select IFNULL(SUM(gdpg.gb_DPG_buy_subtotal), 0) from gb_distributer_purchase_goods as gdpg
         <where>
-            <if test="params.disId != null">
-                and gdpg.gb_DPG_distributer_id = #{params.disId}
+            <if test="disId != null">
+                and gdpg.gb_DPG_distributer_id = #{disId}
             </if>
-            <if test="params.dayuStatus != null">
-                and gdpg.gb_DPG_status &gt; #{params.dayuStatus}
+            <if test="disGoodsId != null">
+                and gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
             </if>
-            <if test="params.purchaseType != null">
-                and gdpg.gb_DPG_purchase_type = #{params.purchaseType}
+            <if test="disGoodsGreatId != null">
+                and gdpg.gb_DPG_dis_goods_great_id = #{disGoodsGreatId}
             </if>
-            <if test="params.date != null">
-                and gdpg.gb_DPG_purchase_date = #{params.date}
+            <if test="purDepId != null">
+                and gdpg.gb_DPG_purchase_department_id = #{purDepId}
             </if>
-            <if test="params.startDate != null">
-                and gdpg.gb_DPG_purchase_date &gt;= #{params.startDate}
+            <if test="purUserId != null">
+                and gdpg.gb_DPG_pur_user_id = #{purUserId}
             </if>
-            <if test="params.stopDate != null">
-                and gdpg.gb_DPG_purchase_date &lt;= #{params.stopDate}
+            <include refid="purGoodsWhereGbSupplierBuyOnly"/>
+            <include refid="purGoodsWhereGbSupplierIdEq"/>
+            <if test="typeNotEqual != null">
+                and gdpg.gb_DPG_purchase_type != #{typeNotEqual}
             </if>
-            <if test="params.equalInputType != null">
-                and gdpg.gb_DPG_input_type = #{params.equalInputType}
+            <if test="dayuStatus != null">
+                and gdpg.gb_DPG_status &gt; #{dayuStatus}
             </if>
-            <if test="params.batchId != null and params.batchId == 1">
+            <if test="purchaseType != null">
+                and gdpg.gb_DPG_purchase_type = #{purchaseType}
+            </if>
+            <choose>
+                <when test="useStockFinishDate != null and useStockFinishDate == true">
+                    <if test="date != null">
+                        and gdpg.gb_DPG_stock_finish_date = #{date}
+                    </if>
+                    <if test="startDate != null">
+                        and gdpg.gb_DPG_stock_finish_date &gt;= #{startDate}
+                    </if>
+                    <if test="stopDate != null">
+                        and gdpg.gb_DPG_stock_finish_date &lt;= #{stopDate}
+                    </if>
+                </when>
+                <otherwise>
+                    <if test="date != null">
+                        and gdpg.gb_DPG_purchase_date = #{date}
+                    </if>
+                    <if test="startDate != null">
+                        and gdpg.gb_DPG_purchase_date &gt;= #{startDate}
+                    </if>
+                    <if test="stopDate != null">
+                        and gdpg.gb_DPG_purchase_date &lt;= #{stopDate}
+                    </if>
+                </otherwise>
+            </choose>
+            <if test="equalInputType != null">
+                and gdpg.gb_DPG_input_type = #{equalInputType}
+            </if>
+            <if test="batchId != null and batchId == 1">
                 and gdpg.gb_DPG_batch_id &gt; 0
             </if>
-            <if test="params.batchId != null and params.batchId == -1">
+            <if test="batchId != null and batchId == -1">
                 and gdpg.gb_DPG_batch_id is null
             </if>
         </where>
@@ -272,12 +420,8 @@
         <result property="gbDuWxNickName" column="gb_du_wx_nick_name"/>
     </resultMap>
 
-    <select id="queryGbPurchaseGoodsCount" resultType="java.lang.Integer">
-        SELECT COUNT(*)
-        FROM gb_distributer_purchase_goods AS gdpg
-        LEFT JOIN gb_distributer_purchase_batch AS gdpb
-        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
-        <where>
+    <!-- 与 queryGbPurchaseGoodsCount 完全一致的条件（含 join batch），供采购分析/重量/单价统计复用 -->
+    <sql id="purGoodsWhereJoinBatchAsGbCount">
             <if test="disId != null">
                 AND gdpg.gb_DPG_distributer_id = #{disId}
             </if>
@@ -287,76 +431,74 @@
             <if test="purUserId != null">
                 AND gdpg.gb_DPG_pur_user_id = #{purUserId}
             </if>
+            <if test="finishAmount != null">
+                AND gdpg.gb_DPG_orders_finish_amount &gt; #{finishAmount}
+            </if>
+            <include refid="purGoodsWhereGbSupplierBuySupplierId"/>
+            <include refid="purGoodsWhereGbDisGoodsHierarchy"/>
+            <include refid="purGoodsWhereGbStockFinishDateFlexible"/>
+            <include refid="purGoodsWhereGbPurchaseCountJoinTail"/>
+    </sql>
 
-            <if test="supplierBuy != null and supplierBuy == -1">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id = -1
-            </if>
-            <if test="supplierBuy != null and supplierBuy == 1">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id != -1
-            </if>
-            <if test="supplierId != null">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id = #{supplierId}
-            </if>
-            <if test="disGoodsId != null">
-                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
-            </if>
-            <if test="disGoodsFatherId != null">
-                AND gdpg.gb_DPG_dis_goods_father_id = #{disGoodsFatherId}
-            </if>
-            <if test="disGoodsGrandId != null">
-                AND gdpg.gb_DPG_dis_goods_grand_id = #{disGoodsGrandId}
-            </if>
-            <if test="disGoodsGreatId != null">
-                AND gdpg.gb_DPG_dis_goods_great_id = #{disGoodsGreatId}
-            </if>
-            <if test="finishDate != null and (date == null)">
-                AND gdpg.gb_DPG_stock_finish_date = #{finishDate}
-            </if>
-            <if test="date != null and (finishDate == null)">
-                AND gdpg.gb_DPG_stock_finish_date = #{date}
-            </if>
-            <if test="startDate != null">
-                AND gdpg.gb_DPG_stock_finish_date &gt;= #{startDate}
-            </if>
-            <if test="stopDate != null">
-                AND gdpg.gb_DPG_stock_finish_date &lt;= #{stopDate}
-            </if>
-            <if test="equalStatus != null">
-                AND gdpg.gb_DPG_status = #{equalStatus}
-            </if>
-            <if test="status != null">
-                AND gdpg.gb_DPG_status &lt; #{status}
-            </if>
-            <if test="dayuStatus != null">
-                AND gdpg.gb_DPG_status &gt; #{dayuStatus}
-            </if>
-            <if test="batchId != null">
-                AND gdpg.gb_DPG_batch_id = #{batchId}
-            </if>
-            <if test="batchDayuStatus != null">
-                AND gdpb.gb_DPB_status &gt; #{batchDayuStatus}
-            </if>
-            <if test="typeNotEqual != null">
-                AND gdpg.gb_DPG_purchase_type != #{typeNotEqual}
-            </if>
-            <if test="purDepIds != null and purDepIds.size() &gt; 0">
-                AND gdpg.gb_DPG_purchase_department_id IN
-                <foreach item="id" collection="purDepIds" open="(" separator="," close=")">
-                    #{id}
-                </foreach>
-            </if>
-            <if test="purUserIds != null and purUserIds.size() &gt; 0">
-                AND gdpg.gb_DPG_pur_user_id IN
-                <foreach item="id" collection="purUserIds" open="(" separator="," close=")">
-                    #{id}
-                </foreach>
-            </if>
-            <if test="supplierIds != null and supplierIds.size() &gt; 0">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id IN
-                <foreach item="id" collection="supplierIds" open="(" separator="," close=")">
-                    #{id}
-                </foreach>
-            </if>
+    <select id="queryGbPurchaseGoodsCount" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+        </where>
+    </select>
+
+    <select id="queryPurchaseGoodsWeightTotal" resultType="java.lang.Double">
+        SELECT IFNULL(SUM(CAST(gdpg.gb_DPG_buy_quantity AS DECIMAL(18,4))), 0)
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+        </where>
+    </select>
+
+    <select id="queryPurGoodsMaxPrice" resultType="java.lang.String">
+        SELECT CAST(IFNULL(MAX(CAST(gdpg.gb_DPG_buy_price AS DECIMAL(18,4))), 0) AS CHAR)
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+            AND gdpg.gb_DPG_buy_price IS NOT NULL AND TRIM(gdpg.gb_DPG_buy_price) != ''
+        </where>
+    </select>
+
+    <select id="queryPurGoodsMinPrice" resultType="java.lang.String">
+        SELECT CAST(IFNULL(MIN(CAST(gdpg.gb_DPG_buy_price AS DECIMAL(18,4))), 0) AS CHAR)
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+            AND gdpg.gb_DPG_buy_price IS NOT NULL AND TRIM(gdpg.gb_DPG_buy_price) != ''
+        </where>
+    </select>
+
+    <select id="queryPurchaseGoodsPrice" resultType="java.lang.String">
+        SELECT CAST(IFNULL(MAX(CAST(gdpg.gb_DPG_buy_price AS DECIMAL(18,4))), 0) AS CHAR)
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+        </where>
+    </select>
+
+    <select id="queryPurchaseGoodsWeight" resultType="java.lang.String">
+        SELECT CAST(IFNULL(SUM(CAST(gdpg.gb_DPG_buy_quantity AS DECIMAL(18,4))), 0) AS CHAR)
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
         </where>
     </select>
 
@@ -372,36 +514,12 @@
             <if test="disId != null">
                 AND gdpg.gb_DPG_distributer_id = #{disId}
             </if>
-            <if test="supplierBuy != null and supplierBuy == -1">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id = -1
-            </if>
-            <if test="supplierBuy != null and supplierBuy == 1">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id != -1
-            </if>
+            <include refid="purGoodsWhereGbSupplierBuyOnly"/>
             <if test="status != null">
-                AND gb_DPG_status &lt; #{status}
+                AND gdpg.gb_DPG_status &lt; #{status}
             </if>
-            <if test="disGoodsId != null">
-                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
-            </if>
-            <if test="disGoodsFatherId != null">
-                AND gdpg.gb_DPG_dis_goods_father_id = #{disGoodsFatherId}
-            </if>
-            <if test="disGoodsGrandId != null">
-                AND gdpg.gb_DPG_dis_goods_grand_id = #{disGoodsGrandId}
-            </if>
-            <if test="disGoodsGreatId != null">
-                AND gdpg.gb_DPG_dis_goods_great_id = #{disGoodsGreatId}
-            </if>
-            <if test="date != null">
-                AND gb_DPG_stock_finish_date = #{date}
-            </if>
-            <if test="startDate != null">
-                AND gdpg.gb_DPG_stock_finish_date &gt;= #{startDate}
-            </if>
-            <if test="stopDate != null">
-                AND gdpg.gb_DPG_stock_finish_date &lt;= #{stopDate}
-            </if>
+            <include refid="purGoodsWhereGbDisGoodsHierarchy"/>
+            <include refid="purGoodsWhereGbStockFinishDateFlexible"/>
         </where>
     </select>
 
@@ -438,30 +556,12 @@
             <if test="date != null">
                 AND gb_DPG_purchase_date = #{date}
             </if>
-            <if test="disGoodsId != null">
-                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
-            </if>
-            <if test="disGoodsFatherId != null">
-                AND gdpg.gb_DPG_dis_goods_father_id = #{disGoodsFatherId}
-            </if>
-            <if test="disGoodsGrandId != null">
-                AND gdpg.gb_DPG_dis_goods_grand_id = #{disGoodsGrandId}
-            </if>
-            <if test="disGoodsGreatId != null">
-                AND gdpg.gb_DPG_dis_goods_great_id = #{disGoodsGreatId}
-            </if>
-            <if test="startDate != null">
-                AND gb_DPG_stock_finish_date &gt;= #{startDate}
-            </if>
-            <if test="stopDate != null">
-                AND gb_DPG_stock_finish_date &lt;= #{stopDate}
-            </if>
+            <include refid="purGoodsWhereGbDisGoodsHierarchy"/>
+            <include refid="purGoodsWhereGbStockFinishStartStop"/>
             <if test="finishDate != null">
-                AND gb_DPG_stock_finish_date = #{finishDate}
+                AND gdpg.gb_DPG_stock_finish_date = #{finishDate}
             </if>
-            <if test="supplierId != null">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id = #{supplierId}
-            </if>
+            <include refid="purGoodsWhereGbSupplierIdEq"/>
             <if test="dayuStatus != null">
                 AND gdpg.gb_DPG_status &gt; #{dayuStatus}
             </if>
@@ -587,36 +687,13 @@
             <if test="date != null">
                 AND gdpg.gb_DPG_stock_finish_date = #{date}
             </if>
-            <if test="disGoodsId != null">
-                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
-            </if>
-            <if test="disGoodsFatherId != null">
-                AND gdpg.gb_DPG_dis_goods_father_id = #{disGoodsFatherId}
-            </if>
-            <if test="disGoodsGrandId != null">
-                AND gdpg.gb_DPG_dis_goods_grand_id = #{disGoodsGrandId}
-            </if>
-            <if test="disGoodsGreatId != null">
-                AND gdpg.gb_DPG_dis_goods_great_id = #{disGoodsGreatId}
-            </if>
-            <if test="startDate != null">
-                AND gdpg.gb_DPG_stock_finish_date &gt;= #{startDate}
-            </if>
-            <if test="stopDate != null">
-                AND gdpg.gb_DPG_stock_finish_date &lt;= #{stopDate}
-            </if>
+            <include refid="purGoodsWhereGbDisGoodsHierarchy"/>
+            <include refid="purGoodsWhereGbStockFinishStartStop"/>
             <if test="finishDate != null">
                 AND gdpg.gb_DPG_stock_finish_date = #{finishDate}
             </if>
-            <if test="supplierId != null">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id = #{supplierId}
-            </if>
-            <if test="supplierBuy != null and supplierBuy == -1">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id = #{supplierBuy}
-            </if>
-            <if test="supplierBuy != null and supplierBuy == 1">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id != -1
-            </if>
+            <include refid="purGoodsWhereGbSupplierIdEq"/>
+            <include refid="purGoodsWhereGbSupplierBuyOnly"/>
             <if test="dayuStatus != null">
                 AND gdpg.gb_DPG_status &gt; #{dayuStatus}
             </if>
@@ -762,17 +839,12 @@
                 AND gdpg.gb_DPG_distributer_id = #{disId}
             </if>
             <if test="dayuStatus != null">
-                AND gdpg.gb_DPG_status > #{dayuStatus}
+                AND gdpg.gb_DPG_status &gt; #{dayuStatus}
             </if>
             <if test="typeNotEqual != null">
                 AND gdpg.gb_DPG_purchase_type != #{typeNotEqual}
             </if>
-            <if test="startDate != null">
-                AND gdpg.gb_DPG_stock_finish_date >= #{startDate}
-            </if>
-            <if test="stopDate != null">
-                AND gdpg.gb_DPG_stock_finish_date &lt;= #{stopDate}
-            </if>
+            <include refid="purGoodsWhereGbStockFinishStartStop"/>
         </where>
         ORDER BY gg.gb_dfg_father_goods_sort
     </select>
@@ -784,30 +856,18 @@
             <if test="purUserId != null">
                 AND gdpg.gb_DPG_pur_user_id = #{purUserId}
             </if>
-            <if test="disGoodsId != null">
-                and gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
-            </if>
+            <include refid="purGoodsWhereGbDisGoodsHierarchy"/>
             <if test="standard != null">
                 and gdpg.gb_DPG_standard = #{standard}
             </if>
-            <if test="supplierId != null">
-                and gdpg.gb_DPG_purchase_nx_supplier_id = #{supplierId}
-            </if>
+            <include refid="purGoodsWhereGbSupplierIdEq"/>
             <if test="batchId != null">
                 and gdpg.gb_DPG_batch_id = #{batchId}
             </if>
             <if test="disId != null">
                 and gdpg.gb_DPG_distributer_id = #{disId}
             </if>
-            <if test="disGoodsGreatId != null">
-                and gdpg.gb_DPG_dis_goods_great_id = #{disGoodsGreatId}
-            </if>
-            <if test="supplierBuy != null and supplierBuy == -1">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id = -1
-            </if>
-            <if test="supplierBuy != null and supplierBuy == 1">
-                AND gdpg.gb_DPG_purchase_nx_supplier_id != -1
-            </if>
+            <include refid="purGoodsWhereGbSupplierBuyOnly"/>
             <if test="xiaoyuSubtotal != null">
                 and gb_DPG_buy_subtotal &lt; #{xiaoyuSubtotal}
             </if>
@@ -835,8 +895,8 @@
         </where>
     </select>
 
-    <!-- 查询采购商品及其详细信息 -->
-    <select id="queryPurchaseGoodsWithDetailByParams" resultMap="purchaseGoodsSimple">
+    <!-- 按 batch 查采购商品 + 部门订单（供货商端称重等），与小程序「采购行+库存」明细不同 -->
+    <select id="queryPurchaseGoodsWithOrdersByBatch" resultMap="purchaseGoodsSimple">
         select gdpg.*,
                dg.gb_dg_goods_name,
                dg.gb_dg_goods_py,
@@ -864,6 +924,70 @@
         </where>
     </select>
 
+    <!-- 小程序采购明细：每条采购 + 自采采购员/订货供货商 + 部门库存行（入库/剩余/销售/损耗/废弃/退货量） -->
+    <select id="queryPurchaseGoodsWithDetailByParams" resultMap="purGoodsWithStocksDetailRM">
+        SELECT
+            gdpg.gb_distributer_purchase_goods_id AS dpg_gb_distributer_purchase_goods_id,
+            gdpg.gb_DPG_dis_goods_id AS dpg_gb_DPG_dis_goods_id,
+            gdpg.gb_DPG_stock_finish_date AS dpg_gb_DPG_stock_finish_date,
+            gdpg.gb_DPG_buy_quantity AS dpg_gb_DPG_buy_quantity,
+            gdpg.gb_DPG_buy_price AS dpg_gb_DPG_buy_price,
+            gdpg.gb_DPG_buy_subtotal AS dpg_gb_DPG_buy_subtotal,
+            gdpg.gb_DPG_pur_user_id AS dpg_gb_DPG_pur_user_id,
+            gdpg.gb_DPG_purchase_nx_supplier_id AS dpg_gb_DPG_purchase_nx_supplier_id,
+            purdu.gb_department_user_id AS purdu_gb_department_user_id,
+            purdu.gb_du_wx_nick_name AS purdu_gb_du_wx_nick_name,
+            jrdh.nx_jrdh_supplier_id AS jrdh_nx_jrdh_supplier_id,
+            jrdh.nx_jrdhs_supplier_name AS jrdh_nx_jrdhs_supplier_name,
+            gdgs.gb_department_goods_stock_id AS dgs_gb_department_goods_stock_id,
+            gdgs.gb_dgs_weight AS dgs_gb_dgs_weight,
+            gdgs.gb_dgs_price AS dgs_gb_dgs_price,
+            gdgs.gb_dgs_subtotal AS dgs_gb_dgs_subtotal,
+            gdgs.gb_dgs_rest_weight AS dgs_gb_dgs_rest_weight,
+            gdgs.gb_dgs_rest_subtotal AS dgs_gb_dgs_rest_subtotal,
+            gdgs.gb_dgs_produce_weight AS dgs_gb_dgs_produce_weight,
+            gdgs.gb_dgs_loss_weight AS dgs_gb_dgs_loss_weight,
+            gdgs.gb_dgs_waste_weight AS dgs_gb_dgs_waste_weight,
+            gdgs.gb_dgs_return_weight AS dgs_gb_dgs_return_weight,
+            gd.gb_department_id AS dgsdep_gb_department_id,
+            gd.gb_department_name AS dgsdep_gb_department_name
+        FROM gb_distributer_purchase_goods gdpg
+        LEFT JOIN gb_department_user purdu ON purdu.gb_department_user_id = gdpg.gb_DPG_pur_user_id
+            AND gdpg.gb_DPG_purchase_nx_supplier_id = -1
+        LEFT JOIN nx_jrdh_supplier jrdh ON jrdh.nx_jrdh_supplier_id = gdpg.gb_DPG_purchase_nx_supplier_id
+            AND gdpg.gb_DPG_purchase_nx_supplier_id IS NOT NULL AND gdpg.gb_DPG_purchase_nx_supplier_id != -1
+        LEFT JOIN gb_department_goods_stock gdgs ON gdgs.gb_dgs_gb_pur_goods_id = gdpg.gb_distributer_purchase_goods_id
+        LEFT JOIN gb_department gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_id
+        <where>
+            <if test="disGoodsId != null and (disGoodsIds == null or disGoodsIds.size() == 0)">
+                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disGoodsIds != null and disGoodsIds.size() &gt; 0">
+                AND gdpg.gb_DPG_dis_goods_id IN
+                <foreach collection="disGoodsIds" item="gid" open="(" separator="," close=")">
+                    #{gid}
+                </foreach>
+            </if>
+            <if test="disId != null">
+                AND gdpg.gb_DPG_distributer_id = #{disId}
+            </if>
+            <if test="typeNotEqual != null">
+                AND gdpg.gb_DPG_purchase_type != #{typeNotEqual}
+            </if>
+            <include refid="purGoodsWhereGbSupplierBuyOnly"/>
+            <if test="purUserId != null">
+                AND gdpg.gb_DPG_pur_user_id = #{purUserId}
+            </if>
+            <include refid="purGoodsWhereGbSupplierIdEq"/>
+            <if test="dayuStatus != null">
+                AND gdpg.gb_DPG_status &gt; #{dayuStatus}
+            </if>
+            <include refid="purGoodsWhereGbStockFinishStartStop"/>
+        </where>
+        ORDER BY gdpg.gb_DPG_stock_finish_date DESC, gdpg.gb_distributer_purchase_goods_id,
+                 gdgs.gb_department_goods_stock_id
+    </select>
+
     <!-- 只查询采购商品 -->
     <select id="queryOnlyPurGoods" resultType="com.nongxinle.entity.GbDistributerPurchaseGoodsEntity">
         select *
@@ -873,6 +997,106 @@
                 and gb_DPG_batch_id = #{batchId}
             </if>
         </where>
+    </select>
+
+    <!-- 部门树采购明细：每条采购 + 自采采购员/订货供货商 + 入库库存行（供 wastePurGoodsEntities） -->
+    <resultMap id="purGoodsDetailStockWithDeptRM" type="com.nongxinle.entity.GbDepartmentGoodsStockEntity">
+        <id property="gbDepartmentGoodsStockId" column="dgs_gb_department_goods_stock_id"/>
+        <result property="gbDgsWeight" column="dgs_gb_dgs_weight"/>
+        <result property="gbDgsPrice" column="dgs_gb_dgs_price"/>
+        <result property="gbDgsSubtotal" column="dgs_gb_dgs_subtotal"/>
+        <result property="gbDgsRestWeight" column="dgs_gb_dgs_rest_weight"/>
+        <result property="gbDgsRestSubtotal" column="dgs_gb_dgs_rest_subtotal"/>
+        <result property="gbDgsProduceWeight" column="dgs_gb_dgs_produce_weight"/>
+        <result property="gbDgsLossWeight" column="dgs_gb_dgs_loss_weight"/>
+        <result property="gbDgsWasteWeight" column="dgs_gb_dgs_waste_weight"/>
+        <result property="gbDgsReturnWeight" column="dgs_gb_dgs_return_weight"/>
+        <association property="gbDepartmentEntity" javaType="com.nongxinle.entity.GbDepartmentEntity">
+            <id property="gbDepartmentId" column="dgsdep_gb_department_id"/>
+            <result property="gbDepartmentName" column="dgsdep_gb_department_name"/>
+        </association>
+    </resultMap>
+
+    <resultMap id="purGoodsWithStocksDetailRM" type="com.nongxinle.entity.GbDistributerPurchaseGoodsEntity">
+        <id property="gbDistributerPurchaseGoodsId" column="dpg_gb_distributer_purchase_goods_id"/>
+        <result property="gbDpgDisGoodsId" column="dpg_gb_DPG_dis_goods_id"/>
+        <result property="gbDpgStockFinishDate" column="dpg_gb_DPG_stock_finish_date"/>
+        <result property="gbDpgBuyQuantity" column="dpg_gb_DPG_buy_quantity"/>
+        <result property="gbDpgBuyPrice" column="dpg_gb_DPG_buy_price"/>
+        <result property="gbDpgBuySubtotal" column="dpg_gb_DPG_buy_subtotal"/>
+        <result property="gbDpgPurUserId" column="dpg_gb_DPG_pur_user_id"/>
+        <result property="gbDpgPurchaseNxSupplierId" column="dpg_gb_DPG_purchase_nx_supplier_id"/>
+        <association property="purchaseDepartmentUser" javaType="com.nongxinle.entity.GbDepartmentUserEntity">
+            <id property="gbDepartmentUserId" column="purdu_gb_department_user_id"/>
+            <result property="gbDuWxNickName" column="purdu_gb_du_wx_nick_name"/>
+        </association>
+        <association property="nxJrdhSupplierEntity" javaType="com.nongxinle.entity.NxJrdhSupplierEntity">
+            <id property="nxJrdhSupplierId" column="jrdh_nx_jrdh_supplier_id"/>
+            <result property="nxJrdhsSupplierName" column="jrdh_nx_jrdhs_supplier_name"/>
+        </association>
+        <collection property="gbDepartmentGoodsStockEntities" ofType="com.nongxinle.entity.GbDepartmentGoodsStockEntity"
+                    resultMap="purGoodsDetailStockWithDeptRM" notNullColumn="dgs_gb_department_goods_stock_id"/>
+    </resultMap>
+
+    <select id="queryPurchaseGoodsWithStocksDetailForGoodsIds" resultMap="purGoodsWithStocksDetailRM">
+        SELECT
+            gdpg.gb_distributer_purchase_goods_id AS dpg_gb_distributer_purchase_goods_id,
+            gdpg.gb_DPG_dis_goods_id AS dpg_gb_DPG_dis_goods_id,
+            gdpg.gb_DPG_stock_finish_date AS dpg_gb_DPG_stock_finish_date,
+            gdpg.gb_DPG_buy_quantity AS dpg_gb_DPG_buy_quantity,
+            gdpg.gb_DPG_buy_price AS dpg_gb_DPG_buy_price,
+            gdpg.gb_DPG_buy_subtotal AS dpg_gb_DPG_buy_subtotal,
+            gdpg.gb_DPG_pur_user_id AS dpg_gb_DPG_pur_user_id,
+            gdpg.gb_DPG_purchase_nx_supplier_id AS dpg_gb_DPG_purchase_nx_supplier_id,
+            purdu.gb_department_user_id AS purdu_gb_department_user_id,
+            purdu.gb_du_wx_nick_name AS purdu_gb_du_wx_nick_name,
+            jrdh.nx_jrdh_supplier_id AS jrdh_nx_jrdh_supplier_id,
+            jrdh.nx_jrdhs_supplier_name AS jrdh_nx_jrdhs_supplier_name,
+            gdgs.gb_department_goods_stock_id AS dgs_gb_department_goods_stock_id,
+            gdgs.gb_dgs_weight AS dgs_gb_dgs_weight,
+            gdgs.gb_dgs_price AS dgs_gb_dgs_price,
+            gdgs.gb_dgs_subtotal AS dgs_gb_dgs_subtotal,
+            gdgs.gb_dgs_rest_weight AS dgs_gb_dgs_rest_weight,
+            gdgs.gb_dgs_rest_subtotal AS dgs_gb_dgs_rest_subtotal,
+            gdgs.gb_dgs_produce_weight AS dgs_gb_dgs_produce_weight,
+            gdgs.gb_dgs_loss_weight AS dgs_gb_dgs_loss_weight,
+            gdgs.gb_dgs_waste_weight AS dgs_gb_dgs_waste_weight,
+            gdgs.gb_dgs_return_weight AS dgs_gb_dgs_return_weight,
+            gd.gb_department_id AS dgsdep_gb_department_id,
+            gd.gb_department_name AS dgsdep_gb_department_name
+        FROM gb_distributer_purchase_goods gdpg
+        LEFT JOIN gb_department_user purdu ON purdu.gb_department_user_id = gdpg.gb_DPG_pur_user_id
+            AND gdpg.gb_DPG_purchase_nx_supplier_id = -1
+        LEFT JOIN nx_jrdh_supplier jrdh ON jrdh.nx_jrdh_supplier_id = gdpg.gb_DPG_purchase_nx_supplier_id
+            AND gdpg.gb_DPG_purchase_nx_supplier_id IS NOT NULL AND gdpg.gb_DPG_purchase_nx_supplier_id != -1
+        LEFT JOIN gb_department_goods_stock gdgs ON gdgs.gb_dgs_gb_pur_goods_id = gdpg.gb_distributer_purchase_goods_id
+        LEFT JOIN gb_department gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_id
+        <where>
+            <if test="disGoodsIds != null and disGoodsIds.size() &gt; 0">
+                AND gdpg.gb_DPG_dis_goods_id IN
+                <foreach collection="disGoodsIds" item="gid" open="(" separator="," close=")">
+                    #{gid}
+                </foreach>
+            </if>
+            <if test="disId != null">
+                AND gdpg.gb_DPG_distributer_id = #{disId}
+            </if>
+            <if test="typeNotEqual != null">
+                AND gdpg.gb_DPG_purchase_type != #{typeNotEqual}
+            </if>
+            <include refid="purGoodsWhereGbSupplierBuyOnly"/>
+            <if test="purUserId != null">
+                AND gdpg.gb_DPG_pur_user_id = #{purUserId}
+            </if>
+            <include refid="purGoodsWhereGbSupplierIdEq"/>
+            <if test="dayuStatus != null">
+                AND gdpg.gb_DPG_status &gt; #{dayuStatus}
+            </if>
+            <include refid="purGoodsWhereGbDisGoodsHierarchy"/>
+            <include refid="purGoodsWhereGbStockFinishStartStop"/>
+        </where>
+        ORDER BY gdpg.gb_DPG_stock_finish_date DESC, gdpg.gb_distributer_purchase_goods_id,
+                 gdgs.gb_department_goods_stock_id
     </select>
 
 </mapper>

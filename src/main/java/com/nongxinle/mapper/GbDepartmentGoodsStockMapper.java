@@ -23,6 +23,11 @@ public interface GbDepartmentGoodsStockMapper extends BaseMapper<GbDepartmentGoo
     List<GbDepartmentGoodsStockEntity> queryGoodsStockByParams(Map<String, Object> map);
 
     /**
+     * 门店时段统计用：与树查询相同条件的一次性库存列表
+     */
+    List<GbDepartmentGoodsStockEntity> queryGoodsStockListForMendianPeriod(Map<String, Object> map);
+
+    /**
      * 查询库存商品数量
      */
     Integer queryGoodsStockCount(Map<String, Object> map);
@@ -31,6 +36,11 @@ public interface GbDepartmentGoodsStockMapper extends BaseMapper<GbDepartmentGoo
      * 查询部门商品剩余总量
      */
     Double queryDepGoodsRestTotal(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryDepGoodsRestTotal} 条件一致，汇总剩余重量 {@code gb_dgs_rest_weight}
+     */
+    Double queryDepGoodsRestWeightTotal(Map<String, Object> map);
 
     /**
      * 查询部门库存树形父商品

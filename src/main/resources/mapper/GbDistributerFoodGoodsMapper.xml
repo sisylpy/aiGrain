@@ -35,6 +35,14 @@
         where gb_dfg_food_id = #{gbDfgFoodId}
     </select>
 
+    <select id="queryFoodGoodsByDisGoodsId" resultType="com.nongxinle.entity.GbDistributerFoodGoodsEntity">
+        select * from gb_distributer_food_goods
+        where gb_dfg_dis_goods_id = #{disGoodsId}
+        <if test="disId != null">
+            and gb_dfg_dis_id = #{disId}
+        </if>
+    </select>
+
     <insert id="save" parameterType="com.nongxinle.entity.GbDistributerFoodGoodsEntity" useGeneratedKeys="true" keyProperty="gbDistributerFoodGoodsId">
         insert into gb_distributer_food_goods
         (gb_dfg_dis_id, gb_dfg_food_id, gb_dfg_dis_goods_id, gb_dfg_goods_amount, gb_dfg_goods_name, gb_dfg_goods_standardname, gb_dfg_status)

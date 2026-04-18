@@ -101,12 +101,15 @@ public class GbDistributerPurchaseBatchEntity implements Serializable {
     
     @TableField
     private Integer gbDpbSellUserId;
-    
+
+    /**
+     * 批次订货方式，库字段 {@code gb_dpb_purchase_type}：0 手动订货，1 自动订货（常量见
+     * {@link com.nongxinle.utils.GbConstants.PurchaseBatchOrderMode}）。
+     * 与采购商品行 {@code gb_DPG_purchase_type} 含义不同，参见 {@link com.nongxinle.utils.GbConstants.PurchaseOrderType}。
+     */
     @TableField
     private Integer gbDpbPurchaseType;
-    
 
-    
     @TableField(exist = false)
     private String gbDpbBatchNo;
 

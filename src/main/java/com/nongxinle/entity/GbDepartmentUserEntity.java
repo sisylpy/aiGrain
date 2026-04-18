@@ -1,12 +1,15 @@
 package com.nongxinle.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 订货部门用户实体
@@ -92,5 +95,15 @@ public class GbDepartmentUserEntity implements Serializable {
      * 登录次数
      */
     private Integer gbDuLoginTimes;
+
+    /** 扩展统计（如采购总额 billTotal、退货总额 returnPayTotal），非表字段 */
+    @TableField(exist = false)
+    private Map<String, Object> itemData;
+
+    /**
+     * 按天的采购明细（小程序 zicaiArr）：每项含 day、zicai（自采额）、dinghuo（订货额）
+     */
+    @TableField(exist = false)
+    private List<Map<String, Object>> zicaiArr;
 
 }

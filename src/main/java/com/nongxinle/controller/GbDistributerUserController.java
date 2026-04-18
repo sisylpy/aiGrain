@@ -11,6 +11,7 @@ import com.nongxinle.service.GbDepartmentService;
 import com.nongxinle.service.GbDistributerService;
 import com.nongxinle.service.GbDistributerUserService;
 import com.nongxinle.service.NxJrdhUserService;
+import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.MyAPPIDConfig;
 import com.nongxinle.utils.R;
 import com.nongxinle.utils.UploadFile;
@@ -77,7 +78,7 @@ public class GbDistributerUserController {
 
         Map<String, Object> map = new HashMap<>();
         map.put("openId", openid);
-        map.put("admin", 2);
+        map.put("admin", GbConstants.DepartmentUserRole.STORE_MANAGER_APP);
         GbDepartmentUserEntity depUserEntities = gbDepartmentUserService.queryDepUsersByOpenIdAndAdmin(map);
         NxJrdhUserEntity nxJrdhUserEntity = nxJrdhUserService.queryWhichUserByOpenId(openid);
 
@@ -92,18 +93,18 @@ public class GbDistributerUserController {
             gbDistributerEntity.setGbDistributerNxDisId(-1);
             gbDistributerEntity.setGbDistributerRecordSeconds("30");
             gbDistributerEntity.setGbDistributerStockCycle(0);
-            GbDepartmentUserEntity purUser = new GbDepartmentUserEntity();
 
+            GbDepartmentUserEntity managerUser = new GbDepartmentUserEntity();
             String newUploadName = "uploadImage";
-            String realPath = UploadFile.upload(session, newUploadName, file);
-
+            UploadFile.upload(session, newUploadName, file);
             String filename = file.getOriginalFilename();
             String filePath = newUploadName + "/" + filename;
 //            //1 disuser save
-            purUser.setGbDuWxOpenId(openid);
-            purUser.setGbDuWxAvartraUrl(filePath);
-            purUser.setGbDuWxNickName(restaurantName+ "采购员");
-            gbDistributerEntity.setSingleDepartmentUser(purUser);
+            managerUser.setGbDuWxOpenId(openid);
+            managerUser.setGbDuWxAvartraUrl(filePath);
+            managerUser.setGbDuWxNickName(restaurantName+ "管理员");
+            managerUser.setGbDuAdmin(GbConstants.DepartmentUserRole.STORE_MANAGER_APP);
+            gbDistributerEntity.setSingleDepartmentUser(managerUser);
             Integer disId = gbDistributerService.saveSingleMendianDistributerGb(gbDistributerEntity);
             System.out.println("usidididid" + disId);
 

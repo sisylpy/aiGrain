@@ -53,4 +53,10 @@
 		WHERE gb_ai_restaurant_profile_department_id = #{departmentId}
 	</select>
 
+	<select id="selectByDistributerId" resultMap="BaseResultMap">
+		SELECT * FROM gb_ai_restaurant_profile
+		WHERE gb_ai_restaurant_profile_distributer_id = #{distributerId}
+		LIMIT 1
+	</select>
+
 </mapper>

@@ -1,5 +1,6 @@
 package com.nongxinle.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.nongxinle.entity.GbDepartmentOrdersEntity;
@@ -188,6 +189,16 @@ public class GbDepartmentOrdersServiceImpl extends ServiceImpl<GbDepartmentOrder
     @Override
     public Double queryGbOrdersSubtotal(Map<String, Object> map) {
         return gbDepartmentOrdersMapper.queryGbOrdersSubtotal(map);
+    }
+
+    @Override
+    public GbDepartmentOrdersEntity queryReturnOrderByReduceId(Integer reduceId) {
+        if (reduceId == null) {
+            return null;
+        }
+        return getOne(new LambdaQueryWrapper<GbDepartmentOrdersEntity>()
+                .eq(GbDepartmentOrdersEntity::getGbDoDgsrReturnId, reduceId)
+                .last("LIMIT 1"));
     }
 
 }

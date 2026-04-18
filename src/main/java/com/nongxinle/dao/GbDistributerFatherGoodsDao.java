@@ -49,5 +49,6 @@ public interface GbDistributerFatherGoodsDao extends BaseMapper<GbDistributerFat
 
     List<GbDistributerFatherGoodsEntity> queryDisGoodsCataWithFilter(Map<String, Object> mapG);
 
+    /** 采购涉及的曾祖父级（分类树最高层级）批发商商品分类，见 Mapper 注释。 */
     List<GbDistributerFatherGoodsEntity> queryPurchaseGoodsFatherTypes(Map<String, Object> map);
 }

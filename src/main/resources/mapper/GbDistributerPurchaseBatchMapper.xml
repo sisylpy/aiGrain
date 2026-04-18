@@ -108,7 +108,7 @@
         
         <!-- 嵌套查询部门订单 -->
         <collection property="gbDepartmentOrdersEntities" ofType="com.nongxinle.entity.GbDepartmentOrdersEntity"
-                    column="gb_distributer_purchase_goods_id" 
+                    column="{purchaseGoodsId=gb_distributer_purchase_goods_id}"
                     select="queryDepartmentOrdersByPurchaseGoodsId"/>
     </resultMap>
 
@@ -167,11 +167,15 @@
         where dpg.gb_DPG_batch_id = #{batchId}
     </select>
 
-    <!-- 根据采购商品ID查询部门订单 -->
+    <!-- 根据采购商品ID查询部门订单（含订货部门、父级部门名称） -->
     <select id="queryDepartmentOrdersByPurchaseGoodsId" resultType="com.nongxinle.entity.GbDepartmentOrdersEntity">
-        select *
-        from gb_department_orders
-        where gb_DO_purchase_goods_id = #{purchaseGoodsId}
+        SELECT dor.*,
+               order_dep.gb_department_name AS gb_do_order_department_name,
+               parent_dep.gb_department_name AS gb_do_parent_department_name
+        FROM gb_department_orders dor
+                 LEFT JOIN gb_department order_dep ON order_dep.gb_department_id = dor.gb_DO_department_id
+                 LEFT JOIN gb_department parent_dep ON parent_dep.gb_department_id = dor.gb_DO_department_father_id
+        WHERE dor.gb_DO_purchase_goods_id = #{purchaseGoodsId}
     </select>
 
     <!-- 根据ID查询采购人员 -->
@@ -202,26 +206,6 @@
         where gb_distributer_purchase_batch_id = #{batchId}
     </select>
 
-    <!-- 查询采购批次列表 -->
-    <select id="queryDisPurchaseBatch" resultMap="purchaseBatchWithGoodsMap">
-        select *
-        from gb_distributer_purchase_batch as dpb
-        <where>
-            <if test="map.disId != null">
-                and gb_DPB_distributer_id = #{map.disId}
-            </if>
-            <if test="map.status != null">
-                and gb_DPB_status &lt; #{map.status, jdbcType=INTEGER}
-            </if>
-            <if test="map.equalStatus != null">
-                and gb_DPB_status = #{map.equalStatus}
-            </if>
-            <if test="map.purUserId != null">
-                and gb_DPB_pur_user_id = #{map.purUserId}
-            </if>
-        </where>
-        order by gb_distributer_purchase_batch_id DESC
-    </select>
 
     <!-- 根据参数查询采购批次数量 -->
     <select id="queryDisPurchaseBatchCount" resultType="java.lang.Integer">
@@ -274,7 +258,7 @@
         </where>
     </select>
 
-    <!-- 查询采购批次详细信息（老项目兼容方法） -->
+    <!-- 查询采购批次主要信息 -->
     <select id="queryDisPurchaseBatchInfo" resultMap="purchaseBatchWithGoodsMap">
         select *
         from gb_distributer_purchase_batch as dpb
@@ -318,6 +302,26 @@
             </if>
         </where>
         order by gb_distributer_purchase_batch_id DESC
+    </select>
+
+    <select id="queryDisPurchaseBatchListWithOrders"  resultMap="purchaseBatchWithGoodsMap">
+        select *
+                from gb_distributer_purchase_batch as dpb
+                <where>
+                    <if test="map.disId != null">
+                        and gb_DPB_distributer_id = #{map.disId}
+                    </if>
+                    <if test="map.status != null">
+                        and gb_DPB_status &lt; #{map.status, jdbcType=INTEGER}
+                    </if>
+                    <if test="map.equalStatus != null">
+                        and gb_DPB_status = #{map.equalStatus}
+                    </if>
+                    <if test="map.purUserId != null">
+                        and gb_DPB_pur_user_id = #{map.purUserId}
+                    </if>
+                </where>
+                order by gb_distributer_purchase_batch_id DESC
     </select>
 
 </mapper>

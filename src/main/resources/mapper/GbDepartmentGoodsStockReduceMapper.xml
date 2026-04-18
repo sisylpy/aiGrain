@@ -5,12 +5,17 @@
 
     <select id="queryReduceTypeCount" resultType="java.lang.Integer">
         select count(*) from gb_department_goods_stock_reduce as gbdssr
+        left join gb_department as gd on gd.gb_department_id = gbdssr.gb_dgsr_gb_department_id
+        left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gbdssr.gb_dgsr_gb_dis_goods_id
         <where>
             <if test="params.disId != null">
-                and gbdssr.gb_dgsr_distributer_id = #{params.disId}
+                and gbdssr.gb_dgsr_gb_distributer_id = #{params.disId}
             </if>
             <if test="params.depId != null">
-                and gbdssr.gb_dgsr_department_id = #{params.depId}
+                and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
             </if>
             <if test="params.date != null">
                 and gbdssr.gb_dgsr_date = #{params.date}
@@ -20,6 +25,15 @@
             </if>
             <if test="params.stopDate != null">
                 and gbdssr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                and (
+                    gbdssr.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+            <if test="params.disGoodsId != null">
+                and gbdssr.gb_dgsr_gb_dis_goods_id = #{params.disGoodsId}
             </if>
             <if test="params.type != null">
                 and gbdssr.gb_dgsr_type = #{params.type}
@@ -35,12 +49,17 @@
 
     <select id="queryReduceCostSubtotal" resultType="java.lang.Double">
         select IFNULL(sum(gbdssr.gb_dgsr_subtotal), 0) from gb_department_goods_stock_reduce as gbdssr
+        left join gb_department as gd on gd.gb_department_id = gbdssr.gb_dgsr_gb_department_id
+        left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gbdssr.gb_dgsr_gb_dis_goods_id
         <where>
             <if test="params.disId != null">
-                and gbdssr.gb_dgsr_distributer_id = #{params.disId}
+                and gbdssr.gb_dgsr_gb_distributer_id = #{params.disId}
             </if>
             <if test="params.depId != null">
-                and gbdssr.gb_dgsr_department_id = #{params.depId}
+                and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
             </if>
             <if test="params.date != null">
                 and gbdssr.gb_dgsr_date = #{params.date}
@@ -50,6 +69,110 @@
             </if>
             <if test="params.stopDate != null">
                 and gbdssr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                and (
+                    gbdssr.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+            <if test="params.disGoodsId != null">
+                and gbdssr.gb_dgsr_gb_dis_goods_id = #{params.disGoodsId}
+            </if>
+            <if test="params.type != null">
+                and gbdssr.gb_dgsr_type = #{params.type}
+            </if>
+            <if test="params.types != null">
+                and gbdssr.gb_dgsr_type in
+                <foreach collection="params.types" item="typeItem" open="(" separator="," close=")">
+                    #{typeItem}
+                </foreach>
+            </if>
+        </where>
+    </select>
+
+    <!-- 与 queryReduceCostSubtotal 条件一致，汇总 gb_dgsr_weight -->
+    <select id="queryReduceWeightSum" resultType="java.lang.Double">
+        select IFNULL(SUM(CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,4))), 0) from gb_department_goods_stock_reduce as gbdssr
+        left join gb_department as gd on gd.gb_department_id = gbdssr.gb_dgsr_gb_department_id
+        left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gbdssr.gb_dgsr_gb_dis_goods_id
+        <where>
+            <if test="params.disId != null">
+                and gbdssr.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.date != null">
+                and gbdssr.gb_dgsr_date = #{params.date}
+            </if>
+            <if test="params.startDate != null">
+                and gbdssr.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and gbdssr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                and (
+                    gbdssr.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+            <if test="params.disGoodsId != null">
+                and gbdssr.gb_dgsr_gb_dis_goods_id = #{params.disGoodsId}
+            </if>
+            <if test="params.type != null">
+                and gbdssr.gb_dgsr_type = #{params.type}
+            </if>
+            <if test="params.types != null">
+                and gbdssr.gb_dgsr_type in
+                <foreach collection="params.types" item="typeItem" open="(" separator="," close=")">
+                    #{typeItem}
+                </foreach>
+            </if>
+        </where>
+    </select>
+
+    <!-- 与 queryReduceTypeCount 条件一致，按类型汇总重量（替代原 gb_department_goods_daily 按日 produce/loss/waste/return 重量） -->
+    <select id="queryReduceTypeWeightTotalsByScope" resultType="java.util.Map">
+        select
+            IFNULL(SUM(CASE WHEN gbdssr.gb_dgsr_type = 1 THEN CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,4)) ELSE 0 END), 0) as produceWeight,
+            IFNULL(SUM(CASE WHEN gbdssr.gb_dgsr_type = 3 THEN CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,4)) ELSE 0 END), 0) as lossWeight,
+            IFNULL(SUM(CASE WHEN gbdssr.gb_dgsr_type = 2 THEN CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,4)) ELSE 0 END), 0) as wasteWeight,
+            IFNULL(SUM(CASE WHEN gbdssr.gb_dgsr_type = 4 THEN CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,4)) ELSE 0 END), 0) as returnWeight
+        from gb_department_goods_stock_reduce as gbdssr
+        left join gb_department as gd on gd.gb_department_id = gbdssr.gb_dgsr_gb_department_id
+        left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gbdssr.gb_dgsr_gb_dis_goods_id
+        <where>
+            <if test="params.disId != null">
+                and gbdssr.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.date != null">
+                and gbdssr.gb_dgsr_date = #{params.date}
+            </if>
+            <if test="params.startDate != null">
+                and gbdssr.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and gbdssr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                and (
+                    gbdssr.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+            <if test="params.disGoodsId != null">
+                and gbdssr.gb_dgsr_gb_dis_goods_id = #{params.disGoodsId}
             </if>
             <if test="params.type != null">
                 and gbdssr.gb_dgsr_type = #{params.type}
@@ -66,25 +189,32 @@
     <!-- 根据 type 分别查询 subtotal 总和 -->
     <select id="queryReduceByTypeTotal" resultType="java.lang.Double">
         select IFNULL(ROUND(SUM(gdgsr.gb_dgsr_subtotal), 1), 0) from gb_department_goods_stock_reduce as gdgsr
-        left join gb_department as gd on gd.gb_department_id = gdgsr.gb_dgsr_department_id
+        left join gb_department as gd on gd.gb_department_id = gdgsr.gb_dgsr_gb_department_id
+        left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gdgsr.gb_dgsr_gb_dis_goods_id
         <where>
             <if test="params.type != null">
                 and gdgsr.gb_dgsr_type = #{params.type}
             </if>
             <if test="params.disId != null">
-                and gdgsr.gb_dgsr_distributer_id = #{params.disId}
+                and gdgsr.gb_dgsr_gb_distributer_id = #{params.disId}
             </if>
             <if test="params.depType != null">
                 and gd.gb_department_type = #{params.depType}
             </if>
             <if test="params.depId != null">
-                and gdgsr.gb_dgsr_department_id = #{params.depId}
+                and gdgsr.gb_dgsr_gb_department_id = #{params.depId}
             </if>
             <if test="params.startDate != null">
                 and gdgsr.gb_dgsr_date &gt;= #{params.startDate}
             </if>
             <if test="params.stopDate != null">
                 and gdgsr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                and (
+                    gdgsr.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
             </if>
             <if test="params.supplierId != null">
                 and gdgsr.gb_dgsr_stock_nx_supplier_id = #{params.supplierId}
@@ -97,26 +227,208 @@
 
     <!-- 查询所有类型的 subtotal 总和 -->
     <select id="queryReduceAllTypesTotal" resultType="java.util.Map">
-        select 
-            IFNULL(ROUND(SUM(case when gb_dgsr_type = 1 then gb_dgsr_subtotal else 0 end), 1), 0) as produceTotal,
-            IFNULL(ROUND(SUM(case when gb_dgsr_type = 2 then gb_dgsr_subtotal else 0 end), 1), 0) as wasteTotal,
-            IFNULL(ROUND(SUM(case when gb_dgsr_type = 3 then gb_dgsr_subtotal else 0 end), 1), 0) as lossTotal,
-            IFNULL(ROUND(SUM(case when gb_dgsr_type = 4 then gb_dgsr_subtotal else 0 end), 1), 0) as returnTotal
-        from gb_department_goods_stock_reduce
+        select
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 1), 0) as produceTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 1), 0) as wasteTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 1), 0) as lossTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 1), 0) as returnTotal
+        from gb_department_goods_stock_reduce r
+        left join gb_department gd on gd.gb_department_id = r.gb_dgsr_gb_department_father_id
+        left join gb_distributer_goods gdd on gdd.gb_distributer_goods_id = r.gb_dgsr_gb_dis_goods_id
         <where>
+            <if test="params.departmentFatherId != null">
+                and r.gb_dgsr_gb_department_father_id = #{params.departmentFatherId}
+            </if>
             <if test="params.departmentId != null">
-                and gb_dgsr_department_id = #{params.departmentId}
+                and r.gb_dgsr_gb_department_id = #{params.departmentId}
             </if>
             <if test="params.disId != null">
-                and gb_dgsr_distributer_id = #{params.disId}
+                and r.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                and r.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
             </if>
             <if test="params.startDate != null">
-                and gb_dgsr_date &gt;= #{params.startDate}
+                and r.gb_dgsr_date &gt;= #{params.startDate}
             </if>
             <if test="params.stopDate != null">
-                and gb_dgsr_date &lt;= #{params.stopDate}
+                and r.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                and (
+                    r.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
             </if>
         </where>
+    </select>
+
+    <!-- 去重商品种数（用于分页 totalCount），可按 reduce 类型过滤 -->
+    <select id="queryReduceDistinctGoodsCount" resultType="java.lang.Integer">
+        select count(distinct gsr.gb_dgsr_gb_dis_goods_id)
+        from gb_department_goods_stock_reduce gsr
+        left join gb_department gd on gd.gb_department_id = gsr.gb_dgsr_gb_department_id
+        left join gb_distributer_goods dg on dg.gb_distributer_goods_id = gsr.gb_dgsr_gb_dis_goods_id
+        <where>
+            <if test="params.disId != null">
+                and gsr.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                and gsr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.startDate != null">
+                and gsr.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and gsr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                and (
+                    gsr.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    or dg.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+            <if test="params.type != null">
+                and gsr.gb_dgsr_type = #{params.type}
+            </if>
+            <if test="params.types != null">
+                and gsr.gb_dgsr_type in
+                <foreach collection="params.types" item="typeItem" open="(" separator="," close=")">
+                    #{typeItem}
+                </foreach>
+            </if>
+            <if test="params.type == null and params.types == null">
+                and gsr.gb_dgsr_type in (1, 2, 3)
+            </if>
+        </where>
+    </select>
+
+    <!-- 成本/损耗分页：按商品聚合 reduce 的 produce/waste/loss 小计 -->
+    <select id="queryGoodsCostGoodsPageByReduce" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        SELECT
+            dg.gb_dg_goods_name AS gbDgGoodsName,
+            dg.gb_dg_nx_father_img AS gbDgNxFatherImg,
+            dg.gb_dg_goods_standardname AS gbDgGoodsStandardname,
+            gsr.gb_dgsr_gb_dis_goods_id AS gbDistributerGoodsId,
+            IFNULL(ROUND(SUM(CASE WHEN gsr.gb_dgsr_type = 1 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 1), 0) AS goodsProduceTotal,
+            IFNULL(ROUND(SUM(CASE WHEN gsr.gb_dgsr_type = 2 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 1), 0) AS goodsWasteTotal,
+            IFNULL(ROUND(SUM(CASE WHEN gsr.gb_dgsr_type = 3 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 1), 0) AS goodsLossTotal
+        FROM gb_department_goods_stock_reduce gsr
+        LEFT JOIN gb_department gd ON gd.gb_department_id = gsr.gb_dgsr_gb_department_id
+        LEFT JOIN gb_distributer_goods dg ON dg.gb_distributer_goods_id = gsr.gb_dgsr_gb_dis_goods_id
+        <where>
+            <choose>
+                <when test="params.reduceTypeFilter != null">
+                    gsr.gb_dgsr_type = #{params.reduceTypeFilter}
+                </when>
+                <otherwise>
+                    gsr.gb_dgsr_type in (1, 2, 3)
+                </otherwise>
+            </choose>
+            <if test="params.disId != null">
+                AND gsr.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                AND gsr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depType != null">
+                AND gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.startDate != null">
+                AND gsr.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                AND gsr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                AND (
+                    gsr.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    OR dg.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+        </where>
+        GROUP BY gsr.gb_dgsr_gb_dis_goods_id, dg.gb_dg_goods_name, dg.gb_dg_nx_father_img, dg.gb_dg_goods_standardname
+        <choose>
+            <when test="params.orderType != null and params.orderType == 'cost'">
+                ORDER BY (
+                    IFNULL(SUM(CASE WHEN gsr.gb_dgsr_type = 1 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 0)
+                    + IFNULL(SUM(CASE WHEN gsr.gb_dgsr_type = 2 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 0)
+                    + IFNULL(SUM(CASE WHEN gsr.gb_dgsr_type = 3 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 0)
+                ) DESC
+            </when>
+            <when test="params.orderType != null and params.orderType == 'produce'">
+                ORDER BY IFNULL(SUM(CASE WHEN gsr.gb_dgsr_type = 1 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 0) DESC
+            </when>
+            <when test="params.orderType != null and params.orderType == 'waste'">
+                ORDER BY IFNULL(SUM(CASE WHEN gsr.gb_dgsr_type = 2 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 0) DESC
+            </when>
+            <when test="params.orderType != null and params.orderType == 'loss'">
+                ORDER BY IFNULL(SUM(CASE WHEN gsr.gb_dgsr_type = 3 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 0) DESC
+            </when>
+            <otherwise>
+                ORDER BY (
+                    IFNULL(SUM(CASE WHEN gsr.gb_dgsr_type = 1 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 0)
+                    + IFNULL(SUM(CASE WHEN gsr.gb_dgsr_type = 2 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 0)
+                    + IFNULL(SUM(CASE WHEN gsr.gb_dgsr_type = 3 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 0)
+                ) DESC
+            </otherwise>
+        </choose>
+        <if test="params.offset != null and params.limit != null">
+            LIMIT #{params.offset}, #{params.limit}
+        </if>
+    </select>
+
+    <!-- 成本页：当前页商品下的全部 reduce 行（用于按部门展开） -->
+    <select id="queryReduceCostDetailRows" resultType="com.nongxinle.entity.GbDepartmentGoodsStockReduceEntity">
+        SELECT gsr.*
+        FROM gb_department_goods_stock_reduce gsr
+        LEFT JOIN gb_department gd ON gd.gb_department_id = gsr.gb_dgsr_gb_department_id
+        LEFT JOIN gb_distributer_goods dg ON dg.gb_distributer_goods_id = gsr.gb_dgsr_gb_dis_goods_id
+        <where>
+            <if test="params.disGoodsIds != null and params.disGoodsIds.size() &gt; 0">
+                AND gsr.gb_dgsr_gb_dis_goods_id IN
+                <foreach collection="params.disGoodsIds" item="gid" open="(" separator="," close=")">
+                    #{gid}
+                </foreach>
+            </if>
+            <choose>
+                <when test="params.reduceTypeFilter != null">
+                    AND gsr.gb_dgsr_type = #{params.reduceTypeFilter}
+                </when>
+                <otherwise>
+                    AND gsr.gb_dgsr_type IN (1, 2, 3)
+                </otherwise>
+            </choose>
+            <if test="params.disId != null">
+                AND gsr.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                AND gsr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depType != null">
+                AND gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.startDate != null">
+                AND gsr.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                AND gsr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                AND (
+                    gsr.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    OR dg.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+        </where>
+        ORDER BY gsr.gb_dgsr_gb_dis_goods_id, gsr.gb_dgsr_gb_department_id, gsr.gb_dgsr_date DESC,
+                 gsr.gb_department_goods_stock_reduce_id DESC
     </select>
 
     <!-- 按 type 查询商品 top 列表 -->
@@ -126,7 +438,7 @@
             dg.gb_dg_goods_name AS gbDgGoodsName,
             dg.gb_dg_nx_father_img AS gbDgNxFatherImg,
             dg.gb_dg_goods_standardname AS gbDgGoodsStandardname,
-            gsr.gb_dgsr_dis_goods_id AS gbDistributerGoodsId,
+            gsr.gb_dgsr_gb_dis_goods_id AS gbDistributerGoodsId,
             <choose>
                 <when test="params.type == 1">
                     IFNULL(ROUND(SUM(gsr.gb_dgsr_subtotal), 1), 0) AS goodsProduceTotal
@@ -145,7 +457,7 @@
                 </otherwise>
             </choose>
         FROM gb_department_goods_stock_reduce gsr
-        LEFT JOIN gb_distributer_goods dg ON dg.gb_distributer_goods_id = gsr.gb_dgsr_dis_goods_id
+        LEFT JOIN gb_distributer_goods dg ON dg.gb_distributer_goods_id = gsr.gb_dgsr_gb_dis_goods_id
         WHERE 1=1
         <if test="params.type != null">
             AND gsr.gb_dgsr_type = #{params.type}
@@ -157,9 +469,9 @@
             AND gsr.gb_dgsr_date &lt;= #{params.stopDate}
         </if>
         <if test="params.disId != null">
-            AND gsr.gb_dgsr_distributer_id = #{params.disId}
+            AND gsr.gb_dgsr_gb_distributer_id = #{params.disId}
         </if>
-        GROUP BY gsr.gb_dgsr_dis_goods_id, dg.gb_dg_goods_name
+        GROUP BY gsr.gb_dgsr_gb_dis_goods_id, dg.gb_dg_goods_name
         <choose>
             <when test="params.type == 1">
                 ORDER BY goodsProduceTotal DESC
@@ -194,7 +506,7 @@
             AND gb_dgsr_date &lt;= #{params.stopDate}
         </if>
         <if test="params.disId != null">
-            AND gb_dgsr_distributer_id = #{params.disId}
+            AND gb_dgsr_gb_distributer_id = #{params.disId}
         </if>
         GROUP BY gb_dgsr_date
         ORDER BY gb_dgsr_date

@@ -23,6 +23,37 @@ public interface GbDepartmentGoodsStockReduceService extends IService<GbDepartme
     Double queryReduceCostSubtotal(Map<String, Object> map);
 
     /**
+     * 与 {@link #queryReduceCostSubtotal} 条件一致，汇总 reduce 行重量
+     */
+    Double queryReduceWeightSum(Map<String, Object> map);
+
+    /**
+     * 老接口兼容：按「生产」类型汇总 reduce 小计（等价于 {@link #queryReduceCostSubtotal} 且 {@code type=1}）。
+     * <p>若 Map 中含 {@code equalType} 而无 {@code type}，实现会先映射为 {@code type} 再查询（与 {@link #queryReduceTypeCount} 一致）。
+     */
+    Double queryReduceProduceTotal(Map<String, Object> map);
+
+    Double queryReduceProduceWeightTotal(Map<String, Object> map);
+
+    Double queryReduceLossTotal(Map<String, Object> map);
+
+    Double queryReduceLossWeightTotal(Map<String, Object> map);
+
+    Double queryReduceWasteTotal(Map<String, Object> map);
+
+    Double queryReduceWasteWeightTotal(Map<String, Object> map);
+
+    Double queryReduceReturnTotal(Map<String, Object> map);
+
+    Double queryReduceReturnWeightTotal(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryReduceTypeCount} 条件一致，按类型汇总 reduce 重量（单日或区间）。
+     * 返回键：produceWeight、lossWeight、wasteWeight、returnWeight。
+     */
+    Map<String, Object> queryReduceTypeWeightTotalsByScope(Map<String, Object> map);
+
+    /**
      * 根据 type 查询 subtotal 总和
      */
     Double queryReduceByTypeTotal(Map<String, Object> map);
@@ -41,6 +72,15 @@ public interface GbDepartmentGoodsStockReduceService extends IService<GbDepartme
      * 按日查询支出
      */
     List<Map<String, Object>> queryGbPurchaseGoodsTopDay(Map<String, Object> map);
+
+    Integer queryReduceDistinctGoodsCount(Map<String, Object> map);
+
+    List<GbDistributerGoodsEntity> queryGoodsCostGoodsPageByReduce(Map<String, Object> map);
+
+    /**
+     * 成本分页列表：聚合行 + 按部门嵌套的 reduce 明细及库存/采购信息（供小程序展开）。
+     */
+    List<GbDistributerGoodsEntity> queryGoodsCostGoodsPageWithDetails(Map<String, Object> map);
 
     /**
      * 根据ID查询记录（老项目兼容方法）

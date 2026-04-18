@@ -722,7 +722,10 @@
         </foreach>
     </delete>
 
-    <!-- 查询采购商品涉及的大类（直接使用采购商品表的大类ID字段） -->
+    <!--
+        采购统计：曾祖父级批发商商品分类（分类树中最大层级 / 最高一级类目）。
+        通过采购表 gb_DPG_dis_goods_father_id 关联 gb_distributer_father_goods 主键取 gg。
+    -->
     <select id="queryPurchaseGoodsFatherTypes" resultType="com.nongxinle.entity.GbDistributerFatherGoodsEntity">
         SELECT DISTINCT gg.gb_distributer_father_goods_id,
                gg.gb_dfg_father_goods_name,
@@ -732,10 +735,10 @@
                gg.gb_dfg_nx_goods_id,
                gg.gb_dfg_fathers_father_id
         FROM gb_distributer_purchase_goods AS gdpg
-        LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = gdpg.gb_DPG_dis_goods_father_id
+        LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = gdpg.gb_DPG_dis_goods_great_id
         <where>
-            gdpg.gb_DPG_dis_goods_father_id IS NOT NULL
-            AND gdpg.gb_DPG_dis_goods_father_id > 0
+            gdpg.gb_DPG_dis_goods_great_id IS NOT NULL
+            AND gdpg.gb_DPG_dis_goods_great_id > 0
             <if test="disId != null">
                 AND gdpg.gb_DPG_distributer_id = #{disId}
             </if>

@@ -511,7 +511,7 @@
         order by g.nx_goods_sort, g.nx_goods_sons_sort, gg.nx_goods_sort, gg.nx_goods_sons_sort
     </select>
 
-    <!-- 查询商品ID列表 -->
+    <!-- 查询商品ID列表（排序与 queryGbDepNxGrandGoodsByGreatId 内层一致，便于与分页列表顺序对齐） -->
     <select id="queryOnlyGoodsIds" resultType="java.lang.Integer">
         select dg.nx_goods_id
         from nx_goods as dg
@@ -522,8 +522,9 @@
             <if test="isHidden != null">
                 AND dg.nx_goods_is_hidden = #{isHidden}
             </if>
+            <!-- 与 queryGbDepNxGrandGoodsByGreatId 相同：按一级类目祖先 gg 限定，不用 dg.nx_goods_great_grand_id，避免与树路径不一致时顺序/集合错位 -->
             <if test="greatGrandId != null">
-                AND dg.nx_goods_great_grand_id = #{greatGrandId}
+                AND gg.nx_goods_id = #{greatGrandId}
             </if>
             and dg.nx_goods_level = 3
         </where>
@@ -535,14 +536,17 @@
         dg.nx_goods_sons_sort
     </select>
 
-    <!-- 根据一级分类(greatGrandId)查询商品数量 -->
+    <!-- 根据一级分类(greatGrandId)查询商品数量（与 queryGbDepNxGrandGoodsByGreatId 内层同一套祖先限定） -->
     <!-- 原方法名: queryNxGoodsCountByFatherId（已废弃） -->
     <select id="queryNxGoodsCountByGreatGrandId" resultType="java.lang.Integer">
-        select count(*)
-        from nx_goods
-        where nx_goods_great_grand_id = #{greatGrandId}
-        and nx_goods_level = 3
-        and nx_goods_is_hidden = 0
+        SELECT COUNT(*)
+        FROM nx_goods AS dg
+        LEFT JOIN nx_goods AS f ON f.nx_goods_id = dg.nx_goods_father_id
+        LEFT JOIN nx_goods AS g ON g.nx_goods_id = f.nx_goods_father_id
+        LEFT JOIN nx_goods AS gg ON gg.nx_goods_id = g.nx_goods_father_id
+        WHERE dg.nx_goods_level = 3
+          AND dg.nx_goods_is_hidden = 0
+          AND gg.nx_goods_id = #{greatGrandId}
     </select>
 
     <!-- 根据一级分类(greatGrandId)分页查询商品 -->
