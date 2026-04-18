@@ -5,7 +5,7 @@ src/main/java/com/nongxinle/utils/MyAPPIDConfig.java
 # 编译输出
 target/
 
-# 日志文件
+# 日志文件（勿 git add -f；已从版本库移除跟踪，仅本地保留）
 logs/
 *.log
 
