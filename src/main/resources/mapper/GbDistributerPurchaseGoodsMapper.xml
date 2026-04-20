@@ -1099,4 +1099,17 @@
                  gdgs.gb_department_goods_stock_id
     </select>
 
+    <select id="queryPurchaseBuyQtyAggByDisGoods" resultType="java.util.LinkedHashMap">
+        SELECT
+            gdpg.gb_DPG_dis_goods_id AS disGoodsId,
+            IFNULL(SUM(CAST(gdpg.gb_DPG_buy_quantity AS DECIMAL(18,6))), 0) AS buyQtySum
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+            ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+        </where>
+        GROUP BY gdpg.gb_DPG_dis_goods_id
+    </select>
+
 </mapper>

@@ -113,4 +113,9 @@ public interface GbDistributerPurchaseGoodsService extends IService<GbDistribute
      */
     void fillWastePurGoodsForDisTreeGoods(List<GbDistributerGoodsEntity> goodsList, Map<String, Object> queryMap);
 
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount(Map)} 条件一致，按 {@code gb_DPG_dis_goods_id} 汇总采购入库数量。
+     */
+    List<Map<String, Object>> queryPurchaseBuyQtyAggByDisGoods(Map<String, Object> map);
+
 }

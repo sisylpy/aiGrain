@@ -100,4 +100,9 @@ public interface GbDepartmentGoodsStockReduceService extends IService<GbDepartme
         return updateById(entity);
     }
 
+    /**
+     * 生产成本扣减按商品汇总（重量、金额），供菜品成本分析页使用。
+     */
+    List<Map<String, Object>> queryProductionReduceAggByDisGoods(Map<String, Object> map);
+
 }

@@ -320,4 +320,11 @@ public class GbDepartmentGoodsStockReduceServiceImpl extends ServiceImpl<GbDepar
             r.setGbDgsrReturnSubtotal(s);
         }
     }
+
+    @Override
+    public List<Map<String, Object>> queryProductionReduceAggByDisGoods(Map<String, Object> map) {
+        List<Map<String, Object>> list =
+                gbDepartmentGoodsStockReduceMapper.queryProductionReduceAggByDisGoods(paramsForReduceStats(map));
+        return list != null ? list : Collections.emptyList();
+    }
 }

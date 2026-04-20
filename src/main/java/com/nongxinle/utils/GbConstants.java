@@ -260,12 +260,15 @@ public final class GbConstants {
         public static final Integer AUTO = 1;
     }
 
-    /** 部门商品库存扣减类型 */
+    /**
+     * 部门商品库存扣减类型（与表 gb_department_goods_stock_reduce.gb_dgsr_type 一致）。
+     * <p>成本分析页「实际用量」：仅汇总 {@link #PRODUCTION}（生产成本出库）。</p>
+     */
     public static final class StockReduceType {
         private StockReduceType() {
         }
 
-        /** 生产成本 */
+        /** 生产成本（成本分析-实际用量统计使用此类型） */
         public static final Integer PRODUCTION = 1;
         /** 损耗（废气等） */
         public static final Integer WASTE = 2;

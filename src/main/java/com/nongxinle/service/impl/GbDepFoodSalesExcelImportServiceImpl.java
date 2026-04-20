@@ -5,21 +5,28 @@ import com.nongxinle.entity.GbDepartmentEntity;
 import com.nongxinle.entity.GbDepFoodGoodsSalesEntity;
 import com.nongxinle.entity.GbDepFoodSalesEntity;
 import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
+import com.nongxinle.entity.GbDepFoodEntity;
+import com.nongxinle.entity.GbDistributerFoodEntity;
+import com.nongxinle.service.GbAiDailyRevenueExcelService;
+import com.nongxinle.service.GbDepartmentService;
 import com.nongxinle.service.GbDepFoodGoodsSalesService;
 import com.nongxinle.service.GbDepFoodSalesExcelImportService;
 import com.nongxinle.service.GbDepFoodSalesService;
+import com.nongxinle.service.GbDepFoodService;
 import com.nongxinle.service.GbDistributerFoodGoodsService;
+import com.nongxinle.utils.GbDateTimeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,9 +38,11 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
     private final GbDepFoodSalesService gbDepFoodSalesService;
     private final GbDepFoodGoodsSalesService gbDepFoodGoodsSalesService;
     private final GbDistributerFoodGoodsService gbDistributerFoodGoodsService;
+    private final GbDepartmentService departmentService;
+    private final GbDepFoodService gbDepFoodService;
+    private final GbAiDailyRevenueExcelService dailyRevenueExcelService;
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> importFoodSales(
             Integer departmentId,
             Integer distributerId,
@@ -47,11 +56,6 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
         int skippedUnknownFood = 0;
         List<String> warnings = new ArrayList<>();
 
-        SimpleDateFormat dayFmt = new SimpleDateFormat("yyyy-MM-dd");
-        SimpleDateFormat monthFmt = new SimpleDateFormat("yyyy-MM");
-        SimpleDateFormat yearFmt = new SimpleDateFormat("yyyy");
-        Date now = new Date();
-
         Integer depFatherId = department.getGbDepartmentFatherId();
 
         for (Map.Entry<Date, Map<Integer, BigDecimal>> entry : cellQuantities) {
@@ -59,10 +63,10 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
             if (recordDate == null) {
                 continue;
             }
-            String fullDate = dayFmt.format(recordDate);
-            String month = monthFmt.format(recordDate);
-            String year = yearFmt.format(recordDate);
-            int weekday = resolveWeekday(recordDate);
+            String fullDate = GbDateTimeUtils.formatDay(recordDate);
+            String month = GbDateTimeUtils.formatYearMonth(recordDate);
+            String year = GbDateTimeUtils.formatYear(recordDate);
+            int weekday = GbDateTimeUtils.weekdayForAiDailyRevenue(recordDate);
 
             Map<Integer, BigDecimal> qtyByFood = entry.getValue();
             if (qtyByFood == null || qtyByFood.isEmpty()) {
@@ -145,11 +149,39 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
         return out;
     }
 
-    private static int resolveWeekday(Date recordDate) {
-        Calendar cal = Calendar.getInstance();
-        cal.setTime(recordDate);
-        int dayOfWeek = cal.get(Calendar.DAY_OF_WEEK);
-        return dayOfWeek == Calendar.SUNDAY ? 0 : dayOfWeek - 1;
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> importFoodSalesFromExcelMultipart(MultipartFile file, Integer departmentId, Integer distributerId)
+            throws IOException {
+        dailyRevenueExcelService.assertSpreadsheetUpload(file);
+        GbDepartmentEntity department = departmentService.getById(departmentId);
+        if (department == null) {
+            throw new IllegalArgumentException("部门不存在");
+        }
+        Map<String, Object> depMap = new HashMap<>();
+        depMap.put("depFatherId", departmentId);
+        List<GbDepFoodEntity> depFoods = gbDepFoodService.queryDepAllFood(depMap);
+        dailyRevenueExcelService.attachDistributerFood(depFoods);
+        Set<Integer> allowedFoodIds = new HashSet<>();
+        for (GbDepFoodEntity f : depFoods) {
+            if (f.getGbDfFoodId() == null) {
+                continue;
+            }
+            GbDistributerFoodEntity disFood = f.getGbDistributerFoodEntity();
+            if (disFood != null && disFood.getGbDfDistributerId() != null
+                    && !disFood.getGbDfDistributerId().equals(distributerId)) {
+                continue;
+            }
+            allowedFoodIds.add(f.getGbDfFoodId());
+        }
+        List<Map.Entry<Date, Map<Integer, BigDecimal>>> rows = dailyRevenueExcelService.parseFoodSalesExcel(file);
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("Excel文件中没有有效的菜品销售数据");
+        }
+        Map<String, Object> stats = importFoodSales(departmentId, distributerId, department, allowedFoodIds, rows);
+        Map<String, Object> out = new HashMap<>(stats);
+        out.put("rows", rows.size());
+        return out;
     }
 
     private GbDepFoodSalesEntity findExisting(Integer depId, Integer foodId, String fullDate) {

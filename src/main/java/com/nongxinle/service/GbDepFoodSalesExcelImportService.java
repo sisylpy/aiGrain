@@ -1,7 +1,9 @@
 package com.nongxinle.service;
 
 import com.nongxinle.entity.GbDepartmentEntity;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
@@ -19,4 +21,11 @@ public interface GbDepFoodSalesExcelImportService {
             GbDepartmentEntity department,
             Set<Integer> allowedFoodIds,
             List<Map.Entry<Date, Map<Integer, BigDecimal>>> cellQuantities);
+
+    /**
+     * 从上传的 Excel 完整处理：校验文件、部门、解析表格并调用 {@link #importFoodSales}。
+     * 返回 Map 含 {@code rows} 及 importFoodSales 的统计字段。
+     */
+    Map<String, Object> importFoodSalesFromExcelMultipart(MultipartFile file, Integer departmentId, Integer distributerId)
+            throws IOException;
 }

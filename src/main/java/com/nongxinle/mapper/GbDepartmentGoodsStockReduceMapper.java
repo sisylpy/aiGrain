@@ -68,4 +68,9 @@ public interface GbDepartmentGoodsStockReduceMapper extends BaseMapper<GbDepartm
 
     List<GbDepartmentGoodsStockReduceEntity> queryReduceCostDetailRows(@Param("params") Map<String, Object> map);
 
+    /**
+     * 生产成本（type=1）按 {@code gb_dgsr_gb_dis_goods_id} 汇总重量与金额，条件与成本统计 reduce 查询一致。
+     */
+    List<Map<String, Object>> queryProductionReduceAggByDisGoods(@Param("params") Map<String, Object> map);
+
 }

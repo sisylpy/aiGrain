@@ -73,4 +73,9 @@ public interface GbDistributerPurchaseGoodsMapper extends BaseMapper<GbDistribut
      */
     List<GbDistributerPurchaseGoodsEntity> queryPurchaseGoodsWithStocksDetailForGoodsIds(Map<String, Object> map);
 
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 条件一致，按 {@code gb_DPG_dis_goods_id} 汇总入库采购数量。
+     */
+    List<Map<String, Object>> queryPurchaseBuyQtyAggByDisGoods(Map<String, Object> map);
+
 }

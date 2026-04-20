@@ -331,4 +331,10 @@ public class GbDistributerPurchaseGoodsServiceImpl extends ServiceImpl<GbDistrib
         }
     }
 
+    @Override
+    public List<Map<String, Object>> queryPurchaseBuyQtyAggByDisGoods(Map<String, Object> map) {
+        List<Map<String, Object>> list = baseMapper.queryPurchaseBuyQtyAggByDisGoods(map);
+        return list != null ? list : Collections.emptyList();
+    }
+
 }
