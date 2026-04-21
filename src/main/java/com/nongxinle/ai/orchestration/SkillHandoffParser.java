@@ -15,7 +15,8 @@ import java.util.Set;
 public final class SkillHandoffParser {
 
     private static final Set<String> ALLOWED_TO_SKILLS = Set.of(
-            "cost", "revenue", "data_extractor", "dish_sales"
+            "cost", "revenue", "data_extractor", "dish_sales",
+            "dish_cost", "procurement", "profit_pilot"
     );
 
     private SkillHandoffParser() {

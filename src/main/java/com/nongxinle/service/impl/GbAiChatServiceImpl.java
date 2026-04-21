@@ -39,6 +39,7 @@ import com.nongxinle.mapper.GbDistributerGoodsMapper;
 import com.nongxinle.service.GbAiChatService;
 import com.nongxinle.service.GbAiMemoryService;
 import com.nongxinle.service.GbAiRestaurantProfileService;
+import com.nongxinle.service.GbDishCostAnalysisService;
 import com.nongxinle.utils.GbConstants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -82,6 +83,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     private final GbDistributerGoodsMapper distributerGoodsMapper;
     private final GbDepFoodSalesMapper depFoodSalesMapper;
     private final GbDistributerFoodMapper distributerFoodMapper;
+    private final GbDishCostAnalysisService gbDishCostAnalysisService;
 
     @Value("${ai.deepseek.api-key}")
     private String apiKey;
@@ -116,7 +118,10 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     private static final List<String> SKILL_FILES = List.of(
             "ai-skill-cost.md",
             "ai-skill-revenue-boost.md",
-            "ai-skill-data-extractor.md"
+            "ai-skill-data-extractor.md",
+            "ai-skill-dish-cost-diagnosis.md",
+            "ai-skill-procurement-structure.md",
+            "ai-skill-profit-pilot.md"
     );
 
     /** DeepSeek 监控：system 角色 content 预览字符上限（INFO 级别，避免单条日志过大） */
@@ -304,6 +309,21 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                         .eq(GbAiMessageEntity::getGbAiMessageConversationId, conversationId)
                         .orderByAsc(GbAiMessageEntity::getGbAiMessageCreateTime)
         );
+    }
+
+    @Override
+    public List<GbAiConversationEntity> getUserConversationTopics(Long userId) {
+        log.info("获取用户历史聊天主题 - userId={}", userId);
+        return conversationMapper.selectList(
+                new LambdaQueryWrapper<GbAiConversationEntity>()
+                        .eq(GbAiConversationEntity::getGbAiConversationUserId, userId)
+                        .orderByDesc(GbAiConversationEntity::getGbAiConversationUpdateTime)
+        );
+    }
+
+    @Override
+    public List<GbAiMessageEntity> getTopicMessages(Long topicId) {
+        return getConversationMessages(topicId);
     }
 
     @Override
@@ -604,14 +624,13 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         return "你是AI技能选择助手。根据用户的问题，从以下技能文件中选择最合适的1-2个技能。\n\n" +
                 "【技能列表】\n" + skillsContent + "\n\n" +
                 "【选择规则】\n" +
-                "1. 问题涉及成本、费用、支出、利润、损耗、食材费用等（含很宽泛的「成本高」「帮我看成本」），必须包含 ai-skill-cost.md\n" +
-                "1a. 用户问库存、存货、备货、剩多少货/料等，必须包含 ai-skill-cost.md（服务端会注入库存账面汇总，勿返回空 skills）\n" +
-                "1b. 用户问采购、进货金额、供应商采购等，选 ai-skill-cost.md 且 costFacet 用 procurement（服务端从 gb_distributer_purchase_goods 注入，勿与库存出库混用）\n" +
-                "1c. 用户问供货商/供应商未结账、应付欠款、挂账等，选 ai-skill-cost.md 且 costFacet 用 supplier（服务端从 gb_distributer_purchase_batch 按 GbConstants.DistributorPurchaseBatchStatus 注入）\n" +
-                "1d. 用户问自采金额/自采采购等，选 ai-skill-cost.md（服务端从 gb_distributer_purchase_goods 按 gb_DPG_purchase_type=PurchaseOrderType.SELF_PURCHASE 注入）\n" +
+                "1. 问题涉及成本、费用、支出、利润、损耗、食材费用等（含很宽泛的「成本高」「帮我看成本」），至少包含 ai-skill-cost.md 或 ai-skill-profit-pilot.md\n" +
+                "1a. 问“哪道菜赚钱/亏钱、配料成本、瓶颈原料、出库分摊”，优先 ai-skill-dish-cost-diagnosis.md（可同时含 ai-skill-cost.md）\n" +
+                "1b. 问采购、进货、自采、供应商占比、应付未结，优先 ai-skill-procurement-structure.md（可同时含 ai-skill-cost.md）\n" +
+                "1c. 问“本月算账、保本、赚不赚钱、经营盘子”，优先 ai-skill-profit-pilot.md\n" +
                 "2. 问题涉及营收提升、客流、促销活动，选择 ai-skill-revenue-boost.md\n" +
                 "3. 用户明确给出要记录的数字（租金、工资、营业额等），可同时选 ai-skill-data-extractor.md\n" +
-                "4. 可同时选多个技能，用 skills 数组列出\n\n" +
+                "4. 可同时选 1-2 个技能，用 skills 数组列出\n\n" +
                 "【costFacet】仅当包含 ai-skill-cost.md 时填写，表示老板成本关切子类（单选其一）：\n" +
                 "overview | dish_structure | procurement | waste | margin | supplier | time_series | pricing | mixed\n" +
                 "无法判断或极宽泛时用 mixed；若明显谈供应商用 supplier，谈报废损耗用 waste，依此类推。\n\n" +
@@ -624,7 +643,8 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 "- confidence：0~1，表示你对 skills 选择的把握；把握低时服务端会用关键词规则兜底。\n" +
                 "- primarySkill：与 skills[0] 一致即可，便于日志（可省略）。\n" +
                 "示例：\n" +
-                "{\"skills\":[\"ai-skill-cost.md\"],\"costFacet\":\"waste\",\"broadQuestion\":false,\"confidence\":0.9}\n" +
+                "{\"skills\":[\"ai-skill-dish-cost-diagnosis.md\"],\"costFacet\":\"dish_structure\",\"broadQuestion\":false,\"confidence\":0.9}\n" +
+                "{\"skills\":[\"ai-skill-procurement-structure.md\"],\"costFacet\":\"procurement\",\"broadQuestion\":false,\"confidence\":0.85}\n" +
                 "{\"skills\":[\"ai-skill-revenue-boost.md\"],\"costFacet\":null,\"broadQuestion\":true,\"confidence\":0.55}\n" +
                 "若无合适技能：{\"skills\":[],\"costFacet\":null,\"broadQuestion\":false}\n" +
                 "若 JSON 合法但 skills 为空数组，服务端会用关键词规则再推断一次（仍可能得到 none）。\n\n" +
@@ -752,7 +772,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
 
         sb.append("【技能移交（结构化 JSON，仅服务端消费）】\n");
         sb.append("若【餐厅真实数据】仍不足以准确回答（例如用户问「哪道菜卖得最多」但上文缺按菜聚合销量），可在面向老板的正文之后，**另起一段**追加一个 ```json 代码块。\n");
-        sb.append("块内须为单行 JSON：type=\"skill_handoff\"、version=1、toSkill、reason；toSkill 只能是：cost | revenue | data_extractor | dish_sales。\n");
+        sb.append("块内须为单行 JSON：type=\"skill_handoff\"、version=1、toSkill、reason；toSkill 只能是：cost | revenue | data_extractor | dish_sales | dish_cost | procurement | profit_pilot。\n");
         sb.append("carryOver 可选，例如 {\"userIntentSummary\":\"用户想对比热销菜\"}；**禁止**在该块里写画像 hasData/updates。\n");
         sb.append("若不需要移交，不要输出该块。用户可见正文仍须符合篇幅与身份要求。\n\n");
 
@@ -1038,23 +1058,67 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         boolean hasFixedCost = fixedCostMonthly != null;
         boolean hasAllBasicCostData = hasRent && hasWage && hasFixedCost;
 
+        boolean costSkill = skillsLower.contains("ai-skill-cost.md") || skillsLower.contains("成本");
+        boolean dishCostSkill = skillsLower.contains("ai-skill-dish-cost-diagnosis.md");
+        boolean procurementSkill = skillsLower.contains("ai-skill-procurement-structure.md");
+        boolean profitPilotSkill = skillsLower.contains("ai-skill-profit-pilot.md");
+
         // 根据Skill类型决定查询哪些数据
-        if (skillsLower.contains("cost") || skillsLower.contains("成本")) {
-            // 成本分析Skill
-            if (!hasAllBasicCostData) {
-                // 3个基本固定成本数据不完整，不能查询其他数据
+        if (costSkill || dishCostSkill || procurementSkill || profitPilotSkill) {
+            // 采购结构分析可在缺固定成本时继续；其余算账技能必须先有三项固定成本
+            boolean needsFixedCostGate = costSkill || dishCostSkill || profitPilotSkill;
+            if (needsFixedCostGate && !hasAllBasicCostData) {
                 sb.append("【数据完整性警告】\n");
-                sb.append("⚠️ 固定成本数据不完整，无法进行成本分析！\n");
+                sb.append("⚠️ 固定成本数据不完整，无法进行完整算账分析！\n");
                 sb.append("缺少的数据：\n");
                 if (!hasRent) sb.append("  - 月租金\n");
                 if (!hasWage) sb.append("  - 月工资\n");
                 if (!hasFixedCost) sb.append("  - 月固定成本（其他）\n");
-                sb.append("\n请先补充以上3项固定成本数据，才能进行成本分析。\n");
-                sb.append("提示用户：\"要分析成本，我需要知道你的固定成本情况。请问你的月租金是多少？工资支出多少？还有其他固定成本吗？\"\n\n");
+                sb.append("\n请先补充以上3项固定成本数据，才能进行利润与保本分析。\n");
+                sb.append("提示用户：\"要帮你算账，我还缺固定成本三项。请告诉我月租金、月工资和其它固定成本。\"\n\n");
+                if (procurementSkill) {
+                    sb.append(queryCostData(departmentId, monthStart, monthEnd, "procurement", userMessage));
+                    if (!SkillRouteFallback.shouldAttachSelfPurchaseFacts(userMessage)) {
+                        sb.append(querySelfPurchaseGoodsFactsForAi(departmentId, monthStart, monthEnd));
+                    }
+                    if (!SkillRouteFallback.shouldAttachSupplierUnsettledFacts(userMessage, "procurement")) {
+                        sb.append(querySupplierUnsettledFactsForAi(departmentId));
+                    }
+                }
             } else {
-                // 3个基本数据都有了：成本分析需要「可核对」的日营收明细 + 库存（避免仅用汇总被模型误判为无数据）
-                sb.append(queryRevenueData(departmentId, monthStart, monthEnd));
-                sb.append(queryCostData(departmentId, monthStart, monthEnd, costFacet, userMessage));
+                if (costSkill || dishCostSkill || profitPilotSkill) {
+                    sb.append(queryRevenueData(departmentId, monthStart, monthEnd));
+                } else {
+                    sb.append(queryRevenueDataBrief(departmentId, monthStart, monthEnd));
+                }
+
+                String facetToUse = costFacet;
+                if (StrUtil.isBlank(facetToUse)) {
+                    if (dishCostSkill) {
+                        facetToUse = "dish_structure";
+                    } else if (procurementSkill) {
+                        facetToUse = "procurement";
+                    } else if (profitPilotSkill) {
+                        facetToUse = "overview";
+                    }
+                }
+                sb.append(queryCostData(departmentId, monthStart, monthEnd, facetToUse, userMessage));
+
+                if (dishCostSkill) {
+                    sb.append(queryDishSalesFacts(departmentId, monthStart, monthEnd));
+                    sb.append(queryDishCostAnalysisFactsForAi(departmentId, monthStart, monthEnd));
+                }
+                if (procurementSkill) {
+                    if (!SkillRouteFallback.shouldAttachSelfPurchaseFacts(userMessage)) {
+                        sb.append(querySelfPurchaseGoodsFactsForAi(departmentId, monthStart, monthEnd));
+                    }
+                    if (!SkillRouteFallback.shouldAttachSupplierUnsettledFacts(userMessage, facetToUse)) {
+                        sb.append(querySupplierUnsettledFactsForAi(departmentId));
+                    }
+                }
+                if (profitPilotSkill) {
+                    sb.append(queryDishSalesFacts(departmentId, monthStart, monthEnd));
+                }
             }
         } else if (skillsLower.contains("revenue") || skillsLower.contains("营收") || skillsLower.contains("boost")) {
             // 营收提升Skill - 查询营业额数据
@@ -1741,6 +1805,69 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         return buildDishSalesFactsWithRecital(departmentId, monthStart, monthEnd).markdown();
     }
 
+    /**
+     * 菜品成本分析事实摘要：调用 {@code GbDishCostAnalysisService} 的月区间结果，提炼前台可用的 Top 异常菜与关键配料。
+     */
+    private String queryDishCostAnalysisFactsForAi(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("【菜品成本分析摘要】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        Integer disId = resolveDistributerIdForDepartment(departmentId);
+        if (disId == null) {
+            sb.append("- 无法解析批发商 ID，未执行菜品成本分析。\n\n");
+            return sb.toString();
+        }
+        try {
+            Map<String, Object> report = gbDishCostAnalysisService.buildReport(
+                    monthStart.toString(), monthEnd.toString(), disId, "-1", null, "salesDish");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> rows = (List<Map<String, Object>>) report.get("salesDishRows");
+            if (rows == null || rows.isEmpty()) {
+                sb.append("- 本期无可用菜品成本行。\n\n");
+                return sb.toString();
+            }
+            sb.append("- 口径：gb_dep_food_sales + gb_dep_food_goods_sales + gb_department_goods_stock_reduce 分摊。\n");
+            sb.append("- 异常菜 Top（按 sortKey，最多 5 行）：\n");
+            int top = Math.min(rows.size(), 5);
+            for (int i = 0; i < top; i++) {
+                Map<String, Object> row = rows.get(i);
+                sb.append("  ").append(i + 1).append(". ")
+                        .append(toStr(row.get("foodName")))
+                        .append("，销量 ").append(toStr(row.get("soldPortions"))).append(" 份")
+                        .append("，理论成本 ¥").append(toStr(row.get("theoryCostAmount")))
+                        .append("，实际成本 ¥").append(toStr(row.get("actualCostAmount")))
+                        .append("，差额 ¥").append(toStr(row.get("diffCostAmount")))
+                        .append("，偏差权重 ").append(toStr(row.get("sortKey"))).append("\n");
+            }
+            Map<String, Object> first = rows.get(0);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> ingredientRows = (List<Map<String, Object>>) first.get("ingredientRows");
+            if (ingredientRows != null && !ingredientRows.isEmpty()) {
+                sb.append("- 头号异常菜关键配料（前 3 条）：\n");
+                int limit = Math.min(ingredientRows.size(), 3);
+                for (int i = 0; i < limit; i++) {
+                    Map<String, Object> ir = ingredientRows.get(i);
+                    sb.append("  - ").append(toStr(ir.get("goodsName")))
+                            .append("：配方用量 ").append(toStr(ir.get("theoryOutboundQtyByRecipe")))
+                            .append("，分摊出库 ").append(toStr(ir.get("outboundAllocatedQty")))
+                            .append("，成本差 ¥").append(toStr(ir.get("recipeSalesVsOutboundCostDiff"))).append("\n");
+                }
+            }
+            sb.append("- 回答“哪道菜成本异常”时，优先引用本块 Top1/Top2 菜名与差额。\n\n");
+        } catch (Exception e) {
+            log.warn("菜品成本摘要注入失败: departmentId={}, disId={}, err={}", departmentId, disId, e.getMessage());
+            sb.append("- 菜品成本分析暂不可用（").append(e.getMessage()).append("）。\n\n");
+        }
+        return sb.toString();
+    }
+
+    private static String toStr(Object v) {
+        if (v == null) {
+            return "-";
+        }
+        String s = String.valueOf(v).trim();
+        return s.isEmpty() ? "-" : s;
+    }
+
     private DishSalesBuilt buildDishSalesFactsWithRecital(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
         StringBuilder sb = new StringBuilder();
         sb.append("【本月菜品销量聚合】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
@@ -2102,6 +2229,20 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 String md = b.markdown() + "\n" + queryRevenueDataBrief(departmentId, monthStart, monthEnd);
                 yield new HandoffFactPayload(md, b.recital());
             }
+            case "dish_cost" -> new HandoffFactPayload(
+                    queryDishSalesFacts(departmentId, monthStart, monthEnd)
+                            + "\n" + queryDishCostAnalysisFactsForAi(departmentId, monthStart, monthEnd),
+                    Optional.empty());
+            case "procurement" -> new HandoffFactPayload(
+                    queryPurchaseGoodsFactsForAi(departmentId, monthStart, monthEnd)
+                            + querySelfPurchaseGoodsFactsForAi(departmentId, monthStart, monthEnd)
+                            + querySupplierUnsettledFactsForAi(departmentId),
+                    Optional.empty());
+            case "profit_pilot" -> new HandoffFactPayload(
+                    queryRevenueData(departmentId, monthStart, monthEnd)
+                            + queryCostData(departmentId, monthStart, monthEnd, "overview", "")
+                            + queryDishSalesFacts(departmentId, monthStart, monthEnd),
+                    Optional.empty());
             default -> new HandoffFactPayload(queryRevenueDataBrief(departmentId, monthStart, monthEnd), Optional.empty());
         };
     }

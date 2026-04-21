@@ -1,0 +1,18 @@
+# 浏览器 GET 图片地址格式（域名按你实际证书与 server_name 替换）
+# 假设：HTTPS 443，server_name grainservice.club，root 已指到 .../images/
+
+https://grainservice.club/goodsVideo/<文件名>
+https://grainservice.club/goodsImage/<文件名>
+https://grainservice.club/uploadImage/<文件名>
+https://grainservice.club/foodImage/<文件名>
+https://grainservice.club/userImage/<文件名>
+https://grainservice.club/uploadClock/<文件名>
+https://grainservice.club/stockImages/<文件名>
+https://grainservice.club/traceReports/<文件名>
+https://grainservice.club/ocrImages/<文件名>
+
+# 示例（中文文件名需 URL 编码，空格为 %20）
+# GET https://grainservice.club/goodsImage/%E7%BB%BF%E7%94%98%E8%93%9D2025-01-11%2008:58:30.jpg
+
+# 老项目（8443 + context-path）仍可用时，GET 形态为：
+# https://grainservice.club:8443/nongxinle/goodsImage/<文件名>

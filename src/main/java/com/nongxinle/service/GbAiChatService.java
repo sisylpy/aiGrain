@@ -46,6 +46,20 @@ public interface GbAiChatService {
     List<GbAiMessageEntity> getConversationMessages(Long conversationId);
 
     /**
+     * 按用户获取历史聊天主题（会话）列表
+     * @param userId 用户ID
+     * @return 会话主题列表（按更新时间倒序）
+     */
+    List<GbAiConversationEntity> getUserConversationTopics(Long userId);
+
+    /**
+     * 按主题ID获取详细聊天内容（主题ID即 conversationId）
+     * @param topicId 主题ID
+     * @return 消息列表
+     */
+    List<GbAiMessageEntity> getTopicMessages(Long topicId);
+
+    /**
      * 结束对话（触发记忆提取）
      * @param conversationId 对话ID
      */

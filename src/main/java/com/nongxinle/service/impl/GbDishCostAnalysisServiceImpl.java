@@ -44,9 +44,6 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     private static final Map<String, String> BOSS_HINTS_SALES_DISH_ROW_ZH;
     private static final Map<String, String> BOSS_HINTS_BOTTLE_ZH;
     private static final Map<String, String> BOSS_HINTS_INGREDIENT_ROW_ZH;
-    private static final Map<String, String> BOSS_HINTS_OUTBOUND_GOODS_GROUP_ZH;
-    private static final Map<String, String> BOSS_HINTS_LINKING_DISH_ROW_ZH;
-
     static {
         LinkedHashMap<String, String> dish = new LinkedHashMap<>();
         dish.put("foodId", "菜品在系统里的编号");
@@ -108,32 +105,6 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         ing.put("gbDgGoodsStandardWeight", "商品标准重量说明（规格侧文案）");
         ing.put("gbDgGoodsStandardname", "商品规格名称（如「500g/袋」等，见主档）");
         BOSS_HINTS_INGREDIENT_ROW_ZH = Collections.unmodifiableMap(ing);
-
-        LinkedHashMap<String, String> og = new LinkedHashMap<>();
-        og.put("disGoodsId", "原料商品编号");
-        og.put("goodsName", "原料名称");
-        og.put("gbDgGoodsStandardname", "规格名称（与 ingredientRows 同源，来自 gb_distributer_goods）");
-        og.put("gbDgControlFresh", "是否管控鲜度（与 ingredientRows 同源）");
-        og.put("gbDgFreshWarnHour", "鲜品预警时长");
-        og.put("gbDgFreshWasteHour", "鲜品报废/浪费时长相关");
-        og.put("gbDgGoodsStandardWeight", "标准重量说明");
-        og.put("outboundQtyTotal", "这种原料本期一共出了多少库");
-        og.put("theoryOutboundQtyByRecipeTotal", "按各菜销量乘配方，这种料按理一共该用多少");
-        og.put("theoryQtyFromSalesRecordsTotal", "销售明细里，这种料一共记了多少用量");
-        og.put("linkingDishSoldPortionsTotal", "下面关联的各道菜，头表实销份数加总（与每行 soldPortions 之和一致）");
-        og.put("linkingDishRows", "哪些菜配方里用到这种料、各占多少");
-        BOSS_HINTS_OUTBOUND_GOODS_GROUP_ZH = Collections.unmodifiableMap(og);
-
-        LinkedHashMap<String, String> link = new LinkedHashMap<>();
-        link.put("foodId", "菜品编号");
-        link.put("foodName", "菜名");
-        link.put("soldPortions", "这道菜卖了多少份");
-        link.put("outboundQtyAllocatedToDish", "这种料总出库按各菜「实销×配方该料用量」占比摊给本菜多少斤（缺料时摊得少于理论需求）");
-        link.put("supportedPortionsOnThisGoodOnly", "光看这一种料，大约还能做几份");
-        link.put("recipeUnitOnDish", "这道菜里，这一种料每份用多少");
-        link.put("theoryOutboundQtyByRecipe", "按卖的份数乘配方，这种料在这道菜上按理该用多少");
-        link.put("theoryQtyFromSalesRecords", "销售明细里，这种料在这道菜上记了多少");
-        BOSS_HINTS_LINKING_DISH_ROW_ZH = Collections.unmodifiableMap(link);
     }
 
     private final GbDepFoodSalesService gbDepFoodSalesService;
@@ -254,9 +225,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         List<Map<String, Object>> salesDishRows = new ArrayList<>();
         List<Map<String, Object>> outboundGoodsRows = new ArrayList<>();
         // 配料行要带的鲜品/规格字段来自 gb_distributer_goods：按报表涉及配方去重后批量查，避免每行 getById 风暴
-        Map<Integer, GbDistributerGoodsEntity> disGoodsById = REPORT_KIND_SALES_DISH.equals(rk)
-                ? loadDisGoodsDetailByRecipeGoods(allFoodIds)
-                : Collections.emptyMap();
+        Map<Integer, GbDistributerGoodsEntity> disGoodsById = loadDisGoodsDetailByRecipeGoods(allFoodIds);
         if (REPORT_KIND_SALES_DISH.equals(rk)) {
             for (Integer foodId : allFoodIds) {
                 salesDishRows.add(buildSalesDishRow(foodId, theoryWtByFoodAndGoods.getOrDefault(foodId, Collections.emptyMap()),
@@ -265,8 +234,8 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
             }
             salesDishRows.sort(Comparator.comparing(o -> toBd(o.get("sortKey")), Comparator.reverseOrder()));
         } else {
-            outboundGoodsRows.addAll(buildOutboundGoodsRows(allFoodIds, reduceW, sumRecipeUnitByGoods, sumSalesQtyByGoods,
-                    sumNeedByGoods, salesQtyByFood, theoryWtByFoodAndGoods, sumTheoryByGoods));
+            outboundGoodsRows.addAll(buildOutboundGoodsRows(allFoodIds, reduceW, reduceS, sumRecipeUnitByGoods, sumSalesQtyByGoods,
+                    sumNeedByGoods, salesQtyByFood, theoryWtByFoodAndGoods, sumTheoryByGoods, disGoodsById));
         }
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -283,10 +252,6 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         bossHints.put("salesDishRow", BOSS_HINTS_SALES_DISH_ROW_ZH);
         bossHints.put("bottle", BOSS_HINTS_BOTTLE_ZH);
         bossHints.put("ingredientRow", BOSS_HINTS_INGREDIENT_ROW_ZH);
-        if (REPORT_KIND_OUTBOUND_QTY.equals(rk)) {
-            bossHints.put("outboundGoodsGroup", BOSS_HINTS_OUTBOUND_GOODS_GROUP_ZH);
-            bossHints.put("linkingDishRow", BOSS_HINTS_LINKING_DISH_ROW_ZH);
-        }
         out.put("bossColumnHintsZh", bossHints);
 
         return out;
@@ -426,6 +391,47 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     }
 
     /**
+     * {@code outboundQty} 父行：与 {@code salesDishRows[].ingredientRows[]} 单条<strong>同键</strong>，数值为本料在全报表上的汇总；
+     * {@code recipeUnitPerDish} 无单一语义，置 {@code null}；末尾附 {@code linkingDishRows}。
+     */
+    private static Map<String, Object> buildOutboundGoodsParentIngredientRow(Integer gId,
+            String goodsName,
+            GbDistributerGoodsEntity profile,
+            BigDecimal wG,
+            BigDecimal sG,
+            BigDecimal sumTGlobal,
+            BigDecimal theoryOutboundQtyByRecipeTotal,
+            BigDecimal minChildSupported,
+            BigDecimal linkingDishSoldPortionsTotal,
+            List<Map<String, Object>> linkingDishRows) {
+        BigDecimal pUnit = wG.compareTo(BigDecimal.ZERO) > 0 ? sG.divide(wG, 8, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+        BigDecimal recipeLineCost = pUnit.multiply(theoryOutboundQtyByRecipeTotal).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal outboundLineCost = pUnit.multiply(wG).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal salesLineCost = pUnit.multiply(sumTGlobal).setScale(2, RoundingMode.HALF_UP);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("disGoodsId", gId);
+        m.put("goodsName", goodsName);
+        m.put("recipeUnitPerDish", null);
+        m.put("theoryQtyFromSales", plainQty(sumTGlobal));
+        m.put("theoryOutboundQtyByRecipe", plainQty(theoryOutboundQtyByRecipeTotal));
+        m.put("outboundAllocatedQty", wG.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
+        m.put("supportedPortionsThisGood",
+                minChildSupported.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
+        m.put("salesIngredientCostAmount", salesLineCost.stripTrailingZeros().toPlainString());
+        m.put("recipeTheoryIngredientCostAmount", recipeLineCost.stripTrailingZeros().toPlainString());
+        m.put("outboundAllocatedIngredientCostAmount", outboundLineCost.stripTrailingZeros().toPlainString());
+        m.put("recipeSalesVsOutboundCostDiff",
+                recipeLineCost.subtract(outboundLineCost).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
+        m.put("soldVsSupportedPortionDiff",
+                linkingDishSoldPortionsTotal.subtract(minChildSupported).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
+        m.put("recipeTheoryQtyVsOutboundAllocDiff",
+                theoryOutboundQtyByRecipeTotal.subtract(wG).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
+        putDisGoodsProfileFields(m, profile);
+        m.put("linkingDishRows", linkingDishRows);
+        return m;
+    }
+
+    /**
      * 把 {@code gb_distributer_goods} 上的规格与鲜品字段挂到 Map（用于 {@code salesDishRows[].ingredientRows} 与
      * {@code outboundGoodsRows[]} 商品行，字段名与 {@link GbDistributerGoodsEntity} 一致）。
      */
@@ -449,19 +455,53 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         row.put("gbDgGoodsFileImg", ge.getGbDgNxFatherImg());
     }
 
+    /** 收集 {@code outboundQty} 下「原料 g × 菜」中间量，便于先排序再输出与 salesDish 配料行同构的 Map。 */
+    private static final class OutboundDishLinkAgg {
+        final Integer foodId;
+        final String foodName;
+        final BigDecimal salesQty;
+        final BigDecimal dishUForGood;
+        final BigDecimal theoryFromSales;
+        final BigDecimal theoryByRecipe;
+        final BigDecimal allocW;
+        final BigDecimal maxPortionsThisGood;
+
+        OutboundDishLinkAgg(Integer foodId, String foodName, BigDecimal salesQty, BigDecimal dishUForGood,
+                BigDecimal theoryFromSales, BigDecimal theoryByRecipe, BigDecimal allocW, BigDecimal maxPortionsThisGood) {
+            this.foodId = foodId;
+            this.foodName = foodName;
+            this.salesQty = salesQty;
+            this.dishUForGood = dishUForGood;
+            this.theoryFromSales = theoryFromSales;
+            this.theoryByRecipe = theoryByRecipe;
+            this.allocW = allocW;
+            this.maxPortionsThisGood = maxPortionsThisGood;
+        }
+    }
+
     /**
-     * {@code outboundQty} 主表：本期有出库的 {@code disGoodsId}，下列关联菜品。
+     * {@code outboundQty} 主表：本期有出库的 {@code disGoodsId}。
+     * <p>父行：与 {@code salesDishRows[].ingredientRows} 同键（配料商品汇总）；{@code linkingDishRows}：与 {@code salesDishRows[]} 整行同结构（菜品）。</p>
      */
     private List<Map<String, Object>> buildOutboundGoodsRows(Set<Integer> allFoodIds,
             Map<Integer, BigDecimal> reduceW,
+            Map<Integer, BigDecimal> reduceS,
             Map<Integer, BigDecimal> sumRecipeUnitByGoods,
             Map<Integer, BigDecimal> sumSalesQtyByGoods,
             Map<Integer, BigDecimal> sumNeedByGoods,
             Map<Integer, BigDecimal> salesQtyByFood,
             Map<Integer, Map<Integer, BigDecimal>> theoryWtByFoodAndGoods,
-            Map<Integer, BigDecimal> sumTheoryByGoods) {
+            Map<Integer, BigDecimal> sumTheoryByGoods,
+            Map<Integer, GbDistributerGoodsEntity> disGoodsById) {
         if (allFoodIds == null || allFoodIds.isEmpty()) {
             return new ArrayList<>();
+        }
+        Map<Integer, GbDistributerGoodsEntity> goodsDetail = disGoodsById == null ? Collections.emptyMap() : disGoodsById;
+        Map<Integer, Map<String, Object>> fullDishRowByFoodId = new LinkedHashMap<>();
+        for (Integer fid : allFoodIds) {
+            fullDishRowByFoodId.put(fid, buildSalesDishRow(fid, theoryWtByFoodAndGoods.getOrDefault(fid, Collections.emptyMap()),
+                    sumTheoryByGoods, sumRecipeUnitByGoods, sumSalesQtyByGoods, sumNeedByGoods, goodsDetail, reduceW, reduceS,
+                    salesQtyByFood == null ? BigDecimal.ZERO : salesQtyByFood.getOrDefault(fid, BigDecimal.ZERO)));
         }
         Map<Integer, List<GbDistributerFoodGoodsEntity>> recipeByFood = new HashMap<>();
         for (Integer fid : allFoodIds) {
@@ -516,18 +556,14 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
             BigDecimal salesSumForGood = nz(sumSalesQtyByGoods.get(gId));
 
             Set<Integer> fids = foodIdsByGood.get(gId);
-            List<Map<String, Object>> dishRows = new ArrayList<>();
-            BigDecimal theoryOutboundQtyByRecipeTotal = BigDecimal.ZERO;
-            // 关联菜品头表实销份数之和（每道关联菜在 gb_dep_food_sales 汇总的 q，与 linkingDishRows[].soldPortions 加总一致）
-            BigDecimal linkingDishSoldPortionsTotal = BigDecimal.ZERO;
+            BigDecimal sG = nz(reduceS.get(gId));
+            List<OutboundDishLinkAgg> linkAggs = new ArrayList<>();
             if (fids != null) {
                 for (Integer fid : fids) {
                     List<GbDistributerFoodGoodsEntity> recipe = recipeByFood.get(fid);
                     BigDecimal dishUForGood = sumRecipeUnitForGoodOnDish(recipe, gId);
                     BigDecimal salesQty = salesQtyByFood == null ? BigDecimal.ZERO : salesQtyByFood.getOrDefault(fid, BigDecimal.ZERO);
-                    linkingDishSoldPortionsTotal = linkingDishSoldPortionsTotal.add(salesQty);
                     BigDecimal theoryByRecipe = salesQty.multiply(dishUForGood);
-                    theoryOutboundQtyByRecipeTotal = theoryOutboundQtyByRecipeTotal.add(theoryByRecipe);
                     BigDecimal theoryFromSales = BigDecimal.ZERO;
                     if (theoryWtByFoodAndGoods != null) {
                         theoryFromSales = nz(theoryWtByFoodAndGoods.getOrDefault(fid, Collections.emptyMap()).get(gId));
@@ -542,45 +578,47 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
                     String allocTag = "outboundQtyLink parentDisGoodsId=" + gId + " foodId=" + fid + " foodName=" + foodName;
                     BigDecimal allocW = allocateOutboundWeightForDishGood(wG, theoryFromSales, sumT, salesQty,
                             salesSumForGood, dishUForGood, recipeUnitSum, needThis, sumNeed, allocTag);
-                    // 与 salesDish 配料行一致：摊得斤数 ÷ 本菜该料单份合并用量 = 该料可支撑份数（sumNeed 分摊下整体缺料时 ≤ 实销）
                     BigDecimal maxPortionsThisGood = dishUForGood.compareTo(BigDecimal.ZERO) > 0
                             ? allocW.divide(dishUForGood, 8, RoundingMode.HALF_UP)
                             : minSellablePortionsForDishOnGood(recipe, gId, wG, salesQty, recipeUnitSum, salesSumForGood);
 
-                    Map<String, Object> drow = new LinkedHashMap<>();
-                    drow.put("foodId", fid);
-                    drow.put("foodName", foodName);
-                    drow.put("soldPortions", salesQty.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
-                    drow.put("outboundQtyAllocatedToDish",
-                            allocW.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
-                    drow.put("supportedPortionsOnThisGoodOnly",
-                            maxPortionsThisGood.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
-                    drow.put("recipeUnitOnDish",
-                            dishUForGood.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
-                    drow.put("theoryOutboundQtyByRecipe",
-                            theoryByRecipe.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
-                    drow.put("theoryQtyFromSalesRecords",
-                            theoryFromSales.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
-                    dishRows.add(drow);
+                    linkAggs.add(new OutboundDishLinkAgg(fid, foodName, salesQty, dishUForGood, theoryFromSales, theoryByRecipe,
+                            allocW, maxPortionsThisGood));
                 }
-                dishRows.sort(Comparator.comparing((Map<String, Object> m) -> toBd(m.get("soldPortions"))).reversed());
+                linkAggs.sort(Comparator.comparing((OutboundDishLinkAgg a) -> a.salesQty).reversed());
             }
 
-            Map<String, Object> group = new LinkedHashMap<>();
-            group.put("disGoodsId", gId);
-            group.put("goodsName", goodsNameById.getOrDefault(gId, ""));
-            putDisGoodsProfileFields(group, outboundGoodsProfileById.get(gId));
-            group.put("outboundQtyTotal",
-                    wG.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
-            group.put("theoryOutboundQtyByRecipeTotal",
-                    theoryOutboundQtyByRecipeTotal.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
-            group.put("theoryQtyFromSalesRecordsTotal",
-                    nz(sumTheoryByGoods == null ? null : sumTheoryByGoods.get(gId))
-                            .setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
-            group.put("linkingDishSoldPortionsTotal",
-                    linkingDishSoldPortionsTotal.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
-            group.put("linkingDishRows", dishRows);
-            groups.add(group);
+            BigDecimal theoryOutboundQtyByRecipeTotal = BigDecimal.ZERO;
+            BigDecimal linkingDishSoldPortionsTotal = BigDecimal.ZERO;
+            for (OutboundDishLinkAgg a : linkAggs) {
+                theoryOutboundQtyByRecipeTotal = theoryOutboundQtyByRecipeTotal.add(a.theoryByRecipe);
+                linkingDishSoldPortionsTotal = linkingDishSoldPortionsTotal.add(a.salesQty);
+            }
+            BigDecimal sumTGlobal = nz(sumTheoryByGoods == null ? null : sumTheoryByGoods.get(gId));
+
+            BigDecimal minChildSupported = null;
+            for (OutboundDishLinkAgg a : linkAggs) {
+                minChildSupported = minChildSupported == null
+                        ? a.maxPortionsThisGood
+                        : minChildSupported.min(a.maxPortionsThisGood);
+            }
+            if (minChildSupported == null) {
+                minChildSupported = BigDecimal.ZERO;
+            }
+
+            String goodsName = goodsNameById.getOrDefault(gId, "");
+            GbDistributerGoodsEntity goodProfile = outboundGoodsProfileById.get(gId);
+
+            List<Map<String, Object>> linkingDishRows = new ArrayList<>();
+            for (OutboundDishLinkAgg a : linkAggs) {
+                Map<String, Object> dishRow = fullDishRowByFoodId.get(a.foodId);
+                if (dishRow != null) {
+                    linkingDishRows.add(dishRow);
+                }
+            }
+
+            groups.add(buildOutboundGoodsParentIngredientRow(gId, goodsName, goodProfile, wG, sG, sumTGlobal,
+                    theoryOutboundQtyByRecipeTotal, minChildSupported, linkingDishSoldPortionsTotal, linkingDishRows));
         }
         return groups;
     }

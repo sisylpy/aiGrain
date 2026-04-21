@@ -151,6 +151,9 @@ public final class SkillRouteFallback {
         }
 
         boolean supplierUnsettled = shouldAttachSupplierUnsettledFacts(userMessage, null);
+        boolean dishCost = isDishCostIntent(u);
+        boolean procurement = isProcurementIntent(u) || supplierUnsettled;
+        boolean profitPilot = isProfitPilotIntent(u);
 
         boolean cost = u.contains("成本") || u.contains("损耗") || u.contains("废弃") || u.contains("毛利")
                 || u.contains("食材") || u.contains("利润") && (u.contains("薄") || u.contains("低"))
@@ -162,6 +165,15 @@ public final class SkillRouteFallback {
         boolean extractor = (u.contains("租金") || u.contains("工资") || u.contains("月薪"))
                 && (u.contains("记录") || u.contains("登记") || u.contains("帮我记") || u.contains("填"));
 
+        if (dishCost) {
+            return "ai-skill-dish-cost-diagnosis.md";
+        }
+        if (procurement) {
+            return "ai-skill-procurement-structure.md";
+        }
+        if (profitPilot) {
+            return "ai-skill-profit-pilot.md";
+        }
         if (cost) {
             return "ai-skill-cost.md";
         }
@@ -175,5 +187,37 @@ public final class SkillRouteFallback {
             return "ai-skill-data-extractor.md";
         }
         return "none";
+    }
+
+    private static boolean isDishCostIntent(String u) {
+        if (u == null) {
+            return false;
+        }
+        boolean dishWord = u.contains("菜") || u.contains("菜品");
+        boolean costWord = u.contains("成本") || u.contains("毛利") || u.contains("利润")
+                || u.contains("配料") || u.contains("原料") || u.contains("出库");
+        if (dishWord && costWord) {
+            return true;
+        }
+        return u.contains("瓶颈原料") || u.contains("卡脖子")
+                || (u.contains("哪道菜") && (u.contains("亏") || u.contains("不赚钱")));
+    }
+
+    private static boolean isProcurementIntent(String u) {
+        if (u == null) {
+            return false;
+        }
+        return u.contains("采购") || u.contains("进货") || u.contains("供应商") || u.contains("供货商")
+                || u.contains("应付") || u.contains("未结") || u.contains("挂账")
+                || u.contains("结账") || u.contains("自采");
+    }
+
+    private static boolean isProfitPilotIntent(String u) {
+        if (u == null) {
+            return false;
+        }
+        return u.contains("算账") || u.contains("账本") || u.contains("保本") || u.contains("回本")
+                || u.contains("赚不赚钱") || u.contains("盈利") || u.contains("利润盘")
+                || (u.contains("这个月") && u.contains("能不能赚"));
     }
 }
