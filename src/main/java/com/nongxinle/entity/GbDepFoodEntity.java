@@ -42,4 +42,14 @@ public class GbDepFoodEntity implements Serializable {
     private GbDistributerFoodEntity gbDistributerFoodEntity;
     @TableField(exist = false)
     private GbDepartmentEntity gbDepartmentEntity;
+    @TableField(exist = false)
+    private String gbDfSalesAmount;
+
+    public String getGbDfSalesAmount() {
+        return gbDfSalesAmount;
+    }
+
+    public void setGbDfSalesAmount(String gbDfSalesAmount) {
+        this.gbDfSalesAmount = gbDfSalesAmount;
+    }
 }

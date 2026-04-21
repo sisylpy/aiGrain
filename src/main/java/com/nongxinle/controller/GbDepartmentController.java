@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 import static com.nongxinle.utils.DateUtils.*;
-import static com.nongxinle.utils.GbTypeUtils.getGbDepartmentTypeMendian;
+import static com.nongxinle.utils.GbTypeUtils.*;
 import static com.nongxinle.utils.PinYin4jUtils.getHeadStringByString;
 
 /**
@@ -24,13 +24,9 @@ public class GbDepartmentController {
     @Autowired
     private GbDepartmentService gbDepartmentService;
     @Autowired
-    private GbDistributerUserService gbDistributerUserService;
-    @Autowired
     private GbDepartmentUserService gbDepartmentUserService;
     @Autowired
     private GbDistributerService gbDistributerService;
-    @Autowired
-    private SysCityMarketService sysCityMarketService;
     @Autowired
     private GbDepartmentOrdersService gbDepartmentOrdersService;
     @Autowired
@@ -45,6 +41,49 @@ public class GbDepartmentController {
     private GbDistributerPurchaseGoodsService gbDistributerPurchaseGoodsService;
 
 
+
+
+
+    @RequestMapping(value = "/updateDisContent", method = RequestMethod.POST)
+    @ResponseBody
+    public R updateDisContent (@RequestBody GbDistributerEntity dis) {
+        gbDistributerService.updateById(dis);
+//        Integer distributerId = dis.getGbDistributerId();
+//        Map<String, Object> map = new HashMap<>();
+//        map.put("disId", distributerId);
+//        System.out.println("dpepepepe" + map);
+//        List<GbDepartmentEntity> gbDepartmentEntityList = gbDepartmentService.queryGroupDepsByDisId(map);
+//        if(gbDepartmentEntityList.size() > 0){
+//            for(GbDepartmentEntity gbDepartmentEntity: gbDepartmentEntityList){
+//                Integer gbDepartmentType = gbDepartmentEntity.getGbDepartmentType();
+//                if(gbDepartmentType.equals(getGbDepartmentTypeMendian())){
+//                    String gbDepartmentName = dis.getGbDistributerName();
+//                    gbDepartmentEntity.setGbDepartmentName(dis.getGbDistributerName());
+//                    gbDepartmentEntity.setGbDepartmentAttrName(dis.getGbDistributerName());
+//                    String headPinyin = getHeadStringByString(gbDepartmentName, false, null);
+//                    gbDepartmentEntity.setGbDepartmentNamePy(headPinyin);
+//                    gbDepartmentService.update(gbDepartmentEntity);
+//                }
+//                if(gbDepartmentType.equals(getGbDepartmentTypeJicai())){
+//                    String gbDepartmentName = dis.getGbDistributerName()+"集采部";
+//                    gbDepartmentEntity.setGbDepartmentName(dis.getGbDistributerName());
+//                    gbDepartmentEntity.setGbDepartmentAttrName(dis.getGbDistributerName());
+//                    String headPinyin = getHeadStringByString(gbDepartmentName, false, null);
+//                    gbDepartmentEntity.setGbDepartmentNamePy(headPinyin);
+//                    gbDepartmentService.update(gbDepartmentEntity);
+//                }if(gbDepartmentType.equals(getGbDepartmentTypeAppSupplier())){
+//                    String gbDepartmentName = dis.getGbDistributerName()+"配送部";
+//                    gbDepartmentEntity.setGbDepartmentName(dis.getGbDistributerName());
+//                    gbDepartmentEntity.setGbDepartmentAttrName(dis.getGbDistributerName());
+//                    String headPinyin = getHeadStringByString(gbDepartmentName, false, null);
+//                    gbDepartmentEntity.setGbDepartmentNamePy(headPinyin);
+//                    gbDepartmentService.update(gbDepartmentEntity);
+//                }
+//            }
+//        }
+
+        return R.ok();
+    }
 
 
     @RequestMapping(value = "/saveSubDepartment", method = RequestMethod.POST)

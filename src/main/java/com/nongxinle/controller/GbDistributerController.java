@@ -3,10 +3,11 @@ package com.nongxinle.controller;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.nongxinle.entity.GbDistributerEntity;
+import com.nongxinle.service.GbDistributerService;
 import com.nongxinle.utils.R;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
 
 import static com.nongxinle.utils.DateUtils.*;
 
@@ -16,6 +17,24 @@ import static com.nongxinle.utils.DateUtils.*;
 @RestController
 @RequestMapping("gbdistributer")
 public class GbDistributerController {
+    @Autowired
+    private GbDistributerService gbDistributerService;
+
+
+
+    @RequestMapping(value = "/updateDisContent", method = RequestMethod.POST)
+    @ResponseBody
+    public R updateDisContent (@RequestBody GbDistributerEntity dis) {
+        gbDistributerService.updateById(dis);
+        return R.ok();
+    }
+
+
+    @RequestMapping(value = "/getDisInfo/{id}")
+    @ResponseBody
+    public R getDisInfo(@PathVariable Integer id) {
+        return R.ok().put("data", gbDistributerService.queryDistributerInfo(id));
+    }
 
 
 

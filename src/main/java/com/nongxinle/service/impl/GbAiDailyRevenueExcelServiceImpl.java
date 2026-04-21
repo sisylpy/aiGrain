@@ -466,6 +466,7 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
 
             List<Object> dataHeaders = new ArrayList<>();
             dataHeaders.add("序号");
+            dataHeaders.add("部门名称");
             dataHeaders.add("菜品名称");
             for (LocalDate d : dayList) {
                 dataHeaders.add(GbDateTimeUtils.formatDay(d));
@@ -489,8 +490,11 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 if (log.isDebugEnabled()) {
                     log.debug("dep food sales template dish serial={} foodId={} name={}", serial, foodId, name);
                 }
+                Integer depId = f.getGbDfDepId();
+                String depName = depDisplayName(depId);
                 List<Object> rowData = new ArrayList<>();
                 rowData.add(serial++);
+                rowData.add(depName + "（id:" + (depId == null ? "" : depId) + "）");
                 rowData.add(name + "（id:" + foodId + "）");
                 for (int i = 0; i < days; i++) {
                     rowData.add("");
@@ -501,9 +505,9 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
 
             writer.setSheet("使用说明");
             writer.writeCellValue(0, 0, "菜品日销售模板说明");
-            writer.writeCellValue(1, 0, "1. 第1列序号、第2列菜品名称（含「（id:数字）」请勿改），第3列起为各日期，在对应格填写该菜当日销量（可小数）");
+            writer.writeCellValue(1, 0, "1. 第1列序号、第2列部门名称（含部门id）、第3列菜品名称（含id）请勿改，第4列起为各日期，在对应格填写该菜当日销量（可小数）");
             writer.writeCellValue(2, 0, "2. 上传接口：POST /ai/daily-revenue/upload-food-sales-excel ，参数 file、departmentId、distributerId");
-            writer.writeCellValue(3, 0, "3. 上传后写入 gb_dep_food_sales，并按 gb_distributer_food_goods 单份用量×销量写入 gb_dep_food_goods_sales");
+            writer.writeCellValue(3, 0, "3. 上传按第2列部门id + 第3列菜品id匹配 gb_dep_food，写入 gb_dep_food_sales，并按配方展开到 gb_dep_food_goods_sales");
             if (skipped > 0) {
                 writer.writeCellValue(4, 0, "4. 当前有 " + skipped + " 条门店菜品未出现在表格中（未配置 gb_df_food_id，或与部门所属批发商不一致）");
             }
@@ -536,7 +540,7 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
     }
 
     @Override
-    public List<Map.Entry<Date, Map<Integer, BigDecimal>>> parseFoodSalesExcel(MultipartFile file)
+    public List<FoodSalesExcelCell> parseFoodSalesExcel(MultipartFile file)
             throws IOException {
         cn.hutool.poi.excel.ExcelReader reader = cn.hutool.poi.excel.ExcelUtil.getReader(file.getInputStream());
         List<List<Object>> rows = reader.read();
@@ -548,14 +552,17 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
         return readFoodSalesExcelLegacyDateRows(rows);
     }
 
-    private List<Map.Entry<Date, Map<Integer, BigDecimal>>> readFoodSalesExcelPivotLayout(
+    private List<FoodSalesExcelCell> readFoodSalesExcelPivotLayout(
             List<List<Object>> rows, int headerRowIndex) {
-        List<Map.Entry<Date, Map<Integer, BigDecimal>>> out = new ArrayList<>();
+        List<FoodSalesExcelCell> out = new ArrayList<>();
         List<Object> header = rows.get(headerRowIndex);
         int dataStartRow = headerRowIndex + 1;
+        boolean hasDepartmentCol = isDepartmentHeader(header, 1);
+        int foodCol = hasDepartmentCol ? 2 : 1;
+        int firstDateCol = hasDepartmentCol ? 3 : 2;
 
         List<String> dateKeys = new ArrayList<>();
-        for (int c = 2; c < header.size(); c++) {
+        for (int c = firstDateCol; c < header.size(); c++) {
             String dk = GbDateTimeUtils.normalizeExcelDayKey(header.get(c));
             if (dk != null) {
                 dateKeys.add(dk);
@@ -564,19 +571,21 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             }
         }
 
-        Map<String, Map<Integer, BigDecimal>> byDateKey = new LinkedHashMap<>();
-
         for (int i = dataStartRow; i < rows.size(); i++) {
             List<Object> row = rows.get(i);
-            if (row.size() < 3) {
+            if (row.size() <= foodCol) {
                 continue;
             }
-            if (row.get(1) == null) {
+            if (row.get(foodCol) == null) {
                 continue;
             }
-            Integer foodId = parseFoodIdFromHeader(row.get(1));
+            Integer foodId = parseFoodIdFromHeader(row.get(foodCol));
             if (foodId == null) {
                 continue;
+            }
+            Integer depId = null;
+            if (hasDepartmentCol) {
+                depId = parseDepartmentIdFromHeaderCell(row.size() > 1 ? row.get(1) : null);
             }
 
             for (int j = 0; j < dateKeys.size(); j++) {
@@ -584,7 +593,7 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 if (dk == null) {
                     continue;
                 }
-                int col = 2 + j;
+                int col = firstDateCol + j;
                 if (col >= row.size()) {
                     continue;
                 }
@@ -597,24 +606,18 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                     if (q.compareTo(BigDecimal.ZERO) <= 0) {
                         continue;
                     }
-                    Map<Integer, BigDecimal> qtyByFood = byDateKey.computeIfAbsent(dk, k -> new LinkedHashMap<>());
-                    qtyByFood.merge(foodId, q, BigDecimal::add);
+                    Date recordDate = GbDateTimeUtils.parseDay(dk);
+                    out.add(new FoodSalesExcelCell(recordDate, depId, foodId, q));
                 } catch (NumberFormatException ignored) {
                 }
-            }
-        }
-
-        for (Map.Entry<String, Map<Integer, BigDecimal>> e : byDateKey.entrySet()) {
-            if (!e.getValue().isEmpty()) {
-                out.add(new AbstractMap.SimpleEntry<>(GbDateTimeUtils.parseDay(e.getKey()), e.getValue()));
             }
         }
         return out;
     }
 
-    private List<Map.Entry<Date, Map<Integer, BigDecimal>>> readFoodSalesExcelLegacyDateRows(
+    private List<FoodSalesExcelCell> readFoodSalesExcelLegacyDateRows(
             List<List<Object>> rows) {
-        List<Map.Entry<Date, Map<Integer, BigDecimal>>> out = new ArrayList<>();
+        List<FoodSalesExcelCell> out = new ArrayList<>();
         int headerRowIndex;
         int dataStartRow;
         if (rows.size() >= 3
@@ -640,8 +643,6 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             colFoodIds.add(parseFoodIdFromHeader(header.get(c)));
         }
 
-        Map<String, Map<Integer, BigDecimal>> byDateKey = new LinkedHashMap<>();
-
         for (int i = dataStartRow; i < rows.size(); i++) {
             List<Object> row = rows.get(i);
             if (row.isEmpty() || row.get(0) == null) {
@@ -652,8 +653,6 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             if (recordDate == null) {
                 continue;
             }
-            String dk = GbDateTimeUtils.formatDay(recordDate);
-            Map<Integer, BigDecimal> qtyByFood = byDateKey.computeIfAbsent(dk, k -> new LinkedHashMap<>());
 
             for (int c = 1; c < colFoodIds.size() && c < row.size(); c++) {
                 Integer fid = colFoodIds.get(c);
@@ -669,14 +668,9 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                     if (q.compareTo(BigDecimal.ZERO) <= 0) {
                         continue;
                     }
-                    qtyByFood.merge(fid, q, BigDecimal::add);
+                    out.add(new FoodSalesExcelCell(recordDate, null, fid, q));
                 } catch (NumberFormatException ignored) {
                 }
-            }
-        }
-        for (Map.Entry<String, Map<Integer, BigDecimal>> e : byDateKey.entrySet()) {
-            if (!e.getValue().isEmpty()) {
-                out.add(new AbstractMap.SimpleEntry<>(GbDateTimeUtils.parseDay(e.getKey()), e.getValue()));
             }
         }
         return out;
@@ -692,6 +686,7 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             Object c0 = row.get(0);
             Object c1 = row.get(1);
             Object c2 = row.get(2);
+            Object c3 = row.size() > 3 ? row.get(3) : null;
             if (c0 == null || c1 == null || c2 == null) {
                 continue;
             }
@@ -700,14 +695,26 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             if (!s0.contains("序号")) {
                 continue;
             }
-            if (!s1.contains("菜品")) {
-                continue;
+            boolean legacyPivot = s1.contains("菜品") && GbDateTimeUtils.normalizeExcelDayKey(c2) != null;
+            if (legacyPivot) {
+                return r;
             }
-            if (GbDateTimeUtils.normalizeExcelDayKey(c2) != null) {
+            boolean newPivot = isDepartmentHeader(row, 1)
+                    && c2.toString().contains("菜品")
+                    && GbDateTimeUtils.normalizeExcelDayKey(c3) != null;
+            if (newPivot) {
                 return r;
             }
         }
         return null;
+    }
+
+    private static boolean isDepartmentHeader(List<Object> row, int idx) {
+        if (row == null || idx < 0 || idx >= row.size() || row.get(idx) == null) {
+            return false;
+        }
+        String s = row.get(idx).toString().trim();
+        return s.contains("部门");
     }
 
     private static Integer parseFoodIdFromHeader(Object cell) {
@@ -724,6 +731,10 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             return Integer.parseInt(m.group(1));
         }
         return null;
+    }
+
+    private static Integer parseDepartmentIdFromHeaderCell(Object cell) {
+        return parseFoodIdFromHeader(cell);
     }
 
     @Override
@@ -773,9 +784,33 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
         return "菜品" + distributerFoodId;
     }
 
+    private String depDisplayName(Integer depId) {
+        if (depId == null) {
+            return "未知部门";
+        }
+        GbDepartmentEntity dep = departmentService.getById(depId);
+        if (dep == null || dep.getGbDepartmentName() == null || dep.getGbDepartmentName().trim().isEmpty()) {
+            return "部门" + depId;
+        }
+        return dep.getGbDepartmentName().trim();
+    }
+
+    private static Integer parseIntSafe(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     @Override
     public Comparator<GbDepFoodEntity> depFoodTemplateRowComparator() {
-        return Comparator.comparing(GbAiDailyRevenueExcelServiceImpl::distributerFoodSortKey,
-                Comparator.nullsLast(String::compareTo));
+        return Comparator
+                .comparing(GbDepFoodEntity::getGbDfDepId, Comparator.nullsLast(Integer::compareTo))
+                .thenComparing(GbAiDailyRevenueExcelServiceImpl::distributerFoodSortKey,
+                        Comparator.nullsLast(String::compareTo));
     }
 }

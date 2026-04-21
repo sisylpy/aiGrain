@@ -412,6 +412,8 @@ public class GbDepartmentOrdersController {
         gbDepartmentOrders.setGbDoOrderType(gbDistributerGoodsEntity.getGbDgGoodsType());
         gbDepartmentOrders.setGbDoGoodsType(gbDistributerGoodsEntity.getGbDgGoodsType());
         gbDepartmentOrders.setGbDoPurchaseGoodsId(-1);
+        gbDepartmentOrders.setGbDoStatus(0);
+        gbDepartmentOrders.setGbDoBuyStatus(0);
         gbDepartmentOrders.setGbDoGoodsName(gbDistributerGoodsEntity.getGbDgGoodsName());
         gbJjOrderPurchaseLinkService.applyJjOrderTimestamps(gbDepartmentOrders);
         Integer gbDoDisGoodsFatherId = gbDepartmentOrders.getGbDoDisGoodsFatherId();

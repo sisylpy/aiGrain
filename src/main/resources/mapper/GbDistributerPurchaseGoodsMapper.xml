@@ -991,10 +991,42 @@
     <!-- 只查询采购商品 -->
     <select id="queryOnlyPurGoods" resultType="com.nongxinle.entity.GbDistributerPurchaseGoodsEntity">
         select *
-        from gb_distributer_purchase_goods
+        from gb_distributer_purchase_goods as gdpg
         <where>
             <if test="batchId != null">
-                and gb_DPG_batch_id = #{batchId}
+                and gdpg.gb_DPG_batch_id = #{batchId}
+            </if>
+
+            <if test="purUserId != null">
+                AND gdpg.gb_DPG_pur_user_id = #{purUserId}
+            </if>
+            <if test="standard != null">
+                and gdpg.gb_DPG_standard = #{standard}
+            </if>
+
+            <if test="xiaoyuSubtotal != null">
+                and gb_DPG_buy_subtotal &lt; #{xiaoyuSubtotal}
+            </if>
+            <if test="date != null">
+                and gb_DPG_stock_finish_date = #{date}
+            </if>
+            <if test="dayuStatus != null">
+                and gb_DPG_status &gt; #{dayuStatus}
+            </if>
+            <if test="equalStatus != null">
+                and gb_DPG_status = #{equalStatus}
+            </if>
+            <if test="dayuPurchaseType != null">
+                and gb_DPG_purchase_type &gt; #{dayuPurchaseType}
+            </if>
+            <if test="purchaseType != null">
+                and gb_DPG_purchase_type = #{purchaseType}
+            </if>
+            <if test="startDate != null">
+                and gdpg.gb_DPG_purchase_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gdpg.gb_DPG_purchase_date &lt;= #{stopDate}
             </if>
         </where>
     </select>

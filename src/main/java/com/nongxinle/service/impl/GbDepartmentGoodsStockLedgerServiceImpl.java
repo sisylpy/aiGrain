@@ -82,7 +82,7 @@ public class GbDepartmentGoodsStockLedgerServiceImpl implements GbDepartmentGood
         if (fromDb == null) {
             return GbDepGoodsStockAdjustResult.error(-1, "请刷新数据");
         }
-        if (new BigDecimal(fromDb.getGbDgsRestWeight()).compareTo(BigDecimal.ZERO) == 0) {
+        if (bd(fromDb.getGbDgsRestWeight()).compareTo(BigDecimal.ZERO) == 0) {
             return GbDepGoodsStockAdjustResult.error(-1, "请刷新数据");
         }
 

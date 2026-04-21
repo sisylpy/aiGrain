@@ -157,10 +157,10 @@ public class GbAiDailyRevenueController {
 
 
     /**
-     * 部门菜品日销售 — 智能 Excel 模板（行=菜品：第1列序号、第2列菜品名称，第3列起为 startDate～endDate 各日销量）
+     * 部门菜品日销售 — 智能 Excel 模板（行=菜品：第1列序号、第2列部门名称（含部门id）、第3列菜品名称，第4列起为日期销量）
      */
     @GetMapping("/download-food-sales-smart-template")
-    @Operation(summary = "菜品日销售智能模板", description = "第1列序号、第2列菜品名称，第3列起为日期列；上传后按配方展开为原料消耗")
+    @Operation(summary = "菜品日销售智能模板", description = "第1列序号、第2列部门名称（含部门id）、第3列菜品名称，第4列起为日期列；上传按部门id+菜品id匹配部门菜品并展开原料消耗")
     public void downloadFoodSalesSmartTemplate(HttpServletResponse response,
             @RequestParam("startDate") String startDate,
             @RequestParam("endDate") String endDate,
@@ -173,7 +173,7 @@ public class GbAiDailyRevenueController {
      * Excel 上传部门菜品日销售，并计算部门菜品原料消耗（gb_dep_food_goods_sales）
      */
     @PostMapping("/upload-food-sales-excel")
-    @Operation(summary = "Excel上传菜品日销售", description = "支持「序号|菜品名称|各日期列」模板（及旧版「日期|各菜品列」）；按销量×配方写入原料消耗")
+    @Operation(summary = "Excel上传菜品日销售", description = "支持「序号|部门名称|菜品名称|各日期列」模板（兼容旧版）；按部门列部门id+菜品id匹配 gb_dep_food 并写入销量与原料消耗")
     public R uploadFoodSalesExcel(
             @RequestParam("file") MultipartFile file,
             @RequestParam("departmentId") Integer departmentId,

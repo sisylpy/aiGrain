@@ -17,6 +17,37 @@ import java.util.Map;
  */
 public interface GbAiDailyRevenueExcelService {
 
+    /** 菜品日销售模板单元：某天、某父级部门、某菜品的销量。 */
+    class FoodSalesExcelCell {
+        private final Date recordDate;
+        private final Integer depId;
+        private final Integer foodRefId;
+        private final BigDecimal amount;
+
+        public FoodSalesExcelCell(Date recordDate, Integer depId, Integer foodRefId, BigDecimal amount) {
+            this.recordDate = recordDate;
+            this.depId = depId;
+            this.foodRefId = foodRefId;
+            this.amount = amount;
+        }
+
+        public Date getRecordDate() {
+            return recordDate;
+        }
+
+        public Integer getDepId() {
+            return depId;
+        }
+
+        public Integer getFoodRefId() {
+            return foodRefId;
+        }
+
+        public BigDecimal getAmount() {
+            return amount;
+        }
+    }
+
     /**
      * 校验上传为 Excel（非空、扩展名 .xls/.xlsx）。
      *
@@ -37,7 +68,7 @@ public interface GbAiDailyRevenueExcelService {
             throws IOException;
 
     /** 菜品日销售 Excel 解析（新/旧表头）。 */
-    List<Map.Entry<Date, Map<Integer, BigDecimal>>> parseFoodSalesExcel(MultipartFile file) throws IOException;
+    List<FoodSalesExcelCell> parseFoodSalesExcel(MultipartFile file) throws IOException;
 
     /** 为门店菜品列表填充批发商菜品实体（上传/模板共用）。 */
     void attachDistributerFood(List<GbDepFoodEntity> depFoods);
