@@ -66,22 +66,21 @@ public interface GbDepartmentDisGoodsService extends IService<GbDepartmentDisGoo
     TreeSet<GbDistributerGoodsEntity> disQueryDisGoodsWithOrderForAiTree(Map<String, Object> map);
 
     /**
-     * 农鑫导入批发商商品后，为部门订货（Jj）创建并保存部门商品（部门侧与批发商商品的关联行）。
-     * <p>字段赋值与老项目在 Controller 中的逻辑一致。
-     *
-     * @param gbDepartmentOrders 订货申请（含部门、订货规格、展示名称等）
-     * @param gbNewGoods         已落库的批发商商品
-     * @return 已保存的部门商品实体（含生成的主键）
+     * 部门已关联批发商商品的快速检索（老项目 queryDepDisGoodsQuickSearchStrGb，按部门商品主键去重排序）
      */
-    GbDepartmentDisGoodsEntity createDepDisGoodsForJjOrderAfterNxImport(
-            GbDepartmentOrdersEntity gbDepartmentOrders,
-            GbDistributerGoodsEntity gbNewGoods);
+    TreeSet<GbDepartmentDisGoodsEntity> queryDepDisGoodsQuickSearchStrGb(Map<String, Object> map);
 
     /**
-     * 已有批发商商品时，为部门订货（Jj）创建并保存部门商品关联行。
-     * <p>名称、拼音等取自批发商商品；部门取自订货申请。
+     * 为部门订货（Jj）创建并保存部门商品（部门与批发商商品的关联行）。
+     * <p>适用于：农鑫导入后新建批发商商品、或选用已有批发商商品两种场景。
+     * <p>部门侧商品名称取自批发商商品；拼音/首字母优先用商品表已有值，否则按该名称生成；
+     * 大类 ID 优先用商品上的 greatId，为空时按 grand 分类解析。
+     *
+     * @param gbDepartmentOrders 订货申请（部门、订货规格等）
+     * @param gbDisGoods         已落库的批发商商品
+     * @return 已保存的部门商品实体（含生成的主键）
      */
-    GbDepartmentDisGoodsEntity createDepDisGoodsForJjOrderFromExistingDisGoods(
+    GbDepartmentDisGoodsEntity createDepDisGoodsForJjOrder(
             GbDepartmentOrdersEntity gbDepartmentOrders,
-            GbDistributerGoodsEntity gbDistributerGoodsEntity);
+            GbDistributerGoodsEntity gbDisGoods);
 }

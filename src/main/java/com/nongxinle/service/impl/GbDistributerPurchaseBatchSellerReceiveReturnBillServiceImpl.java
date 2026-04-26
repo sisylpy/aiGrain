@@ -52,7 +52,7 @@ public class GbDistributerPurchaseBatchSellerReceiveReturnBillServiceImpl
             gbDPGService.updateById(updatePurGoods);
 
             List<GbDepartmentOrdersEntity> gbDepartmentOrdersEntities =
-                    purGoods.getGbDistributerGoodsEntity().getGbDepartmentOrdersEntities();
+                    purGoods.getGbDepartmentOrdersEntities();
             if (gbDepartmentOrdersEntities.size() > 0) {
                 for (GbDepartmentOrdersEntity ordersEntity : gbDepartmentOrdersEntities) {
                     log.debug("orddidid" + ordersEntity.getGbDepartmentOrdersId());

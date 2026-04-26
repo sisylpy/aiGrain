@@ -37,8 +37,6 @@
         <result property="gbDdgDepartmentFatherId" column="gb_DDG_department_father_id"/>
         <result property="gbDdgGoodsType" column="gb_DDG_goods_type"/>
         <result property="gbDdgGbDisId" column="gb_DDG_gb_dis_id"/>
-        <result property="gbDdgNxDistributerId" column="gb_DDG_nx_distributer_id"/>
-        <result property="gbDdgNxDistributerGoodsId" column="gb_DDG_nx_distributer_goods_id"/>
         <result property="gbDdgOrderGoodsName" column="gb_DDG_order_goods_name"/>
         <result property="gbDdgOrderPriceLevel" column="gb_DDG_order_price_level"/>
         <result property="gbDdgPrintStandard" column="gb_DDG_print_standard"/>
@@ -81,9 +79,11 @@
             <result property="gbDgNxFatherImg" column="gb_dg_nx_father_img"/>
             <result property="gbDgNxFatherImgLarge" column="gb_dg_nx_father_img_large"/>
             <result property="gbDgGbSupplierId" column="gb_dg_gb_supplier_id"/>
-            <result property="gbDgNxDistributerId" column="gb_dg_nx_distributer_id"/>
-            <result property="gbDgNxDistributerGoodsId" column="gb_dg_nx_distributer_goods_id"/>
         </association>
+        <association property="gbDepartmentOrdersEntity" resultMap="depOrders"/>
+        <collection property="gbDepartmentGoodsStockEntities" resultMap="depStock"/>
+        <collection property="gbDistributerStandardEntities" resultMap="disStandards"/>
+
     </resultMap>
 
     <!-- 返回给前端的主 ResultMap (depDisGoodsCataGb) -->
@@ -114,8 +114,6 @@
         <result property="gbDdgDisGoodsGrandId" column="gb_DDG_dis_goods_grand_id"/>
         <result property="gbDdgDisGoodsGreatId" column="gb_DDG_dis_goods_great_id"/>
         <result property="gbDdgGoodsType" column="gb_DDG_goods_type"/>
-        <result property="gbDdgNxDistributerId" column="gb_DDG_nx_distributer_id"/>
-        <result property="gbDdgNxDistributerGoodsId" column="gb_DDG_nx_distributer_goods_id"/>
         <result property="gbDdgGbDepartmentId" column="gb_DDG_gb_department_id"/>
         <result property="gbDdgGbSupplierId" column="gb_DDG_gb_supplier_id"/>
         <result property="gbDdgStockTotalSubtotal" column="gb_DDG_stock_total_subtotal"/>
@@ -143,7 +141,7 @@
             <result property="gbDgFreshWasteHour" column="gb_dg_fresh_waste_hour"/>
         </association>
         <association property="gbDepartmentOrdersEntity" resultMap="depOrders"/>
-        <collection property="gbDepartmentGoodsStockEntities" resultMap="depStockForAi"/>
+        <collection property="gbDepartmentGoodsStockEntities" resultMap="depStock"/>
         <collection property="gbDistributerStandardEntities" resultMap="disStandards"/>
     </resultMap>
 
@@ -152,16 +150,62 @@
         <result property="gbDoDisGoodsId" column="gb_DO_dis_goods_id"/>
         <result property="gbDoDepartmentId" column="gb_DO_department_id"/>
         <result property="gbDoStatus" column="gb_DO_status"/>
+        <result property="gbDoQuantity" column="gb_DO_quantity"/>
+        <result property="gbDoStandard" column="gb_DO_standard"/>
+        <result property="gbDoBuyStatus" column="gb_DO_buy_status"/>
+        <result property="gbDoRemark" column="gb_DO_remark"/>
     </resultMap>
 
     <resultMap id="depStock" type="com.nongxinle.entity.GbDepartmentGoodsStockEntity">
         <id property="gbDepartmentGoodsStockId" column="gb_department_goods_stock_id"/>
         <result property="gbDgsGbDisGoodsId" column="gb_dgs_gb_dis_goods_id"/>
-        <result property="gbDgsDepartmentId" column="gb_dgs_department_id"/>
+        <result property="gbDgsGbDepDisGoodsId" column="gb_dgs_gb_dep_dis_goods_id"/>
+        <result property="gbDgsGbDepartmentId" column="gb_dgs_gb_department_id"/>
+        <result property="gbDgsGbDepartmentFatherId" column="gb_dgs_gb_department_father_id"/>
         <result property="gbDgsRestWeight" column="gb_dgs_rest_weight"/>
+        <result property="gbDgsRestSubtotal" column="gb_dgs_rest_subtotal"/>
+        <result property="gbDgsWeight" column="gb_dgs_weight"/>
+        <result property="gbDgsSubtotal" column="gb_dgs_subtotal"/>
+        <result property="gbDgsPrice" column="gb_dgs_price"/>
         <result property="gbDgsDate" column="gb_dgs_date"/>
-        <result property="gbDgsWeek" column="gb_dgs_week"/>
         <result property="gbDgsStatus" column="gb_dgs_status"/>
+        <result property="gbDgsInventoryDate" column="gb_dgs_inventory_date"/>
+        <result property="gbDgsInventoryFullTime" column="gb_dgs_inventory_full_time"/>
+        <result property="gbDgsInventoryWeek" column="gb_dgs_inventory_week"/>
+        <result property="gbDgsInventoryMonth" column="gb_dgs_inventory_month"/>
+        <result property="gbDgsProduceWeight" column="gb_dgs_produce_weight"/>
+        <result property="gbDgsProduceSubtotal" column="gb_dgs_produce_subtotal"/>
+        <result property="gbDgsLossWeight" column="gb_dgs_loss_weight"/>
+        <result property="gbDgsLossSubtotal" column="gb_dgs_loss_subtotal"/>
+        <result property="gbDgsWasteWeight" column="gb_dgs_waste_weight"/>
+        <result property="gbDgsWasteSubtotal" column="gb_dgs_waste_subtotal"/>
+        <result property="gbDgsReturnWeight" column="gb_dgs_return_weight"/>
+        <result property="gbDgsReturnSubtotal" column="gb_dgs_return_subtotal"/>
+        <result property="gbDgsSellingPrice" column="gb_dgs_selling_price"/>
+        <result property="gbDgsSellingSubtotal" column="gb_dgs_selling_subtotal"/>
+        <result property="gbDgsGbDistributerId" column="gb_dgs_gb_distributer_id"/>
+        <result property="gbDgsNxDistributerId" column="gb_dgs_nx_distributer_id"/>
+        <result property="gbDgsGbDisGoodsFatherId" column="gb_dgs_gb_dis_goods_father_id"/>
+        <result property="gbDgsGbDisGoodsGrandId" column="gb_dgs_gb_dis_goods_grand_id"/>
+        <result property="gbDgsGbDisGoodsGreatId" column="gb_dgs_gb_dis_goods_great_id"/>
+        <result property="gbDgsReceiveUserId" column="gb_dgs_receive_user_id"/>
+        <result property="gbDgsWarnFullTime" column="gb_dgs_warn_full_time"/>
+        <result property="gbDgsWasteFullTime" column="gb_dgs_waste_full_time"/>
+        <result property="gbDgsFullTime" column="gb_dgs_full_time"/>
+        <result property="gbDgsDoWasteFullTime" column="gb_dgs_do_waste_full_time"/>
+        <result property="gbDgsOutFullTime" column="gb_dgs_out_full_time"/>
+        <result property="gbDgsProfitWeight" column="gb_dgs_profit_weight"/>
+        <result property="gbDgsProfitSubtotal" column="gb_dgs_profit_subtotal"/>
+        <result property="gbDgsBetweenPrice" column="gb_dgs_between_price"/>
+        <result property="gbDgsWarnTimeQuantumName" column="gb_dgs_warn_time_quantum_name"/>
+        <result property="gbDgsWasteTimeQuantumName" column="gb_dgs_waste_time_quantum_name"/>
+        <result property="gbDgsGbPurGoodsId" column="gb_dgs_gb_pur_goods_id"/>
+        <result property="gbDgsGbPriceGoodsId" column="gb_dgs_gb_price_goods_id"/>
+        <result property="gbDgsGbPriceSubtotal" column="gb_dgs_gb_price_subtotal"/>
+        <result property="gbDgsAfterProfitSubtotal" column="gb_dgs_after_profit_subtotal"/>
+        <result property="gbDgsProfitSubtotal" column="gb_dgs_profit_subtotal"/>
+        <result property="gbDgsRestWeightShowStandard" column="gb_dgs_rest_weight_show_standard"/>
+        <result property="gbDgsRestWeightShowStandardName" column="gb_dgs_rest_weight_show_standard_name"/>
     </resultMap>
 
     <!-- 部门商品库存 collection resultMap（inventoryStock 带 inventory_ 前缀别名） -->
@@ -190,6 +234,7 @@
     <resultMap id="disStandards" type="com.nongxinle.entity.GbDistributerStandardEntity">
         <id property="gbDistributerStandardId" column="gb_distributer_standard_id"/>
         <result property="gbDsDisGoodsId" column="gb_DS_dis_goods_id"/>
+        <result property="gbDsStandardName" column="gb_DS_standard_name"/>
     </resultMap>
 
     <!-- disGetDepDisGoodsCataGb: 获取部门商品分类（二级嵌套结构） -->
@@ -364,26 +409,28 @@
             greatGrand.*,
             greatGrand.gb_distributer_father_goods_id AS greatFatherId,
             ng.*,
-            dor.*,
-            inventoryStock.gb_department_goods_stock_id 'inventory_gb_department_goods_stock_id',
-            inventoryStock.gb_dgs_gb_dep_dis_goods_id 'inventory_gb_dgs_gb_dep_dis_goods_id',
-            inventoryStock.gb_dgs_gb_dis_goods_id 'inventory_gb_dgs_gb_dis_goods_id',
-            inventoryStock.gb_dgs_gb_dis_goods_father_id 'inventory_gb_dgs_gb_dis_goods_father_id',
-            inventoryStock.gb_dgs_gb_dis_goods_grand_id 'inventory_gb_dgs_gb_dis_goods_grand_id',
-            inventoryStock.gb_dgs_gb_dis_goods_great_id 'inventory_gb_dgs_gb_dis_goods_great_id',
-            inventoryStock.gb_dgs_gb_distributer_id 'inventory_gb_dgs_gb_distributer_id',
-            inventoryStock.gb_dgs_gb_department_id 'inventory_gb_dgs_gb_department_id',
-            inventoryStock.gb_dgs_gb_department_father_id 'inventory_gb_dgs_gb_department_father_id',
-            inventoryStock.gb_dgs_weight 'inventory_gb_dgs_weight',
-            inventoryStock.gb_dgs_rest_weight 'inventory_gb_dgs_rest_weight',
-            inventoryStock.gb_dgs_subtotal 'inventory_gb_dgs_subtotal',
-            inventoryStock.gb_dgs_rest_subtotal 'inventory_gb_dgs_rest_subtotal',
-            inventoryStock.gb_dgs_price 'inventory_gb_dgs_price',
-            inventoryStock.gb_dgs_date 'inventory_gb_dgs_date',
-            inventoryStock.gb_dgs_week 'inventory_gb_dgs_week',
-            inventoryStock.gb_dgs_month 'inventory_gb_dgs_month',
-            inventoryStock.gb_dgs_year 'inventory_gb_dgs_year',
-            inventoryStock.gb_dgs_status 'inventory_gb_dgs_status'
+         inventoryStock.*,
+            dor.*
+
+#             inventoryStock.gb_department_goods_stock_id 'inventory_gb_department_goods_stock_id',
+#             inventoryStock.gb_dgs_gb_dep_dis_goods_id 'inventory_gb_dgs_gb_dep_dis_goods_id',
+#             inventoryStock.gb_dgs_gb_dis_goods_id 'inventory_gb_dgs_gb_dis_goods_id',
+#             inventoryStock.gb_dgs_gb_dis_goods_father_id 'inventory_gb_dgs_gb_dis_goods_father_id',
+#             inventoryStock.gb_dgs_gb_dis_goods_grand_id 'inventory_gb_dgs_gb_dis_goods_grand_id',
+#             inventoryStock.gb_dgs_gb_dis_goods_great_id 'inventory_gb_dgs_gb_dis_goods_great_id',
+#             inventoryStock.gb_dgs_gb_distributer_id 'inventory_gb_dgs_gb_distributer_id',
+#             inventoryStock.gb_dgs_gb_department_id 'inventory_gb_dgs_gb_department_id',
+#             inventoryStock.gb_dgs_gb_department_father_id 'inventory_gb_dgs_gb_department_father_id',
+#             inventoryStock.gb_dgs_weight 'inventory_gb_dgs_weight',
+#             inventoryStock.gb_dgs_rest_weight 'inventory_gb_dgs_rest_weight',
+#             inventoryStock.gb_dgs_subtotal 'inventory_gb_dgs_subtotal',
+#             inventoryStock.gb_dgs_rest_subtotal 'inventory_gb_dgs_rest_subtotal',
+#             inventoryStock.gb_dgs_price 'inventory_gb_dgs_price',
+#             inventoryStock.gb_dgs_date 'inventory_gb_dgs_date',
+#             inventoryStock.gb_dgs_week 'inventory_gb_dgs_week',
+#             inventoryStock.gb_dgs_month 'inventory_gb_dgs_month',
+#             inventoryStock.gb_dgs_year 'inventory_gb_dgs_year',
+#             inventoryStock.gb_dgs_status 'inventory_gb_dgs_status'
         FROM (
             SELECT ddg.gb_department_dis_goods_id
             FROM gb_department_dis_goods AS ddg
@@ -404,6 +451,9 @@
                 <if test="notLinshi != null and notLinshi == 1">
                     AND dg.gb_dg_dfg_goods_father_id IS NOT NULL
                 </if>
+                <if test="depDisGoodsId != null">
+                    AND ddg.gb_department_dis_goods_id = #{depDisGoodsId}
+                </if>
             </where>
             ORDER BY
                 greatGrand.gb_dfg_father_goods_sort,
@@ -420,7 +470,7 @@
         LEFT JOIN gb_distributer_father_goods AS dfg ON dfg.gb_distributer_father_goods_id = ddg.gb_DDG_dis_goods_father_id
         LEFT JOIN gb_distributer_father_goods AS great ON great.gb_distributer_father_goods_id = dfg.gb_dfg_fathers_father_id
         LEFT JOIN gb_distributer_father_goods AS greatGrand ON greatGrand.gb_distributer_father_goods_id = great.gb_dfg_fathers_father_id
-        LEFT JOIN nx_goods AS ng ON ng.nx_goods_id = great.gb_dfg_nx_goods_id
+        LEFT JOIN nongxinle.nx_goods AS ng ON ng.nx_goods_id = great.gb_dfg_nx_goods_id
         LEFT JOIN gb_department_orders AS dor ON dor.gb_DO_dis_goods_id = ddg.gb_DDG_dis_goods_id
             AND dor.gb_DO_status &lt; #{status}
             AND dor.gb_DO_status &gt; -1
@@ -428,6 +478,7 @@
             AND dor.gb_DO_order_type != 9
         LEFT JOIN gb_department_goods_stock AS inventoryStock ON inventoryStock.gb_dgs_gb_dep_dis_goods_id = ddg.gb_department_dis_goods_id
             AND inventoryStock.gb_dgs_status &gt; -1
+            AND inventoryStock.gb_dgs_rest_weight &gt; 0
         ORDER BY
             greatGrand.gb_dfg_father_goods_sort,
             great.gb_dfg_father_goods_sort,
@@ -529,7 +580,7 @@
                 AND gdg.gb_dg_goods_type = #{goodsType}
             </if>
             <if test="goodsType != null and goodsType == 101">
-                AND gdg.gb_dg_fresh = 1
+                AND gdg.gb_dg_control_fresh = 1
             </if>
             <if test="goodsType != null and goodsType == 102">
                 AND gdg.gb_dg_pull_off = 1
@@ -552,7 +603,7 @@
                 AND gdg.gb_dg_goods_type = #{goodsType}
             </if>
             <if test="goodsType != null and goodsType == 101">
-                AND gdg.gb_dg_fresh = 1
+                AND gdg.gb_dg_control_fresh = 1
             </if>
             <if test="goodsType != null and goodsType == 102">
                 AND gdg.gb_dg_pull_off = 1
@@ -590,7 +641,7 @@
                 AND gdg.gb_dg_goods_type = #{goodsType}
             </if>
             <if test="goodsType != null and goodsType == 101">
-                AND gdg.gb_dg_fresh = 1
+                AND gdg.gb_dg_control_fresh = 1
             </if>
             <if test="goodsType != null and goodsType == 102">
                 AND gdg.gb_dg_pull_off = 1
@@ -600,6 +651,64 @@
         <if test="limit != null">
             LIMIT #{limit} OFFSET #{offset}
         </if>
+    </select>
+
+    <!-- 老项目: queryDepDisGoodsQuickSearchStrGb — 部门已关联批发商商品的快速检索（名称 / 别名 / 拼音 / 首字母） -->
+    <select id="queryDepDisGoodsQuickSearchStrGb" parameterType="map" resultMap="depGoodsWithStocks">
+        SELECT ddg.*,
+               gdgs.*,
+               dg.*,
+               gds.*,
+               da.*,
+               dor.*,
+               du.*,
+               gd.*
+        FROM gb_department_dis_goods AS ddg
+        LEFT JOIN gb_department_goods_stock AS gdgs ON gdgs.gb_dgs_gb_dep_dis_goods_id = ddg.gb_department_dis_goods_id
+            AND gdgs.gb_dgs_rest_weight &gt; 0 AND gdgs.gb_dgs_status &gt; -1
+        LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = ddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_distributer_standard AS gds ON gds.gb_DS_dis_goods_id = dg.gb_distributer_goods_id
+        LEFT JOIN gb_distributer_alias AS da ON da.gb_DA_dis_goods_id = dg.gb_distributer_goods_id
+        LEFT JOIN gb_department_orders AS dor ON dor.gb_DO_dis_goods_id = dg.gb_distributer_goods_id
+            AND dor.gb_DO_status &lt; 2 AND dor.gb_DO_status &gt; -1 AND dor.gb_DO_department_id = #{depId}
+        LEFT JOIN gb_department_user AS du ON du.gb_department_user_id = dor.gb_DO_order_user_id
+        LEFT JOIN gb_department AS gd ON gd.gb_department_id = ddg.gb_DDG_gb_department_id
+
+        <where>
+            <if test="depId != null">
+                AND ddg.gb_DDG_department_id = #{depId}
+            </if>
+            <if test="searchStr != null or searchPinyin != null">
+                AND (
+                <trim prefixOverrides="OR">
+                    <if test="searchStr != null">
+                        OR ddg.gb_DDG_dep_goods_name LIKE CONCAT('%', #{searchStr}, '%')
+                        OR da.gb_DA_alias_name LIKE CONCAT('%', #{searchStr}, '%')
+                        OR ddg.gb_DDG_dep_goods_pinyin LIKE CONCAT('%', #{searchStr}, '%')
+                        OR ddg.gb_DDG_dep_goods_py LIKE CONCAT('%', #{searchStr}, '%')
+                    </if>
+                    <if test="searchPinyin != null">
+                        OR ddg.gb_DDG_dep_goods_pinyin LIKE CONCAT('%', #{searchPinyin}, '%')
+                        OR ddg.gb_DDG_dep_goods_py LIKE CONCAT('%', #{searchPinyin}, '%')
+                        OR da.gb_DA_alias_name LIKE CONCAT('%', #{searchPinyin}, '%')
+                    </if>
+                </trim>
+                )
+            </if>
+            <if test="isSelf != null">
+                AND dg.gb_dg_is_self_control = #{isSelf}
+            </if>
+            <if test="pull != null">
+                AND dg.gb_dg_pull_off = #{pull}
+            </if>
+            <if test="notLinshi != null and notLinshi == 1">
+                AND dg.gb_dg_dfg_goods_father_id IS NOT NULL
+            </if>
+            <if test="notLinshi != null and notLinshi == -1">
+                AND dg.gb_dg_dfg_goods_father_id IS NULL
+            </if>
+        </where>
+        ORDER BY dg.gb_dg_goods_sort
     </select>
 
 </mapper>

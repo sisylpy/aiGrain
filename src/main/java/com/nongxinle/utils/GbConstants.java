@@ -1,5 +1,8 @@
 package com.nongxinle.utils;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 /**
  * GB（批发商）模块业务常量：与库表中的类型、状态整型取值一致。
  * <p>
@@ -29,6 +32,22 @@ public final class GbConstants {
         public static final Integer DELIVERY_SUPPLIER = 5;
         /** 加盟店部门 */
         public static final Integer FRANCHISE = 11;
+    }
+
+    // -------------------------------------------------------------------------
+    // 批发商菜品 gb_distributer_food.gb_df_status
+    // -------------------------------------------------------------------------
+    public static final class DistributerFoodStatus {
+        private DistributerFoodStatus() {
+        }
+
+        /** 正常 */
+        public static final Integer ACTIVE = 0;
+        /**
+         * 存在部门菜品销售记录（{@code gb_dep_food_sales.gb_dfs_food_id} 对应 {@code gb_dep_food.gb_dep_food_id}）时，
+         * 删除接口改为仅停用、不物理删行。
+         */
+        public static final Integer DISABLED_WITH_DEP_FOOD_SALES = 1;
     }
 
     // -------------------------------------------------------------------------
@@ -262,13 +281,14 @@ public final class GbConstants {
 
     /**
      * 部门商品库存扣减类型（与表 gb_department_goods_stock_reduce.gb_dgsr_type 一致）。
-     * <p>成本分析页「实际用量」：仅汇总 {@link #PRODUCTION}（生产成本出库）。</p>
+     * <p><b>菜品成本分析（按菜分摊、均价）</b>：仅汇总 {@link #PRODUCTION}（type=1），与 {@link com.nongxinle.service.GbDepartmentGoodsStockReduceService#queryProductionReduceAggByDisGoods(java.util.Map)} 一致。</p>
+     * <p><b>区间损耗率</b>：分子为 {@link #WASTE}+{@link #LOSS}（2+3）出库金额，分母为 1+2+3 出库金额合计（不含 {@link #RETURN}）；全量 1+2+3 按商品汇总见 {@link com.nongxinle.service.GbDepartmentGoodsStockReduceService#queryProduceLossWasteReduceAggByDisGoods(java.util.Map)}。</p>
      */
     public static final class StockReduceType {
         private StockReduceType() {
         }
 
-        /** 生产成本（成本分析-实际用量统计使用此类型） */
+        /** 生产成本（菜品成本分析里按菜分摊的出库均价、W_g 仅汇总此类型） */
         public static final Integer PRODUCTION = 1;
         /** 损耗（废气等） */
         public static final Integer WASTE = 2;
@@ -278,6 +298,83 @@ public final class GbConstants {
         public static final Integer RETURN = 4;
         /** 其它类型 5（与库表 gb_dgsr_type 等约定一致） */
         public static final Integer STARS = 5;
+    }
+
+    /**
+     * 配料/食材行「利用率」分档（与前端「食材利用率分布」环图一致）。
+     * <p>接口字段 {@code utilizationRate} 为百分数，如 83.33 表示 83.33%（与 {@link #fromRatePercent(BigDecimal)} 入参单位一致）。</p>
+     * <p>区间约定（与 UI）：{@code <90%} 偏低；{@code [90%, 110%]} 正常；{@code (110%, 120%]} 偏高；{@code >120%} 浪费严重
+     * （110% 算正常、120% 算偏高；&gt;120% 为严重浪费）。</p>
+     * <p>无利用率（理论用量为 0 等）不调用本类，或调用 {@code fromRatePercent} 时返回 null。</p>
+     */
+    public static final class IngredientUtilizationLevel {
+        private IngredientUtilizationLevel() {
+        }
+
+        /** 偏低，&lt; 90% */
+        public static final String CODE_LOW = "LOW";
+        /** 正常，90%（含）～ 110%（含） */
+        public static final String CODE_NORMAL = "NORMAL";
+        /** 偏高，&gt; 110% 且 ≤ 120% */
+        public static final String CODE_HIGH = "HIGH";
+        /** 浪费严重，&gt; 120% */
+        public static final String CODE_CRITICAL = "CRITICAL";
+
+        public static final String LABEL_ZH_LOW = "偏低";
+        public static final String LABEL_ZH_NORMAL = "正常";
+        public static final String LABEL_ZH_HIGH = "偏高";
+        public static final String LABEL_ZH_CRITICAL = "浪费严重";
+
+        /** 分档下沿（%）：&lt; 为「偏低」。 */
+        public static final BigDecimal PCT_LOW_EXCLUSIVE_MAX = new BigDecimal("90");
+        /** 正常上沿（含）：≤ 为「正常」（与 PCT_LOW_EXCLUSIVE_MAX 闭区间 90%～110%）。 */
+        public static final BigDecimal PCT_NORMAL_INCLUSIVE_MAX = new BigDecimal("110");
+        /** 偏上沿（含）：≤ 为「偏高」；&gt; 为「浪费严重」 */
+        public static final BigDecimal PCT_HIGH_INCLUSIVE_MAX = new BigDecimal("120");
+
+        /**
+         * 由利用率百分数解析分档，供 JSON 中返回 {@code level}、{@code labelZh}。
+         *
+         * @param ratePercent 百分数，如 100 表示 100%
+         * @return 非空；入参为 null 或非有限数时返回 null
+         */
+        public static LevelAndLabel fromRatePercent(BigDecimal ratePercent) {
+            if (ratePercent == null) {
+                return null;
+            }
+            ratePercent = ratePercent.setScale(6, RoundingMode.HALF_UP);
+            if (ratePercent.compareTo(PCT_LOW_EXCLUSIVE_MAX) < 0) {
+                return new LevelAndLabel(CODE_LOW, LABEL_ZH_LOW);
+            }
+            if (ratePercent.compareTo(PCT_NORMAL_INCLUSIVE_MAX) <= 0) {
+                return new LevelAndLabel(CODE_NORMAL, LABEL_ZH_NORMAL);
+            }
+            if (ratePercent.compareTo(PCT_HIGH_INCLUSIVE_MAX) <= 0) {
+                return new LevelAndLabel(CODE_HIGH, LABEL_ZH_HIGH);
+            }
+            return new LevelAndLabel(CODE_CRITICAL, LABEL_ZH_CRITICAL);
+        }
+
+        /**
+         * 接口级「level + 中文名」，仅两字段，无行数/占比等聚合。
+         */
+        public static final class LevelAndLabel {
+            private final String level;
+            private final String labelZh;
+
+            public LevelAndLabel(String level, String labelZh) {
+                this.level = level;
+                this.labelZh = labelZh;
+            }
+
+            public String getLevel() {
+                return level;
+            }
+
+            public String getLabelZh() {
+                return labelZh;
+            }
+        }
     }
 
     // -------------------------------------------------------------------------

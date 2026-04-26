@@ -2,6 +2,7 @@ package com.nongxinle.controller;
 
 import com.nongxinle.entity.*;
 import com.nongxinle.service.*;
+import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.R;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -50,6 +51,191 @@ public class GbDepartmentOrdersController {
     private GbDepartmentGoodsStockLedgerService gbDepartmentGoodsStockLedgerService;
     @Autowired
     private GbJjOrderPurchaseLinkService gbJjOrderPurchaseLinkService;
+
+
+
+
+    @ResponseBody
+    @RequestMapping(value = "/updateOrderGbJj", method = RequestMethod.POST)
+    public R updateOrderGbJj(Integer id, String standard, String remark, String weight) {
+
+        System.out.println("updateeelelellee" + id);
+        //检查修改规格
+
+        GbDepartmentOrdersEntity oldOrdersEntity = gbDepartmentOrdersService.queryObject(id);
+        String oldStandard = oldOrdersEntity.getGbDoStandard();
+        System.out.println("updateeelelellee" + oldStandard);
+
+        Integer gbDoDisGoodsId = oldOrdersEntity.getGbDoDisGoodsId();
+        GbDistributerGoodsEntity gbDisGoodsEntity = gbDistributerGoodsService.queryObject(gbDoDisGoodsId);
+        String standardname = gbDisGoodsEntity.getGbDgGoodsStandardname();
+        Integer gbDoPurchaseGoodsId = oldOrdersEntity.getGbDoPurchaseGoodsId();
+
+        GbDistributerPurchaseGoodsEntity purchaseGoodsEntity = gbDistributerPurchaseGoodsService.getById(gbDoPurchaseGoodsId);
+
+        if (!oldStandard.equals(standard)) {
+
+            // 1，修改原来的purGoods
+            Integer oldOrdersAmount = purchaseGoodsEntity.getGbDpgOrdersAmount();
+
+            if (oldOrdersAmount == 1) { //如果新规格的采购商品只有一个订单
+
+                Map<String, Object> map = new HashMap<>();
+                map.put("disGoodsId", oldOrdersEntity.getGbDoDisGoodsId());
+                map.put("equalStatus", 0);
+                map.put("standard", standard);
+                List<GbDistributerPurchaseGoodsEntity> goodsEntities = gbDistributerPurchaseGoodsService.queryOnlyPurGoods(map);
+                if (goodsEntities.size() == 1) {
+                    GbDistributerPurchaseGoodsEntity sameStandardPurGoods = goodsEntities.get(0);
+                    BigDecimal decimal = new BigDecimal(sameStandardPurGoods.getGbDpgBuyQuantity()).add(new BigDecimal(weight));
+                    sameStandardPurGoods.setGbDpgQuantity(decimal.toString());
+                    sameStandardPurGoods.setGbDpgBuyQuantity(decimal.toString());
+                    if (standard.equals(standardname) && sameStandardPurGoods.getGbDpgBuyPrice() != null) {
+                        BigDecimal decimal1 = new BigDecimal(sameStandardPurGoods.getGbDpgBuyPrice()).multiply(decimal).setScale(1, BigDecimal.ROUND_HALF_UP);
+                        sameStandardPurGoods.setGbDpgBuySubtotal(decimal1.toString());
+                    }
+                    gbDistributerPurchaseGoodsService.updateById(sameStandardPurGoods);
+                    //删除原来的采购商品
+                    gbDistributerPurchaseGoodsService.removeById(purchaseGoodsEntity.getGbDistributerPurchaseGoodsId());
+
+                } else {
+
+                    purchaseGoodsEntity.setGbDpgBuyQuantity(weight);
+                    purchaseGoodsEntity.setGbDpgQuantity(weight);
+                    purchaseGoodsEntity.setGbDpgStandard(standard);
+                    if (standard.equals(standardname) && purchaseGoodsEntity.getGbDpgBuyPrice() != null) {
+                        BigDecimal decimal = new BigDecimal(purchaseGoodsEntity.getGbDpgBuyPrice()).multiply(new BigDecimal(weight)).setScale(1, BigDecimal.ROUND_HALF_UP);
+                        purchaseGoodsEntity.setGbDpgBuySubtotal(decimal.toString());
+                    }
+                    gbDistributerPurchaseGoodsService.updateById(purchaseGoodsEntity);
+                }
+
+            } else { //如果采购商品有多个订单
+
+                BigDecimal subtract = new BigDecimal(purchaseGoodsEntity.getGbDpgQuantity()).subtract(new BigDecimal(oldOrdersEntity.getGbDoQuantity()));
+                purchaseGoodsEntity.setGbDpgQuantity(subtract.toString());
+                purchaseGoodsEntity.setGbDpgOrdersAmount(purchaseGoodsEntity.getGbDpgOrdersAmount() - 1);
+                if (standard.equals(standardname) && purchaseGoodsEntity.getGbDpgBuyPrice() != null) {
+                    BigDecimal decimal = new BigDecimal(purchaseGoodsEntity.getGbDpgBuyPrice()).multiply(new BigDecimal(weight)).setScale(1, BigDecimal.ROUND_HALF_UP);
+                    purchaseGoodsEntity.setGbDpgBuySubtotal(decimal.toString());
+                }
+                gbDistributerPurchaseGoodsService.updateById(purchaseGoodsEntity);
+
+                // 2，查询是否有采购的同一个商品
+                //有采购商品
+                Map<String, Object> map = new HashMap<>();
+                map.put("disGoodsId", oldOrdersEntity.getGbDoDisGoodsId());
+                map.put("equalStatus", 0);
+                map.put("standard", standard);
+                List<GbDistributerPurchaseGoodsEntity> goodsEntities = gbDistributerPurchaseGoodsService.queryOnlyPurGoods(map);
+                if (goodsEntities.size() == 0) {
+                    //是个新采购商品
+                    GbDistributerPurchaseGoodsEntity newPurGoods = new GbDistributerPurchaseGoodsEntity();
+                    newPurGoods.setGbDpgDisGoodsFatherId(oldOrdersEntity.getGbDoDisGoodsFatherId());
+                    newPurGoods.setGbDpgDisGoodsId(oldOrdersEntity.getGbDoDisGoodsId());
+                    newPurGoods.setGbDpgDistributerId(oldOrdersEntity.getGbDoDistributerId());
+                    newPurGoods.setGbDpgApplyDate(formatWhatDay(0));
+                    newPurGoods.setGbDpgStatus(getGbPurchaseGoodsStatusNew());
+                    newPurGoods.setGbDpgOrdersAmount(1);
+                    newPurGoods.setGbDpgOrdersFinishAmount(0);
+                    newPurGoods.setGbDpgOrdersBillAmount(0);
+                    newPurGoods.setGbDpgStandard(standard);
+                    newPurGoods.setGbDpgQuantity(weight);
+                    newPurGoods.setGbDpgPurchaseWeek(getWeek(0));
+                    newPurGoods.setGbDpgPurchaseWeekYear(getWeekOfYear(0).toString());
+                    if (standard.equals(standardname) && purchaseGoodsEntity.getGbDpgBuyPrice() != null) {
+                        BigDecimal decimal = new BigDecimal(purchaseGoodsEntity.getGbDpgBuyPrice()).multiply(new BigDecimal(weight)).setScale(1, BigDecimal.ROUND_HALF_UP);
+                        newPurGoods.setGbDpgBuySubtotal(decimal.toString());
+                    }
+                    gbDistributerPurchaseGoodsService.save(newPurGoods);
+                    Integer gbDistributerPurchaseGoodsId = newPurGoods.getGbDistributerPurchaseGoodsId();
+                    oldOrdersEntity.setGbDoPurchaseGoodsId(gbDistributerPurchaseGoodsId);
+
+
+                } else {
+                    // 3， 给老采购商品添加新订单
+                    GbDistributerPurchaseGoodsEntity gbDisPurGoodsEntity = goodsEntities.get(0);
+                    Integer gbDistributerPurchaseGoodsId = gbDisPurGoodsEntity.getGbDistributerPurchaseGoodsId();
+                    oldOrdersEntity.setGbDoPurchaseGoodsId(gbDistributerPurchaseGoodsId);
+                    //采购商品订单数量更新
+                    Integer gbDpgOrdersAmount = gbDisPurGoodsEntity.getGbDpgOrdersAmount();
+                    gbDisPurGoodsEntity.setGbDpgOrdersAmount(gbDpgOrdersAmount + 1);
+                    BigDecimal purQuantity = new BigDecimal(gbDisPurGoodsEntity.getGbDpgQuantity());
+                    BigDecimal orderQuantity = new BigDecimal(weight);
+                    BigDecimal add = purQuantity.add(orderQuantity).setScale(1, BigDecimal.ROUND_HALF_UP);
+                    gbDisPurGoodsEntity.setGbDpgQuantity(add.toString());
+                    if (standard.equals(standardname) && purchaseGoodsEntity.getGbDpgBuyPrice() != null) {
+                        BigDecimal decimal = new BigDecimal(purchaseGoodsEntity.getGbDpgBuyPrice()).multiply(add).setScale(1, BigDecimal.ROUND_HALF_UP);
+                        gbDisPurGoodsEntity.setGbDpgBuySubtotal(decimal.toString());
+                    }
+                    gbDistributerPurchaseGoodsService.updateById(gbDisPurGoodsEntity);
+                }
+
+                //元采购商品减去
+                String gbDpgBuyQuantity = purchaseGoodsEntity.getGbDpgBuyQuantity();
+                BigDecimal decimal = new BigDecimal(gbDpgBuyQuantity).subtract(new BigDecimal(weight)).setScale(1, BigDecimal.ROUND_HALF_UP);
+                purchaseGoodsEntity.setGbDpgBuyQuantity(decimal.toString());
+                purchaseGoodsEntity.setGbDpgQuantity(decimal.toString());
+                purchaseGoodsEntity.setGbDpgOrdersAmount(oldOrdersAmount - 1);
+                if (purchaseGoodsEntity.getGbDpgStandard().equals(standardname) && purchaseGoodsEntity.getGbDpgBuyPrice() != null) {
+                    BigDecimal decimal1 = new BigDecimal(purchaseGoodsEntity.getGbDpgBuyPrice()).multiply(decimal).setScale(1, BigDecimal.ROUND_HALF_UP);
+                    purchaseGoodsEntity.setGbDpgBuySubtotal(decimal1.toString());
+                    gbDistributerPurchaseGoodsService.updateById(purchaseGoodsEntity);
+                }
+
+            }
+
+
+            // 修改 price 和 subtotal
+            if (standard.equals(gbDisGoodsEntity.getGbDgGoodsStandardname())) {
+                oldOrdersEntity.setGbDoWeight(weight);
+                if (standard.equals(standardname) && oldOrdersEntity.getGbDoPrice() != null) {
+                    BigDecimal decimal = new BigDecimal(oldOrdersEntity.getGbDoPrice()).multiply(new BigDecimal(weight)).setScale(1, BigDecimal.ROUND_HALF_UP);
+                    oldOrdersEntity.setGbDoSubtotal(decimal.toString());
+                }
+            } else {
+                oldOrdersEntity.setGbDoWeight("0");
+                oldOrdersEntity.setGbDoSubtotal("0");
+            }
+        } else {
+            System.out.println("updatepururrurur");
+            Integer oldOrdersAmount = purchaseGoodsEntity.getGbDpgOrdersAmount();
+            if (oldOrdersAmount == 1) {
+                purchaseGoodsEntity.setGbDpgQuantity(weight);
+                purchaseGoodsEntity.setGbDpgStandard(standard);
+                if (standard.equals(standardname) && oldOrdersEntity.getGbDoPrice() != null && !oldOrdersEntity.getGbDoPrice().trim().isEmpty()) {
+                    BigDecimal decimal = new BigDecimal(oldOrdersEntity.getGbDoPrice()).multiply(new BigDecimal(weight)).setScale(1, BigDecimal.ROUND_HALF_UP);
+                    purchaseGoodsEntity.setGbDpgBuySubtotal(decimal.toString());
+                }
+                gbDistributerPurchaseGoodsService.updateById(purchaseGoodsEntity);
+            } else {
+
+                BigDecimal subtract = new BigDecimal(purchaseGoodsEntity.getGbDpgQuantity()).subtract(new BigDecimal(oldOrdersEntity.getGbDoQuantity()));
+                purchaseGoodsEntity.setGbDpgQuantity(subtract.toString());
+                purchaseGoodsEntity.setGbDpgOrdersAmount(purchaseGoodsEntity.getGbDpgOrdersAmount() - 1);
+                if (standard.equals(standardname) && purchaseGoodsEntity.getGbDpgBuyPrice() != null) {
+                    BigDecimal decimal = new BigDecimal(purchaseGoodsEntity.getGbDpgBuyPrice()).multiply(subtract).setScale(1, BigDecimal.ROUND_HALF_UP);
+                    purchaseGoodsEntity.setGbDpgBuySubtotal(decimal.toString());
+                }
+                gbDistributerPurchaseGoodsService.updateById(purchaseGoodsEntity);
+            }
+        }
+
+
+        oldOrdersEntity.setGbDoRemark(remark);
+        oldOrdersEntity.setGbDoQuantity(weight);
+        oldOrdersEntity.setGbDoStandard(standard);
+        System.out.println("fdstandnndndd" + standard + "snen" + standardname);
+        if (standard.equals(standardname) && oldOrdersEntity.getGbDoPrice() != null && !oldOrdersEntity.getGbDoPrice().trim().isEmpty()) {
+            BigDecimal decimal = new BigDecimal(oldOrdersEntity.getGbDoPrice()).multiply(new BigDecimal(weight)).setScale(1, BigDecimal.ROUND_HALF_UP);
+            oldOrdersEntity.setGbDoSubtotal(decimal.toString());
+        }
+        gbDepartmentOrdersService.update(oldOrdersEntity);
+
+        GbDistributerGoodsEntity goodsEntity = gbDistributerGoodsService.queryObject(gbDoDisGoodsId);
+        oldOrdersEntity.setGbDistributerGoodsEntity(goodsEntity);
+        return R.ok().put("data", oldOrdersEntity);
+    }
 
     /**
      * 获取部门父级AI申请订单
@@ -250,23 +436,26 @@ public class GbDepartmentOrdersController {
         Integer gbDoDisGoodsId = gbDepartmentOrders.getGbDoDisGoodsId();
         GbDistributerGoodsEntity gbDistributerGoodsEntity = gbDistributerGoodsService.getById(gbDoDisGoodsId);
         GbDepartmentDisGoodsEntity mendianDisGoodsEntity =
-                gbDepartmentDisGoodsService.createDepDisGoodsForJjOrderFromExistingDisGoods(
+                gbDepartmentDisGoodsService.createDepDisGoodsForJjOrder(
                         gbDepartmentOrders, gbDistributerGoodsEntity);
         gbDepartmentOrders.setGbDoDepDisGoodsId(mendianDisGoodsEntity.getGbDepartmentDisGoodsId());
         gbJjOrderPurchaseLinkService.applyDisGoodsCategoryHierarchyToOrder(
                 gbDepartmentOrders, gbDistributerGoodsEntity.getGbDgDfgGoodsFatherId());
         gbJjOrderPurchaseLinkService.applyJjOrderTimestamps(gbDepartmentOrders);
+        gbDepartmentOrders.setGbDoGoodsType(gbDistributerGoodsEntity.getGbDgGoodsType());
+        gbDepartmentOrders.setGbDoOrderType(gbDistributerGoodsEntity.getGbDgGoodsType());
+        gbDepartmentOrders.setGbDoBuyStatus(GbConstants.OrderBuyStatus.NEW);
+        gbDepartmentOrders.setGbDoStatus(GbConstants.DepartmentOrderStatus.NEW);
         gbDepartmentOrdersService.save(gbDepartmentOrders);
 
         gbJjOrderPurchaseLinkService.resolvePurchaseGoodsLineForJjOrder(
                 gbDepartmentOrders,
                 gbDistributerGoodsEntity,
                 GbJjOrderPurchaseLinkService.PurchaseGoodsLinkMode.MERGE_BY_PUR_DEPARTMENT);
-        Integer gbDoDepartmentFatherId = gbDepartmentOrders.getGbDoDepartmentFatherId();
-        GbDepartmentEntity departmentEntity = gbDepartmentService.getById(gbDoDepartmentFatherId);
 
         if (gbDistributerGoodsEntity.getGbDgGbSupplierId() != null && gbDistributerGoodsEntity.getGbDgGbSupplierId() != -1) {
-
+            Integer gbDoDepartmentFatherId = gbDepartmentOrders.getGbDoDepartmentFatherId();
+            GbDepartmentEntity departmentEntity = gbDepartmentService.getById(gbDoDepartmentFatherId);
             Map<String, Object> mapData = gbJjOrderPurchaseLinkService.ensureSupplierPurchaseBatchForJjOrder(gbDepartmentOrders, gbDistributerGoodsEntity);
             Integer batchId = (Integer) mapData.get("batchId");
             Integer gbDepartmentDisId = departmentEntity.getGbDepartmentDisId();
@@ -409,12 +598,12 @@ public class GbDepartmentOrdersController {
         gbDepartmentOrders.setGbDoNxGoodsFatherId(gbDistributerGoodsEntity.getGbDgNxFatherId());
         gbDepartmentOrders.setGbDoDistributerId(gbDistributerGoodsEntity.getGbDgDistributerId());
         gbDepartmentOrders.setGbDoToDepartmentId(gbDistributerGoodsEntity.getGbDgGbDepartmentId());
-        gbDepartmentOrders.setGbDoOrderType(gbDistributerGoodsEntity.getGbDgGoodsType());
-        gbDepartmentOrders.setGbDoGoodsType(gbDistributerGoodsEntity.getGbDgGoodsType());
+        gbDepartmentOrders.setGbDoDisGoodsFatherId(gbDistributerGoodsEntity.getGbDgDfgGoodsFatherId());
         gbDepartmentOrders.setGbDoPurchaseGoodsId(-1);
-        gbDepartmentOrders.setGbDoStatus(0);
-        gbDepartmentOrders.setGbDoBuyStatus(0);
-        gbDepartmentOrders.setGbDoGoodsName(gbDistributerGoodsEntity.getGbDgGoodsName());
+        gbDepartmentOrders.setGbDoGoodsType(gbDistributerGoodsEntity.getGbDgGoodsType());
+        gbDepartmentOrders.setGbDoOrderType(gbDistributerGoodsEntity.getGbDgGoodsType());
+        gbDepartmentOrders.setGbDoBuyStatus(GbConstants.OrderBuyStatus.NEW);
+        gbDepartmentOrders.setGbDoStatus(GbConstants.DepartmentOrderStatus.NEW);
         gbJjOrderPurchaseLinkService.applyJjOrderTimestamps(gbDepartmentOrders);
         Integer gbDoDisGoodsFatherId = gbDepartmentOrders.getGbDoDisGoodsFatherId();
         gbJjOrderPurchaseLinkService.applyDisGoodsCategoryHierarchyToOrder(gbDepartmentOrders, gbDoDisGoodsFatherId);
@@ -427,8 +616,10 @@ public class GbDepartmentOrdersController {
 
         Integer gbDoDepartmentFatherId = gbDepartmentOrders.getGbDoDepartmentFatherId();
         GbDepartmentEntity departmentEntity = gbDepartmentService.getById(gbDoDepartmentFatherId);
+        System.out.println("gbgst" + gbDistributerGoodsEntity.getGbDgGbSupplierId());
 
         if (gbDistributerGoodsEntity.getGbDgGbSupplierId() != null && gbDistributerGoodsEntity.getGbDgGbSupplierId() != -1) {
+            System.out.println("gbgst" + gbDistributerGoodsEntity.getGbDgGbSupplierId());
 
             Map<String, Object> mapData = gbJjOrderPurchaseLinkService.ensureSupplierPurchaseBatchForJjOrder(gbDepartmentOrders, gbDistributerGoodsEntity);
             Integer batchId = (Integer) mapData.get("batchId");

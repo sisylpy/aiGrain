@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.nongxinle.entity.*;
 import com.nongxinle.mapper.GbDistributerGoodsMapper;
 import com.nongxinle.service.GbDistributerAliasService;
+import com.nongxinle.service.GbDepartmentDisGoodsService;
+import com.nongxinle.service.GbDepartmentService;
 import com.nongxinle.service.GbDistributerFatherGoodsService;
 import com.nongxinle.service.GbDistributerGoodsService;
 import com.nongxinle.service.GbDistributerStandardService;
@@ -11,12 +13,18 @@ import com.nongxinle.service.NxAliasService;
 import com.nongxinle.service.NxGoodsService;
 import com.nongxinle.service.NxStandardService;
 import com.nongxinle.utils.GbConstants;
+import com.nongxinle.utils.UploadFile;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static com.nongxinle.utils.PinYin4jUtils.getEnglishKuohao;
+import static com.nongxinle.utils.PinYin4jUtils.getHeadStringByString;
+import static com.nongxinle.utils.PinYin4jUtils.hanziToPinyin;
 
 /**
  * 批发商商品Service实现
@@ -36,6 +44,10 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
     private GbDistributerAliasService gbDistributerAliasService;
     @Autowired
     private GbDistributerStandardService gbDistributerStandardService;
+    @Autowired
+    private GbDepartmentDisGoodsService gbDepDisGoodsService;
+    @Autowired
+    private GbDepartmentService gbDepartmentService;
 
     @Override
     public List<GbDistributerGoodsEntity> queryDisGoodsByParams(Map<String, Object> map) {
@@ -123,6 +135,76 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
 
         return disGoods;
     }
+
+    @Override
+    public GbDistributerGoodsEntity saveLinshiGoodsGb(MultipartFile file, String goodsName, String standard,
+                                                      String detail, Integer disId, Integer toDepId, Integer depId
+            ,Integer depFatherId) {
+        String filePath = null;
+        if (file != null && !file.isEmpty()) {
+            String originalName = goodsName.replaceAll("[\\\\/:*?\"<>|]", "");
+            String headByString = hanziToPinyin(getEnglishKuohao(originalName));
+            filePath = UploadFile.uploadFileName("goodsImage", file, headByString);
+        }
+
+        Map<String, Object> map = new HashMap<>(3);
+        map.put("disId", disId);
+        map.put("nxGoodsId", -1);
+        map.put("goodsLevel", 2);
+
+        List<GbDistributerFatherGoodsEntity> fatherGoodsEntities = dgfService.queryDisFathersGoodsByParamsGb(map);
+        if (fatherGoodsEntities == null || fatherGoodsEntities.isEmpty()) {
+            throw new IllegalStateException("未找到批发商临时父分类（disId=" + disId + "）");
+        }
+
+        GbDistributerFatherGoodsEntity fatherGoodsEntity = fatherGoodsEntities.get(0);
+        GbDistributerFatherGoodsEntity grandFather = dgfService.queryObject(fatherGoodsEntity.getGbDfgFathersFatherId());
+        if (grandFather == null) {
+            throw new IllegalStateException("父级分类不存在: gbDistributerFatherGoodsId="
+                    + fatherGoodsEntity.getGbDfgFathersFatherId());
+        }
+
+        GbDepartmentEntity depEntity = gbDepartmentService.getById(depId);
+        if (depEntity == null) {
+            throw new IllegalArgumentException("部门不存在: depId=" + depId);
+        }
+
+        GbDistributerGoodsEntity goods = new GbDistributerGoodsEntity();
+        goods.setGbDgDfgGoodsFatherId(fatherGoodsEntity.getGbDistributerFatherGoodsId());
+        goods.setGbDgDfgGoodsGrandId(fatherGoodsEntity.getGbDfgFathersFatherId());
+        goods.setGbDgDfgGoodsGreatId(grandFather.getGbDfgFathersFatherId());
+        goods.setGbDgGoodsType(GbConstants.DistributorGoodsType.SELF_PURCHASE);
+        goods.setGbDgGbDepartmentId(toDepId);
+        goods.setGbDgDistributerId(disId);
+        goods.setGbDgNxFatherImgLarge(filePath);
+        goods.setGbDgNxFatherImg(filePath);
+        goods.setGbDgGoodsName(goodsName);
+        goods.setGbDgGoodsPinyin(hanziToPinyin(goodsName));
+        goods.setGbDgGoodsPy(getHeadStringByString(goodsName, false, null));
+        goods.setGbDgGoodsIsHidden(0);
+        goods.setGbDgGoodsStandardname(standard);
+        goods.setGbDgGoodsDetail(detail);
+        goods.setGbDgNxDistributerId(-1);
+        goods.setGbDgNxDistributerGoodsId(-1);
+        goods.setGbDgGoodsStatus(0);
+        goods.setGbDgGoodsIsWeight(0);
+        goods.setGbDgPullOff(0);
+        goods.setGbDgGbSupplierId(-1);
+        goods.setGbDgControlFresh(0);
+        goods.setGbDgControlPrice(0);
+        goods.setGbDgGoodsInventoryType(1);
+        goods.setGbDgIsFranchisePrice(0);
+        goods.setGbDgIsSelfControl(0);
+
+        save(goods);
+
+        Integer gbDfgGoodsAmount = fatherGoodsEntity.getGbDfgGoodsAmount();
+        fatherGoodsEntity.setGbDfgGoodsAmount((gbDfgGoodsAmount == null ? 0 : gbDfgGoodsAmount) + 1);
+        dgfService.update(fatherGoodsEntity);
+
+        return goods;
+    }
+
 
     /**
      * 持久化批发商商品并维护父级分类树（与老项目逻辑一致）。

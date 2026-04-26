@@ -2,16 +2,16 @@ package com.nongxinle.controller;
 
 import com.nongxinle.entity.*;
 import com.nongxinle.service.*;
+import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.R;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.math.BigDecimal;
 import java.util.*;
 
 import static com.nongxinle.utils.DateUtils.*;
 import static com.nongxinle.utils.GbTypeUtils.getGbDepartmentTypeMendian;
-//import static com.nongxinle.utils.GbTypeUtils.getGbDisGoodsTypeZicai;
 import static com.nongxinle.utils.PinYin4jUtils.*;
 
 /**
@@ -38,6 +38,41 @@ public class GbDistributerGoodsController {
     @Autowired
     private GbJjOrderPurchaseLinkService gbJjOrderPurchaseLinkService;
 
+
+
+
+    @RequestMapping(value = "/addAutoOrderGoods", method = RequestMethod.POST)
+    @ResponseBody
+    public R addAutoOrderGoods(Integer supplierId, Integer goodsId) {
+        GbDistributerGoodsEntity gbDistributerGoodsEntity = gbDgService.queryObject(goodsId);
+
+        gbDistributerGoodsEntity.setGbDgGbSupplierId(supplierId);
+        if(supplierId == -1){
+            gbDistributerGoodsEntity.setGbDgGoodsType(GbConstants.DistributorGoodsType.SELF_PURCHASE);
+        }else{
+            gbDistributerGoodsEntity.setGbDgGoodsType(GbConstants.DistributorGoodsType.AUTO_SUPPLIER);
+        }
+        gbDgService.update(gbDistributerGoodsEntity);
+        return R.ok().put("data", gbDistributerGoodsEntity);
+    }
+
+
+    @ResponseBody
+    @RequestMapping(value = "/saveLinshiGoodsGb", produces = "text/html;charset=UTF-8")
+    public GbDistributerGoodsEntity saveFatherGb(@RequestParam(value = "file", required = false) MultipartFile file,
+                                                 @RequestParam("goodsName") String goodsName,
+                                                 @RequestParam("standard") String standard,
+                                                 @RequestParam("detail") String detail,
+                                                 @RequestParam("disId") Integer disId,
+                                                 @RequestParam("toDepId") Integer toDepId,
+                                                 @RequestParam("depId") Integer depId,
+                                                 @RequestParam("depFatherId") Integer depFatherId) {
+        return gbDgService.saveLinshiGoodsGb(file, goodsName, standard, detail, disId, toDepId, depId, depFatherId);
+    }
+
+
+
+
     /**
      * 从农鑫导入批发商商品并保存部门订货单（含部门商品、采购行）。
      * <p>HTTP 路径仍为 {@code /saveOrdersGbJjAndSaveGoods}，与前端/老接口一致。
@@ -52,15 +87,15 @@ public class GbDistributerGoodsController {
         GbDistributerGoodsEntity gbNewGoods = gbDgService.createDistributerGoodsFromNxGoods(gbDoDistributerId, gbDoDepartmentId, nxGoodsId);
         gbDepartmentOrders.setGbDoDisGoodsId(gbNewGoods.getGbDistributerGoodsId());
         GbDepartmentDisGoodsEntity mendianDisGoodsEntity =
-                gbDepDisGoodsService.createDepDisGoodsForJjOrderAfterNxImport(gbDepartmentOrders, gbNewGoods);
+                gbDepDisGoodsService.createDepDisGoodsForJjOrder(gbDepartmentOrders, gbNewGoods);
         gbDepartmentOrders.setGbDoDepDisGoodsId(mendianDisGoodsEntity.getGbDepartmentDisGoodsId());
         gbJjOrderPurchaseLinkService.applyJjOrderTimestamps(gbDepartmentOrders);
         gbJjOrderPurchaseLinkService.applyDisGoodsCategoryHierarchyToOrder(
                 gbDepartmentOrders, gbNewGoods.getGbDgDfgGoodsFatherId());
-        gbDepartmentOrders.setGbDoGoodsType(1);
-        gbDepartmentOrders.setGbDoOrderType(1);
-        gbDepartmentOrders.setGbDoBuyStatus(0);
-        gbDepartmentOrders.setGbDoStatus(0);
+        gbDepartmentOrders.setGbDoGoodsType(gbNewGoods.getGbDgGoodsType());
+        gbDepartmentOrders.setGbDoOrderType(gbNewGoods.getGbDgGoodsType());
+        gbDepartmentOrders.setGbDoBuyStatus(GbConstants.OrderBuyStatus.NEW);
+        gbDepartmentOrders.setGbDoStatus(GbConstants.DepartmentOrderStatus.NEW);
         depOrdersService.save(gbDepartmentOrders);
         gbJjOrderPurchaseLinkService.resolvePurchaseGoodsLineForJjOrder(
                 gbDepartmentOrders,

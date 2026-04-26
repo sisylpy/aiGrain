@@ -33,6 +33,7 @@
     <select id="queryFoodGoodsByFoodId" resultType="com.nongxinle.entity.GbDistributerFoodGoodsEntity">
         select * from gb_distributer_food_goods
         where gb_dfg_food_id = #{gbDfgFoodId}
+        order by gb_distributer_food_goods_id
     </select>
 
     <select id="queryFoodGoodsByDisGoodsId" resultType="com.nongxinle.entity.GbDistributerFoodGoodsEntity">

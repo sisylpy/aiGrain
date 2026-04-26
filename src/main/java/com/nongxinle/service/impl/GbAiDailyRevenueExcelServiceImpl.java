@@ -439,6 +439,9 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
 
             Map<String, Object> depMap = new HashMap<>();
             depMap.put("depFatherId", departmentId);
+            if (log.isDebugEnabled()) {
+                log.debug("queryDepAllFood depMap={}", depMap);
+            }
             List<GbDepFoodEntity> depFoods = gbDepFoodService.queryDepAllFood(depMap);
             attachDistributerFood(depFoods);
             depFoods.sort(depFoodTemplateRowComparator());

@@ -14,6 +14,9 @@
             <if test="params.depId != null">
                 and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
             </if>
+            <if test="params.depFatherId != null">
+                and gbdssr.gb_dgsr_gb_department_father_id = #{params.depFatherId}
+            </if>
             <if test="params.depType != null">
                 and gd.gb_department_type = #{params.depType}
             </if>
@@ -57,6 +60,9 @@
             </if>
             <if test="params.depId != null">
                 and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depFatherId != null">
+                and gbdssr.gb_dgsr_gb_department_father_id = #{params.depFatherId}
             </if>
             <if test="params.depType != null">
                 and gd.gb_department_type = #{params.depType}
@@ -102,6 +108,9 @@
             </if>
             <if test="params.depId != null">
                 and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depFatherId != null">
+                and gbdssr.gb_dgsr_gb_department_father_id = #{params.depFatherId}
             </if>
             <if test="params.depType != null">
                 and gd.gb_department_type = #{params.depType}
@@ -523,6 +532,71 @@
         left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gbdssr.gb_dgsr_gb_dis_goods_id
         <where>
             and gbdssr.gb_dgsr_type = 1
+            <if test="params.disId != null">
+                and gbdssr.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depFatherId != null">
+                and gbdssr.gb_dgsr_gb_department_father_id = #{params.depFatherId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.startDate != null">
+                and gbdssr.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and gbdssr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+        </where>
+        group by gbdssr.gb_dgsr_gb_dis_goods_id
+    </select>
+
+    <!-- 生产+损耗+损失按商品汇总（菜品成本/毛利：出库均价与分摊用 W_g、S_g，含 type 1/2/3） -->
+    <select id="queryProduceLossWasteReduceAggByDisGoods" resultType="java.util.LinkedHashMap">
+        select
+            gbdssr.gb_dgsr_gb_dis_goods_id as disGoodsId,
+            IFNULL(SUM(CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,6))), 0) as weightSum,
+            IFNULL(SUM(CAST(gbdssr.gb_dgsr_subtotal AS DECIMAL(18,4))), 0) as subtotalSum
+        from gb_department_goods_stock_reduce as gbdssr
+        left join gb_department as gd on gd.gb_department_id = gbdssr.gb_dgsr_gb_department_id
+        left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gbdssr.gb_dgsr_gb_dis_goods_id
+        <where>
+            and gbdssr.gb_dgsr_type in (1, 2, 3)
+            <if test="params.disId != null">
+                and gbdssr.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depFatherId != null">
+                and gbdssr.gb_dgsr_gb_department_father_id = #{params.depFatherId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.startDate != null">
+                and gbdssr.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and gbdssr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+        </where>
+        group by gbdssr.gb_dgsr_gb_dis_goods_id
+    </select>
+
+    <select id="queryReduceAggByDisGoodsByType" resultType="java.util.LinkedHashMap">
+        select
+            gbdssr.gb_dgsr_gb_dis_goods_id as disGoodsId,
+            IFNULL(SUM(CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,6))), 0) as weightSum,
+            IFNULL(SUM(CAST(gbdssr.gb_dgsr_subtotal AS DECIMAL(18,4))), 0) as subtotalSum
+        from gb_department_goods_stock_reduce as gbdssr
+        left join gb_department as gd on gd.gb_department_id = gbdssr.gb_dgsr_gb_department_id
+        left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gbdssr.gb_dgsr_gb_dis_goods_id
+        <where>
+            and gbdssr.gb_dgsr_type = #{params.reduceType}
             <if test="params.disId != null">
                 and gbdssr.gb_dgsr_gb_distributer_id = #{params.disId}
             </if>

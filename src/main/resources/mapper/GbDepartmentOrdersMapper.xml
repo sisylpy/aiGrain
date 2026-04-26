@@ -153,7 +153,6 @@
         <result property="gbDgNxFatherImg" column="gb_dg_nx_father_img"/>
         <result property="gbDgNxFatherImgLarge" column="gb_dg_nx_father_img_large"/>
         <result property="gbDgNxGoodsFatherImg" column="gb_dg_nx_goods_father_img"/>
-        <result property="gbDgNxDistributerGoodsPrice" column="gb_dg_nx_distributer_goods_price"/>
         <result property="gbDgNxGoodsId" column="gb_dg_nx_goods_id"/>
         <result property="gbDgGbDepartmentId" column="gb_dg_gb_department_id"/>
         <result property="gbDgGoodsIsHidden" column="gb_dg_goods_is_hidden"/>

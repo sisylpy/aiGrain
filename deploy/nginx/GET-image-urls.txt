@@ -1,0 +1,40 @@
+# 浏览器 GET 图片地址格式（域名按你实际证书与 server_name 替换）
+# 假设：HTTPS 443，server_name grainservice.club，root 已指到 .../images/
+
+https://grainservice.club/goodsVideo/<文件名>
+https://grainservice.club/goodsImage/<文件名>
+https://grainservice.club/uploadImage/<文件名>
+https://grainservice.club/foodImage/<文件名>
+https://grainservice.club/userImage/<文件名>
+https://grainservice.club/uploadClock/<文件名>
+https://grainservice.club/stockImages/<文件名>
+https://grainservice.club/traceReports/<文件名>
+https://grainservice.club/ocrImages/<文件名>
+
+# 示例（中文文件名需 URL 编码，空格为 %20）
+# GET https://grainservice.club/goodsImage/%E7%BB%BF%E7%94%98%E8%93%9D2025-01-11%2008:58:30.jpg
+
+# 老项目（8443 + context-path）仍可用时，GET 形态为：
+# https://grainservice.club:8443/nongxinle/goodsImage/<文件名>
+
+# -----------------------------------------------------------------------------
+# 中文文件名：443 上「%E6%B5%B7…」这种不是乱码，是 UTF-8 百分号编码。
+# 若老地址能开、新地址不能开，按下面顺序排查。
+# -----------------------------------------------------------------------------
+#
+# 1) 双重编码（最常见）
+#    若库里或接口已返回「整段已编码」的 URL，前端又对 src 做 encodeURI/encodeURIComponent，
+#    则 % 会变成 %25，nginx 解码后去找字面量「%E6…」的文件，必然 404。
+#    处理：接口只返回「路径 + 未编码文件名」或只编码一次；img 的 src 不要对已编码串再编码。
+#
+# 2) 确认 nginx 实际打开的路径
+#    curl -sI 'https://grainservice.club/goodsImage/%E6%B5%B7%E5%A4%A95%E5%BA%A6%E7%99%BD%E9%86%8B2026-04-22%2017%3A46.jpg'
+#    应为 200 且 Content-Type: image/jpeg；若是 404，看 error.log 里 open() 的路径与磁盘 ls 是否一致。
+#
+# 3) 服务器 locale / 文件名 Unicode
+#    磁盘文件名须为 UTF-8（Linux 常见）。若文件在 Mac 上拷到服务器，偶发 NFC/NFD 不一致会导致「看起来一样」却对不上。
+#
+# 4) nginx 可选（对静态图路径解析无强制要求，仅改善异常页/头信息）
+#    server { charset utf-8; ... } 或 location /goodsImage/ { charset utf-8; ... }
+#
+# 5) 长期建议：上传保存为 ASCII 文件名（UUID/雪花 + .jpg），展示名放数据库，避免 URL 与文件系统编码纠缠。

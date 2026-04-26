@@ -4,7 +4,7 @@
 <mapper namespace="com.nongxinle.mapper.NxAliasMapper">
 
 	<select id="queryNxAliasList" resultType="com.nongxinle.entity.NxAliasEntity">
-		select * from nx_alias
+		select * from nongxinle.nx_alias
 		<where>
 			<if test="goodsId != null">
 				and nx_als_goods_id = #{goodsId}
@@ -41,8 +41,8 @@
 	</resultMap>
 
     <select id="queryNxGoodsByName" resultMap="nxGoodsWithAlias">
-		select * from nx_alias as na
-		left join nx_goods as ng  on na.nx_als_goods_id = ng.nx_goods_id
+		select * from nongxinle.nx_alias as na
+		left join nongxinle.nx_goods as ng  on na.nx_als_goods_id = ng.nx_goods_id
 		<where>
 			<if test="name != null">
 				and nx_alias_name = #{name}

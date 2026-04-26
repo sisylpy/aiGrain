@@ -32,6 +32,7 @@ public class GbDistributerPurchaseBatchDisGoodsBatchQueryServiceImpl implements 
         Map<String, Object> queryMap = new HashMap<>();
         queryMap.put("batchId", batchId);
         log.debug("mapmcansn{}", queryMap);
+        System.out.println("mappapap" + queryMap);
         List<GbDistributerGoodsEntity> gbDistributerGoodsEntities = gbDPGService.queryDisTreeGoodsWithPurList(queryMap);
         gbDPGService.fillWastePurGoodsForDisTreeGoods(gbDistributerGoodsEntities, queryMap);
         return gbDistributerGoodsEntities;

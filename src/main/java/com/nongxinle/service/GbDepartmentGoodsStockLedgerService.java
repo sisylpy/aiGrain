@@ -16,7 +16,8 @@ public interface GbDepartmentGoodsStockLedgerService {
 
     /**
      * 删除一条扣减记录并回滚库存及相关数据（采购、订单、日报等按类型处理）。
-     * 成功时 {@link GbDepGoodsStockAdjustResult#getData()} 中含 {@code "data"} -> {@link com.nongxinle.entity.GbDepartmentDisGoodsEntity}。
+     * 成功时 {@link GbDepGoodsStockAdjustResult#getData()} 中含 {@code "data"} -> 与
+     * {@code depGetDepGoodsGbPage} 列表项相同结构的 {@link com.nongxinle.entity.GbDepartmentDisGoodsEntity}。
      */
     GbDepGoodsStockAdjustResult removeReduceAndRevert(Integer reduceId);
 

@@ -72,6 +72,7 @@ public class GbDistributerPurchaseBatchSaveDisPurGoodsBatchGbSupplierServiceImpl
         map.put("status", 1);
         map.put("notEqualPurchaseType", 9);
         log.debug("mapapmaaapa" + map);
+        System.out.println("aipapa" + map);
         List<GbDistributerPurchaseBatchEntity> entities = gbDPBService.queryDisPurchaseBatchInfo(map);
         log.debug("enennensisiziizizi" + entities.size());
         Integer gbDistributerPurchaseBatchId = 0;
@@ -95,7 +96,7 @@ public class GbDistributerPurchaseBatchSaveDisPurGoodsBatchGbSupplierServiceImpl
                 Integer gbDpgDisGoodsId = gbPurGoods.getGbDpgDisGoodsId();
                 GbDistributerGoodsEntity gbDistributerGoodsEntity = gbDistributerGoodsService.queryObject(gbDpgDisGoodsId);
                 List<GbDepartmentOrdersEntity> nxDepartmentOrdersEntities =
-                        gbPurGoods.getGbDistributerGoodsEntity().getGbDepartmentOrdersEntities();
+                        gbPurGoods.getGbDepartmentOrdersEntities();
                 List<GbDepartmentOrdersEntity> unChoiceOrderList = new ArrayList<>();
 
                 Map<String, Object> mapItem = new HashMap<>();
@@ -210,7 +211,7 @@ public class GbDistributerPurchaseBatchSaveDisPurGoodsBatchGbSupplierServiceImpl
                 Integer gbDpgDisGoodsId = gbPurGoods.getGbDpgDisGoodsId();
                 GbDistributerGoodsEntity gbDistributerGoodsEntity = gbDistributerGoodsService.queryObject(gbDpgDisGoodsId);
                 List<GbDepartmentOrdersEntity> nxDepartmentOrdersEntities =
-                        gbPurGoods.getGbDistributerGoodsEntity().getGbDepartmentOrdersEntities();
+                        gbPurGoods.getGbDepartmentOrdersEntities();
 
                 List<GbDepartmentOrdersEntity> unChoiceOrderList = new ArrayList<>();
                 BigDecimal buyWeight = new BigDecimal(0);

@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 
 import static com.nongxinle.utils.DateUtils.*;
-import static com.nongxinle.utils.GbTypeUtils.getGbPurchaseGoodsStatusNew;
 import static com.nongxinle.utils.GbTypeUtils.getGbPurchaseGoodsStatusProcurement;
 
 /**
@@ -71,6 +70,7 @@ public class GbJjOrderPurchaseLinkServiceImpl implements GbJjOrderPurchaseLinkSe
             return linkAlwaysNew(order, disGoods);
         }
         if (mode == PurchaseGoodsLinkMode.MERGE_BY_PUR_DEPARTMENT) {
+            System.out.println("createDepartmentOrderForJjcreateDepartmentOrderForJj");
             return linkMergeByPurDepartment(order, disGoods);
         }
         return linkMergeBySupplierOrStatus(order, disGoods);
@@ -84,7 +84,7 @@ public class GbJjOrderPurchaseLinkServiceImpl implements GbJjOrderPurchaseLinkSe
         gbPurchaseGoodsEntity.setGbDpgDisGoodsId(order.getGbDoDisGoodsId());
         gbPurchaseGoodsEntity.setGbDpgDistributerId(order.getGbDoDistributerId());
         gbPurchaseGoodsEntity.setGbDpgApplyDate(formatWhatDay(0));
-        gbPurchaseGoodsEntity.setGbDpgStatus(0);
+        gbPurchaseGoodsEntity.setGbDpgStatus(GbConstants.PurchaseGoodsStatus.NEW);
         gbPurchaseGoodsEntity.setGbDpgOrdersAmount(1);
         gbPurchaseGoodsEntity.setGbDpgOrdersFinishAmount(0);
         gbPurchaseGoodsEntity.setGbDpgOrdersWeightAmount(0);
@@ -119,34 +119,13 @@ public class GbJjOrderPurchaseLinkServiceImpl implements GbJjOrderPurchaseLinkSe
             map.put("equalStatus", 0);
         }
 
-        List<GbDistributerPurchaseGoodsEntity> purchaseGoodsEntities = gbDistributerPurchaseGoodsService.queryOnlyPurGoods(map);
-        GbDistributerPurchaseGoodsEntity gbPurchaseGoodsEntity = new GbDistributerPurchaseGoodsEntity();
+        System.out.println("putmap" + map);
 
+        List<GbDistributerPurchaseGoodsEntity> purchaseGoodsEntities = gbDistributerPurchaseGoodsService.queryOnlyPurGoods(map);
+
+        GbDistributerPurchaseGoodsEntity gbPurchaseGoodsEntity;
         if (purchaseGoodsEntities.isEmpty()) {
-            gbPurchaseGoodsEntity.setGbDpgPurchaseType(order.getGbDoGoodsType());
-            gbPurchaseGoodsEntity.setGbDpgDisGoodsFatherId(order.getGbDoDisGoodsFatherId());
-            gbPurchaseGoodsEntity.setGbDpgDisGoodsGrandId(order.getGbDoDisGoodsGrandId());
-            gbPurchaseGoodsEntity.setGbDpgDisGoodsGreatId(order.getGbDoDisGoodsGreatId());
-            gbPurchaseGoodsEntity.setGbDpgPurchaseNxSupplierId(-1);
-            gbPurchaseGoodsEntity.setGbDpgDisGoodsId(order.getGbDoDisGoodsId());
-            gbPurchaseGoodsEntity.setGbDpgDistributerId(order.getGbDoDistributerId());
-            gbPurchaseGoodsEntity.setGbDpgApplyDate(formatWhatDay(0));
-            gbPurchaseGoodsEntity.setGbDpgStatus(getGbPurchaseGoodsStatusNew());
-            gbPurchaseGoodsEntity.setGbDpgOrdersAmount(1);
-            gbPurchaseGoodsEntity.setGbDpgOrdersFinishAmount(0);
-            gbPurchaseGoodsEntity.setGbDpgOrdersWeightAmount(0);
-            gbPurchaseGoodsEntity.setGbDpgOrdersBillAmount(0);
-            gbPurchaseGoodsEntity.setGbDpgStandard(order.getGbDoStandard());
-            gbPurchaseGoodsEntity.setGbDpgQuantity(order.getGbDoQuantity());
-            gbPurchaseGoodsEntity.setGbDpgBuyScale(order.getGbDoDsStandardScale());
-            gbPurchaseGoodsEntity.setGbDpgPurchaseDepartmentId(order.getGbDoToDepartmentId());
-            if (disGoods.getGbDgGoodsStandardname().equals(order.getGbDoStandard())) {
-                order.setGbDoWeight(order.getGbDoQuantity());
-                gbPurchaseGoodsEntity.setGbDpgBuyQuantity(order.getGbDoQuantity());
-            }
-            gbDistributerPurchaseGoodsService.save(gbPurchaseGoodsEntity);
-            order.setGbDoPurchaseGoodsId(gbPurchaseGoodsEntity.getGbDistributerPurchaseGoodsId());
-            gbDepartmentOrdersService.update(order);
+            gbPurchaseGoodsEntity = linkAlwaysNew(order, disGoods);
         } else {
             gbPurchaseGoodsEntity = purchaseGoodsEntities.get(0);
             order.setGbDoPurchaseGoodsId(gbPurchaseGoodsEntity.getGbDistributerPurchaseGoodsId());
@@ -244,6 +223,7 @@ public class GbJjOrderPurchaseLinkServiceImpl implements GbJjOrderPurchaseLinkSe
         map.put("supplierId", gbDgGbSupplierId);
         map.put("status", 1);
         map.put("notEqualPurchaseType", 9);
+        System.out.println("savebatchch" + map);
         List<GbDistributerPurchaseBatchEntity> entities = gbDPBService.queryDisPurchaseBatchInfo(map);
 
         if (entities.isEmpty()) {
@@ -374,7 +354,7 @@ public class GbJjOrderPurchaseLinkServiceImpl implements GbJjOrderPurchaseLinkSe
         disGoodsRow.setGbDpgDisGoodsFatherId(ordersEntity.getGbDoDisGoodsFatherId());
         disGoodsRow.setGbDpgDisGoodsId(ordersEntity.getGbDoDisGoodsId());
         disGoodsRow.setGbDpgApplyDate(formatWhatDay(0));
-        disGoodsRow.setGbDpgStatus(0);
+        disGoodsRow.setGbDpgStatus(GbConstants.PurchaseGoodsStatus.NEW);
         disGoodsRow.setGbDpgBuyScale("-1");
         disGoodsRow.setGbDpgStandard(ordersEntity.getGbDoStandard());
         disGoodsRow.setGbDpgOrdersAmount(unChoiceOrderList.size());
@@ -384,7 +364,7 @@ public class GbJjOrderPurchaseLinkServiceImpl implements GbJjOrderPurchaseLinkSe
         disGoodsRow.setGbDpgPurchaseWeek(getWeek(0));
         disGoodsRow.setGbDpgPurchaseWeekYear(getWeekOfYear(0).toString());
         disGoodsRow.setGbDpgIsCheck(0);
-        disGoodsRow.setGbDpgPurchaseType(1);
+        disGoodsRow.setGbDpgPurchaseType(GbConstants.PurchaseOrderType.UN_DETERMINED);
         disGoodsRow.setGbDpgPurchaseNxSupplierId(-1);
         disGoodsRow.setGbDpgQuantity("0");
         gbDistributerPurchaseGoodsService.save(disGoodsRow);

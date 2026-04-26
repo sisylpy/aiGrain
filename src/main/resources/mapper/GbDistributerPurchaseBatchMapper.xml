@@ -52,6 +52,57 @@
                     column="gb_distributer_purchase_batch_id" 
                     select="queryPurchaseGoodsByBatchId"/>
     </resultMap>
+
+    <resultMap id="goods" type="com.nongxinle.entity.GbDistributerGoodsEntity">
+        <id property="gbDistributerGoodsId" column="gb_distributer_goods_id"/>
+        <result property="gbDgSellingPrice" column="gb_dg_selling_price"/>
+        <result property="gbDgNxFatherImg" column="gb_dg_nx_father_img"/>
+        <result property="gbDgQuantityDays" column="gb_dg_quantity_days"/>
+        <result property="gbDgNxGoodsId" column="gb_dg_nx_goods_id"/>
+        <result property="gbDgNxFatherImg" column="gb_dg_nx_father_img"/>
+        <result property="gbDgNxFatherImgLarge" column="gb_dg_nx_father_img_large"/>
+        <result property="gbDgNxGoodsFatherImg" column="gb_dg_nx_goods_father_img"/>
+        <result property="gbDgGoodsSort" column="gb_dg_goods_sort"/>
+        <result property="gbDgGbDepartmentId" column="gb_dg_gb_department_id"/>
+        <result property="gbDgGoodsIsHidden" column="gb_dg_goods_is_hidden"/>
+        <result property="gbDgGoodsSonsSort" column="gb_dg_goods_sons_sort"/>
+        <result property="gbDgSellingPrice" column="gb_dg_selling_price"/>
+        <result property="gbDgPullOff" column="gb_dg_pull_off"/>
+        <result property="gbDgDfgGoodsFatherId" column="gb_dg_dfg_goods_father_id"/>
+        <result property="gbDgDfgGoodsGrandId" column="gb_dg_dfg_goods_grand_id"/>
+        <result property="gbDgDfgGoodsGreatId" column="gb_dg_dfg_goods_great_id"/>
+        <result property="gbDgNxGoodsId" column="gb_dg_nx_goods_id"/>
+        <result property="gbDgNxFatherId" column="gb_dg_nx_father_id"/>
+        <result property="gbDgGoodsName" column="gb_dg_goods_name"/>
+        <result property="gbDgGoodsStandardname" column="gb_dg_goods_standardname"/>
+        <result property="gbDgGoodsStandardWeight" column="gb_dg_goods_standard_weight"/>
+        <result property="gbDgGoodsDetail" column="gb_dg_goods_detail"/>
+        <result property="gbDgGoodsBrand" column="gb_dg_goods_brand"/>
+        <result property="gbDgGoodsPlace" column="gb_dg_goods_place"/>
+        <result property="gbDgGoodsPy" column="gb_dg_goods_py"/>
+        <result property="gbDgGoodsIsWeight" column="gb_dg_goods_is_weight"/>
+        <result property="gbDgGoodsPrice" column="gb_dg_goods_price"/>
+        <result property="gbDgGoodsLowestPrice" column="lowest_price"/>
+        <result property="gbDgGoodsHighestPrice" column="highest_price"/>
+        <result property="gbDgGoodsAveragePrice" column="average_price"/>
+        <result property="gbDgControlPrice" column="gb_dg_control_price"/>
+        <result property="gbDgControlFresh" column="gb_dg_control_fresh"/>
+        <result property="gbDgFreshWarnHour" column="gb_dg_fresh_warn_hour"/>
+        <result property="gbDgFreshWasteHour" column="gb_dg_fresh_waste_hour"/>
+        <result property="gbDgGoodsInventoryType" column="gb_dg_goods_inventory_type"/>
+        <result property="gbDgGbSupplierId" column="gb_dg_gb_supplier_id"/>
+        <result property="gbDgGoodsType" column="gb_dg_goods_type"/>
+        <result property="gbDgIsFranchisePrice" column="gb_dg_is_franchise_price"/>
+        <result property="gbDgFranchisePriceOne" column="gb_dg_franchise_price_one"/>
+        <result property="gbDgFranchisePriceOneUpdate" column="gb_dg_franchise_price_one_update"/>
+        <result property="gbDgFranchisePriceTwo" column="gb_dg_franchise_price_two"/>
+        <result property="gbDgFranchisePriceTwoUpdate" column="gb_dg_franchise_price_two_update"/>
+        <result property="gbDgFranchisePriceThree" column="gb_dg_franchise_price_three"/>
+        <result property="gbDgFranchisePriceThreeUpdate" column="gb_dg_franchise_price_three_update"/>
+        <result property="gbDgIsSelfControl" column="gb_dg_is_self_control"/>
+        <result property="gbDgSelfPrice" column="gb_dg_self_price"/>
+        <result property="goodsPurTotalCount" column="buy_count"/>
+    </resultMap>
     
     <!-- 采购商品结果映射（包含商品信息和部门订单） -->
     <resultMap id="purchaseGoodsWithOrdersMap" type="com.nongxinle.entity.GbDistributerPurchaseGoodsEntity">
@@ -102,10 +153,13 @@
         <!-- 商品名称、拼音、规格、重量、品牌 -->
         <result column="gb_dg_goods_name" property="gbDistributerGoodsName"/>
         <result column="gb_dg_goods_py" property="gbDgGoodsPy"/>
+        <result column="gb_dg_goods_py" property="gbDgGoodsPy"/>
         <result column="gb_dg_goods_standardname" property="gbDgGoodsStandardname"/>
         <result column="gb_dg_goods_standard_weight" property="gbDgGoodsStandardWeight"/>
         <result column="gb_dg_goods_brand" property="gbDgGoodsBrand"/>
-        
+        <result column="gb_dg_gb_supplier_id" property="gbDgGbSupplierId"/>
+        <association property="gbDistributerGoodsEntity" resultMap="goods"/>
+
         <!-- 嵌套查询部门订单 -->
         <collection property="gbDepartmentOrdersEntities" ofType="com.nongxinle.entity.GbDepartmentOrdersEntity"
                     column="{purchaseGoodsId=gb_distributer_purchase_goods_id}"
@@ -157,11 +211,8 @@
                dpg.gb_DPG_orders_weight_amount,
                dpg.gb_DPG_supplier_finish_date,
                dpg.gb_DPG_stock_finish_date,
-               dg.gb_dg_goods_name,
-               dg.gb_dg_goods_py,
-               dg.gb_dg_goods_standardname,
-               dg.gb_dg_goods_standard_weight,
-               dg.gb_dg_goods_brand
+               dg.*
+
         from gb_distributer_purchase_goods dpg
         left join gb_distributer_goods dg on dg.gb_distributer_goods_id = dpg.gb_DPG_dis_goods_id
         where dpg.gb_DPG_batch_id = #{batchId}

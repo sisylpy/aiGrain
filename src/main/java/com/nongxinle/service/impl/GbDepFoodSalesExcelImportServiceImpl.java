@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -57,6 +58,8 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
         List<String> warnings = new ArrayList<>();
 
         Integer depFatherId = department.getGbDepartmentFatherId();
+
+        Map<Integer, String> unitPriceByFoodRefId = loadUnitPriceByFoodRefIdForDep(departmentId);
 
         for (Map.Entry<Date, Map<Integer, BigDecimal>> entry : cellQuantities) {
             Date recordDate = entry.getKey();
@@ -101,7 +104,7 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
                 }
 
                 sales.setGbDfsAmount(qty.stripTrailingZeros().toPlainString());
-                sales.setGbDfsSubtotal(sales.getGbDfsAmount());
+                sales.setGbDfsSubtotal(computeSubtotalPlain(qty, unitPriceByFoodRefId.get(foodId)));
 
                 if (isNew) {
                     gbDepFoodSalesService.save(sales);
@@ -265,7 +268,9 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
             }
 
             sales.setGbDfsAmount(qty.stripTrailingZeros().toPlainString());
-            sales.setGbDfsSubtotal(sales.getGbDfsAmount());
+            GbDepFoodEntity depFoodRow = depFoodByDepAndFood.get(depFoodLookupKey(depId, foodId));
+            sales.setGbDfsSubtotal(computeSubtotalPlain(qty,
+                    depFoodRow == null ? null : depFoodRow.getGbDfFoodPrice()));
 
             if (isNew) {
                 gbDepFoodSalesService.save(sales);
@@ -346,6 +351,51 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
             return Integer.valueOf(raw.trim());
         } catch (NumberFormatException e) {
             return null;
+        }
+    }
+
+    /**
+     * 部门菜品标价（{@code gb_dep_food.gb_df_food_price}）按菜品 id 与可选父 id 建索引，与 Excel 行里引用的 id 对齐。
+     */
+    private Map<Integer, String> loadUnitPriceByFoodRefIdForDep(Integer depId) {
+        if (depId == null) {
+            return Collections.emptyMap();
+        }
+        Map<String, Object> m = new HashMap<>();
+        m.put("depId", depId);
+        List<GbDepFoodEntity> list = gbDepFoodService.queryDepAllFood(m);
+        if (list == null || list.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Integer, String> out = new HashMap<>();
+        for (GbDepFoodEntity f : list) {
+            if (f.getGbDfFoodId() == null) {
+                continue;
+            }
+            String p = f.getGbDfFoodPrice();
+            out.putIfAbsent(f.getGbDfFoodId(), p);
+            if (f.getGbDfFoodFatherId() != null) {
+                out.putIfAbsent(f.getGbDfFoodFatherId(), p);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 销售小计金额：{@code qty × 单价}；单价为空或无法解析时为 {@code "0"}。
+     */
+    private static String computeSubtotalPlain(BigDecimal qty, String unitPriceStr) {
+        if (qty == null || qty.compareTo(BigDecimal.ZERO) <= 0) {
+            return "0";
+        }
+        if (unitPriceStr == null || unitPriceStr.trim().isEmpty()) {
+            return "0";
+        }
+        try {
+            BigDecimal price = new BigDecimal(unitPriceStr.trim());
+            return qty.multiply(price).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+        } catch (NumberFormatException e) {
+            return "0";
         }
     }
 }

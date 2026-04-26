@@ -16,9 +16,7 @@
             <if test="disId != null">
                 AND gb_dg_distributer_id = #{disId}
             </if>
-            <if test="nxDisId != null">
-                AND gb_dg_nx_distributer_id = #{nxDisId}
-            </if>
+
             <if test="price != null">
                 AND gb_dg_control_price = #{price}
             </if>

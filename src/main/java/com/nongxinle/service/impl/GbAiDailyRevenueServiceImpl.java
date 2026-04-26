@@ -108,6 +108,48 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
     }
 
     @Override
+    public void saveOrUpsertByDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue) {
+        if (dailyRevenue.getGbAiDailyRevenueDepartmentId() == null) {
+            throw new IllegalArgumentException("部门ID不能为空");
+        }
+        if (dailyRevenue.getGbAiDailyRevenueRecordDate() == null) {
+            dailyRevenue.setGbAiDailyRevenueRecordDate(new Date());
+        }
+        Date recordDate = dailyRevenue.getGbAiDailyRevenueRecordDate();
+        Date dayStart = GbDateTimeUtils.startOfDay(recordDate);
+        Date dayEnd = GbDateTimeUtils.endOfDay(recordDate);
+        GbAiDailyRevenueEntity existing = getOne(
+                new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
+                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, dailyRevenue.getGbAiDailyRevenueDepartmentId())
+                        .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayStart)
+                        .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayEnd)
+                        .last("LIMIT 1"), false);
+        if (existing != null) {
+            if (dailyRevenue.getGbAiDailyRevenueDistributerId() != null) {
+                existing.setGbAiDailyRevenueDistributerId(dailyRevenue.getGbAiDailyRevenueDistributerId());
+            }
+            copyMutableDailyRevenueFields(dailyRevenue, existing);
+            fillUpdateWeekday(existing);
+            updateById(existing);
+        } else {
+            fillInsertDefaults(dailyRevenue);
+            save(dailyRevenue);
+        }
+    }
+
+    private static void copyMutableDailyRevenueFields(GbAiDailyRevenueEntity from, GbAiDailyRevenueEntity to) {
+        to.setGbAiDailyRevenueDineInRevenue(from.getGbAiDailyRevenueDineInRevenue());
+        to.setGbAiDailyRevenueDineInOrders(from.getGbAiDailyRevenueDineInOrders());
+        to.setGbAiDailyRevenueDineInCustomers(from.getGbAiDailyRevenueDineInCustomers());
+        to.setGbAiDailyRevenueTakeoutRevenue(from.getGbAiDailyRevenueTakeoutRevenue());
+        to.setGbAiDailyRevenueTakeoutOrders(from.getGbAiDailyRevenueTakeoutOrders());
+        to.setGbAiDailyRevenuePlatformFee(from.getGbAiDailyRevenuePlatformFee());
+        to.setGbAiDailyRevenueWeekday(from.getGbAiDailyRevenueWeekday());
+        to.setGbAiDailyRevenueHoliday(from.getGbAiDailyRevenueHoliday());
+        to.setGbAiDailyRevenueNotes(from.getGbAiDailyRevenueNotes());
+    }
+
+    @Override
     public Map<String, Object> importDailyRevenueFromExcel(MultipartFile file, Long departmentId, Long distributerId)
             throws IOException {
         dailyRevenueExcelService.assertSpreadsheetUpload(file);
@@ -180,21 +222,16 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
                 String dateStr = GbDateTimeUtils.formatDay(revenue.getGbAiDailyRevenueRecordDate());
                 GbAiDailyRevenueEntity existing = existingByDay.get(dateStr);
                 if (existing != null) {
-                    existing.setGbAiDailyRevenueDineInRevenue(revenue.getGbAiDailyRevenueDineInRevenue());
-                    existing.setGbAiDailyRevenueDineInOrders(revenue.getGbAiDailyRevenueDineInOrders());
-                    existing.setGbAiDailyRevenueDineInCustomers(revenue.getGbAiDailyRevenueDineInCustomers());
-                    existing.setGbAiDailyRevenueTakeoutRevenue(revenue.getGbAiDailyRevenueTakeoutRevenue());
-                    existing.setGbAiDailyRevenueTakeoutOrders(revenue.getGbAiDailyRevenueTakeoutOrders());
-                    existing.setGbAiDailyRevenuePlatformFee(revenue.getGbAiDailyRevenuePlatformFee());
-                    existing.setGbAiDailyRevenueWeekday(revenue.getGbAiDailyRevenueWeekday());
-                    existing.setGbAiDailyRevenueHoliday(revenue.getGbAiDailyRevenueHoliday());
-                    existing.setGbAiDailyRevenueNotes(revenue.getGbAiDailyRevenueNotes());
+                    copyMutableDailyRevenueFields(revenue, existing);
                     existing.setGbAiDailyRevenueUpdateTime(now);
                     updateById(existing);
                     updated++;
                 } else {
                     save(revenue);
                     inserted++;
+                    if (dateStr != null) {
+                        existingByDay.put(dateStr, revenue);
+                    }
                 }
             } catch (Exception e) {
                 errors++;

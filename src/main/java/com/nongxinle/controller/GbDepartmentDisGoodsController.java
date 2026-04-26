@@ -2,12 +2,10 @@ package com.nongxinle.controller;
 
 import com.nongxinle.dto.GbDepGoodsStockAdjustRequest;
 import com.nongxinle.dto.GbDepGoodsStockAdjustResult;
-import com.nongxinle.entity.GbDepartmentDisGoodsEntity;
-import com.nongxinle.entity.GbDepartmentGoodsStockEntity;
-import com.nongxinle.entity.GbDistributerFatherGoodsEntity;
-import com.nongxinle.entity.GbDistributerGoodsEntity;
+import com.nongxinle.entity.*;
 import com.nongxinle.service.GbDepartmentDisGoodsService;
 import com.nongxinle.service.GbDepartmentGoodsStockService;
+import com.nongxinle.service.GbDistributerGoodsService;
 import com.nongxinle.utils.R;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -15,10 +13,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeSet;
+import java.util.*;
+
+import static com.nongxinle.utils.DateUtils.formatWhatDay;
 
 /**
  * 部门商品关联Controller
@@ -34,6 +31,87 @@ public class GbDepartmentDisGoodsController {
     private GbDepartmentDisGoodsService gbDepartmentDisGoodsService;
     @Autowired
     private GbDepartmentGoodsStockService gbDepGoodsStockService;
+    @Autowired
+    private GbDistributerGoodsService gbDistributerGoodsService;
+
+
+
+
+    @RequestMapping(value = "/disGetDepGoodsGbPageWithSupplier")
+    @ResponseBody
+    public R disGetDepGoodsGbPageWithSupplier(Integer limit, Integer page, Integer disId, Integer supplierId) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("disId", disId);
+        map.put("supplierId", supplierId);
+
+        // 1. 获取总数
+        List<Integer > disGoodsIds =   gbDepartmentDisGoodsService.queryOnlyDisGoodsIds(map);
+
+        // 2. 获取当前页数据
+        map.put("status", 4);
+        map.put("date", formatWhatDay(0));
+        map.put("limit", limit);
+        map.put("offset", (page - 1) * limit);
+        log.info("查询参数: limit={}, offset={}", limit, (page - 1) * limit);
+        log.info("map查询: {}", map);
+        TreeSet<GbDistributerGoodsEntity> currentPageSet = gbDepartmentDisGoodsService.disQueryDisGoodsWithOrderForAiTree(map);
+        log.info("当前页数据量Tree: {}", currentPageSet.size());
+
+        // 4. 处理每个商品的提示文本
+//        for(GbDistributerGoodsEntity distributerGoodsEntity: currentPageSet){
+//            gbDistributerGoodsService.getStockTotal(distributerGoodsEntity);
+//        }
+        log.info("最终返回数据量: {}", currentPageSet.size());
+        // 5. 返回分页数据
+        List<GbDistributerGoodsEntity> currentPageList = new ArrayList<>(currentPageSet);
+
+        // 3. 返回分页数据
+       Map<String, Object> pageMap = new HashMap<>();
+        pageMap.put("totalCount", disGoodsIds.size());
+        pageMap.put("pageSize", limit);
+        pageMap.put("currPage", page);
+        pageMap.put("list", currentPageList);
+        return R.ok().put("page", pageMap);
+    }
+
+    @RequestMapping(value = "/disGetDepGoodsCataGbWithSupplier")
+    @ResponseBody
+    public R disGetDepGoodsCataGbWithSupplier(Integer disId, Integer supplierId) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("disId", disId);
+        map.put("supplierId", supplierId);
+
+        System.out.println("cattaktktktkktk");
+        List<GbDistributerFatherGoodsEntity> disGoodsEntities = gbDepartmentDisGoodsService.disGetDepDisGoodsCataGb(map);
+
+        System.out.println("iddmdpdpddpdpd" + map);
+        List<Integer > disGoodsIds =   gbDepartmentDisGoodsService.queryOnlyDisGoodsIds(map);
+        Map<String, Object> mapR = new HashMap<>();
+        mapR.put("cataArr",disGoodsEntities);
+        mapR.put("disGoodsArr", disGoodsIds);
+
+        return R.ok().put("data", mapR);
+    }
+
+
+
+    @RequestMapping(value = "/deleteDepGoods/{depGoodsId}")
+    @ResponseBody
+    public R deleteDepGoods(@PathVariable Integer depGoodsId) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("depGoodsId", depGoodsId);
+        map.put("restWeight", 0);
+        List<GbDepartmentGoodsStockEntity> stockEntities = gbDepGoodsStockService.queryGoodsStockByParams(map);
+        if (stockEntities.size() > 0) {
+            return R.error(-1, "有库存，不能删除");
+        } else {
+
+            gbDepartmentDisGoodsService.removeById(depGoodsId);
+            return R.ok();
+        }
+    }
+
+
 
     /**
      * 获取部门商品分类和商品ID列表
@@ -199,7 +277,8 @@ public class GbDepartmentDisGoodsController {
     /**
      * 订货端部门库存调整（制作 / 损耗 / 退货 / 废弃），替代原四个独立接口。
      * <p>请求体：{@code { "kind": "produce|loss|return|waste", "stock": { ...GbDepartmentGoodsStockEntity 字段 } }}</p>
-     * <p>成功时 {@code data} 统一为 Map：{@code disGoods} 必有；{@code id}（库存减少记录主键）仅在 loss、return 时返回。</p>
+     * <p>成功时 {@code data} 统一为 Map：{@code disGoods} 必有，且与 {@link #depGetDepGoodsGbPage} 返回的 {@code page.list} 中单条
+     * 部门商品结构一致（同一套 depQueryDepGoodsWithOrderForAi）；{@code id}（库存减少记录主键）仅在 loss、return 时返回。</p>
      */
     @Operation(summary = "部门库存调整（统一）", description = "kind：produce 制作、loss 损耗、return 退货、waste 废弃；stock 为部门库存实体。")
     @RequestMapping(value = "/saveDepGoodsStockAdjust", method = RequestMethod.POST)

@@ -9,4 +9,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class GbDepFoodSalesServiceImpl extends ServiceImpl<GbDepFoodSalesMapper, GbDepFoodSalesEntity>
         implements GbDepFoodSalesService {
+
+    @Override
+    public long countSalesByDistributerFoodId(Integer distributerFoodId) {
+        return baseMapper.countSalesByDistributerFoodId(distributerFoodId);
+    }
 }

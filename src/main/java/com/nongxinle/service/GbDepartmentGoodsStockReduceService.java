@@ -101,8 +101,18 @@ public interface GbDepartmentGoodsStockReduceService extends IService<GbDepartme
     }
 
     /**
-     * 生产成本扣减按商品汇总（重量、金额），供菜品成本分析页使用。
+     * 生产成本扣减（仅 type=1）按商品汇总（重量、金额）；仅生产线领料口径时使用。
      */
     List<Map<String, Object>> queryProductionReduceAggByDisGoods(Map<String, Object> map);
+
+    /**
+     * 生产 + 损耗 + 损失（type 1、2、3）按商品汇总（重量、金额），供菜品成本/毛利分析使用。
+     */
+    List<Map<String, Object>> queryProduceLossWasteReduceAggByDisGoods(Map<String, Object> map);
+
+    /**
+     * 指定 type（1/2/3）按商品汇总的出库重量、金额，条件与 {@link #queryProductionReduceAggByDisGoods} 相同。
+     */
+    List<Map<String, Object>> queryReduceAggByDisGoodsByType(Map<String, Object> map, Integer stockReduceType);
 
 }

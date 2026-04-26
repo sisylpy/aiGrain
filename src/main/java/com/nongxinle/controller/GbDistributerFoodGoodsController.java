@@ -34,6 +34,16 @@ public class GbDistributerFoodGoodsController {
 		return R.ok();
 	}
 
+	@RequestMapping(value = "/saveGbFoodGoodsItem", method = RequestMethod.POST)
+	@ResponseBody
+	public R saveGbFoodGoodsItem(@RequestBody GbDistributerFoodGoodsEntity foodGoods) {
+
+			foodGoods.setGbDfgStatus(1);
+			gbDistributerFoodGoodsService.save(foodGoods);
+
+		return R.ok().put("data", foodGoods);
+	}
+
 
 	@RequestMapping(value = "/deleteGbFoodGoods/{id}")
 	@ResponseBody

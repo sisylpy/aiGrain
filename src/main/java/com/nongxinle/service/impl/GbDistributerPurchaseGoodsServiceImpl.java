@@ -312,6 +312,7 @@ public class GbDistributerPurchaseGoodsServiceImpl extends ServiceImpl<GbDistrib
         q.remove("money");
         q.remove("times");
         q.put("disGoodsIds", disGoodsIds);
+        System.out.println("rowwomapa" + q);
         List<GbDistributerPurchaseGoodsEntity> rows = baseMapper.queryPurchaseGoodsWithStocksDetailForGoodsIds(q);
         Map<Integer, List<GbDistributerPurchaseGoodsEntity>> byDisGoodsId = new LinkedHashMap<>();
         for (GbDistributerPurchaseGoodsEntity row : rows) {

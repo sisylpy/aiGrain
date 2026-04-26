@@ -357,6 +357,9 @@ public class PinYin4jUtils {
      */
     public static String[] getHeadByString(String src, boolean isCapital,
                                            String separator) {
+        if (src == null || src.length() == 0 || "null".equals(src)) {
+            return new String[0];
+        }
         char[] chars = src.toCharArray();
         String[] headString = new String[chars.length];
         int i = 0;

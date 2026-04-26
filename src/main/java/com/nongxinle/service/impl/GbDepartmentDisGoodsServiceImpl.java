@@ -28,65 +28,50 @@ public class GbDepartmentDisGoodsServiceImpl extends ServiceImpl<GbDepartmentDis
     private GbDistributerFatherGoodsService gbDistributerFatherGoodsService;
 
     @Override
-    public GbDepartmentDisGoodsEntity createDepDisGoodsForJjOrderAfterNxImport(
+    public GbDepartmentDisGoodsEntity createDepDisGoodsForJjOrder(
             GbDepartmentOrdersEntity gbDepartmentOrders,
-            GbDistributerGoodsEntity gbNewGoods) {
-        GbDistributerFatherGoodsEntity grandGoods =
-                gbDistributerFatherGoodsService.queryObject(gbNewGoods.getGbDgDfgGoodsGrandId());
-        Integer greatFatherGoodsId = grandGoods.getGbDfgFathersFatherId();
+            GbDistributerGoodsEntity gbDisGoods) {
+        String depGoodsName = gbDisGoods.getGbDgGoodsName();
+
+        Integer greatId = gbDisGoods.getGbDgDfgGoodsGreatId();
+        if (greatId == null && gbDisGoods.getGbDgDfgGoodsGrandId() != null) {
+            GbDistributerFatherGoodsEntity grandGoods =
+                    gbDistributerFatherGoodsService.queryObject(gbDisGoods.getGbDgDfgGoodsGrandId());
+            if (grandGoods != null) {
+                greatId = grandGoods.getGbDfgFathersFatherId();
+            }
+        }
+
+        String depPinyin = gbDisGoods.getGbDgGoodsPinyin();
+        String depPy = gbDisGoods.getGbDgGoodsPy();
+        if (depPinyin == null || depPinyin.isEmpty()) {
+            depPinyin = hanziToPinyin(depGoodsName);
+        }
+        if (depPy == null || depPy.isEmpty()) {
+            depPy = getHeadStringByString(depGoodsName, false, null);
+        }
 
         GbDepartmentDisGoodsEntity depDisGoods = new GbDepartmentDisGoodsEntity();
-        String gbDoGoodsName = gbDepartmentOrders.getGbDoGoodsName();
-        depDisGoods.setGbDdgDepGoodsName(gbDoGoodsName);
-        depDisGoods.setGbDdgDisGoodsId(gbNewGoods.getGbDistributerGoodsId());
-        depDisGoods.setGbDdgDisGoodsFatherId(gbNewGoods.getGbDgDfgGoodsFatherId());
-        depDisGoods.setGbDdgDisGoodsGrandId(gbNewGoods.getGbDgDfgGoodsGrandId());
-        depDisGoods.setGbDdgDisGoodsGreatId(greatFatherGoodsId);
-        depDisGoods.setGbDdgDepGoodsPinyin(hanziToPinyin(gbDoGoodsName));
-        depDisGoods.setGbDdgDepGoodsPy(getHeadStringByString(gbDoGoodsName, false, null));
-        depDisGoods.setGbDdgDepGoodsStandardname(gbNewGoods.getGbDgGoodsStandardname());
+        depDisGoods.setGbDdgDepGoodsName(depGoodsName);
+        depDisGoods.setGbDdgDisGoodsId(gbDisGoods.getGbDistributerGoodsId());
+        depDisGoods.setGbDdgDisGoodsFatherId(gbDisGoods.getGbDgDfgGoodsFatherId());
+        depDisGoods.setGbDdgDisGoodsGrandId(gbDisGoods.getGbDgDfgGoodsGrandId());
+        depDisGoods.setGbDdgDisGoodsGreatId(greatId);
+        depDisGoods.setGbDdgDepGoodsPinyin(depPinyin);
+        depDisGoods.setGbDdgDepGoodsPy(depPy);
+        depDisGoods.setGbDdgDepGoodsStandardname(gbDisGoods.getGbDgGoodsStandardname());
         depDisGoods.setGbDdgDepartmentId(gbDepartmentOrders.getGbDoDepartmentId());
         depDisGoods.setGbDdgDepartmentFatherId(gbDepartmentOrders.getGbDoDepartmentFatherId());
-        depDisGoods.setGbDdgGbDepartmentId(gbNewGoods.getGbDgGbDepartmentId());
-        depDisGoods.setGbDdgGbDisId(gbNewGoods.getGbDgDistributerId());
-        depDisGoods.setGbDdgGoodsType(gbNewGoods.getGbDgGoodsType());
+        depDisGoods.setGbDdgGbDepartmentId(gbDisGoods.getGbDgGbDepartmentId());
+        depDisGoods.setGbDdgGbDisId(gbDisGoods.getGbDgDistributerId());
+        depDisGoods.setGbDdgGoodsType(gbDisGoods.getGbDgGoodsType());
         depDisGoods.setGbDdgStockTotalWeight("0.0");
         depDisGoods.setGbDdgStockTotalSubtotal("0.0");
         depDisGoods.setGbDdgShowStandardId(-1);
-        depDisGoods.setGbDdgShowStandardName(gbNewGoods.getGbDgGoodsStandardname());
+        depDisGoods.setGbDdgShowStandardName(gbDisGoods.getGbDgGoodsStandardname());
         depDisGoods.setGbDdgOrderStandard(gbDepartmentOrders.getGbDoStandard());
         depDisGoods.setGbDdgShowStandardScale("-1");
-        depDisGoods.setGbDdgShowStandardWeight(null);
-        depDisGoods.setGbDdgNxDistributerGoodsId(gbNewGoods.getGbDgNxDistributerGoodsId());
-        depDisGoods.setGbDdgNxDistributerId(-1);
-        depDisGoods.setGbDdgPrintStandard(gbNewGoods.getGbDgGoodsStandardname());
-        save(depDisGoods);
-        return depDisGoods;
-    }
-
-    @Override
-    public GbDepartmentDisGoodsEntity createDepDisGoodsForJjOrderFromExistingDisGoods(
-            GbDepartmentOrdersEntity gbDepartmentOrders,
-            GbDistributerGoodsEntity gbDistributerGoodsEntity) {
-        GbDepartmentDisGoodsEntity depDisGoods = new GbDepartmentDisGoodsEntity();
-        depDisGoods.setGbDdgDepGoodsName(gbDistributerGoodsEntity.getGbDgGoodsName());
-        depDisGoods.setGbDdgDisGoodsId(gbDistributerGoodsEntity.getGbDistributerGoodsId());
-        depDisGoods.setGbDdgDisGoodsFatherId(gbDistributerGoodsEntity.getGbDgDfgGoodsFatherId());
-        depDisGoods.setGbDdgDisGoodsGrandId(gbDistributerGoodsEntity.getGbDgDfgGoodsGrandId());
-        depDisGoods.setGbDdgDisGoodsGreatId(gbDistributerGoodsEntity.getGbDgDfgGoodsGreatId());
-        depDisGoods.setGbDdgDepGoodsPinyin(gbDistributerGoodsEntity.getGbDgGoodsPinyin());
-        depDisGoods.setGbDdgDepGoodsPy(gbDistributerGoodsEntity.getGbDgGoodsPy());
-        depDisGoods.setGbDdgDepGoodsStandardname(gbDistributerGoodsEntity.getGbDgGoodsStandardname());
-        depDisGoods.setGbDdgDepartmentId(gbDepartmentOrders.getGbDoDepartmentId());
-        depDisGoods.setGbDdgDepartmentFatherId(gbDepartmentOrders.getGbDoDepartmentFatherId());
-        depDisGoods.setGbDdgGbDepartmentId(gbDistributerGoodsEntity.getGbDgGbDepartmentId());
-        depDisGoods.setGbDdgGbDisId(gbDistributerGoodsEntity.getGbDgDistributerId());
-        depDisGoods.setGbDdgGoodsType(gbDistributerGoodsEntity.getGbDgGoodsType());
-        depDisGoods.setGbDdgStockTotalWeight("0.0");
-        depDisGoods.setGbDdgStockTotalSubtotal("0.0");
-        depDisGoods.setGbDdgShowStandardId(-1);
-        depDisGoods.setGbDdgShowStandardName(gbDistributerGoodsEntity.getGbDgGoodsStandardname());
-        depDisGoods.setGbDdgShowStandardWeight(gbDistributerGoodsEntity.getGbDgGoodsStandardWeight());
+        depDisGoods.setGbDdgShowStandardWeight(gbDisGoods.getGbDgGoodsStandardWeight());
         save(depDisGoods);
         return depDisGoods;
     }
@@ -139,5 +124,14 @@ public class GbDepartmentDisGoodsServiceImpl extends ServiceImpl<GbDepartmentDis
     @Override
     public TreeSet<GbDistributerGoodsEntity> disQueryDisGoodsWithOrderForAiTree(Map<String, Object> map) {
         return baseMapper.disQueryDisGoodsWithOrderForAiTree(map);
+    }
+
+    @Override
+    public TreeSet<GbDepartmentDisGoodsEntity> queryDepDisGoodsQuickSearchStrGb(Map<String, Object> map) {
+        List<GbDepartmentDisGoodsEntity> list = baseMapper.queryDepDisGoodsQuickSearchStrGb(map);
+        if (list == null || list.isEmpty()) {
+            return new TreeSet<>();
+        }
+        return new TreeSet<>(list);
     }
 }

@@ -73,4 +73,14 @@ public interface GbDepartmentGoodsStockReduceMapper extends BaseMapper<GbDepartm
      */
     List<Map<String, Object>> queryProductionReduceAggByDisGoods(@Param("params") Map<String, Object> map);
 
+    /**
+     * 生产 + 损耗 + 损失（type in 1,2,3）按 {@code gb_dgsr_gb_dis_goods_id} 汇总重量与金额；与 {@link #queryProductionReduceAggByDisGoods} 条件相同，仅类型范围不同。
+     */
+    List<Map<String, Object>> queryProduceLossWasteReduceAggByDisGoods(@Param("params") Map<String, Object> map);
+
+    /**
+     * 指定 type（1/2/3）按商品汇总 weightSum、subtotalSum；与 {@link #queryProductionReduceAggByDisGoods} 条件与分组一致，{@code params.reduceType} 为类型。
+     */
+    List<Map<String, Object>> queryReduceAggByDisGoodsByType(@Param("params") Map<String, Object> map);
+
 }

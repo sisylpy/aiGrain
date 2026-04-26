@@ -8,6 +8,8 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
+import java.util.List;
+import java.util.Map;
 
 
 @Data
@@ -44,6 +46,19 @@ public class GbDepFoodEntity implements Serializable {
     private GbDepartmentEntity gbDepartmentEntity;
     @TableField(exist = false)
     private String gbDfSalesAmount;
+
+    /**
+     * 经营分析（与 {@code /gbdepfood/depGetAllFood} 在传 startDate/stopDate 且 disId、depFatherId 齐全时填充）：
+     * 周销量、标价收入、成本、毛利率、区间损耗说明等，见 {@link com.nongxinle.service.GbDepFoodBusinessInsightService#buildInsight} 菜品行字段。
+     */
+    @TableField(exist = false)
+    private Map<String, Object> gbDfBusinessInsight;
+
+    /**
+     * 与 {@code /gbDishCostAnalysis/ingredientAnalysis} 中 {@code salesDishRows[].ingredientRows} 单条结构一致（仅四参齐全走经营分析时填充）。
+     */
+    @TableField(exist = false)
+    private List<Map<String, Object>> ingredientAnalysisRows;
 
     public String getGbDfSalesAmount() {
         return gbDfSalesAmount;

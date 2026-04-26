@@ -32,9 +32,7 @@ public interface NxJrdhUserMapper extends BaseMapper<NxJrdhUserEntity> {
             "   <if test='admin != null'>" +
             "       AND nx_jrdh_admin = #{admin}" +
             "   </if>" +
-            "   <if test='nxDisId != null'>" +
-            "       AND nx_jrdh_nx_distributer_id = #{nxDisId}" +
-            "   </if>" +
+
             "   <if test='gbDisId != null'>" +
             "       AND nx_jrdh_gb_distributer_id = #{gbDisId}" +
             "   </if>" +

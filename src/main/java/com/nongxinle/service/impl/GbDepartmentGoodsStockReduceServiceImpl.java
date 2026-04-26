@@ -327,4 +327,22 @@ public class GbDepartmentGoodsStockReduceServiceImpl extends ServiceImpl<GbDepar
                 gbDepartmentGoodsStockReduceMapper.queryProductionReduceAggByDisGoods(paramsForReduceStats(map));
         return list != null ? list : Collections.emptyList();
     }
+
+    @Override
+    public List<Map<String, Object>> queryProduceLossWasteReduceAggByDisGoods(Map<String, Object> map) {
+        List<Map<String, Object>> list =
+                gbDepartmentGoodsStockReduceMapper.queryProduceLossWasteReduceAggByDisGoods(paramsForReduceStats(map));
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
+    public List<Map<String, Object>> queryReduceAggByDisGoodsByType(Map<String, Object> map, Integer stockReduceType) {
+        if (stockReduceType == null) {
+            return Collections.emptyList();
+        }
+        Map<String, Object> p = new HashMap<>(paramsForReduceStats(map));
+        p.put("reduceType", stockReduceType);
+        List<Map<String, Object>> list = gbDepartmentGoodsStockReduceMapper.queryReduceAggByDisGoodsByType(p);
+        return list != null ? list : Collections.emptyList();
+    }
 }

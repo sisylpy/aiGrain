@@ -64,4 +64,9 @@ public interface GbDepartmentDisGoodsMapper extends BaseMapper<GbDepartmentDisGo
      * 按批发商分页查询商品（TreeSet版本）
      */
     java.util.TreeSet<com.nongxinle.entity.GbDistributerGoodsEntity> disQueryDisGoodsWithOrderForAiTree(Map<String, Object> map);
+
+    /**
+     * 部门已关联批发商商品的快速检索（老项目 queryDepDisGoodsQuickSearchStrGb）
+     */
+    List<GbDepartmentDisGoodsEntity> queryDepDisGoodsQuickSearchStrGb(Map<String, Object> map);
 }

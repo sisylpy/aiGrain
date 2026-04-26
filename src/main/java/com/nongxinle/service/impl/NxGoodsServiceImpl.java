@@ -72,4 +72,19 @@ public class NxGoodsServiceImpl extends ServiceImpl<NxGoodsMapper, NxGoodsEntity
         
         return list;
     }
+
+    @Override
+    public List<NxGoodsEntity> queryDisGoodsEqualSearchStrWithDepOrders(Map<String, Object> map) {
+        return baseMapper.queryDisGoodsEqualSearchStrWithDepOrders(map);
+    }
+
+    @Override
+    public List<NxGoodsEntity> queryDisGoodsQuickSearchStrWithDepOrders(Map<String, Object> map) {
+        return baseMapper.queryDisGoodsQuickSearchStrWithDepOrders(map);
+    }
+
+    @Override
+    public List<NxGoodsEntity> queryDisGoodsQuickSearchPyWithDepOrders(Map<String, Object> map) {
+        return baseMapper.queryDisGoodsQuickSearchPyWithDepOrders(map);
+    }
 }

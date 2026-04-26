@@ -15,7 +15,7 @@ import java.util.Objects;
 /**
  * 农鑫商品实体
  */
-@TableName("nx_goods")
+@TableName("nongxinle.nx_goods")
 @Data
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public class NxGoodsEntity implements Serializable {

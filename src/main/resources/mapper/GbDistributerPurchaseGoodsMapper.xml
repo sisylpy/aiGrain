@@ -44,6 +44,9 @@
             <if test="finishDate != null and (date == null)">
                 AND gdpg.gb_DPG_stock_finish_date = #{finishDate}
             </if>
+        <if test="disGoodsId != null">
+            AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
+        </if>
             <if test="date != null and (finishDate == null)">
                 AND gdpg.gb_DPG_stock_finish_date = #{date}
             </if>
@@ -73,6 +76,9 @@
             <if test="status != null">
                 AND gdpg.gb_DPG_status &lt; #{status}
             </if>
+        <if test="disGoodsId != null">
+            AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
+        </if>
             <if test="dayuStatus != null">
                 AND gdpg.gb_DPG_status &gt; #{dayuStatus}
             </if>
@@ -218,6 +224,9 @@
             <if test="disId != null">
                 and gdpg.gb_DPG_distributer_id = #{disId}
             </if>
+            <if test="disGoodsId != null">
+                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
+            </if>
             <if test="supplierBuy != null and supplierBuy == -1">
                 AND gdpg.gb_DPG_purchase_nx_supplier_id = -1
             </if>
@@ -304,6 +313,9 @@
         <where>
             <if test="disId != null">
                 and gdpg.gb_DPG_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
             </if>
             <if test="purDepId != null">
                 and gdpg.gb_DPG_purchase_department_id = #{purDepId}
@@ -514,6 +526,9 @@
             <if test="disId != null">
                 AND gdpg.gb_DPG_distributer_id = #{disId}
             </if>
+            <if test="disGoodsId != null">
+                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
+            </if>
             <include refid="purGoodsWhereGbSupplierBuyOnly"/>
             <if test="status != null">
                 AND gdpg.gb_DPG_status &lt; #{status}
@@ -533,6 +548,9 @@
             </if>
             <if test="disId != null">
                 AND gdpg.gb_DPG_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
             </if>
             <if test="purDepId != null">
                 AND gdpg.gb_DPG_purchase_department_id = #{purDepId}
@@ -580,7 +598,6 @@
         <result property="gbDgNxFatherImg" column="gb_dg_nx_father_img"/>
         <result property="gbDgNxFatherImgLarge" column="gb_dg_nx_father_img_large"/>
         <result property="gbDgNxGoodsFatherImg" column="gb_dg_nx_goods_father_img"/>
-        <result property="gbDgNxDistributerGoodsPrice" column="gb_dg_nx_distributer_goods_price"/>
         <result property="gbDgGoodsSort" column="gb_dg_goods_sort"/>
         <result property="gbDgGbDepartmentId" column="gb_dg_gb_department_id"/>
         <result property="gbDgGoodsIsHidden" column="gb_dg_goods_is_hidden"/>
@@ -665,6 +682,9 @@
             <if test="disId != null">
                 AND gdpg.gb_DPG_distributer_id = #{disId}
             </if>
+            <if test="disGoodsId != null">
+            AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
+           </if>
             <if test="purDepId != null">
                 AND gdpg.gb_DPG_purchase_department_id = #{purDepId}
             </if>
@@ -838,6 +858,9 @@
             <if test="disId != null">
                 AND gdpg.gb_DPG_distributer_id = #{disId}
             </if>
+            <if test="disGoodsId != null">
+                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
+            </if>
             <if test="dayuStatus != null">
                 AND gdpg.gb_DPG_status &gt; #{dayuStatus}
             </if>
@@ -855,6 +878,9 @@
         <where>
             <if test="purUserId != null">
                 AND gdpg.gb_DPG_pur_user_id = #{purUserId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
             </if>
             <include refid="purGoodsWhereGbDisGoodsHierarchy"/>
             <if test="standard != null">
@@ -917,6 +943,9 @@
         <where>
             <if test="batchId != null">
                 and gdpg.gb_DPG_batch_id = #{batchId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
             </if>
             <if test="status != null">
                 and gdpg.gb_DPG_status = #{status}
@@ -993,10 +1022,15 @@
         select *
         from gb_distributer_purchase_goods as gdpg
         <where>
+            <if test="supplierId != null">
+                and gdpg.gb_DPG_purchase_nx_supplier_id = #{supplierId}
+            </if>
             <if test="batchId != null">
                 and gdpg.gb_DPG_batch_id = #{batchId}
             </if>
-
+            <if test="disGoodsId != null">
+                AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
+            </if>
             <if test="purUserId != null">
                 AND gdpg.gb_DPG_pur_user_id = #{purUserId}
             </if>
@@ -1012,6 +1046,9 @@
             </if>
             <if test="dayuStatus != null">
                 and gb_DPG_status &gt; #{dayuStatus}
+            </if>
+            <if test="status != null">
+                and gb_DPG_status &lt; #{status}
             </if>
             <if test="equalStatus != null">
                 and gb_DPG_status = #{equalStatus}
@@ -1052,6 +1089,7 @@
     <resultMap id="purGoodsWithStocksDetailRM" type="com.nongxinle.entity.GbDistributerPurchaseGoodsEntity">
         <id property="gbDistributerPurchaseGoodsId" column="dpg_gb_distributer_purchase_goods_id"/>
         <result property="gbDpgDisGoodsId" column="dpg_gb_DPG_dis_goods_id"/>
+        <result property="gbDpgBatchId" column="dpg_gb_DPG_batch_id"/>
         <result property="gbDpgStockFinishDate" column="dpg_gb_DPG_stock_finish_date"/>
         <result property="gbDpgBuyQuantity" column="dpg_gb_DPG_buy_quantity"/>
         <result property="gbDpgBuyPrice" column="dpg_gb_DPG_buy_price"/>
@@ -1073,6 +1111,7 @@
     <select id="queryPurchaseGoodsWithStocksDetailForGoodsIds" resultMap="purGoodsWithStocksDetailRM">
         SELECT
             gdpg.gb_distributer_purchase_goods_id AS dpg_gb_distributer_purchase_goods_id,
+            gdpg.gb_DPG_batch_id AS dpg_gb_DPG_batch_id,
             gdpg.gb_DPG_dis_goods_id AS dpg_gb_DPG_dis_goods_id,
             gdpg.gb_DPG_stock_finish_date AS dpg_gb_DPG_stock_finish_date,
             gdpg.gb_DPG_buy_quantity AS dpg_gb_DPG_buy_quantity,
@@ -1112,6 +1151,9 @@
             </if>
             <if test="disId != null">
                 AND gdpg.gb_DPG_distributer_id = #{disId}
+            </if>
+            <if test="batchId != null">
+                AND gdpg.gb_DPG_batch_id = #{batchId}
             </if>
             <if test="typeNotEqual != null">
                 AND gdpg.gb_DPG_purchase_type != #{typeNotEqual}

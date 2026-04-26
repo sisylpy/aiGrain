@@ -12,7 +12,7 @@ import java.io.Serializable;
  * 商品别名Entity
  */
 @Data
-@TableName("nx_alias")
+@TableName("nongxinle.nx_alias")
 @EqualsAndHashCode(callSuper = false)
 public class NxAliasEntity implements Serializable {
     private static final long serialVersionUID = 1L;

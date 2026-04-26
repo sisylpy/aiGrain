@@ -30,6 +30,20 @@ public class NxJrdhSupplierController {
     @Autowired
     private GbDistributerGoodsService gbDistributerGoodsService;
 
+
+
+    @RequestMapping(value = "/updateJrdhSupplier", method = RequestMethod.POST)
+    @ResponseBody
+    public R updateJrdhSupplier (@RequestBody NxJrdhSupplierEntity supplier) {
+        Integer nxJrdhSupplierId = supplier.getNxJrdhSupplierId();
+        NxJrdhSupplierEntity byId = nxJrdhSupplierService.getById(nxJrdhSupplierId);
+        byId.setNxJrdhsSupplierName(supplier.getNxJrdhsSupplierName());
+        nxJrdhSupplierService.updateById(byId);
+        return R.ok();
+    }
+
+
+
     /**
      * 获取部门的供应商列表
      */

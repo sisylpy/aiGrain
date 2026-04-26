@@ -46,4 +46,19 @@ public interface NxGoodsMapper extends BaseMapper<NxGoodsEntity> {
      * 原方法名: queryGbDepNxGrandGoodsByGreatId（来自老项目 NxGoodsDao.xml）
      */
     List<NxGoodsEntity> queryGbDepNxGrandGoodsByGreatId(Map<String, Object> map);
+
+    /**
+     * 农鑫商品精确匹配（名称 / 别名 / 拼音 / 首字母）+ 批发商商品 + 部门商品 + 部门订单
+     */
+    List<NxGoodsEntity> queryDisGoodsEqualSearchStrWithDepOrders(Map<String, Object> map);
+
+    /**
+     * 农鑫商品名称 / 别名模糊 + 同上关联
+     */
+    List<NxGoodsEntity> queryDisGoodsQuickSearchStrWithDepOrders(Map<String, Object> map);
+
+    /**
+     * 农鑫商品拼音 / 首字母模糊 + 同上关联
+     */
+    List<NxGoodsEntity> queryDisGoodsQuickSearchPyWithDepOrders(Map<String, Object> map);
 }

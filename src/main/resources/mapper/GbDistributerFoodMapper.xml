@@ -107,7 +107,7 @@
                 and f.gb_df_food_father_id &gt; #{dayuFatherId}
             </if>
         </where>
-        ORDER BY f.gb_df_goods_sort
+        ORDER BY f.gb_distributer_food_id
     </select>
 
     <select id="queryDisAllFood" resultType="com.nongxinle.entity.GbDistributerFoodEntity">

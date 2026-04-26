@@ -135,7 +135,8 @@
 
 ## 5. 口径说明
 
-- 理论用量：`gb_dep_food_goods_sales`；出库与分摊：`gb_dgsr_type` 生产成本扣库（与现有 `queryProductionReduceAggByDisGoods` 一致）。
+- 理论用量：`gb_dep_food_goods_sales`；**按菜分摊的出库重量/金额、均价**：仅 **`gb_dgsr_type = 1`（生产）**，`queryProductionReduceAggByDisGoods`。
+- **区间损耗（老板看整体）**：`data.scopeOutboundSubtotals` — type1/2/3 金额小计与 `wasteLossRatioInOutbound123` = (2+3)/(1+2+3)×100，**百分数字符串、两位小数**（如 `"5.23"` 表示 5.23%）；与单菜成本口径分离。全量 1+2+3 按商品汇总仍可用 `queryProduceLossWasteReduceAggByDisGoods`（其它报表）。
 - 共料分摊、可支撑份数：`Q_g>0` 时 `W×q/Q` 再 ÷`u`；`Q_g=0` 时回退 `W/S`；整菜瓶颈仅 `W_g>0` 的原料参与 min。
 
 ---

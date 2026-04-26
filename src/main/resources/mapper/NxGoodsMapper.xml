@@ -59,30 +59,28 @@
         <!-- 部门分销商品关联 -->
         <association property="gbDepartmentDisGoodsEntity" javaType="com.nongxinle.entity.GbDepartmentDisGoodsEntity">
             <id property="gbDepartmentDisGoodsId" column="gb_department_dis_goods_id"/>
-            <result property="gbDDGDepartmentId" column="gb_DDG_department_id"/>
-            <result property="gbDDGNxDistributerId" column="gb_DDG_nx_distributer_id"/>
-            <result property="gbDDGNxGoodsId" column="gb_DDG_nx_goods_id"/>
-            <result property="gbDDGDisGoodsId" column="gb_DDG_dis_goods_id"/>
-            <result property="gbDDGDepGoodsName" column="gb_DDG_dep_goods_name"/>
-            <result property="gbDDGDepGoodsStandardname" column="gb_DDG_dep_goods_standardname"/>
-            <result property="gbDDGOrderPrice" column="gb_DDG_order_price"/>
-            <result property="gbDDGSellingPrice" column="gb_DDG_selling_price"/>
-            <result property="gbDDGGbDisId" column="gb_DDG_gb_dis_id"/>
+            <result property="gbDdgDepartmentId" column="gb_DDG_department_id"/>
+            <result property="gbDdgDisGoodsId" column="gb_DDG_dis_goods_id"/>
+            <result property="gbDdgDepGoodsName" column="gb_DDG_dep_goods_name"/>
+            <result property="gbDdgDepGoodsStandardname" column="gb_DDG_dep_goods_standardname"/>
+            <result property="gbDdgOrderPrice" column="gb_DDG_order_price"/>
+            <result property="gbDdgSellingPrice" column="gb_DDG_selling_price"/>
+            <result property="gbDdgGbDisId" column="gb_DDG_gb_dis_id"/>
         </association>
         
         <!-- 部门订单关联 -->
         <association property="gbDepartmentOrdersEntity" javaType="com.nongxinle.entity.GbDepartmentOrdersEntity">
             <id property="gbDepartmentOrdersId" column="gb_department_orders_id"/>
             <result property="gbDoGoodsName" column="gb_do_goods_name"/>
-            <result property="gbDONxGoodsId" column="gb_DO_nx_goods_id"/>
-            <result property="gbDODisGoodsId" column="gb_DO_dis_goods_id"/>
-            <result property="gbDODepartmentId" column="gb_DO_department_id"/>
-            <result property="gbDODistributerId" column="gb_DO_distributer_id"/>
-            <result property="gbDOStatus" column="gb_DO_status"/>
-            <result property="gbDOPrice" column="gb_DO_price"/>
-            <result property="gbDOQuantity" column="gb_DO_quantity"/>
-            <result property="gbDOSubtotal" column="gb_DO_subtotal"/>
-            <result property="gbDOSellingPrice" column="gb_DO_selling_price"/>
+            <result property="gbDoNxGoodsId" column="gb_DO_nx_goods_id"/>
+            <result property="gbDoDisGoodsId" column="gb_DO_dis_goods_id"/>
+            <result property="gbDoDepartmentId" column="gb_DO_department_id"/>
+            <result property="gbDoDistributerId" column="gb_DO_distributer_id"/>
+            <result property="gbDoStatus" column="gb_DO_status"/>
+            <result property="gbDoPrice" column="gb_DO_price"/>
+            <result property="gbDoQuantity" column="gb_DO_quantity"/>
+            <result property="gbDoSubtotal" column="gb_DO_subtotal"/>
+            <result property="gbDoSellingPrice" column="gb_DO_selling_price"/>
         </association>
     </resultMap>
 
@@ -226,10 +224,10 @@
                greatgrand.nx_goods_sons_sort as greatgrand_nx_goods_sons_sort,
                greatgrand.nx_goods_file as greatgrand_nx_goods_file,
                greatgrand.nx_goods_file_big as greatgrand_nx_goods_file_big
-        from nx_goods g
-        left join nx_goods f on f.nx_goods_id = g.nx_goods_father_id
-        left join nx_goods grand on grand.nx_goods_id = f.nx_goods_father_id
-        left join nx_goods greatgrand on greatgrand.nx_goods_id = grand.nx_goods_father_id
+        from nongxinle.nx_goods g
+        left join nongxinle.nx_goods f on f.nx_goods_id = g.nx_goods_father_id
+        left join nongxinle.nx_goods grand on grand.nx_goods_id = f.nx_goods_father_id
+        left join nongxinle.nx_goods greatgrand on greatgrand.nx_goods_id = grand.nx_goods_father_id
         where g.nx_goods_id = #{nxGoodsId}
     </select>
 
@@ -296,7 +294,6 @@
     <resultMap id="gbStandard" type="com.nongxinle.entity.GbDistributerStandardEntity">
         <id property="gbDistributerStandardId" column="gb_distributer_standard_id"/>
         <result property="gbDsStandardName" column="gb_DS_standard_name"/>
-        <result property="gbDsStandardScale" column="gb_DS_standard_scale"/>
         <result property="gbDsDisGoodsId" column="gb_DS_dis_goods_id"/>
     </resultMap>
 
@@ -457,7 +454,9 @@
         <result property="nxGoodsFileBig" column="nx_goods_file_big"/>
         <result property="nxGoodsStandardname" column="nx_goods_standardname"/>
         <result property="nxGoodsStandardWeight" column="nx_goods_standard_weight"/>
-        
+        <result property="nxGoodsPinyin" column="nx_goods_pinyin"/>
+        <result property="nxGoodsPy" column="nx_goods_py"/>
+
         <!-- 分销商商品关联（内联方式） -->
         <association property="gbDistributerGoodsEntity" javaType="com.nongxinle.entity.GbDistributerGoodsEntity">
             <id property="gbDistributerGoodsId" column="gb_distributer_goods_id"/>
@@ -467,6 +466,8 @@
             <result property="gbDgGoodsPrice" column="gb_dg_goods_price"/>
             <result property="gbDgSellingPrice" column="gb_dg_selling_price"/>
             <result property="gbDgDistributerId" column="gb_dg_distributer_id"/>
+
+            <collection property="gbDistributerStandardEntities" resultMap="gbStandard"/>
         </association>
         
         <!-- 部门商品关联（内联方式） -->
@@ -476,6 +477,7 @@
             <result property="gbDdgOrderPrice" column="gb_DDG_order_price"/>
             <result property="gbDdgSellingPrice" column="gb_DDG_selling_price"/>
             <result property="gbDdgDepartmentId" column="gb_DDG_department_id"/>
+            <result property="gbDdgDisGoodsId" column="gb_DDG_dis_goods_id"/>
         </association>
         
         <!-- 部门订单关联（内联方式） -->
@@ -485,6 +487,8 @@
             <result property="gbDoPrice" column="gb_DO_price"/>
             <result property="gbDoQuantity" column="gb_DO_quantity"/>
             <result property="gbDoDepartmentId" column="gb_DO_department_id"/>
+            <result property="gbDoStandard" column="gb_DO_standard"/>
+            <result property="gbDoRemark" column="gb_DO_remark"/>
         </association>
         
         <!-- 集合对象 -->
@@ -505,8 +509,8 @@
                gg.nx_goods_file      as sub_nx_goods_file,
                gg.nx_goods_father_id as sub_nx_goods_father_id,
                gg.nx_goods_sort      as sub_nx_goods_sort
-        from nx_goods as g
-        left join nx_goods as gg on g.nx_goods_id = gg.nx_goods_father_id
+        from nongxinle.nx_goods as g
+        left join nongxinle.nx_goods as gg on g.nx_goods_id = gg.nx_goods_father_id
         where g.nx_goods_father_id = 0
         order by g.nx_goods_sort, g.nx_goods_sons_sort, gg.nx_goods_sort, gg.nx_goods_sons_sort
     </select>
@@ -514,10 +518,10 @@
     <!-- 查询商品ID列表（排序与 queryGbDepNxGrandGoodsByGreatId 内层一致，便于与分页列表顺序对齐） -->
     <select id="queryOnlyGoodsIds" resultType="java.lang.Integer">
         select dg.nx_goods_id
-        from nx_goods as dg
-        left join nx_goods as f on f.nx_goods_id = dg.nx_goods_father_id
-        left join nx_goods as g on g.nx_goods_id = f.nx_goods_father_id
-        left join nx_goods as gg on gg.nx_goods_id = g.nx_goods_father_id
+        from nongxinle.nx_goods as dg
+        left join nongxinle.nx_goods as f on f.nx_goods_id = dg.nx_goods_father_id
+        left join nongxinle.nx_goods as g on g.nx_goods_id = f.nx_goods_father_id
+        left join nongxinle.nx_goods as gg on gg.nx_goods_id = g.nx_goods_father_id
         <where>
             <if test="isHidden != null">
                 AND dg.nx_goods_is_hidden = #{isHidden}
@@ -540,10 +544,10 @@
     <!-- 原方法名: queryNxGoodsCountByFatherId（已废弃） -->
     <select id="queryNxGoodsCountByGreatGrandId" resultType="java.lang.Integer">
         SELECT COUNT(*)
-        FROM nx_goods AS dg
-        LEFT JOIN nx_goods AS f ON f.nx_goods_id = dg.nx_goods_father_id
-        LEFT JOIN nx_goods AS g ON g.nx_goods_id = f.nx_goods_father_id
-        LEFT JOIN nx_goods AS gg ON gg.nx_goods_id = g.nx_goods_father_id
+        FROM nongxinle.nx_goods AS dg
+        LEFT JOIN nongxinle.nx_goods AS f ON f.nx_goods_id = dg.nx_goods_father_id
+        LEFT JOIN nongxinle.nx_goods AS g ON g.nx_goods_id = f.nx_goods_father_id
+        LEFT JOIN nongxinle.nx_goods AS gg ON gg.nx_goods_id = g.nx_goods_father_id
         WHERE dg.nx_goods_level = 3
           AND dg.nx_goods_is_hidden = 0
           AND gg.nx_goods_id = #{greatGrandId}
@@ -553,7 +557,7 @@
     <!-- 原方法名: queryNxGoodsPageByFatherId（已废弃） -->
     <select id="queryNxGoodsPageByGreatGrandId" resultMap="BaseResultMap">
         select *
-        from nx_goods
+        from nongxinle.nx_goods
         where nx_goods_great_grand_id = #{greatGrandId}
         and nx_goods_level = 3
         and nx_goods_is_hidden = 0
@@ -602,8 +606,6 @@
             gdg.gb_dg_nx_father_img,
             gdg.gb_dg_nx_father_img_large,
             gdg.gb_dg_gb_supplier_id,
-            gdg.gb_dg_nx_distributer_id,
-            gdg.gb_dg_nx_distributer_goods_id,
             gdg.gb_dg_distributer_id,
             gdg.gb_dg_selling_price,
             gdg.gb_dg_pull_off,
@@ -626,8 +628,6 @@
             gddg.gb_DDG_dep_goods_standardname,
             gddg.gb_DDG_goods_type,
             gddg.gb_DDG_department_id,
-            gddg.gb_DDG_nx_distributer_id,
-            gddg.gb_DDG_nx_distributer_goods_id,
             gddg.gb_DDG_dis_goods_id,
             gddg.gb_DDG_dis_goods_father_id,
             gddg.gb_DDG_dis_goods_grand_id,
@@ -709,10 +709,10 @@
                 ng.nx_goods_quantity_days AS nx_goods_quantity_days,
                 ng.nx_goods_carton_unit AS nx_goods_carton_unit,
                 ng.nx_goods_items_per_carton AS nx_goods_items_per_carton
-            FROM nx_goods AS ng
-            LEFT JOIN nx_goods AS f ON f.nx_goods_id = ng.nx_goods_father_id
-            LEFT JOIN nx_goods AS g ON g.nx_goods_id = f.nx_goods_father_id
-            LEFT JOIN nx_goods AS gg ON gg.nx_goods_id = g.nx_goods_father_id
+            FROM nongxinle.nx_goods AS ng
+            LEFT JOIN nongxinle.nx_goods AS f ON f.nx_goods_id = ng.nx_goods_father_id
+            LEFT JOIN nongxinle.nx_goods AS g ON g.nx_goods_id = f.nx_goods_father_id
+            LEFT JOIN nongxinle.nx_goods AS gg ON gg.nx_goods_id = g.nx_goods_father_id
             <where>
                 <!-- 只查第3级商品（真正的商品，不是分类目录） -->
                 ng.nx_goods_level = 3
@@ -756,6 +756,244 @@
         ORDER BY
             limited_goods.nx_goods_sort,
             limited_goods.nx_goods_sons_sort
+    </select>
+
+    <!-- 内层商品行（含拼音字段，供农鑫快速检索与 queryGbDepNxGrandGoodsByGreatId 外层复用） -->
+    <sql id="nxGoodsLimitedRowForDepQuickSearch">
+                ng.nx_goods_id AS nx_goods_id,
+                ng.nx_goods_name AS nx_goods_name,
+                ng.nx_goods_standardname AS nx_goods_standardname,
+                ng.nx_goods_standard_weight AS nx_goods_standard_weight,
+                ng.nx_goods_father_id AS nx_goods_father_id,
+                ng.nx_goods_grand_id AS nx_goods_grand_id,
+                ng.nx_goods_great_grand_id AS nx_goods_great_grand_id,
+                ng.nx_goods_sort AS nx_goods_sort,
+                ng.nx_goods_sons_sort AS nx_goods_sons_sort,
+                ng.nx_goods_file AS nx_goods_file,
+                ng.nx_goods_file_big AS nx_goods_file_big,
+                ng.nx_goods_detail AS nx_goods_detail,
+                ng.nx_goods_brand AS nx_goods_brand,
+                ng.nx_goods_level AS nx_goods_level,
+                ng.nx_goods_is_hidden AS nx_goods_is_hidden,
+                ng.nx_goods_is_oldest_son AS nx_goods_is_oldest_son,
+                ng.nx_goods_place AS nx_goods_place,
+                ng.nx_goods_quantity_days AS nx_goods_quantity_days,
+                ng.nx_goods_carton_unit AS nx_goods_carton_unit,
+                ng.nx_goods_items_per_carton AS nx_goods_items_per_carton,
+                ng.nx_goods_pinyin AS nx_goods_pinyin,
+                ng.nx_goods_py AS nx_goods_py
+    </sql>
+
+    <!-- 与 queryGbDepNxGrandGoodsByGreatId 外层 SELECT + JOIN 一致（复用 goodsWithGbOrder） -->
+    <sql id="nxDepQuickSearchOuterSelectList">
+            limited_goods.*,
+            ns.nx_standard_id,
+            ns.nx_s_goods_id,
+            ns.nx_standard_name,
+            ns.nx_standard_scale,
+            ns.nx_standard_file_path,
+            na.nx_alias_id,
+            na.nx_alias_name,
+            na.nx_als_goods_id,
+            gdg.gb_distributer_goods_id,
+            gdg.gb_dg_nx_goods_id,
+            gdg.gb_dg_goods_name,
+            gdg.gb_dg_goods_standardname,
+            gdg.gb_dg_goods_detail,
+            gdg.gb_dg_goods_place,
+            gdg.gb_dg_goods_brand,
+            gdg.gb_dg_goods_standard_weight,
+            gdg.gb_dg_goods_price,
+            gdg.gb_dg_goods_lowest_price,
+            gdg.gb_dg_goods_highest_price,
+            gdg.gb_dg_control_price,
+            gdg.gb_dg_control_fresh,
+            gdg.gb_dg_fresh_warn_hour,
+            gdg.gb_dg_fresh_waste_hour,
+            gdg.gb_dg_goods_inventory_type,
+            gdg.gb_dg_goods_type,
+            gdg.gb_dg_is_franchise_price,
+            gdg.gb_dg_franchise_price_one,
+            gdg.gb_dg_franchise_price_two,
+            gdg.gb_dg_franchise_price_three,
+            gdg.gb_dg_is_self_control,
+            gdg.gb_dg_self_price,
+            gdg.gb_dg_goods_sort,
+            gdg.gb_dg_goods_sons_sort,
+            gdg.gb_dg_nx_father_img,
+            gdg.gb_dg_nx_father_img_large,
+            gdg.gb_dg_gb_supplier_id,
+            gdg.gb_dg_distributer_id,
+            gdg.gb_dg_selling_price,
+            gdg.gb_dg_pull_off,
+            gdg.gb_dg_dfg_goods_father_id,
+            gdg.gb_dg_dfg_goods_grand_id,
+            gdg.gb_dg_dfg_goods_great_id,
+            gdg.gb_dg_goods_is_weight,
+            gs.gb_distributer_standard_id AS gb_distributer_standard_id,
+            gs.gb_DS_standard_name,
+            gs.gb_DS_standard_scale,
+            gs.gb_DS_dis_goods_id,
+            ga.gb_distributer_alias_id,
+            ga.gb_da_alias_name,
+            ga.gb_da_dis_goods_id,
+            gddg.gb_department_dis_goods_id,
+            gddg.gb_DDG_order_goods_name,
+            gddg.gb_DDG_order_price_level,
+            gddg.gb_DDG_print_standard,
+            gddg.gb_DDG_dep_goods_name,
+            gddg.gb_DDG_dep_goods_standardname,
+            gddg.gb_DDG_goods_type,
+            gddg.gb_DDG_department_id,
+            gddg.gb_DDG_dis_goods_id,
+            gddg.gb_DDG_dis_goods_father_id,
+            gddg.gb_DDG_dis_goods_grand_id,
+            gddg.gb_DDG_dis_goods_great_id,
+            gddg.gb_DDG_gb_dis_id,
+            gddg.gb_DDG_stock_total_subtotal,
+            gddg.gb_DDG_stock_total_weight,
+            gddg.gb_DDG_prepare_total_weight,
+            gddg.gb_DDG_show_standard_id,
+            gddg.gb_DDG_show_standard_name,
+            gddg.gb_DDG_show_standard_scale,
+            gddg.gb_DDG_selling_price,
+            gddg.gb_DDG_order_date,
+            gddg.gb_DDG_order_price,
+            gddg.gb_DDG_order_quantity,
+            gddg.gb_DDG_order_remark,
+            gddg.gb_DDG_order_standard,
+            gddg.gb_DDG_order_weight,
+            gddg.gb_DDG_inventory_date,
+            gddg.gb_DDG_inventory_full_time,
+            gddg.gb_DDG_prepare_status,
+            gddg.gb_DDG_department_father_id,
+            gds.gb_department_goods_stock_id,
+            gds.gb_dgs_gb_dis_goods_id,
+            gds.gb_dgs_gb_dep_dis_goods_id,
+            gds.gb_dgs_gb_department_id,
+            gds.gb_dgs_rest_weight,
+            gds.gb_dgs_rest_subtotal,
+            gds.gb_dgs_weight,
+            gds.gb_dgs_subtotal,
+            gds.gb_dgs_price,
+            gds.gb_dgs_date,
+            gds.gb_dgs_status,
+            gdo.gb_department_orders_id,
+            gdo.gb_do_goods_name,
+            gdo.gb_DO_nx_goods_id,
+            gdo.gb_DO_dis_goods_id,
+            gdo.gb_DO_dis_goods_father_id,
+            gdo.gb_DO_dep_dis_goods_id,
+            gdo.gb_DO_department_id,
+            gdo.gb_DO_distributer_id,
+            gdo.gb_DO_status,
+            gdo.gb_DO_price,
+            gdo.gb_DO_weight,
+            gdo.gb_DO_subtotal,
+            gdo.gb_DO_quantity,
+            gdo.gb_DO_standard,
+            gdo.gb_DO_remark,
+            gdo.gb_DO_apply_date,
+            gdo.gb_DO_apply_full_time,
+            gdo.gb_DO_arrive_date,
+            gdo.gb_DO_arrive_what_day,
+            gdo.gb_DO_scale_weight,
+            gdo.gb_DO_scale_price,
+            gdo.gb_DO_buy_status,
+            gdo.gb_DO_goods_type,
+            gdo.gb_DO_order_type,
+            gdo.gb_DO_selling_price,
+            gdo.gb_DO_selling_subtotal
+    </sql>
+
+    <sql id="nxDepQuickSearchOuterJoins">
+        LEFT JOIN nx_standard AS ns ON ns.nx_s_goods_id = limited_goods.nx_goods_id
+        LEFT JOIN nx_alias AS na ON na.nx_als_goods_id = limited_goods.nx_goods_id
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_dg_nx_goods_id = limited_goods.nx_goods_id
+            AND gdg.gb_dg_distributer_id = #{gbDisId}
+        LEFT JOIN gb_distributer_standard AS gs ON gs.gb_DS_dis_goods_id = gdg.gb_distributer_goods_id
+        LEFT JOIN gb_distributer_alias AS ga ON ga.gb_da_dis_goods_id = gdg.gb_distributer_goods_id
+        LEFT JOIN gb_department_dis_goods AS gddg ON gddg.gb_DDG_dis_goods_id = gdg.gb_distributer_goods_id
+            AND gddg.gb_DDG_department_id = #{gbDepId}
+        LEFT JOIN gb_department_goods_stock AS gds ON gds.gb_dgs_gb_dep_dis_goods_id = gddg.gb_department_dis_goods_id
+        LEFT JOIN gb_department_orders AS gdo ON gdo.gb_DO_nx_goods_id = limited_goods.nx_goods_id
+            AND gdo.gb_DO_status &lt; 3
+            AND gdo.gb_DO_department_id = #{gbDepId}
+    </sql>
+
+    <!-- 老项目: queryDisGoodsEqualSearchStrWithDepOrders — 精确匹配名称 / 别名 / 全拼 / 首字母 -->
+    <select id="queryDisGoodsEqualSearchStrWithDepOrders" parameterType="map" resultMap="goodsWithGbOrder">
+        SELECT
+        <include refid="nxDepQuickSearchOuterSelectList"/>
+        FROM (
+            SELECT
+            <include refid="nxGoodsLimitedRowForDepQuickSearch"/>
+            FROM nongxinle.nx_goods AS ng
+            LEFT JOIN nx_alias AS na ON na.nx_als_goods_id = ng.nx_goods_id
+            WHERE ng.nx_goods_is_hidden = #{isHidden}
+              AND ng.nx_goods_level = 3
+              AND (
+                <trim prefixOverrides="OR">
+                    <if test="searchPinyin != null">
+                        OR ng.nx_goods_py = #{searchPinyin}
+                        OR ng.nx_goods_pinyin = #{searchPinyin}
+                    </if>
+                    <if test="searchStr != null">
+                        OR ng.nx_goods_name = #{searchStr}
+                        OR na.nx_alias_name = #{searchStr}
+                    </if>
+                </trim>
+              )
+            ORDER BY ng.nx_goods_great_grand_id, ng.nx_goods_grand_id, ng.nx_goods_father_id, ng.nx_goods_sort
+        ) AS limited_goods
+        <include refid="nxDepQuickSearchOuterJoins"/>
+        ORDER BY limited_goods.nx_goods_father_id, limited_goods.nx_goods_sort, limited_goods.nx_goods_sons_sort
+    </select>
+
+    <!-- 老项目: queryDisGoodsQuickSearchStrWithDepOrders — 名称 / 别名模糊 -->
+    <select id="queryDisGoodsQuickSearchStrWithDepOrders" parameterType="map" resultMap="goodsWithGbOrder">
+        SELECT
+        <include refid="nxDepQuickSearchOuterSelectList"/>
+        FROM (
+            SELECT
+            <include refid="nxGoodsLimitedRowForDepQuickSearch"/>
+            FROM nongxinle.nx_goods AS ng
+            LEFT JOIN nx_alias AS na ON na.nx_als_goods_id = ng.nx_goods_id
+            WHERE ng.nx_goods_is_hidden = #{isHidden}
+              AND ng.nx_goods_level = 3
+              <if test="searchStr != null">
+              AND (
+                ng.nx_goods_name LIKE CONCAT('%', #{searchStr}, '%')
+                OR na.nx_alias_name LIKE CONCAT('%', #{searchStr}, '%')
+              )
+              </if>
+            ORDER BY ng.nx_goods_great_grand_id, ng.nx_goods_grand_id, ng.nx_goods_father_id, ng.nx_goods_sort
+        ) AS limited_goods
+        <include refid="nxDepQuickSearchOuterJoins"/>
+        ORDER BY limited_goods.nx_goods_father_id, limited_goods.nx_goods_sort, limited_goods.nx_goods_sons_sort
+    </select>
+
+    <!-- 老项目: queryDisGoodsQuickSearchPyWithDepOrders — 拼音 / 首字母模糊 -->
+    <select id="queryDisGoodsQuickSearchPyWithDepOrders" parameterType="map" resultMap="goodsWithGbOrder">
+        SELECT
+        <include refid="nxDepQuickSearchOuterSelectList"/>
+        FROM (
+            SELECT
+            <include refid="nxGoodsLimitedRowForDepQuickSearch"/>
+            FROM nongxinle.nx_goods AS ng
+            LEFT JOIN nx_alias AS na ON na.nx_als_goods_id = ng.nx_goods_id
+            WHERE ng.nx_goods_is_hidden = #{isHidden}
+              AND ng.nx_goods_level = 3
+              <if test="searchPinyin != null">
+              AND (
+                ng.nx_goods_py LIKE CONCAT('%', #{searchPinyin}, '%')
+                OR ng.nx_goods_pinyin LIKE CONCAT('%', #{searchPinyin}, '%')
+              )
+              </if>
+            ORDER BY ng.nx_goods_great_grand_id, ng.nx_goods_grand_id, ng.nx_goods_father_id, ng.nx_goods_sort
+        ) AS limited_goods
+        <include refid="nxDepQuickSearchOuterJoins"/>
+        ORDER BY limited_goods.nx_goods_father_id, limited_goods.nx_goods_sort, limited_goods.nx_goods_sons_sort
     </select>
 
 </mapper>

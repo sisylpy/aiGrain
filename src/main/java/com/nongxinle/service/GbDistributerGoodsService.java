@@ -2,6 +2,7 @@ package com.nongxinle.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.nongxinle.entity.GbDistributerGoodsEntity;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,16 @@ public interface GbDistributerGoodsService extends IService<GbDistributerGoodsEn
      * @return 已持久化后的批发商商品（含生成的分类 ID）
      */
     GbDistributerGoodsEntity createDistributerGoodsFromNxGoods(Integer gbDisId, Integer depId, Integer nxGoodsId);
+
+    /**
+     * 保存批发商临时自建商品：可选图片、落库商品、更新父分类数量、写入部门分销商品。
+     *
+     * @param file     商品图，可空
+     * @param toDepId  写入商品的 gbDgGbDepartmentId
+     * @param depId    部门主键，用于部门分销商品的父子部门 ID
+     */
+    GbDistributerGoodsEntity saveLinshiGoodsGb(MultipartFile file, String goodsName, String standard, String detail,
+                                               Integer disId, Integer toDepId, Integer depId, Integer depFatherId);
 
     // 老项目的 update 方法，使用 default 委托给 updateById
     default boolean update(GbDistributerGoodsEntity entity) {

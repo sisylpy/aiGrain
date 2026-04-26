@@ -36,6 +36,7 @@ public class GbDistributerPurchaseBatchDisPurchaseDetaiTypeWithIdServiceImpl
             queryMap.put("limit", 100);
             queryMap.put("dateOrder", 1);
             log.debug("mapppppppp{}", queryMap);
+            System.out.println("mapaamammamammama" + queryMap);
             Integer integer = gbDPGService.queryGbDisGoodsTreeCount(queryMap);
             List<GbDistributerGoodsEntity> goodsList = gbDPGService.queryDisTreeGoodsWithPurList(queryMap);
             gbDPGService.fillWastePurGoodsForDisTreeGoods(goodsList, queryMap);

@@ -52,7 +52,7 @@ public class GbDistributerPurchaseBatchSellUserReadDisBatchServiceImpl implement
                 BigDecimal buySubtotal = new BigDecimal(0);
                 BigDecimal buyWeight = new BigDecimal(0);
                 List<GbDepartmentOrdersEntity> ordersEntities =
-                        purchaseGoodsEntity.getGbDistributerGoodsEntity().getGbDepartmentOrdersEntities();
+                        purchaseGoodsEntity.getGbDepartmentOrdersEntities();
                 if (ordersEntities.size() > 0) {
                     for (GbDepartmentOrdersEntity ordersEntity : ordersEntities) {
                         //give price

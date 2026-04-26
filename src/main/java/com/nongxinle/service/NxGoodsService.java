@@ -38,4 +38,13 @@ public interface NxGoodsService extends IService<NxGoodsEntity> {
      * 根据一级分类查询商品，包含批发商商品、部门商品、订单、库存等完整信息
      */
     List<NxGoodsEntity> queryGbDepNxGrandGoodsByGreatId(Map<String, Object> map);
+
+    /** 农鑫商品精确匹配 + 批发商 / 部门商品 / 部门订单（老项目 queryDisGoodsEqualSearchStrWithDepOrders） */
+    List<NxGoodsEntity> queryDisGoodsEqualSearchStrWithDepOrders(Map<String, Object> map);
+
+    /** 农鑫商品名称 / 别名模糊（老项目 queryDisGoodsQuickSearchStrWithDepOrders） */
+    List<NxGoodsEntity> queryDisGoodsQuickSearchStrWithDepOrders(Map<String, Object> map);
+
+    /** 农鑫商品拼音 / 首字母模糊（老项目 queryDisGoodsQuickSearchPyWithDepOrders） */
+    List<NxGoodsEntity> queryDisGoodsQuickSearchPyWithDepOrders(Map<String, Object> map);
 }

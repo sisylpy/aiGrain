@@ -85,11 +85,14 @@ public class GbAiDailyRevenueController {
      * 保存单条日营业额
      */
     @PostMapping("/save")
-    @Operation(summary = "保存日营业额", description = "保存单条日营业额记录")
+    @Operation(summary = "保存日营业额", description = "按部门+记录日保存；该日已存在则覆盖更新（与唯一键一致）")
     public R save(@RequestBody GbAiDailyRevenueEntity dailyRevenue) {
-        dailyRevenueService.fillInsertDefaults(dailyRevenue);
-        dailyRevenueService.save(dailyRevenue);
-        return R.ok();
+        try {
+            dailyRevenueService.saveOrUpsertByDepartmentAndDate(dailyRevenue);
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.error(e.getMessage());
+        }
     }
 
     /**
@@ -114,10 +117,11 @@ public class GbAiDailyRevenueController {
     }
 
     /**
-     * Excel上传批量保存日营业额
+     * Excel 上传日营业额；同一部门（参数 departmentId）+ 同一记录日已存在则覆盖更新
      */
     @PostMapping("/upload-excel")
-    @Operation(summary = "Excel上传日营业额", description = "通过Excel文件上传批量保存日营业额记录")
+    @Operation(summary = "Excel上传日营业额",
+            description = "批量导入日营业额；与参数 departmentId + Excel 中各日期为同一业务键时已存在则更新，否则插入；返回 total/inserted/updated 等")
     public R uploadExcel(
             @Parameter(description = "Excel文件") @RequestParam("file") MultipartFile file,
             @Parameter(description = "部门ID") @RequestParam("departmentId") Long departmentId,
@@ -170,10 +174,11 @@ public class GbAiDailyRevenueController {
 
 
     /**
-     * Excel 上传部门菜品日销售，并计算部门菜品原料消耗（gb_dep_food_goods_sales）
+     * Excel 上传部门菜品日销售；同一子部门 + 同一菜品 + 同一自然日已存在则覆盖并重建原料行（gb_dep_food_goods_sales）
      */
     @PostMapping("/upload-food-sales-excel")
-    @Operation(summary = "Excel上传菜品日销售", description = "支持「序号|部门名称|菜品名称|各日期列」模板（兼容旧版）；按部门列部门id+菜品id匹配 gb_dep_food 并写入销量与原料消耗")
+    @Operation(summary = "Excel上传菜品日销售",
+            description = "支持「序号|部门名称|菜品名称|各日期列」模板（兼容旧版）；按部门列子部门id+菜品id匹配 gb_dep_food；子部门+菜品+日期 已存在则更新销量并替换原料展开，否则插入；返回 inserted/updated 等")
     public R uploadFoodSalesExcel(
             @RequestParam("file") MultipartFile file,
             @RequestParam("departmentId") Integer departmentId,

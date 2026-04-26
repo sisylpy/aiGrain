@@ -31,4 +31,28 @@ public class GbDistributerFoodGoodsEntity implements Serializable {
 
     @TableField(exist = false)
     private GbDistributerGoodsEntity gbDistributerGoodsEntity;
+
+    /**
+     * 本区间、本作用域下该批发商商品 type=1 均价的「出库价」：制作金额÷制作数量（与菜品成本分析 reduce 口径一致；无生产出库时 "0"）。
+     */
+    @TableField(exist = false)
+    private String gbDfgOutboundUnitPrice;
+    /**
+     * 生产（type=1）出库总数量（与库存 reduce 重量汇总统寸一致）。
+     */
+    @TableField(exist = false)
+    private String gbDfgProduceReduceWeight;
+    @TableField(exist = false)
+    private String gbDfgProduceReduceCost;
+    /**
+     * 损耗+损失（type2+3）在「本料」上的数量/金额：1+2+3 按料汇总 减 type1 同料汇总，与区间无冲突时应非负。
+     */
+    @TableField(exist = false)
+    private String gbDfgWasteLossReduceWeight;
+    @TableField(exist = false)
+    private String gbDfgWasteLossReduceCost;
+    @TableField(exist = false)
+    private String gbDfgOutbound123Weight;
+    @TableField(exist = false)
+    private String gbDfgOutbound123Cost;
 }

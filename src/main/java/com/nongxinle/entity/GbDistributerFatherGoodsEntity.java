@@ -15,7 +15,9 @@ import java.util.Map;
 import java.util.TreeSet;
 
 /**
- * 批发商父类商品实体
+ * 批发商<strong>商品</strong>父类实体（{@code gb_distributer_father_goods}，配料/主档商品类目树）。
+ * <p><strong>与「菜品父类」区分</strong>：菜品分类、父菜下挂子菜请用 {@link GbDistributerFoodEntity#getGbDfFoodFatherId()}
+ * 与同表上的 {@link GbDistributerFoodEntity#getFoodEntityList()}，勿与本实体下的 {@link #getGbDistributerGoodsEntities()} 混淆。</p>
  */
 @Data
 @TableName("gb_distributer_father_goods")

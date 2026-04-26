@@ -45,10 +45,13 @@ public class GbDistributerPurchaseGoodsSellerUpdatePurGoodsServiceImpl
             }
         }
 
+        purchaseGoodsEntity.setGbDpgStatus(3);
         gbDpgService.updateById(purchaseGoodsEntity);
         List<GbDepartmentOrdersEntity> gbDepartmentOrdersEntities = purchaseGoodsEntity.getGbDepartmentOrdersEntities();
         for (GbDepartmentOrdersEntity orders : gbDepartmentOrdersEntities) {
             log.debug("wieieieieiieieiieie" + orders.getGbDoWeight());
+            System.out.println("wieieieieiieieiieiewieieieieiieieiieie00---"  + orders.getGbDoWeight());
+
             if (orders.getGbDoWeight() != null && !orders.getGbDoWeight().trim().isEmpty()
                     && !orders.getGbDoWeight().equals("0.0")) {
                 BigDecimal decimal1 = new BigDecimal(orders.getGbDoPrice());
@@ -56,9 +59,14 @@ public class GbDistributerPurchaseGoodsSellerUpdatePurGoodsServiceImpl
                 BigDecimal decimal3 = decimal1.multiply(decimal2).setScale(1, BigDecimal.ROUND_HALF_UP);
                 orders.setGbDoSubtotal(decimal3.toString());
                 orders.setGbDoBuyStatus(getGbOrderBuyStatusHasWeightAndPrice());
+                System.out.println("wieieieieiieieiieiewieieieieiieieiieie11111"  + orders.getGbDoWeight());
+
             } else {
+                System.out.println("wieieieieiieieiieiewieieieieiieieiieie222"  + orders.getGbDoWeight());
                 orders.setGbDoBuyStatus(getGbOrderBuyStatusPrepareing());
             }
+            System.out.println("wieieieieiieieiieiewieieieieiieieiieie11111"  + orders.getGbDoBuyStatus());
+
             gbDepartmentOrdersService.update(orders);
         }
 

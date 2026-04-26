@@ -1,16 +1,21 @@
 package com.nongxinle.controller;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import com.nongxinle.entity.*;
+import com.nongxinle.service.GbDepFoodSalesService;
 import com.nongxinle.service.GbDepFoodService;
+import com.nongxinle.service.GbDepartmentService;
 import com.nongxinle.service.GbDistributerFoodGoodsService;
+import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.UploadFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.support.ManagedMap;
 import org.springframework.web.bind.annotation.*;
 
 import com.nongxinle.service.GbDistributerFoodService;
@@ -27,9 +32,11 @@ public class GbDistributerFoodController {
 	@Autowired
 	private GbDistributerFoodService gbDistributerFoodService;
 	@Autowired
-	private GbDistributerFoodGoodsService gbDistributerFoodGoodsService;
-	@Autowired
 	private GbDepFoodService gbDepFoodService;
+	@Autowired
+	private GbDepartmentService gbDepartmentService;
+	@Autowired
+	private GbDepFoodSalesService gbDepFoodSalesService;
 
 
 
@@ -51,27 +58,79 @@ public class GbDistributerFoodController {
 		Map<String, Object> map = new HashMap<>();
 		map.put("fatherId", fatherId);
 		List<GbDistributerFoodEntity> foodEntities = gbDistributerFoodService.queryFoodByParams(map);
+		foodEntities.sort(Comparator.comparing(e -> {
+			Integer s = e.getGbDfStatus();
+			if (s != null && s.equals(GbConstants.DistributerFoodStatus.DISABLED_WITH_DEP_FOOD_SALES)) {
+				return 1;
+			}
+			return 0;
+		}));
 		return R.ok().put("data", foodEntities);
 	}
+
+
+	@RequestMapping(value = "/reStartFood/{foodId}")
+	@ResponseBody
+	public R reStartFood(@PathVariable Integer foodId) {
+
+		GbDistributerFoodEntity gbDistributerFoodEntity = gbDistributerFoodService.queryObject(foodId);
+		gbDistributerFoodEntity.setGbDfStatus(0);
+		gbDistributerFoodService.update(gbDistributerFoodEntity);
+
+		Map<String, Object> map = new HashMap<>();
+		map.put("foodId", foodId);
+		List<GbDepFoodEntity> depFoodEntities = gbDepFoodService.queryDepFoodByParams(map);
+		if (depFoodEntities.size() > 0) {
+			for (GbDepFoodEntity depFood : depFoodEntities) {
+				depFood.setGbDfStatus(0);
+				gbDepFoodService.update(depFood);
+			}
+		}
+
+		return R.ok();
+	}
+
 
 
 	@RequestMapping(value = "/deleteFood",  method = RequestMethod.POST)
 	@ResponseBody
 	public R deleteFood(Integer id) {
+		GbDistributerFoodEntity foodEntity = gbDistributerFoodService.queryObject(id);
+		if (foodEntity == null) {
+			return R.error(-1, "菜品不存在");
+		}
 		Map<String, Object> map = new HashMap<>();
 		map.put("foodId", id);
 		List<GbDepFoodEntity> depFoodEntities = gbDepFoodService.queryDepFoodByParams(map);
-		if(depFoodEntities.size() > 0){
-			return R.error(-1, "有门店下载了菜品");
-		}else{
-			GbDistributerFoodEntity foodEntity = gbDistributerFoodService.queryObject(id);
-			String oldPath = foodEntity.getGbDfFoodImg();
-			if (oldPath != null && !oldPath.trim().isEmpty()) {
-				UploadFile.deleteFile(oldPath);
+		long salesCount = gbDepFoodSalesService.countSalesByDistributerFoodId(id);
+		System.out.println("coutnntnt" + salesCount);
+		if (salesCount > 0) {
+			foodEntity.setGbDfStatus(GbConstants.DistributerFoodStatus.DISABLED_WITH_DEP_FOOD_SALES);
+			gbDistributerFoodService.update(foodEntity);
+
+			if (depFoodEntities.size() > 0) {
+				for (GbDepFoodEntity depFood : depFoodEntities) {
+					depFood.setGbDfStatus(1);
+					gbDepFoodService.update(depFood);
+				}
 			}
-			gbDistributerFoodService.delete(id);
-			return R.ok();
+
+			return R.ok().put("disabledOnly", true);
+		}else {
+
+			if (depFoodEntities.size() > 0) {
+				for (GbDepFoodEntity depFood : depFoodEntities) {
+					gbDepFoodService.delete(depFood.getGbDepFoodId());
+				}
+			}
 		}
+
+		String oldPath = foodEntity.getGbDfFoodImg();
+		if (oldPath != null && !oldPath.trim().isEmpty()) {
+			UploadFile.deleteFile(oldPath);
+		}
+		gbDistributerFoodService.delete(id);
+		return R.ok();
 	}
 
 	@RequestMapping(value = "/updateFood", method = RequestMethod.POST)
@@ -91,7 +150,7 @@ public class GbDistributerFoodController {
 
 	@RequestMapping(value = "/updateFoodWithFile", method = RequestMethod.POST)
 	@ResponseBody
-	public R updateFoodWithFile (@RequestParam("file") MultipartFile file,
+	public R updateFoodWithFile (@RequestParam(value = "file", required = false) MultipartFile file,
 								 @RequestParam("foodName") String foodName,
 								 @RequestParam("id") Integer id,
 								 @RequestParam("price") String price,
@@ -105,17 +164,17 @@ public class GbDistributerFoodController {
 			return R.error(-1, "名称重复了");
 		}else{
 			GbDistributerFoodEntity foodEntity = gbDistributerFoodService.queryObject(id);
-			String oldPath = foodEntity.getGbDfFoodImg();
-			if (oldPath != null && !oldPath.trim().isEmpty()) {
-				UploadFile.deleteFile(oldPath);
+			if (file != null && !file.isEmpty()) {
+				String oldPath = foodEntity.getGbDfFoodImg();
+				if (oldPath != null && !oldPath.trim().isEmpty()) {
+					UploadFile.deleteFile(oldPath);
+				}
+				String newUploadName = "foodImage";
+				String headByString = com.nongxinle.utils.PinYin4jUtils.hanziToPinyin(foodName);
+				String filePath = UploadFile.uploadFileName(newUploadName, file, headByString);
+				foodEntity.setGbDfFoodImg(filePath);
 			}
 
-			// 上传新图片
-			String newUploadName = "foodImage";
-			String headByString = com.nongxinle.utils.PinYin4jUtils.hanziToPinyin(foodName);
-			String filePath = UploadFile.uploadFileName(newUploadName, file, headByString);
-
-			foodEntity.setGbDfFoodImg(filePath);
 			foodEntity.setGbDfFoodMethod(method);
 			foodEntity.setGbDfFoodName(foodName);
 			foodEntity.setGbDfFoodPrice(price);
@@ -127,7 +186,7 @@ public class GbDistributerFoodController {
 
 	@RequestMapping(value = "/saveGbFood",  produces = "text/html;charset=UTF-8")
 	@ResponseBody
-	public R saveGbFood(@RequestParam("file") MultipartFile file,
+	public R saveGbFood(@RequestParam(value = "file", required = false) MultipartFile file,
 						@RequestParam("foodName") String foodName,
 						@RequestParam("fatherId") Integer fatherId,
 						@RequestParam("disId") Integer disId,
@@ -135,7 +194,12 @@ public class GbDistributerFoodController {
 						@RequestParam("method") String method) {
 		logger.info("========== saveGbFood 开始 ==========");
 		logger.info("参数: foodName={}, fatherId={}, disId={}, price={}, method={}", foodName, fatherId, disId, price, method);
-		logger.info("文件信息: name={}, size={}, contentType={}", file.getName(), file.getSize(), file.getContentType());
+		if (file != null && !file.isEmpty()) {
+			logger.info("文件信息: originalFilename={}, size={}, contentType={}",
+					file.getOriginalFilename(), file.getSize(), file.getContentType());
+		} else {
+			logger.info("未上传图片");
+		}
 
 		try {
 			Map<String, Object> map = new HashMap<>();
@@ -149,12 +213,14 @@ public class GbDistributerFoodController {
 				return R.error();
 			}
 
-			// 上传图片
-			String newUploadName = "foodImage";
-			String headByString = com.nongxinle.utils.PinYin4jUtils.hanziToPinyin(foodName);
-			logger.info("开始上传图片，pinyin={}", headByString);
-			String filePath = UploadFile.uploadFileName(newUploadName, file, headByString);
-			logger.info("图片上传成功，路径={}", filePath);
+			String filePath = null;
+			if (file != null && !file.isEmpty()) {
+				String newUploadName = "foodImage";
+				String headByString = com.nongxinle.utils.PinYin4jUtils.hanziToPinyin(foodName);
+				logger.info("开始上传图片，pinyin={}", headByString);
+				filePath = UploadFile.uploadFileName(newUploadName, file, headByString);
+				logger.info("图片上传成功，路径={}", filePath);
+			}
 
 			GbDistributerFoodEntity foodEntity = new GbDistributerFoodEntity();
 			foodEntity.setGbDfDistributerId(disId);
@@ -163,7 +229,31 @@ public class GbDistributerFoodController {
 			foodEntity.setGbDfFoodFatherId(fatherId);
 			foodEntity.setGbDfFoodName(foodName);
 			foodEntity.setGbDfFoodPrice(price);
+			foodEntity.setGbDfStatus(0);
 			gbDistributerFoodService.save(foodEntity);
+
+			//如果只有一个门店并且只有一个部分，则自动给部门添加菜品。
+			Map<String, Object> mapDep = new HashMap<>();
+			map.put("disId", disId);
+			map.put("depType", GbConstants.DepartmentType.STORE);
+			List<GbDepartmentEntity> gbDepartmentEntities = gbDepartmentService.queryGroupDepsByDisId(map);
+			String depFatherId = gbDepartmentEntities.get(0).getGbDepartmentId().toString();
+			List<GbDepartmentEntity> subDepartments = gbDepartmentService.querySubDepartments(Integer.valueOf(depFatherId));
+			System.out.println("subnamgbDepartmentEntitiesi" + gbDepartmentEntities.size());
+			System.out.println("subnami" + subDepartments.size());
+			if(gbDepartmentEntities.size() == 1  && subDepartments.size() == 1){
+				GbDepFoodEntity gbDepFoodEntity = new GbDepFoodEntity();
+				gbDepFoodEntity.setGbDfFoodId(foodEntity.getGbDistributerFoodId());
+				gbDepFoodEntity.setGbDfDepId(subDepartments.get(0).getGbDepartmentId());
+				gbDepFoodEntity.setGbDfDepFatherId(gbDepartmentEntities.get(0).getGbDepartmentId().toString());
+				gbDepFoodEntity.setGbDfFoodName(foodName);
+				gbDepFoodEntity.setGbDfFoodPrice(price);
+				gbDepFoodEntity.setGbDfFoodMethod(method);
+				gbDepFoodEntity.setGbDfFoodFatherId(fatherId);
+				gbDepFoodEntity.setGbDfStatus(0);
+				gbDepFoodEntity.setGbDfDistributerId(disId);
+				gbDepFoodService.save(gbDepFoodEntity);
+			}
 			logger.info("========== saveGbFood 成功 ==========");
 			return R.ok();
 		} catch (Exception e) {
@@ -173,14 +263,14 @@ public class GbDistributerFoodController {
 	}
 
 
-	@RequestMapping(value = "/deleteGbSupplierFather/{id}")
+	@RequestMapping(value = "/deleteGbFoodFather/{id}")
 	@ResponseBody
-	public R deleteGbSupplierFather(@PathVariable Integer id) {
+	public R deleteGbFoodFather(@PathVariable Integer id) {
 		Map<String, Object> map = new HashMap<>();
 		map.put("fatherId", id);
 		List<GbDistributerFoodEntity> supplierEntities = gbDistributerFoodService.queryFoodByParams(map);
 		if(supplierEntities.size() > 0){
-			return R.error(-1,"类别下有供货商，不能删除");
+			return R.error(-1,"类别下有菜品，不能删除");
 		}else{
 			gbDistributerFoodService.delete(id);
 			return R.ok();

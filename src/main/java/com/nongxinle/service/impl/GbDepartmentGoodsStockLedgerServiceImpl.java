@@ -101,16 +101,7 @@ public class GbDepartmentGoodsStockLedgerServiceImpl implements GbDepartmentGood
 
         GbDepartmentGoodsStockReduceEntity reduceEntity = changeDepartmentStock(stock, what);
 
-        Map<String, Object> mapD = new HashMap<>();
-        mapD.put("depId", stock.getGbDgsGbDepartmentId());
-        if ("return".equals(what)) {
-            mapD.put("disGoodsId", reduceEntity.getGbDgsrGbDisGoodsId());
-        } else {
-            mapD.put("disGoodsId", stock.getGbDgsGbDisGoodsId());
-        }
-        mapD.put("orderStatus", 3);
-        mapD.put("restWeight", 0);
-        GbDepartmentDisGoodsEntity disGoods = gbDepartmentDisGoodsService.queryDepartmentGoodsForAi(mapD);
+        GbDepartmentDisGoodsEntity disGoods = loadDepDisGoodsForDepGoodsPageShape(fromDb.getGbDgsGbDepDisGoodsId(), stock.getGbDgsGbDepartmentId());
 
         Map<String, Object> data = new HashMap<>();
         data.put("disGoods", disGoods);
@@ -220,12 +211,8 @@ public class GbDepartmentGoodsStockLedgerServiceImpl implements GbDepartmentGood
 
         gbDepartmentStockReduceService.removeById(reduceEntity.getGbDepartmentGoodsStockReduceId());
 
-        Map<String, Object> map = new HashMap<>();
-        map.put("disGoodsId", stockEntity.getGbDgsGbDisGoodsId());
-        map.put("depId", stockEntity.getGbDgsGbDepartmentId());
-        map.put("orderStatus", 3);
-        map.put("restWeight", 0);
-        GbDepartmentDisGoodsEntity gbDepartmentDisGoodsEntity = gbDepartmentDisGoodsService.queryDepartmentGoodsForAi(map);
+        GbDepartmentDisGoodsEntity gbDepartmentDisGoodsEntity =
+                loadDepDisGoodsForDepGoodsPageShape(stockEntity.getGbDgsGbDepDisGoodsId(), stockEntity.getGbDgsGbDepartmentId());
         Map<String, Object> data = new HashMap<>();
         data.put("data", gbDepartmentDisGoodsEntity);
         return GbDepGoodsStockAdjustResult.success(data);
@@ -626,5 +613,27 @@ public class GbDepartmentGoodsStockLedgerServiceImpl implements GbDepartmentGood
         Calendar calendar = Calendar.getInstance();
         calendar.add(Calendar.YEAR, day);
         return sdf.format(calendar.getTime());
+    }
+
+    /**
+     * 与 {@code depGetDepGoodsGbPage} 相同的数据源 {@link com.nongxinle.service.GbDepartmentDisGoodsService#depQueryDepGoodsWithOrderForAi}，
+     * 保证库存调整/撤销后返回的 {@link GbDepartmentDisGoodsEntity} 含订单、库存批次、规格等与分页列表一致。
+     */
+    private GbDepartmentDisGoodsEntity loadDepDisGoodsForDepGoodsPageShape(Integer depDisGoodsId, Integer depId) {
+        if (depDisGoodsId == null || depId == null) {
+            return null;
+        }
+        Map<String, Object> map = new HashMap<>();
+        map.put("depId", depId);
+        map.put("pull", 0);
+        map.put("status", 4);
+        map.put("depDisGoodsId", depDisGoodsId);
+        map.put("limit", 1);
+        map.put("offset", 0);
+        List<GbDepartmentDisGoodsEntity> list = gbDepartmentDisGoodsService.depQueryDepGoodsWithOrderForAi(map);
+        if (list == null || list.isEmpty()) {
+            return null;
+        }
+        return list.get(0);
     }
 }

@@ -3,6 +3,7 @@ package com.nongxinle.utils;
 import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -101,6 +102,16 @@ public final class GbDepartmentGoodsStockReduceSupport {
      * 将 JDBC / 表单 / 实体中的数量统一为 {@link BigDecimal}；避免对 {@link Double} 使用 {@link BigDecimal#valueOf(double)} 造成二进制误差。
      * 字符串会先去掉首尾空白，再把全角逗号、中文逗号规范为半角点再解析（不支持带千分位逗号的英美写法）。
      */
+    /**
+     * 将 0～1 的比例转为百分数数值字符串，固定两位小数（不含 {@code %} 后缀，如 {@code "45.23"} 表示 45.23%）。
+     */
+    public static String formatRatioAsPercentTwoDecimals(BigDecimal ratio0to1) {
+        if (ratio0to1 == null) {
+            return "0.00";
+        }
+        return ratio0to1.multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
     public static BigDecimal coerceDecimal(Object raw) {
         if (raw == null) {
             return BigDecimal.ZERO;

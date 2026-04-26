@@ -5,7 +5,6 @@
 
     <resultMap id="jrdhSupplier" type="com.nongxinle.entity.NxJrdhSupplierEntity">
         <id property="nxJrdhSupplierId" column="nx_jrdh_supplier_id"/>
-        <result property="nxJrdhsNxDistributerId" column="nx_jrdhs_nx_distributer_id"/>
         <result property="nxJrdhsGbDistributerId" column="nx_jrdhs_gb_distributer_id"/>
         <result property="nxJrdhsGbDepartmentId" column="nx_jrdhs_gb_department_id"/>
         <result property="nxJrdhsSupplierName" column="nx_jrdhs_supplier_name"/>
@@ -16,7 +15,6 @@
 
     <resultMap id="jrdhSupplierWithDis" type="com.nongxinle.entity.NxJrdhSupplierEntity">
         <id property="nxJrdhSupplierId" column="nx_jrdh_supplier_id"/>
-        <result property="nxJrdhsNxDistributerId" column="nx_jrdhs_nx_distributer_id"/>
         <result property="nxJrdhsGbDistributerId" column="nx_jrdhs_gb_distributer_id"/>
         <result property="nxJrdhsGbDepartmentId" column="nx_jrdhs_gb_department_id"/>
         <result property="nxJrdhsSupplierName" column="nx_jrdhs_supplier_name"/>

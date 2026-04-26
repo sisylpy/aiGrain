@@ -42,6 +42,9 @@ public class GbDistributerPurchaseBatchController {
     private final GbDistributerPurchaseBatchSupplierGetPrintBatchService gbDistributerPurchaseBatchSupplierGetPrintBatchService;
 
 
+
+
+
     @RequestMapping(value = "/finishPayPurchaseBatchGb", method = RequestMethod.POST)
     @ResponseBody
     public R finishPayPurchaseBatchGb(String ids, Integer gbDisId, String total, Integer supplierId, Integer userId) {
@@ -203,6 +206,7 @@ public class GbDistributerPurchaseBatchController {
     @RequestMapping(value = "/getDisPurchaseGoodsBatchDetail/{batchId}")
     @ResponseBody
     public R getDisPurchaseGoodsBatchDetail(@PathVariable Integer batchId) {
+        System.out.println("batcididiid" + batchId);
         List<GbDistributerGoodsEntity> gbDistributerGoodsEntities =
                 gbDistributerPurchaseBatchDisGoodsBatchQueryService.listBatchDetailGoodsTree(batchId);
         return R.ok().put("data", gbDistributerGoodsEntities);

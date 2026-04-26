@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.util.*;
 
 import static com.nongxinle.utils.DateUtils.*;
+import static com.nongxinle.utils.GbTypeUtils.*;
 
 /**
  * 批发商采购商品Controller
@@ -25,7 +26,6 @@ public class GbDistributerPurchaseGoodsController {
     private final GbDistributerPurchaseGoodsService gbDpgService;
     private final GbDepartmentOrdersService gbDepartmentOrdersService;
     private final GbDistributerService gbDistributerService;
-    private final GbDistributerGoodsService gbDistributerGoodsService;
     private final GbDepartmentGoodsStockService gbDepartmentGoodsStockService;
     private final GbDepartmentGoodsStockReduceService gbDepartmentStockReduceService;
     private final GbDepartmentUserService gbDepartmentUserService;
@@ -36,6 +36,35 @@ public class GbDistributerPurchaseGoodsController {
     private final GbDistributerPurchaseGoodsFinishPurGoodsToStockService gbDistributerPurchaseGoodsFinishPurGoodsToStockService;
 
 
+
+
+    /**
+     * 删除订货批次->"采购商品"
+     *
+     * @param id 采购商品id
+     * @return ok
+     */
+    @RequestMapping(value = "/supplierInitWeightPurItem/{id}")
+    @ResponseBody
+    public R supplierInitWeightPurItem(@PathVariable Integer id) {
+
+        GbDistributerPurchaseGoodsEntity purGoods = gbDpgService.getById(id);
+        purGoods.setGbDpgStatus(GbConstants.PurchaseGoodsStatus.SHARED_TO_SUPPLIER);
+        purGoods.setGbDpgOrdersWeightAmount(0);
+        gbDpgService.updateById(purGoods);
+
+        Map<String, Object> map = new HashMap<>();
+        map.put("purGoodsId", id);
+        List<GbDepartmentOrdersEntity> ordersEntities = gbDepartmentOrdersService.queryDisOrdersByParams(map);
+        for (GbDepartmentOrdersEntity orders : ordersEntities) {
+            orders.setGbDoStatus(GbConstants.DepartmentOrderStatus.NEW);
+            orders.setGbDoBuyStatus(GbConstants.OrderBuyStatus.SHARED_TO_SUPPLIER);
+            gbDepartmentOrdersService.update(orders);
+        }
+
+        return R.ok();
+
+    }
 
 
 

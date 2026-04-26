@@ -135,6 +135,9 @@ public class GbDistributerPurchaseGoodsEntity implements Serializable {
 	private String gbDgGoodsBrand;
 
 	@TableField(exist = false)
+	private String gbDgGbSupplierId;
+
+	@TableField(exist = false)
 	@JsonIgnore
     private GbDistributerGoodsPriceEntity gbDistributerGoodsPriceEntity;
 
