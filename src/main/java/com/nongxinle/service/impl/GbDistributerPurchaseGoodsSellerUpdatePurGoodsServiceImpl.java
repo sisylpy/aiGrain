@@ -9,6 +9,7 @@ import com.nongxinle.service.GbDistributerGoodsService;
 import com.nongxinle.service.GbDistributerPurchaseBatchService;
 import com.nongxinle.service.GbDistributerPurchaseGoodsSellerUpdatePurGoodsService;
 import com.nongxinle.service.GbDistributerPurchaseGoodsService;
+import com.nongxinle.utils.GbConstants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -45,38 +46,31 @@ public class GbDistributerPurchaseGoodsSellerUpdatePurGoodsServiceImpl
             }
         }
 
-        purchaseGoodsEntity.setGbDpgStatus(3);
+        purchaseGoodsEntity.setGbDpgStatus(GbConstants.PurchaseGoodsStatus.WEIGHT_FINISHED);
         gbDpgService.updateById(purchaseGoodsEntity);
         List<GbDepartmentOrdersEntity> gbDepartmentOrdersEntities = purchaseGoodsEntity.getGbDepartmentOrdersEntities();
         for (GbDepartmentOrdersEntity orders : gbDepartmentOrdersEntities) {
-            log.debug("wieieieieiieieiieie" + orders.getGbDoWeight());
-            System.out.println("wieieieieiieieiieiewieieieieiieieiieie00---"  + orders.getGbDoWeight());
-
             if (orders.getGbDoWeight() != null && !orders.getGbDoWeight().trim().isEmpty()
                     && !orders.getGbDoWeight().equals("0.0")) {
                 BigDecimal decimal1 = new BigDecimal(orders.getGbDoPrice());
                 BigDecimal decimal2 = new BigDecimal(orders.getGbDoWeight());
                 BigDecimal decimal3 = decimal1.multiply(decimal2).setScale(1, BigDecimal.ROUND_HALF_UP);
                 orders.setGbDoSubtotal(decimal3.toString());
-                orders.setGbDoBuyStatus(getGbOrderBuyStatusHasWeightAndPrice());
-                System.out.println("wieieieieiieieiieiewieieieieiieieiieie11111"  + orders.getGbDoWeight());
+                orders.setGbDoBuyStatus(GbConstants.OrderBuyStatus.HAS_WEIGHT_AND_PRICE);
 
             } else {
-                System.out.println("wieieieieiieieiieiewieieieieiieieiieie222"  + orders.getGbDoWeight());
-                orders.setGbDoBuyStatus(getGbOrderBuyStatusPrepareing());
+                orders.setGbDoBuyStatus(GbConstants.OrderBuyStatus.PICK_LIST_PRINTED);
             }
-            System.out.println("wieieieieiieieiieiewieieieieiieieiieie11111"  + orders.getGbDoBuyStatus());
-
             gbDepartmentOrdersService.update(orders);
         }
 
-        Map<String, Object> map = new HashMap<>();
-        Integer gbDpgBatchId = purchaseGoodsEntity.getGbDpgBatchId();
-        map.put("batchId", gbDpgBatchId);
-        Double subTotal = gbDpgService.queryPurchaseGoodsSubTotal(map);
-        GbDistributerPurchaseBatchEntity batchEntity = gbDPBService.getById(gbDpgBatchId);
-        batchEntity.setGbDpbSubtotal(String.format("%.1f", subTotal));
-        gbDPBService.updateById(batchEntity);
+//        Map<String, Object> map = new HashMap<>();
+//        Integer gbDpgBatchId = purchaseGoodsEntity.getGbDpgBatchId();
+//        map.put("batchId", gbDpgBatchId);
+//        Double subTotal = gbDpgService.queryPurchaseGoodsSubTotal(map);
+//        GbDistributerPurchaseBatchEntity batchEntity = gbDPBService.getById(gbDpgBatchId);
+//        batchEntity.setGbDpbSubtotal(String.format("%.1f", subTotal));
+//        gbDPBService.updateById(batchEntity);
 
         return purchaseGoodsEntity;
     }

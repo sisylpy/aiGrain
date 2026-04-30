@@ -109,4 +109,11 @@ public class GbDepartmentGoodsStockSimpleEntity implements Serializable {
 
     @JSONField(name = "wasteTotal")
     private Double wasteTotal;
+
+    @JSONField(name = "purUserName")
+    private String purUserName;
+
+    @JSONField(name = "nxSupplierName")
+    private String nxSupplierName;
+
 }

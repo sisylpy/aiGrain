@@ -60,10 +60,11 @@ public interface GbAiChatService {
     List<GbAiMessageEntity> getTopicMessages(Long topicId);
 
     /**
-     * 结束对话（触发记忆提取）
+     * 结束对话（有实质消息时触发记忆与总结；空对话不保存、不调模型）
      * @param conversationId 对话ID
+     * @return 0=会话不存在；1=已结束但无内容未保存；2=已结束并已记忆/总结
      */
-    void endConversation(Long conversationId);
+    int endConversation(Long conversationId);
 
     /**
      * 使用DeepSeek总结对话并提取记忆

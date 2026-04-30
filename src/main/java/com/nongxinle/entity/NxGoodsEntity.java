@@ -31,6 +31,10 @@ public class NxGoodsEntity implements Serializable {
     private String nxGoodsPy;
     private Integer nxGoodsFatherId;
     private Integer nxGoodsSort;
+    /**
+     * 三级品名父下四级 SKU（level=3）中的「根」规格标记：同级仅允许一条为 1（与三级连带的主规格）。
+     * 仅在「同时新建三级+首条四级」等唯一根场景设为 1；仅追加另一条四级 SKU 时应为 0。
+     */
     private Integer nxGoodsIsOldestSon;
     private Integer nxGoodsGrandId;
     private Integer nxGoodsGreatGrandId;
@@ -38,6 +42,10 @@ public class NxGoodsEntity implements Serializable {
     @TableField(exist = false)
     private String color;
     private Integer nxGoodsApplyNxDistributerId;
+    /** 扩充目录 SKU 来源批发商 ID（库字段 nx_from_gb_distributer_id） */
+    private Integer nxFromGbDistributerId;
+    /** 农鑫商品业务状态（库字段 nx_goods_status；-1 表示批发商/AI 扩充待定） */
+    private Integer nxGoodsStatus;
     private Integer nxGoodsLevel;
     private Integer nxGoodsIsHidden;
     @TableField(exist = false)

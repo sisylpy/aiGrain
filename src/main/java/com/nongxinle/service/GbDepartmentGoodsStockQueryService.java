@@ -34,4 +34,6 @@ public interface GbDepartmentGoodsStockQueryService {
      * <p>先查指定日期范围内剩余大于 0 的批次，再查「当天、剩余为 0」的批次并合并去重，最后按批次 id 批量加载 reduce。</p>
      */
     List<GbDepartmentGoodsStockEntity> queryDepGoodsBusiness(Integer depGoodsId, String startDate, String stopDate);
+
+    List<GbDepartmentGoodsStockEntity> queryDisGoodsBusiness(Integer disGoodsId, String startDate, String stopDate);
 }

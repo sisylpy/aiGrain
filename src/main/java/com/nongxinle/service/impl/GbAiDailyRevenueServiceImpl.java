@@ -137,6 +137,41 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         }
     }
 
+    @Override
+    public void upsertDineInRevenueOnly(Long departmentId, Long distributerId, Date recordDate, BigDecimal dineInRevenue) {
+        if (departmentId == null) {
+            throw new IllegalArgumentException("部门ID不能为空");
+        }
+        if (recordDate == null) {
+            throw new IllegalArgumentException("记录日期不能为空");
+        }
+        Date dayStart = GbDateTimeUtils.startOfDay(recordDate);
+        Date dayEnd = GbDateTimeUtils.endOfDay(recordDate);
+        GbAiDailyRevenueEntity existing = getOne(
+                new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
+                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, departmentId)
+                        .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayStart)
+                        .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayEnd)
+                        .last("LIMIT 1"), false);
+        BigDecimal dineIn = dineInRevenue != null ? dineInRevenue : BigDecimal.ZERO;
+        if (existing != null) {
+            existing.setGbAiDailyRevenueDineInRevenue(dineIn);
+            if (distributerId != null) {
+                existing.setGbAiDailyRevenueDistributerId(distributerId);
+            }
+            fillUpdateWeekday(existing);
+            updateById(existing);
+        } else {
+            GbAiDailyRevenueEntity row = new GbAiDailyRevenueEntity();
+            row.setGbAiDailyRevenueDepartmentId(departmentId);
+            row.setGbAiDailyRevenueDistributerId(distributerId);
+            row.setGbAiDailyRevenueRecordDate(dayStart);
+            row.setGbAiDailyRevenueDineInRevenue(dineIn);
+            fillInsertDefaults(row);
+            save(row);
+        }
+    }
+
     private static void copyMutableDailyRevenueFields(GbAiDailyRevenueEntity from, GbAiDailyRevenueEntity to) {
         to.setGbAiDailyRevenueDineInRevenue(from.getGbAiDailyRevenueDineInRevenue());
         to.setGbAiDailyRevenueDineInOrders(from.getGbAiDailyRevenueDineInOrders());

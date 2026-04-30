@@ -57,4 +57,19 @@ public interface GbDepartmentOrdersMapper extends BaseMapper<GbDepartmentOrdersE
      */
     Double queryGbOrdersSubtotal(Map<String, Object> map);
 
+    /**
+     * 统计在时间窗口内订货次数达到阈值的不同部门商品（gb_do_dep_dis_goods_id）数量。
+     */
+    Integer countDepGoodsReorderCandidates(Map<String, Object> map);
+
+    /**
+     * 分页返回候选部门商品 id（按订货次数降序）。
+     */
+    List<Integer> selectDepGoodsReorderCandidatesPage(Map<String, Object> map);
+
+    /**
+     * 窗口内恰好 1 笔已收货到货单的部门商品 id（按到货次数聚合）。
+     */
+    List<Integer> selectDepGoodsIdsSingleOrderInWindow(Map<String, Object> map);
+
 }

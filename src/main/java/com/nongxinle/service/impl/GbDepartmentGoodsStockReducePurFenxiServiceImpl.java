@@ -62,7 +62,7 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
         Map<String, Object> out = new HashMap<>();
         out.put("dishFoodNames", "");
         out.put("dishSalesQtyTotal", 0.0);
-        out.put("linkedDishList", new ArrayList<Map<String, Object>>());
+        out.put("supportedDishes", new ArrayList<Map<String, Object>>());
         if (disGoodsId == null || startDate == null || stopDate == null) {
             return out;
         }
@@ -73,6 +73,15 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
         }
         if (lines == null) {
             lines = Collections.emptyList();
+        }
+        Map<Integer, BigDecimal> recipeUnitByFoodId = new HashMap<>();
+        for (GbDistributerFoodGoodsEntity line : lines) {
+            if (!GbDepartmentGoodsStockReduceSupport.isActiveFoodGoodsLine(line) || line.getGbDfgFoodId() == null) {
+                continue;
+            }
+            recipeUnitByFoodId.merge(line.getGbDfgFoodId(),
+                    GbDepartmentGoodsStockReduceSupport.parseGoodsAmountString(line.getGbDfgGoodsAmount()),
+                    BigDecimal::add);
         }
         LinkedHashSet<Integer> foodIds = new LinkedHashSet<>();
         for (GbDistributerFoodGoodsEntity line : lines) {
@@ -143,22 +152,43 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
             }
         }
 
-        List<Map<String, Object>> linkedDishList = new ArrayList<>();
-        for (Integer fid : foodIds) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("dishFoodId", fid);
+        List<Integer> orderedFoodIds = new ArrayList<>(foodIds);
+        orderedFoodIds.sort((a, b) -> dishQtyByFoodId.getOrDefault(b, BigDecimal.ZERO)
+                .compareTo(dishQtyByFoodId.getOrDefault(a, BigDecimal.ZERO)));
+
+        List<Map<String, Object>> supportedDishes = new ArrayList<>();
+        for (Integer fid : orderedFoodIds) {
             GbDistributerFoodEntity food = gbDistributerFoodService.queryObject(fid);
             String dishName = food != null && food.getGbDfFoodName() != null ? food.getGbDfFoodName().trim() : "";
-            row.put("dishFoodName", dishName);
+            BigDecimal dishU = recipeUnitByFoodId.getOrDefault(fid, BigDecimal.ZERO);
             BigDecimal dQty = dishQtyByFoodId.getOrDefault(fid, BigDecimal.ZERO);
             BigDecimal ingQty = ingredientByFoodId.getOrDefault(fid, BigDecimal.ZERO);
-            row.put("dishSalesQty", String.format("%.1f", dQty.setScale(1, RoundingMode.HALF_UP).doubleValue()));
-            row.put("foodIngredientSalesQty",
-                    String.format("%.1f", ingQty.setScale(1, RoundingMode.HALF_UP).doubleValue()));
-            linkedDishList.add(row);
+            BigDecimal theoryRecipe = dishU.multiply(dQty);
+            Map<String, Object> sRow = new LinkedHashMap<>();
+            sRow.put("dishId", fid);
+            sRow.put("dishName", dishName);
+            sRow.put("recipeUnitPerDish", fenxiSupportedQtyTwoDecimals(dishU));
+            sRow.put("salesPortions", fenxiSupportedSalesPortions(dQty));
+            sRow.put("theoryUsage", fenxiSupportedQtyTwoDecimals(theoryRecipe));
+            sRow.put("salesUsageFromOrders", fenxiSupportedQtyTwoDecimals(ingQty));
+            sRow.put("actualUsage", fenxiSupportedQtyTwoDecimals(ingQty));
+            sRow.put("diffUsage", fenxiSupportedQtyTwoDecimals(ingQty.subtract(theoryRecipe)));
+            supportedDishes.add(sRow);
         }
-        out.put("linkedDishList", linkedDishList);
+        out.put("supportedDishes", supportedDishes);
         return out;
+    }
+
+    /**
+     * 与 {@code GbDishCostAnalysisServiceImpl} 中 {@code /outboundIngredientAnalysis} 的 {@code supportedDishes} 数量字段小数格式一致。
+     */
+    private static String fenxiSupportedQtyTwoDecimals(BigDecimal v) {
+        return (v != null ? v : BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    /** 与配料报表 {@code salesPortions} 一致：实销份数为整数份字符串。 */
+    private static String fenxiSupportedSalesPortions(BigDecimal v) {
+        return (v != null ? v : BigDecimal.ZERO).setScale(0, RoundingMode.HALF_UP).toPlainString();
     }
 
     @Override
@@ -181,7 +211,7 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
         map1.put("startDate", startDate);
         map1.put("stopDate", stopDate);
         map1.put("typeNotEqual", 9);
-        log.debug("wsupsspspspsp" + map1);
+        log.info("wsupsspspspsp" + map1);
         Integer integerPur = gbDistributerPurchaseGoodsService.queryGbPurchaseGoodsCount(map1);
         Map<String, Object> reduceExistsMap = GbDepartmentGoodsStockReduceSupport.buildReduceParamsForGoodsDay(
                 goodsEntity.getGbDgDistributerId(), disGoodsId, startDate, stopDate, howManyDaysInPeriod, null);
@@ -245,8 +275,8 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
             if (stockDayCount != null && stockDayCount > 0) {
                 Double aDouble = gbDepartmentGoodsStockService.queryDepGoodsRestWeightTotal(mapPreStock);
                 Double aDoubleS = gbDepartmentGoodsStockService.queryDepStockRestSubtotal(mapPreStock);
-                preWeight = new BigDecimal(aDouble != null ? aDouble : 0).setScale(1, BigDecimal.ROUND_HALF_UP).toString();
-                preSubtotal = new BigDecimal(aDoubleS != null ? aDoubleS : 0).setScale(1, BigDecimal.ROUND_HALF_UP).toString();
+                preWeight = new BigDecimal(aDouble != null ? aDouble : 0).setScale(1, RoundingMode.HALF_UP).toString();
+                preSubtotal = new BigDecimal(aDoubleS != null ? aDoubleS : 0).setScale(1, RoundingMode.HALF_UP).toString();
             }
 
 
@@ -266,7 +296,7 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
                 doublePurchaseV = gbDistributerPurchaseGoodsService.queryPurchaseGoodsSubTotal(map);
                 doublePurchaseWeight = gbDistributerPurchaseGoodsService.queryPurchaseGoodsWeightTotal(map);
                 v = doublePurchaseV / doublePurchaseWeight;
-                perPrice = new BigDecimal(v).setScale(1, BigDecimal.ROUND_HALF_UP).toString();
+                perPrice = new BigDecimal(v).setScale(1, RoundingMode.HALF_UP).toString();
                 maxPrice = gbDistributerPurchaseGoodsService.queryPurGoodsMaxPrice(map);
                 minPrice = gbDistributerPurchaseGoodsService.queryPurGoodsMinPrice(map);
 
@@ -285,7 +315,7 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
                         searchDoubleCostV = gbDistributerPurchaseGoodsService.queryPurchaseGoodsSubTotal(map);
                         searchDoubleCostWeight = gbDistributerPurchaseGoodsService.queryPurchaseGoodsWeightTotal(map);
                         searchV = searchDoubleCostV / searchDoubleCostWeight;
-                        searchPerPrice = new BigDecimal(searchV).setScale(1, BigDecimal.ROUND_HALF_UP).toString();
+                        searchPerPrice = new BigDecimal(searchV).setScale(1, RoundingMode.HALF_UP).toString();
                         searchMaxPrice = gbDistributerPurchaseGoodsService.queryPurGoodsMaxPrice(map);
                         searchMinPrice = gbDistributerPurchaseGoodsService.queryPurGoodsMinPrice(map);
                     }
@@ -515,8 +545,8 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
             goodsEntity.setPurEveryDay(mapEveryDay);
 
             Map<String, Object> mapResult = new HashMap<>();
-            mapResult.put("totalPurchaseWeight", new BigDecimal(doublePurchaseWeight).setScale(1, BigDecimal.ROUND_HALF_UP).toString());
-            mapResult.put("totalPurchaseSubtotal", new BigDecimal(doublePurchaseV).setScale(1, BigDecimal.ROUND_HALF_UP).toString());
+            mapResult.put("totalPurchaseWeight", new BigDecimal(doublePurchaseWeight).setScale(1, RoundingMode.HALF_UP).toString());
+            mapResult.put("totalPurchaseSubtotal", new BigDecimal(doublePurchaseV).setScale(1, RoundingMode.HALF_UP).toString());
             mapResult.put("maxPrice", maxPrice);
             mapResult.put("minPrice", minPrice);
             mapResult.put("perPrice", perPrice);
@@ -524,8 +554,8 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
             mapResult.put("preWeight", preWeight);
             mapResult.put("preSubtotal", preSubtotal);
 
-            mapResult.put("sTotalCost", new BigDecimal(searchDoubleCostWeight).setScale(1, BigDecimal.ROUND_HALF_UP).toString());
-            mapResult.put("sTotalCostSubtotal", new BigDecimal(searchDoubleCostV).setScale(1, BigDecimal.ROUND_HALF_UP).toString());
+            mapResult.put("sTotalCost", new BigDecimal(searchDoubleCostWeight).setScale(1, RoundingMode.HALF_UP).toString());
+            mapResult.put("sTotalCostSubtotal", new BigDecimal(searchDoubleCostV).setScale(1, RoundingMode.HALF_UP).toString());
             mapResult.put("sMaxPrice", searchMaxPrice);
             mapResult.put("sMinPrice", searchMinPrice);
             mapResult.put("sPerPrice", searchPerPrice);
@@ -540,9 +570,9 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
             mapResult.put("dishSalesQtyTotal",
                     String.format("%.1f", (Double) dishIng.get("dishSalesQtyTotal")));
             @SuppressWarnings("unchecked")
-            List<Map<String, Object>> linkedDishList =
-                    (List<Map<String, Object>>) dishIng.get("linkedDishList");
-            mapResult.put("linkedDishList", linkedDishList != null ? linkedDishList : new ArrayList<>());
+            List<Map<String, Object>> supportedDishes =
+                    (List<Map<String, Object>>) dishIng.get("supportedDishes");
+            mapResult.put("supportedDishes", supportedDishes != null ? supportedDishes : new ArrayList<>());
             double ingredientSalesPeriodTotal = 0;
             for (String s : foodIngredientSalesDayValue) {
                 ingredientSalesPeriodTotal += GbDepartmentGoodsStockReduceSupport.toDouble(s);
@@ -553,7 +583,7 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
             double doubleProduceWeightPeriod =
                     GbDepartmentGoodsStockReduceSupport.nzD(gbDepartmentGoodsStockReduceService.queryReduceProduceWeightTotal(reduceExistsMap));
             mapResult.put("totalProduceWeight",
-                    new BigDecimal(doubleProduceWeightPeriod).setScale(1, BigDecimal.ROUND_HALF_UP).toString());
+                    new BigDecimal(doubleProduceWeightPeriod).setScale(1, RoundingMode.HALF_UP).toString());
 
             double purchaseVsIngredientDiff = doubleProduceWeightPeriod - ingredientSalesPeriodTotal;
             log.debug("fenxi produceWeight=" + doubleProduceWeightPeriod + " ingredientSales="
@@ -764,11 +794,11 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
                 BigDecimal wastePercent = new BigDecimal(0);
                 BigDecimal retPercent = new BigDecimal(0);
                 if (goodsDoubleProduce > 0) {
-                    proPercent = new BigDecimal(goodsDoubleProduce).divide(new BigDecimal(goodsDoubleTotalWeight), 3, BigDecimal.ROUND_HALF_UP).multiply(new BigDecimal(100)).setScale(1, BigDecimal.ROUND_HALF_UP);
+                    proPercent = new BigDecimal(goodsDoubleProduce).divide(new BigDecimal(goodsDoubleTotalWeight), 3, RoundingMode.HALF_UP).multiply(new BigDecimal(100)).setScale(1, RoundingMode.HALF_UP);
                     log.debug("propenene" + goodsDoubleProduce + " ostweiicei" + goodsDoubleTotalWeight);
-                    lossPercent = new BigDecimal(goodsDoubleLoss).divide(new BigDecimal(goodsDoubleTotalWeight), 3, BigDecimal.ROUND_HALF_UP).multiply(new BigDecimal(100)).setScale(1, BigDecimal.ROUND_HALF_UP);
-                    wastePercent = new BigDecimal(goodsDoubleWaste).divide(new BigDecimal(goodsDoubleTotalWeight), 3, BigDecimal.ROUND_HALF_UP).multiply(new BigDecimal(100)).setScale(1, BigDecimal.ROUND_HALF_UP);
-                    retPercent = new BigDecimal(goodsDoubleReturn).divide(new BigDecimal(goodsDoubleTotalWeight), 3, BigDecimal.ROUND_HALF_UP).multiply(new BigDecimal(100)).setScale(1, BigDecimal.ROUND_HALF_UP);
+                    lossPercent = new BigDecimal(goodsDoubleLoss).divide(new BigDecimal(goodsDoubleTotalWeight), 3, RoundingMode.HALF_UP).multiply(new BigDecimal(100)).setScale(1, RoundingMode.HALF_UP);
+                    wastePercent = new BigDecimal(goodsDoubleWaste).divide(new BigDecimal(goodsDoubleTotalWeight), 3, RoundingMode.HALF_UP).multiply(new BigDecimal(100)).setScale(1, RoundingMode.HALF_UP);
+                    retPercent = new BigDecimal(goodsDoubleReturn).divide(new BigDecimal(goodsDoubleTotalWeight), 3, RoundingMode.HALF_UP).multiply(new BigDecimal(100)).setScale(1, RoundingMode.HALF_UP);
                 }
 
                 BigDecimal searchProPercent = new BigDecimal(0);
@@ -776,10 +806,10 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
                 BigDecimal searchWastePercent = new BigDecimal(0);
                 BigDecimal searchRetPercent = new BigDecimal(0);
                 if (searchGoodsDoubleTotalWeight > 0) {
-                    searchProPercent = new BigDecimal(searchGoodsDoubleProduce).divide(new BigDecimal(searchGoodsDoubleTotalWeight), 3, BigDecimal.ROUND_HALF_UP).multiply(new BigDecimal(100)).setScale(1, BigDecimal.ROUND_HALF_UP);
-                    searchLossPercent = new BigDecimal(searchGoodsDoubleLoss).divide(new BigDecimal(searchGoodsDoubleTotalWeight), 3, BigDecimal.ROUND_HALF_UP).multiply(new BigDecimal(100)).setScale(1, BigDecimal.ROUND_HALF_UP);
-                    searchWastePercent = new BigDecimal(searchGoodsDoubleWaste).divide(new BigDecimal(searchGoodsDoubleTotalWeight), 3, BigDecimal.ROUND_HALF_UP).multiply(new BigDecimal(100)).setScale(1, BigDecimal.ROUND_HALF_UP);
-                    searchRetPercent = new BigDecimal(searchGoodsDoubleReturn).divide(new BigDecimal(searchGoodsDoubleTotalWeight), 3, BigDecimal.ROUND_HALF_UP).multiply(new BigDecimal(100)).setScale(1, BigDecimal.ROUND_HALF_UP);
+                    searchProPercent = new BigDecimal(searchGoodsDoubleProduce).divide(new BigDecimal(searchGoodsDoubleTotalWeight), 3, RoundingMode.HALF_UP).multiply(new BigDecimal(100)).setScale(1, RoundingMode.HALF_UP);
+                    searchLossPercent = new BigDecimal(searchGoodsDoubleLoss).divide(new BigDecimal(searchGoodsDoubleTotalWeight), 3, RoundingMode.HALF_UP).multiply(new BigDecimal(100)).setScale(1, RoundingMode.HALF_UP);
+                    searchWastePercent = new BigDecimal(searchGoodsDoubleWaste).divide(new BigDecimal(searchGoodsDoubleTotalWeight), 3, RoundingMode.HALF_UP).multiply(new BigDecimal(100)).setScale(1, RoundingMode.HALF_UP);
+                    searchRetPercent = new BigDecimal(searchGoodsDoubleReturn).divide(new BigDecimal(searchGoodsDoubleTotalWeight), 3, RoundingMode.HALF_UP).multiply(new BigDecimal(100)).setScale(1, RoundingMode.HALF_UP);
 
                 }
 

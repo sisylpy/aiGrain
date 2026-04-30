@@ -75,8 +75,7 @@
 | **`grossMarginRateTheoryOnListPrice`** | string / null | **配料毛利率·理论（整菜）**：`(listPricePerPortion − theoryCostPerPortion) ÷ listPricePerPortion` |
 | **`blendedGrossMarginRateTheoryOnListPrice`** | string / null | 与 **`grossMarginRateTheoryOnListPrice`** 同值（别名） |
 | **`netGrossProfitPerPortion`** | string | **净菜品毛利/份（元）**：标价&gt;0 时为 `listPricePerPortion − actualCostPerPortion`（两位小数）；**无标价**时为 `0 − actualCostPerPortion`（即 `-actualCostPerPortion`） |
-| **`highMarginDish`** | boolean | **高毛利菜品**：标价&gt;0 时 `(listPricePerPortion − actualCostPerPortion) ÷ listPricePerPortion ≥ 50%`；**无标价**时用 **`comprehensiveGrossMarginRateOnListPrice`** 解析为百分数，若 **≥ 50** 亦为高毛利 |
-| **`highMarginDishLevel`** | string | `HIGH` 或 `NORMAL`，与 `highMarginDish` 一致 |
+| **`grossMarginStandardTarget`** 等 / **`grossMarginLevel`** | 与 `depGetAllFood` 的 `gbDfBusinessInsight` 同源：直接父级 `gb_distributer_food` 上配置的 T、F 与三档 `IN_BAND` / `ABOVE` / `BELOW` / `UNKNOWN`（对比 `blendedGrossMarginRateOnListPrice` 与 T±F 带） |
 
 以上毛利率字段均为**不含 `%` 后缀的两位小数字符串**（如 `"12.34"` 表示 12.34%），与 wxml 自行拼接 `%` 的写法一致。
 

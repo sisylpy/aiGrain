@@ -3,6 +3,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.nongxinle.dto.GbDepReorderAuxHint;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -137,6 +138,51 @@ public class GbDepartmentDisGoodsEntity implements Serializable, Comparable {
     private String aiTomorrowNeed;
     @TableField(exist = false)
     private String aiAvailableDays;
+
+    /** 订货习惯：平均间隔天数（约整数） */
+    @TableField(exist = false)
+    private String aiHabitIntervalDays;
+    /** 按习惯推算的下次订货日 yyyy-MM-dd */
+    @TableField(exist = false)
+    private String aiNextHabitOrderDate;
+    /** 综合订货逻辑是否建议今日关注 true/false */
+    @TableField(exist = false)
+    private String aiShouldRemindToday;
+
+    /** reduce 窗口统计：生产出库(type=1)日均重量 */
+    @TableField(exist = false)
+    private String aiReduceProductionDailyAvg;
+    /** reduce 窗口统计：损耗(type=2)+损失(type=3)日均出库重量合计 */
+    @TableField(exist = false)
+    private String aiReduceLossWasteDailyAvg;
+    /** 仅按生产日均×覆盖天数 − 当前库存，建议补货量（≥0，与批次库存同口径） */
+    @TableField(exist = false)
+    private String aiRecommendGapWeightProductionOnly;
+    /** 按「生产+损耗+损失」合计日均×覆盖天数 − 当前库存，建议补货量（补充口径） */
+    @TableField(exist = false)
+    private String aiRecommendGapWeightWithLossWaste;
+    /** 假定按生产日均线性耗尽，预估耗尽日 yyyy-MM-dd */
+    @TableField(exist = false)
+    private String aiEstimateDepleteDateProductionOnly;
+    /** 假定按「生产+损耗+损失」日均线性耗尽，预估耗尽日（更早则优先备货） */
+    @TableField(exist = false)
+    private String aiEstimateDepleteDateWithLossWaste;
+    /** 上面缺口口径使用的覆盖天数（如「3」） */
+    @TableField(exist = false)
+    private String aiRecommendCoverDaysUsed;
+
+    /** 单次订货场景：按（最近一单 gb_do_weight − 当前库存）/ 距到货天数 估算的日均消耗（重量） */
+    @TableField(exist = false)
+    private String aiStockEstimateDailyUsage;
+    /** 因「库存低于约 2 天估算消耗」而建议提醒时为 true */
+    @TableField(exist = false)
+    private String aiRemindLowStockBelowTwoDayUsage;
+    /** 提醒原因：habit / stock_below_two_day_usage / 逗号分隔 */
+    @TableField(exist = false)
+    private String aiRemindReason;
+
+    @TableField(exist = false)
+    private List<GbDepReorderAuxHint> aiAuxHints;
 
 
     @Override

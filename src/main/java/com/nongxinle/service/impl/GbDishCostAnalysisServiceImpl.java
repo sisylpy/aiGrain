@@ -17,6 +17,7 @@ import com.nongxinle.service.GbDistributerFoodService;
 import com.nongxinle.service.GbDistributerGoodsService;
 import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.GbDepartmentGoodsStockReduceSupport;
+import com.nongxinle.utils.GrossMarginStandardDisplay;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -98,8 +99,11 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         ing.put("recipeUnitPerDish", "每做一份这道菜，这条料标准该用多少");
         ing.put("theoryQtyFromSales", "销售开单明细里，这条料一共写了用多少");
         ing.put("theoryOutboundQtyByRecipe", "按实际卖了多少份乘配方，这条料按理该用多少");
-        ing.put("outboundAllocatedQty", "总出库里摊给本菜多少斤：优先按各菜「实销份数×本菜该料配方用量」占全局该料理论总耗的比例分（整体缺料时，蒜蓉这类不会分到超过自己实销所需的斤数）");
-        ing.put("supportedPortionsThisGood", "这条料摊给你的斤数÷本菜该料每份用量：出库少于理论总耗时，这个数会小于本菜实销份数（老板看是否「用料偏紧」）");
+        ing.put("outboundAllocatedQty",
+                "仅 type1（生产）出库：摊给本菜的重量（斤）；与看板 `actualProduceUsage` 同源量级；**不等于**看板 `actualUsage`（后者为 type1+2+3 合计）。");
+        ing.put("supportedPortionsThisGood",
+                "本行 outboundAllocatedQty（仅 type1 生产出库分摊重量）÷ recipeUnitPerDish（合并后单份配方用量，斤/份），"
+                        + "表示「这条料按当前摊到的出库，够做几份菜」；**除数必须是单份配方，不得用本期理论总用量 theoryOutboundQtyByRecipe**（误用会得到 10 这类与系统 30 不一致的数）。");
         ing.put("salesIngredientCostAmount", "按销售子表里这条料的用量 theoryQtyFromSales×本期该料出库均价（元）；均价仅来自本期该料 type=1（生产）出库：W_g>0 时 subtotal/weight；W_g=0 时金额为 0（无法从扣库汇总推单价）");
         ing.put("recipeTheoryIngredientCostAmount", "按配方推算用量 theoryOutboundQtyByRecipe×同上均价（元）；与子表用量对照用，不是「销售录入」口径");
         ing.put("outboundAllocatedIngredientCostAmount", "按本条摊得的出库斤数 outboundAllocatedQty×同上均价（元），与 supportedPortionsThisGood 同源分摊");
@@ -899,6 +903,43 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         return out;
     }
 
+    @Override
+    public Map<Integer, Map<String, String>> getDishPerPortionCosts123ByFoodIds(String startDate, String endDate, Integer disId,
+            Integer depFatherId, Set<Integer> foodIds) {
+        if (startDate == null || startDate.trim().isEmpty() || endDate == null || endDate.trim().isEmpty()) {
+            throw new IllegalArgumentException("startDate、endDate 不能为空");
+        }
+        if (disId == null || depFatherId == null) {
+            throw new IllegalArgumentException("disId、depFatherId 不能为空");
+        }
+        if (foodIds == null || foodIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        String sd = startDate.trim();
+        String ed = endDate.trim();
+        IngredientAnalysisData d = loadIngredientAnalysisData(sd, ed, disId, null, depFatherId, foodIds);
+        Map<Integer, Map<String, String>> out = new LinkedHashMap<>();
+        for (Integer foodId : foodIds) {
+            if (foodId == null) {
+                continue;
+            }
+            Map<String, Object> dishRow = buildIngredientAnalysisDishRow(foodId,
+                    d.theoryWtByFoodAndGoods.getOrDefault(foodId, Collections.emptyMap()),
+                    d.sumTheoryByGoods, d.sumRecipeUnitByGoods, d.sumSalesQtyByGoods, d.sumNeedByGoods, d.disGoodsById,
+                    d.reduceW, d.reduceS, d.wasteW, d.wasteS, d.lossW, d.lossS,
+                    d.salesQtyByFood.getOrDefault(foodId, BigDecimal.ZERO),
+                    d.salesSubtotalByFood.getOrDefault(foodId, BigDecimal.ZERO),
+                    d.scopeListPriceRevenueTotal, d.scopeSubtotalOutbound123);
+            Map<String, String> m = new LinkedHashMap<>();
+            m.put("theoryCostPerPortion", dishRowFieldString(dishRow.get("theoryCostPerPortion")));
+            m.put("actualCostPerPortion", dishRowFieldString(dishRow.get("actualCostPerPortion")));
+            m.put("diffCostPerPortion", dishRowFieldString(dishRow.get("diffCostPerPortion")));
+            m.put("salesPortions", dishRowFieldString(dishRow.get("salesPortions")));
+            out.put(foodId, m);
+        }
+        return out;
+    }
+
     private static final BigDecimal DASHBOARD_USAGE_ABNORMAL_THRESHOLD = new BigDecimal("0.15");
     private static final BigDecimal DASHBOARD_COST_OTHER_MERGE_PCT = new BigDecimal("5");
     private static final int DASHBOARD_TREND_MAX_MONTHS = 18;
@@ -1014,7 +1055,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     }
 
     /**
-     * 看板「整菜头区」展示字段：区间综合毛利率、本菜标价 vs type1 / vs type1+2+3 / 理论毛利率、净毛利/份、高毛利标记。
+     * 看板「整菜头区」展示字段：区间综合毛利率、本菜标价 vs type1 / vs type1+2+3 / 理论毛利率、净毛利/份、父级毛利率标尺。
      * <p>{@code blendedGrossMarginRateOnListPrice} 与 {@code grossMarginRateOnListPriceUsingActual123} 均为
      * {@code (listPricePerPortion − actualCostPerPortion) / listPrice}（全出库摊销）；{@code grossMarginRateOnListPrice} 为仅 type1 生产口径。</p>
      */
@@ -1055,30 +1096,26 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
             dish.put("netGrossProfitPerPortion", ingredientTwoDecimals(BigDecimal.ZERO.subtract(actPp123)));
         }
 
-        boolean high = computeHighMarginDish(listPp, actPp123, comprehensive);
-        dish.put("highMarginDish", high);
-        dish.put("highMarginDishLevel", high ? "HIGH" : "NORMAL");
+        putDishGrossMarginStandardOnDashboard(dish, food);
     }
 
-    private static boolean computeHighMarginDish(BigDecimal listPp, BigDecimal actPp123, String comprehensivePercentStr) {
+    private void putDishGrossMarginStandardOnDashboard(Map<String, Object> dish, GbDistributerFoodEntity food) {
+        GbDistributerFoodEntity directParent = null;
+        if (food != null) {
+            Integer pid = food.getGbDfFoodFatherId();
+            if (pid != null && pid != 0) {
+                directParent = gbDistributerFoodService.queryObject(pid);
+            }
+        }
+        BigDecimal listPp = GbDepartmentGoodsStockReduceSupport.coerceDecimal(food == null ? null : food.getGbDfFoodPrice());
+        BigDecimal actPp123 = GbDepartmentGoodsStockReduceSupport.coerceDecimal(dish.get("actualCostPerPortion"));
+        BigDecimal blendedRatio = null;
         if (listPp.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal marginRatio = listPp.subtract(actPp123).divide(listPp, 8, RoundingMode.HALF_UP);
-            return marginRatio.compareTo(new BigDecimal("0.5")) >= 0;
+            blendedRatio = listPp.subtract(actPp123).divide(listPp, 8, RoundingMode.HALF_UP);
+        } else if (listPp.signum() == 0 && actPp123.signum() == 0) {
+            blendedRatio = BigDecimal.ZERO;
         }
-        BigDecimal p = parseDashboardMarginPercentNumber(comprehensivePercentStr);
-        return p != null && p.compareTo(new BigDecimal("50")) >= 0;
-    }
-
-    /** 解析 {@code "12.34"} 型毛利率展示串为百分数数值（不含 %）；无法解析时 {@code null}。 */
-    private static BigDecimal parseDashboardMarginPercentNumber(String s) {
-        if (s == null || s.trim().isEmpty()) {
-            return null;
-        }
-        try {
-            return new BigDecimal(s.trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        GrossMarginStandardDisplay.putOnMap(dish, blendedRatio, directParent);
     }
 
     private static LocalDate parseIsoLocalDate(String s) {
@@ -2839,5 +2876,13 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     /** 数量类字段输出：先统一 8 位小数再去尾零，避免小数量（如 0.03）或累加结果被 4 位尺度吃掉。 */
     private static String plainQty(BigDecimal v) {
         return nz(v).setScale(8, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+    }
+
+    /** 配料分析 dish 行 Map 转 String 注入用（null→空串）。 */
+    private static String dishRowFieldString(Object v) {
+        if (v == null) {
+            return "";
+        }
+        return String.valueOf(v).trim();
     }
 }

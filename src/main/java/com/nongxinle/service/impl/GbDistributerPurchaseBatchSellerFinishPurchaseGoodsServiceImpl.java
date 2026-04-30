@@ -7,6 +7,7 @@ import com.nongxinle.service.GbDepartmentOrdersService;
 import com.nongxinle.service.GbDistributerPurchaseBatchSellerFinishPurchaseGoodsService;
 import com.nongxinle.service.GbDistributerPurchaseBatchService;
 import com.nongxinle.service.GbDistributerPurchaseGoodsService;
+import com.nongxinle.utils.GbConstants;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -55,7 +56,7 @@ public class GbDistributerPurchaseBatchSellerFinishPurchaseGoodsServiceImpl
                 }
             }
         }
-        batchEntity.setGbDpbStatus(2);
+        batchEntity.setGbDpbStatus(GbConstants.DistributorPurchaseBatchStatus.AWAITING_RECEIPT);
         batchEntity.setGbDpbSellerReplyFullTime(formatFullTime());
         gbDPBService.updateById(batchEntity);
     }

@@ -52,9 +52,11 @@ public class GbDistributerPurchaseGoodsEntity implements Serializable {
 	 */
 	private Integer gbDpgDistributerId;
 	/**
-	 *  采购方式
+	 * 采购方式（库 gb_DPG_purchase_type）。常用：1=自采 {@link com.nongxinle.utils.GbConstants.PurchaseOrderType#SELF_PURCHASE}；
+	 * 5=向供货商订货（配送商）{@link com.nongxinle.utils.GbConstants.PurchaseOrderType#DELIVERY_SUPPLIER}；9=退货等见 {@link com.nongxinle.utils.GbConstants.PurchaseOrderType}。
 	 */
 	private Integer gbDpgPurchaseType;
+	/** 供货来源：{@code -1}=自采；正整数=nx 供货商 ID（供货商配送）。与入库批次 {@code gb_department_goods_stock.gb_dgs_nx_supplier_id} 对齐。 */
 	private Integer gbDpgPurchaseNxSupplierId;
 	/**
 	 *  采购时间

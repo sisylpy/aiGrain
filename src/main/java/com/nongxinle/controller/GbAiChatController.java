@@ -100,6 +100,8 @@ public class GbAiChatController {
     @Operation(summary = "获取对话历史", description = "获取指定对话的所有消息历史")
     public R getHistory(@Parameter(description = "对话ID") @PathVariable Long conversationId) {
         List<GbAiMessageEntity> messages = chatService.getConversationMessages(conversationId);
+        System.out.println("lishidihua" + messages);
+
         return R.ok().put("data", messages);
     }
 
@@ -139,14 +141,18 @@ public class GbAiChatController {
         List<Map<String, Object>> topics = new ArrayList<>();
         topics.add(topic("dish-profit",
                 "这道菜到底赚不赚钱？",
-                "对比菜品销量、配料消耗和出库分摊，快速找出成本偏差最大的菜。",
+                "对比销量、配料与出库分摊找成本异常；并对照各分类在系统里设的目标毛利率与上下浮区间，看单菜综合实际毛利率是否落在带内。",
                 List.of(
                         question("dish-profit-top2", "先看高销量里的利润风险",
                                 "帮我看这个月哪道菜卖得多但利润最危险，先给我前2名。"),
                         question("dish-profit-diff", "先看成本差额最大的菜",
                                 "按成本差额从高到低排前3道菜，告诉我每道菜最可能的问题配料。"),
                         question("dish-profit-bottleneck", "先看瓶颈原料",
-                                "先找出最卡脖子的原料对应了哪些菜，并给我本周处理优先级。")
+                                "先找出最卡脖子的原料对应了哪些菜，并给我本周处理优先级。"),
+                        question("dish-profit-margin-band", "先看相对分类毛利的带内带外",
+                                "按当前在页面上选的日期和部门范围，帮我看哪些菜相对父级分类定的毛利标准偏低（没到带下沿）或明显偏高，先列前3道，并各用一句话说可能原因（定价、成本、用量）。"),
+                        question("dish-profit-margin-dish", "点一道 菜看综合毛利和配料",
+                                "我重点盯一道常卖的菜：请结合单菜看板与配料分析，说明这道菜的综合实际毛利率是否落在父级分类定的毛利带里，并指出1～2个最拖毛利的配料（从成本占比或实际用量偏离说）。")
                 )));
         topics.add(topic("procurement-structure",
                 "这个月钱主要花在哪？",
@@ -195,9 +201,15 @@ public class GbAiChatController {
      * @Description 结束对话并触发记忆提取流程
      */
     @PostMapping("/end/{conversationId}")
-    @Operation(summary = "结束对话", description = "结束对话并触发记忆提取流程")
+    @Operation(summary = "结束对话", description = "结束对话；有消息内容时触发记忆与总结，空对话不保存")
     public R endConversation(@Parameter(description = "对话ID") @PathVariable Long conversationId) {
-        chatService.endConversation(conversationId);
+        int out = chatService.endConversation(conversationId);
+        if (out == 0) {
+            return R.error(-1, "对话不存在");
+        }
+        if (out == 1) {
+            return R.ok("对话已结束（无内容，未保存记忆）");
+        }
         return R.ok("对话已结束，记忆已提取");
     }
 

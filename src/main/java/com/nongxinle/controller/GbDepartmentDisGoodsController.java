@@ -5,6 +5,7 @@ import com.nongxinle.dto.GbDepGoodsStockAdjustResult;
 import com.nongxinle.entity.*;
 import com.nongxinle.service.GbDepartmentDisGoodsService;
 import com.nongxinle.service.GbDepartmentGoodsStockService;
+import com.nongxinle.service.GbDepartmentReorderReminderService;
 import com.nongxinle.service.GbDistributerGoodsService;
 import com.nongxinle.utils.R;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,6 +34,8 @@ public class GbDepartmentDisGoodsController {
     private GbDepartmentGoodsStockService gbDepGoodsStockService;
     @Autowired
     private GbDistributerGoodsService gbDistributerGoodsService;
+    @Autowired
+    private GbDepartmentReorderReminderService gbDepartmentReorderReminderService;
 
 
 
@@ -290,7 +293,20 @@ public class GbDepartmentDisGoodsController {
         return R.ok().put("data", result.getData());
     }
 
-
-
+    /**
+     * 订货习惯提醒分页（以历史到货订单推断间隔与习惯订货量；辅以库存偏多、损耗与废弃偏多提示）。
+     */
+    @Operation(summary = "订货习惯提醒分页", description = "与 depGetDepGoodsGbPage 相同返回顶层 page；list 中单条含 aiHabitIntervalDays、aiNextHabitOrderDate、aiShouldRemindToday、aiAuxHints")
+    @RequestMapping(value = "/depReorderReminderPage", method = RequestMethod.POST)
+    public R depReorderReminderPage(
+            @RequestParam Integer depId,
+            @RequestParam Integer page,
+            @RequestParam Integer limit,
+            @RequestParam(required = false) Integer windowDays,
+            @RequestParam(required = false) Integer minTimes) {
+        Map<String, Object> payload =
+                gbDepartmentReorderReminderService.depReorderReminderPage(depId, page, limit, windowDays, minTimes);
+        return R.ok().put("page", payload != null ? payload.get("page") : null);
+    }
 
 }

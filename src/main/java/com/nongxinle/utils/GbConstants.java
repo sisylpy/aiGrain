@@ -247,7 +247,7 @@ public final class GbConstants {
 
         /** 待定 */
         public static final Integer UN_DETERMINED = 0;
-        /** 自采 */
+        /** 自采（门店自行采购），库值 1 */
         public static final Integer SELF_PURCHASE = 1;
         /** 集采 */
         public static final Integer GROUP_PURCHASE = 2;
@@ -259,7 +259,7 @@ public final class GbConstants {
         public static final Integer CENTRAL_KITCHEN = 4;
         /** 中央厨房采购 */
         public static final Integer CENTRAL_KITCHEN_PURCHASE = 41;
-        /** 配送商 */
+        /** 配送商 / **供货商订货**（业务：向供货商订货的采购行，库值 5；与 {@link #SELF_PURCHASE} 自采不同） */
         public static final Integer DELIVERY_SUPPLIER = 5;
         /** 退货 */
         public static final Integer RETURN = 9;

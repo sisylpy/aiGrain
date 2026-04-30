@@ -1,0 +1,4 @@
+"nx_goods_id"	"nx_goods_name"	"nx_goods_standardname"	"nx_goods_detail"	"nx_goods_brand"	"nx_goods_place"	"nx_goods_pinyin"	"nx_goods_py"	"nx_goods_father_id"	"nx_goods_sort"	"nx_goods_file"	"nx_goods_standard_amount"	"nx_goods_standard_weight"	"nx_goods_apply_nx_distributer_id"	"nx_goods_level"	"nx_goods_grand_id"	"nx_goods_is_oldest_son"	"nx_goods_sons_sort"	"nx_goods_is_hidden"	"nx_goods_file_big"	"nx_goods_great_grand_id"	"nx_goods_quantity_days"	"nx_goods_carton_unit"	"nx_goods_items_per_carton"
+"10597"	"绿葡萄干"	""	""	""	""	"lüputaogan"	"lptg"	"306"	"30"	"goodsImage/logo.jpg"		""		"2"			"0"	"0"	""			""	
+"100553"	"绿葡萄干"	"斤"				"lüputaogan"	"lptg"	"10597"	"30"	"goodsImage/绿葡萄干2025-12-24 18:41.jpg"				"3"	"306"	"1"	"1"	"0"	"goodsImage/绿葡萄干2025-12-24 18:41large.jpg"	"3"		"箱"	
+"102338"	"黑葡萄干"	"斤"				"heiputaogan"	"hptg"	"10597"	"30"	"goodsImage/黑葡萄干2025-12-24 18:41.jpg"				"3"	"306"	"0"	"3"	"0"	"goodsImage/黑葡萄干2025-12-24 18:41large.jpg"	"3"		"箱"	

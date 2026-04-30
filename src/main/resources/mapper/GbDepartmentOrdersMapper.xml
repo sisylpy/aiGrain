@@ -582,4 +582,71 @@
         </where>
     </select>
 
+    <!-- 订货习惯候选：时间窗口内某部门商品订货次数 >= minTimes -->
+    <select id="countDepGoodsReorderCandidates" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM (
+            SELECT dor.gb_DO_dep_dis_goods_id
+            FROM gb_department_orders AS dor
+            <where>
+                dor.gb_DO_department_id = #{depId}
+                AND dor.gb_DO_dep_dis_goods_id IS NOT NULL
+                <if test="equalStatus != null">
+                    AND dor.gb_DO_status = #{equalStatus}
+                </if>
+                <if test="startDate != null">
+                    AND dor.gb_DO_arrive_date &gt;= #{startDate}
+                </if>
+                <if test="stopDate != null">
+                    AND dor.gb_DO_arrive_date &lt;= #{stopDate}
+                </if>
+            </where>
+            GROUP BY dor.gb_DO_dep_dis_goods_id
+            HAVING COUNT(*) &gt;= #{minTimes}
+        ) t
+    </select>
+
+    <select id="selectDepGoodsReorderCandidatesPage" resultType="java.lang.Integer">
+        SELECT dor.gb_DO_dep_dis_goods_id
+        FROM gb_department_orders AS dor
+        <where>
+            dor.gb_DO_department_id = #{depId}
+            AND dor.gb_DO_dep_dis_goods_id IS NOT NULL
+            <if test="equalStatus != null">
+                AND dor.gb_DO_status = #{equalStatus}
+            </if>
+            <if test="startDate != null">
+                AND dor.gb_DO_arrive_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND dor.gb_DO_arrive_date &lt;= #{stopDate}
+            </if>
+        </where>
+        GROUP BY dor.gb_DO_dep_dis_goods_id
+        HAVING COUNT(*) &gt;= #{minTimes}
+        ORDER BY COUNT(*) DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 窗口内仅 1 笔已收货订单的部门商品（用于单次订货 + 库存按日消耗估算的补充提醒） -->
+    <select id="selectDepGoodsIdsSingleOrderInWindow" resultType="java.lang.Integer">
+        SELECT dor.gb_DO_dep_dis_goods_id
+        FROM gb_department_orders AS dor
+        <where>
+            dor.gb_DO_department_id = #{depId}
+            AND dor.gb_DO_dep_dis_goods_id IS NOT NULL
+            <if test="equalStatus != null">
+                AND dor.gb_DO_status = #{equalStatus}
+            </if>
+            <if test="startDate != null">
+                AND dor.gb_DO_arrive_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND dor.gb_DO_arrive_date &lt;= #{stopDate}
+            </if>
+        </where>
+        GROUP BY dor.gb_DO_dep_dis_goods_id
+        HAVING COUNT(*) = 1
+        ORDER BY MAX(dor.gb_DO_arrive_date) DESC
+    </select>
+
 </mapper>

@@ -135,10 +135,9 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
                 <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
+                    <!-- 与 spring-boot-starter-parent 的 java.version 一致；勿锁 1.8，否则 Boot 3 + 新代码易编译失败或未刷新，表现为缺 Bean -->
+                    <release>${java.version}</release>
                 </configuration>
             </plugin>
         </plugins>

@@ -44,6 +44,7 @@ public class GbDepartmentGoodsStockReduceEntity implements Serializable {
 	private Integer gbDgsrGbDisGoodsFatherId;
 	private Integer gbDgsrGbDisGoodsGrandId;
 	private Integer gbDgsrGbDisGoodsGreatId;
+	/** 对应出库时所扣库存批次的 {@code gb_dgs_nx_supplier_id}：{@code -1}=自采；正整数=供货商 ID。 */
 	private Integer gbDgsrStockNxSupplierId;
 	private Integer gbDgsrStatus;
 	private Integer gbDgsrStockPurUserId;

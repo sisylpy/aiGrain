@@ -1,5 +1,6 @@
 package com.nongxinle.controller;
 
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -287,6 +288,10 @@ public class GbDistributerFoodController {
 	@RequestMapping(value = "/updateGbFood", method = RequestMethod.POST)
 	@ResponseBody
 	public R updateGbFood(@RequestBody GbDistributerFoodEntity suppler) {
+		String marginErr = validateGrossMarginStandard(suppler);
+		if (marginErr != null) {
+			return R.error(-1, marginErr);
+		}
 		gbDistributerFoodService.update(suppler);
 		return R.ok();
 	}
@@ -294,19 +299,49 @@ public class GbDistributerFoodController {
 	@RequestMapping(value = "/saveGbFoodFather", method = RequestMethod.POST)
 	@ResponseBody
 	public R saveGbFoodFather(@RequestBody GbDistributerFoodEntity foodEntity) {
-		String gbDistributerFoodName = foodEntity.getGbDfFoodName();
-		Map<String, Object> map = new HashMap<>();
-		map.put("foodName", gbDistributerFoodName);
-		map.put("fatherId", 0);
-		System.out.println("whatisimap" + map);
-		List<GbDistributerFoodEntity> foodEntities = gbDistributerFoodService.queryFoodByParams(map);
-		if(foodEntities.size() > 0){
-			return R.error(-1, "名称重复了");
-		}else{
-			foodEntity.setGbDfFoodFatherId(0);
-			gbDistributerFoodService.save(foodEntity);
-			return R.ok();
+		if (foodEntity.getGbDfDistributerId() == null) {
+			return R.error(-1, "缺少批发商id");
 		}
+		String name = foodEntity.getGbDfFoodName();
+		if (name == null || name.trim().isEmpty()) {
+			return R.error(-1, "名称不能为空");
+		}
+		String marginErr = validateGrossMarginStandard(foodEntity);
+		if (marginErr != null) {
+			return R.error(-1, marginErr);
+		}
+		Map<String, Object> map = new HashMap<>();
+		map.put("foodName", name);
+		map.put("fatherId", 0);
+		map.put("disId", foodEntity.getGbDfDistributerId());
+		List<GbDistributerFoodEntity> foodEntities = gbDistributerFoodService.queryFoodByParams(map);
+		if (foodEntities.size() > 0) {
+			return R.error(-1, "名称重复了");
+		}
+		foodEntity.setGbDfFoodFatherId(0);
+		gbDistributerFoodService.save(foodEntity);
+		return R.ok();
+	}
+
+	/**
+	 * 父级/分类 毛利率标尺：目标与上下浮动全空或全有；若有值则 0–100。返回 null 表示可保存。
+	 */
+	private static String validateGrossMarginStandard(GbDistributerFoodEntity e) {
+		BigDecimal t = e.getGbDfTargetGrossMarginRate();
+		BigDecimal f = e.getGbDfGrossMarginFloatAbs();
+		if (t == null && f == null) {
+			return null;
+		}
+		if (t == null || f == null) {
+			return "目标毛利率与上下浮动需同时设置或同时留空";
+		}
+		if (t.signum() < 0 || t.compareTo(new BigDecimal("100")) > 0) {
+			return "目标毛利率须在 0～100 之间";
+		}
+		if (f.signum() < 0 || f.compareTo(new BigDecimal("100")) > 0) {
+			return "上下浮动须在 0～100 个绝对百分点内";
+		}
+		return null;
 	}
 
 	@RequestMapping(value = "/disGetFood/{disId}")

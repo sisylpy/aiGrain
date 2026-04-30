@@ -79,6 +79,10 @@ public class GbDepartmentGoodsStockEntity implements Serializable,Comparable {
 	 *  接收用户
 	 */
 	private Integer gbDgsReceiveUserId;
+	/**
+	 * 入库批次供货来源（农鲜供货商维度）。与采购商品行 {@code gb_DPG_purchase_nx_supplier_id}、出库流水 {@code gb_dgsr_stock_nx_supplier_id} 同语义：
+	 * {@code -1} 表示自采；正整数为 nx 供货商 ID（供货商配送）。回答「这批库存是自采还是供货商送的」应以此字段为准。
+	 */
 	private Integer gbDgsNxSupplierId;
 	/**
 	 *  批次状态

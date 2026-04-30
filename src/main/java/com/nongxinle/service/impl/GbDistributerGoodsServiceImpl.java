@@ -286,7 +286,6 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
             Integer distributerFatherGoodsId = dgf.getGbDistributerFatherGoodsId();
             goods.setGbDgDfgGoodsFatherId(distributerFatherGoodsId);
 
-            System.out.println("zizin" + dgf.getGbDfgFathersFatherId());
             save(goods);
 
             String grandName = goods.getGbDgNxGrandName();

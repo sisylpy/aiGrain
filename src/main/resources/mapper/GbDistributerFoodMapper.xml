@@ -19,6 +19,8 @@
         <result property="gbDfFoodMethod" column="gb_df_food_method"/>
         <result property="gbDfFoodDetail" column="gb_df_food_detail"/>
         <result property="gbDfGoodsSort" column="gb_df_goods_sort"/>
+        <result property="gbDfTargetGrossMarginRate" column="gb_df_target_gross_margin_rate"/>
+        <result property="gbDfGrossMarginFloatAbs" column="gb_df_gross_margin_float_abs"/>
         <!-- 关联菜品的成分商品 -->
         <collection property="gbdisFoodGoodsEntities" resultMap="foodGoodsResult"/>
     </resultMap>
@@ -126,11 +128,11 @@
         insert into gb_distributer_food
         (gb_df_distributer_id, gb_df_nx_food_id, gb_df_food_name, gb_df_food_price, gb_df_status,
          gb_df_food_pinyin, gb_df_food_py, gb_df_food_father_id, gb_df_food_img, gb_df_food_img_large,
-         gb_df_food_method, gb_df_food_detail, gb_df_goods_sort)
+         gb_df_food_method, gb_df_food_detail, gb_df_goods_sort, gb_df_target_gross_margin_rate, gb_df_gross_margin_float_abs)
         values
         (#{gbDfDistributerId}, #{gbDfNxFoodId}, #{gbDfFoodName}, #{gbDfFoodPrice}, #{gbDfStatus},
          #{gbDfFoodPinyin}, #{gbDfFoodPy}, #{gbDfFoodFatherId}, #{gbDfFoodImg}, #{gbDfFoodImgLarge},
-         #{gbDfFoodMethod}, #{gbDfFoodDetail}, #{gbDfGoodsSort})
+         #{gbDfFoodMethod}, #{gbDfFoodDetail}, #{gbDfGoodsSort}, #{gbDfTargetGrossMarginRate}, #{gbDfGrossMarginFloatAbs})
     </insert>
 
     <update id="update" parameterType="com.nongxinle.entity.GbDistributerFoodEntity">
@@ -146,6 +148,8 @@
             <if test="gbDfFoodPinyin != null">`gb_df_food_pinyin` = #{gbDfFoodPinyin},</if>
             <if test="gbDfFoodPy != null">`gb_df_food_py` = #{gbDfFoodPy},</if>
             <if test="gbDfGoodsSort != null">`gb_df_goods_sort` = #{gbDfGoodsSort},</if>
+            <if test="gbDfTargetGrossMarginRate != null">`gb_df_target_gross_margin_rate` = #{gbDfTargetGrossMarginRate},</if>
+            <if test="gbDfGrossMarginFloatAbs != null">`gb_df_gross_margin_float_abs` = #{gbDfGrossMarginFloatAbs},</if>
         </set>
         where gb_distributer_food_id = #{gbDistributerFoodId}
     </update>

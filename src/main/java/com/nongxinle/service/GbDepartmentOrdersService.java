@@ -73,4 +73,10 @@ public interface GbDepartmentOrdersService extends IService<GbDepartmentOrdersEn
      */
     GbDepartmentOrdersEntity queryReturnOrderByReduceId(Integer reduceId);
 
+    Integer countDepGoodsReorderCandidates(Map<String, Object> map);
+
+    List<Integer> selectDepGoodsReorderCandidatesPage(Map<String, Object> map);
+
+    List<Integer> selectDepGoodsIdsSingleOrderInWindow(Map<String, Object> map);
+
 }

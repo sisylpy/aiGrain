@@ -143,14 +143,44 @@ public class GbAiMemoryServiceImpl implements GbAiMemoryService {
         ) > 0;
     }
 
+    /**
+     * 模型常返回带 markdown 围栏的内容（如 {@code ```json \n{...}\n```}），{@link JSONUtil#parseObj(String)} 需要纯 JSON。
+     */
+    private static String unwrapAssistantJsonPayload(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String t = raw.trim();
+        if (t.startsWith("```")) {
+            int firstNl = t.indexOf('\n');
+            if (firstNl >= 0) {
+                t = t.substring(firstNl + 1);
+            } else {
+                t = t.replaceFirst("^```+\\s*[a-zA-Z0-9_-]*", "");
+            }
+            t = t.trim();
+            if (t.endsWith("```")) {
+                t = t.substring(0, t.length() - 3).trim();
+            }
+        }
+        t = t.trim();
+        if (!t.isEmpty() && t.charAt(0) != '{') {
+            int b = t.indexOf('{');
+            if (b >= 0) {
+                t = t.substring(b);
+            }
+        }
+        return t.trim();
+    }
+
     @Override
     public void saveConversationSummary(Long conversationId, Long departmentId, Long userId, String summaryResult) {
         log.info("========== 保存DeepSeek对话总结 ==========");
         log.info("conversationId={}, departmentId={}", conversationId, departmentId);
 
         try {
-            // 1. 解析JSON
-            JSONObject json = JSONUtil.parseObj(summaryResult);
+            // 1. 解析JSON（先去掉 ```json 围栏，避免 "must begin with '{'"）
+            JSONObject json = JSONUtil.parseObj(unwrapAssistantJsonPayload(summaryResult));
 
             // 2. 保存对话主题摘要（作为一条总记忆）
             String conversationTopic = json.getStr("conversationTopic", "未分类对话");
@@ -175,17 +205,37 @@ public class GbAiMemoryServiceImpl implements GbAiMemoryService {
                 log.info("保存对话主题记忆: {}", conversationTopic);
             }
 
-            // 3. 保存提取的记忆点
+            // 3. 保存提取的记忆点（支持对象 {title,content,...} 或纯字符串，与 LLM 输出两种形态兼容）
             JSONArray memories = json.getJSONArray("memories");
             if (memories != null && !memories.isEmpty()) {
-                for (JSONObject memory : memories.jsonIter()) {
-                    String title = memory.getStr("title", "");
-                    String content = memory.getStr("content", "");
-                    String type = memory.getStr("type", "普通记忆");
-                    Integer importance = memory.getInt("importance", 5);
-                    String tags = memory.getStr("tags", type);
-
-                    // 检查是否已存在相同的记忆
+                for (int i = 0; i < memories.size(); i++) {
+                    Object raw = memories.get(i);
+                    String title;
+                    String content;
+                    String type = "普通记忆";
+                    Integer importance = 5;
+                    String tags;
+                    if (raw instanceof JSONObject) {
+                        JSONObject memory = (JSONObject) raw;
+                        title = memory.getStr("title", "");
+                        content = memory.getStr("content", "");
+                        type = memory.getStr("type", "普通记忆");
+                        importance = memory.getInt("importance", 5);
+                        tags = memory.getStr("tags", type);
+                    } else {
+                        content = raw == null ? "" : String.valueOf(raw);
+                        title = StrUtil.subWithLength(content, 0, 30);
+                        if (content.length() > 30) {
+                            title = title + "…";
+                        }
+                        if (StrUtil.isBlank(title)) {
+                            title = "记忆点";
+                        }
+                        tags = type;
+                    }
+                    if (StrUtil.isEmpty(content)) {
+                        continue;
+                    }
                     if (!memoryExists(departmentId, content)) {
                         GbAiMemoryEntity m = new GbAiMemoryEntity();
                         m.setGbAiMemoryDepartmentId(departmentId);
@@ -209,15 +259,22 @@ public class GbAiMemoryServiceImpl implements GbAiMemoryService {
                 }
             }
 
-            // 4. 保存承诺
+            // 4. 保存承诺（支持对象 {content,deadline} 或纯字符串）
             JSONArray commitments = json.getJSONArray("commitments");
             if (commitments != null && !commitments.isEmpty()) {
-                for (JSONObject commitment : commitments.jsonIter()) {
-                    String content = commitment.getStr("content", "");
-                    String deadline = commitment.getStr("deadline", "");
-
+                for (int i = 0; i < commitments.size(); i++) {
+                    Object raw = commitments.get(i);
+                    String content;
+                    String deadline = "";
+                    if (raw instanceof JSONObject) {
+                        JSONObject commitment = (JSONObject) raw;
+                        content = commitment.getStr("content", "");
+                        deadline = commitment.getStr("deadline", "");
+                    } else {
+                        content = raw == null ? "" : String.valueOf(raw);
+                    }
                     if (StrUtil.isNotEmpty(content)) {
-                        String fullContent = deadline != null && !deadline.isEmpty()
+                        String fullContent = StrUtil.isNotBlank(deadline)
                                 ? content + " (截止: " + deadline + ")"
                                 : content;
 

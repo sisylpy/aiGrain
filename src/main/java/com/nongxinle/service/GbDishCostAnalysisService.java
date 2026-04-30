@@ -60,4 +60,12 @@ public interface GbDishCostAnalysisService {
      */
     Map<Integer, BigDecimal> getDishActualCostPerPortion123ByFoodIds(String startDate, String endDate, Integer disId,
             Integer depFatherId, Set<Integer> foodIds);
+
+    /**
+     * 与 {@code /gbDishCostAnalysis/dishIngredientDashboard} 的 {@code dish}、{@code /ingredientAnalysis} 按菜行一致：
+     * 各菜 {@code theoryCostPerPortion}、{@code actualCostPerPortion}（type1+2+3 摊销）、{@code diffCostPerPortion}、{@code salesPortions}（字符串）。
+     * <p>注意：与 {@link #buildReport} {@code salesDishRows} 的 {@code theoryCostAmount}/{@code actualCostAmount} 不同——后者整菜「实际」侧仅按生产出库 type1 重量分摊计价，未并入 type2/3 分摊金额。</p>
+     */
+    Map<Integer, Map<String, String>> getDishPerPortionCosts123ByFoodIds(String startDate, String endDate, Integer disId,
+            Integer depFatherId, Set<Integer> foodIds);
 }

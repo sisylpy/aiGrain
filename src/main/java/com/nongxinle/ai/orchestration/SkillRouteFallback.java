@@ -35,19 +35,22 @@ public final class SkillRouteFallback {
     public static SkillSelectionResult apply(String userMessage, SkillSelectionResult fromLlm) {
         boolean empty = isNoneOrEmptySkills(fromLlm.skillsCsv());
         boolean needFallback = !fromLlm.llmStructuredOk() || empty;
+        SkillSelectionResult routed;
         if (!needFallback) {
-            return fromLlm.withRouteSource(ChatRouteSource.LLM);
+            routed = fromLlm.withRouteSource(ChatRouteSource.LLM);
+        } else {
+            String inferred = inferSkillsCsv(userMessage);
+            boolean broad = fromLlm.broadQuestion() || inferBroadQuestionFallback(userMessage);
+            routed = new SkillSelectionResult(
+                    inferred,
+                    fromLlm.costFacet(),
+                    broad,
+                    fromLlm.confidence(),
+                    fromLlm.llmStructuredOk(),
+                    ChatRouteSource.RULE_FALLBACK
+            );
         }
-        String inferred = inferSkillsCsv(userMessage);
-        boolean broad = fromLlm.broadQuestion() || inferBroadQuestionFallback(userMessage);
-        return new SkillSelectionResult(
-                inferred,
-                fromLlm.costFacet(),
-                broad,
-                fromLlm.confidence(),
-                fromLlm.llmStructuredOk(),
-                ChatRouteSource.RULE_FALLBACK
-        );
+        return routed.withNormalizedCostFacet();
     }
 
     private static boolean isNoneOrEmptySkills(String csv) {
@@ -74,10 +77,83 @@ public final class SkillRouteFallback {
         }
         String u = userMessage.toLowerCase(Locale.ROOT);
         if (u.contains("自采") && !(u.contains("采购") || u.contains("进货"))) {
-            // 仅问自采时有专用块，不重复拉全量采购
+            if (!supplierOrderPurchaseCue(u)) {
+                // 仅问自采时有专用块，不重复拉全量采购
+                return false;
+            }
+        }
+        return u.contains("采购") || u.contains("进货") || supplierOrderPurchaseCue(u);
+    }
+
+    /**
+     * 是否附带「本月供货商订货采购」事实块（{@code gb_DPG_purchase_type} = {@link com.nongxinle.utils.GbConstants.PurchaseOrderType#DELIVERY_SUPPLIER}，值 5）。
+     * <p>触发场景含：供货商/供应商/配送商 + （订货、下单、配送、送货 等），覆盖「给我配送哪些原料」类口语。</p>
+     */
+    public static boolean shouldAttachSupplierOrderPurchaseFacts(String userMessage) {
+        if (StrUtil.isBlank(userMessage)) {
             return false;
         }
-        return u.contains("采购") || u.contains("进货");
+        return supplierOrderPurchaseCue(userMessage.toLowerCase(Locale.ROOT));
+    }
+
+    private static boolean supplierOrderPurchaseCue(String u) {
+        boolean supplierCtx = u.contains("供货商") || u.contains("供应商") || u.contains("配送商");
+        boolean channelCue = u.contains("订货") || u.contains("下单")
+                || u.contains("配送") || u.contains("送货")
+                || u.contains("供货单") || u.contains("送货单");
+        return supplierCtx && channelCue;
+    }
+
+    /** 订货/到货节奏类关键词（小写消息）。 */
+    private static boolean reorderHabitCue(String u) {
+        boolean explicitPhrase = u.contains("采购频率") || u.contains("订货频率") || u.contains("进货频率")
+                || u.contains("订货习惯") || u.contains("补货节奏") || u.contains("订货节奏") || u.contains("补货频率")
+                || u.contains("订货间隔") || u.contains("多久订一次") || u.contains("订货周期");
+        boolean purchaseOrInboundAndFreq = (u.contains("采购") || u.contains("进货") || u.contains("订货"))
+                && u.contains("频率");
+        return explicitPhrase || purchaseOrInboundAndFreq;
+    }
+
+    /**
+     * 是否附带「订货/到货频率与习惯」事实块（与 {@code depReorderReminderPage} 同源：{@code gb_department_orders} / {@code gb_DO_arrive_date}）。
+     */
+    public static boolean shouldAttachReorderHabitFacts(String userMessage) {
+        if (StrUtil.isBlank(userMessage)) {
+            return false;
+        }
+        return reorderHabitCue(userMessage.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * 是否附带「本月采购单价波动」事实块（按入库完成日筛，同 {@link #shouldAttachPurchaseFacts} 的采购表口径）。
+     */
+    public static boolean shouldAttachPurchasePriceVolatilityFacts(String userMessage) {
+        if (StrUtil.isBlank(userMessage)) {
+            return false;
+        }
+        String u = userMessage.toLowerCase(Locale.ROOT);
+        if (u.contains("售价") || u.contains("定价") || u.contains("菜单价")) {
+            return false;
+        }
+        boolean priceCue = u.contains("单价") || u.contains("进价") || u.contains("进货价") || u.contains("采购价")
+                || u.contains("入库价");
+        boolean volCue = u.contains("波动") || u.contains("涨跌") || u.contains("浮动") || u.contains("变动")
+                || u.contains("价差") || u.contains("差价");
+        boolean rangeCue = u.contains("最贵") || u.contains("最便宜") || (u.contains("最高") && u.contains("最低"));
+        return (priceCue && volCue)
+                || (priceCue && rangeCue && (u.contains("采购") || u.contains("进货") || u.contains("进价")))
+                || (volCue && (u.contains("采购") || u.contains("进货")));
+    }
+
+    /**
+     * 单价波动是否仅统计自采行（与 {@link #shouldAttachPurchaseFacts} 互斥场景对齐：仅「自采」且未出现采购/进货）。
+     */
+    public static boolean volatilityFactsSelfPurchaseOnly(String userMessage) {
+        if (StrUtil.isBlank(userMessage)) {
+            return false;
+        }
+        String u = userMessage.toLowerCase(Locale.ROOT);
+        return u.contains("自采") && !u.contains("采购") && !u.contains("进货");
     }
 
     /**
@@ -159,7 +235,8 @@ public final class SkillRouteFallback {
                 || u.contains("食材") || u.contains("利润") && (u.contains("薄") || u.contains("低"))
                 || u.contains("支出") || u.contains("费用") && u.contains("控")
                 || u.contains("采购") || u.contains("进货") || u.contains("自采")
-                || supplierUnsettled;
+                || supplierUnsettled || supplierOrderPurchaseCue(u)
+                || shouldAttachReorderHabitFacts(userMessage);
         boolean revenue = u.contains("营业") || u.contains("营收") || u.contains("客流") || u.contains("促销")
                 || u.contains("营销") || u.contains("生意") || shouldAttachDishSalesFacts(userMessage);
         boolean extractor = (u.contains("租金") || u.contains("工资") || u.contains("月薪"))
@@ -209,7 +286,13 @@ public final class SkillRouteFallback {
         }
         return u.contains("采购") || u.contains("进货") || u.contains("供应商") || u.contains("供货商")
                 || u.contains("应付") || u.contains("未结") || u.contains("挂账")
-                || u.contains("结账") || u.contains("自采");
+                || u.contains("结账") || u.contains("自采")
+                || u.contains("进价") || u.contains("进货价") || u.contains("采购价")
+                || u.contains("入库价")
+                || (u.contains("单价") && u.contains("波动"))
+                || (u.contains("原料") && (u.contains("订货") || u.contains("供货商") || u.contains("供应商")))
+                || supplierOrderPurchaseCue(u)
+                || reorderHabitCue(u);
     }
 
     private static boolean isProfitPilotIntent(String u) {

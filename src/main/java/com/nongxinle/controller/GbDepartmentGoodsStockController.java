@@ -161,11 +161,12 @@ public class GbDepartmentGoodsStockController {
         try {
             Map<String, Object> mapDisGoods = new HashMap<>();
             mapDisGoods.put("disGoodsId", disGoodsId);
-            mapDisGoods.put("restWeight", 0);
+//            mapDisGoods.put("restWeight", 0);
             mapDisGoods.put("startDate", startDate);
             mapDisGoods.put("stopDate", stopDate);
-            System.out.println("mapdddffafdasnnnnnn333333333" + mapDisGoods);
-            List<GbDepartmentGoodsStockEntity> stockEntities = gbDepartmentGoodsStockService.queryGoodsStockByParams(mapDisGoods);
+            System.out.println("mapdddffafdasnnnnnn33333333311111" + mapDisGoods);
+            List<GbDepartmentGoodsStockEntity> stockEntities = gbDepartmentGoodsStockQueryService.queryDisGoodsBusiness(disGoodsId, startDate, stopDate);
+
             System.out.println("stoennenenene" + stockEntities.size());
             return R.ok().put("data", stockEntities);
         } catch (Exception e) {

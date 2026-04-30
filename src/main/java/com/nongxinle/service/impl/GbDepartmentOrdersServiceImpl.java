@@ -201,4 +201,19 @@ public class GbDepartmentOrdersServiceImpl extends ServiceImpl<GbDepartmentOrder
                 .last("LIMIT 1"));
     }
 
+    @Override
+    public Integer countDepGoodsReorderCandidates(Map<String, Object> map) {
+        return gbDepartmentOrdersMapper.countDepGoodsReorderCandidates(map);
+    }
+
+    @Override
+    public List<Integer> selectDepGoodsReorderCandidatesPage(Map<String, Object> map) {
+        return gbDepartmentOrdersMapper.selectDepGoodsReorderCandidatesPage(map);
+    }
+
+    @Override
+    public List<Integer> selectDepGoodsIdsSingleOrderInWindow(Map<String, Object> map) {
+        return gbDepartmentOrdersMapper.selectDepGoodsIdsSingleOrderInWindow(map);
+    }
+
 }

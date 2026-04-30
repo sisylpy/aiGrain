@@ -589,10 +589,14 @@
             (SELECT IFNULL(SUM(gdgs2.gb_dgs_waste_subtotal), 0)
              FROM gb_department_goods_stock gdgs2
              WHERE gdgs2.gb_dgs_gb_dis_goods_id = gdgs.gb_dgs_gb_dis_goods_id
-            ) as 'wasteTotal'
+            ) as 'wasteTotal',
+            pur_user.gb_du_wx_nick_name as 'purUserName',
+            njs.nx_jrdhs_supplier_name as 'nxSupplierName'
         FROM gb_department_goods_stock AS gdgs
         LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
         LEFT JOIN gb_department AS gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_id
+        LEFT JOIN gb_department_user AS pur_user ON pur_user.gb_department_user_id = gdgs.gb_dgs_pur_user_id
+        LEFT JOIN nx_jrdh_supplier AS njs ON njs.nx_jrdh_supplier_id = gdgs.gb_dgs_nx_supplier_id
         <where>
             <if test="depId != null">
                 AND gdgs.gb_dgs_gb_department_id = #{depId}

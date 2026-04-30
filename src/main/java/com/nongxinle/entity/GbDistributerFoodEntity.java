@@ -9,6 +9,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.List;
 
 
@@ -36,6 +37,14 @@ public class GbDistributerFoodEntity implements Serializable {
     private String gbDfFoodMethod;
     private String gbDfFoodDetail;
     private Integer gbDfGoodsSort;
+    /**
+     * 父级/分类：目标综合毛利率(%)，与单菜 blendedGrossMarginRateOnListPrice 同口径；null=未配置。
+     */
+    private BigDecimal gbDfTargetGrossMarginRate;
+    /**
+     * 父级/分类：目标毛利率上下浮动绝对百分点，带内为 [T−F, T+F]；null=未配置。
+     */
+    private BigDecimal gbDfGrossMarginFloatAbs;
 
     @TableField(exist = false)
     private List<GbDistributerFoodGoodsEntity> gbdisFoodGoodsEntities;

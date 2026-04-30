@@ -363,13 +363,13 @@ public class GbDepartmentOrdersController {
         System.out.println("ordstats" + gbDepartmentOrdersEntity.getGbDoStatus());
         if(gbDepartmentOrdersEntity.getGbDoStatus() == 0){
 
-            gbDepartmentOrdersEntity.setGbDoStatus(getGbOrderStatusProcurement());
+            gbDepartmentOrdersEntity.setGbDoStatus(GbConstants.DepartmentOrderStatus.WEIGHT_CAPTURED);
 
             Integer gbDpgOrdersWeightAmount = purchaseGoodsEntity.getGbDpgOrdersWeightAmount();
             Integer gbDpgOrdersAmount = purchaseGoodsEntity.getGbDpgOrdersAmount();
             System.out.println("gbDpgOrdersFinishAmount=" + gbDpgOrdersWeightAmount +"gbDpgOrdersAmount== " + gbDpgOrdersAmount);
             if(gbDpgOrdersAmount - gbDpgOrdersWeightAmount == 1){
-                purchaseGoodsEntity.setGbDpgStatus(getGbPurchaseGoodsStatusWeightFinished());
+                purchaseGoodsEntity.setGbDpgStatus(GbConstants.PurchaseGoodsStatus.WEIGHT_FINISHED);
             }
             purchaseGoodsEntity.setGbDpgOrdersWeightAmount(gbDpgOrdersWeightAmount + 1);
         }
@@ -382,7 +382,7 @@ public class GbDepartmentOrdersController {
             BigDecimal decimal2 = new BigDecimal(weight);
             BigDecimal decimal3 = decimal1.multiply(decimal2).setScale(1, BigDecimal.ROUND_HALF_UP);
             gbDepartmentOrdersEntity.setGbDoSubtotal(decimal3.toString());
-            gbDepartmentOrdersEntity.setGbDoBuyStatus(getGbOrderBuyStatusHasWeightAndPrice());
+            gbDepartmentOrdersEntity.setGbDoBuyStatus(GbConstants.OrderBuyStatus.HAS_WEIGHT_AND_PRICE);
 
         }else{
             gbDepartmentOrdersEntity.setGbDoBuyStatus(getGbOrderBuyStatusPrepareing());
@@ -406,17 +406,17 @@ public class GbDepartmentOrdersController {
                 purchaseGoodsEntity.setGbDpgBuySubtotal(String.format("%.1f", subtotalTotal));
             }
             gbDistributerPurchaseGoodsService.updateById(purchaseGoodsEntity);
-
-            Integer gbDpgBatchId = purchaseGoodsEntity.getGbDpgBatchId();
-            Map<String, Object> mapBatch = new HashMap<>();
-            mapBatch.put("batchId", gbDpgBatchId);
-            Integer integer1 = gbDistributerPurchaseGoodsService.queryGbPurchaseGoodsCount(mapBatch);
-            if(integer1 > 0){
-                Double subTotal = gbDistributerPurchaseGoodsService.queryPurchaseGoodsSubTotal(mapBatch);
-                GbDistributerPurchaseBatchEntity batchEntity = gbDistributerPurchaseBatchService.getById(gbDpgBatchId);
-                batchEntity.setGbDpbSubtotal(String.format("%.1f", subTotal));
-                gbDistributerPurchaseBatchService.updateById(batchEntity);
-            }
+//
+//            Integer gbDpgBatchId = purchaseGoodsEntity.getGbDpgBatchId();
+//            Map<String, Object> mapBatch = new HashMap<>();
+//            mapBatch.put("batchId", gbDpgBatchId);
+//            Integer integer1 = gbDistributerPurchaseGoodsService.queryGbPurchaseGoodsCount(mapBatch);
+//            if(integer1 > 0){
+//                Double subTotal = gbDistributerPurchaseGoodsService.queryPurchaseGoodsSubTotal(mapBatch);
+//                GbDistributerPurchaseBatchEntity batchEntity = gbDistributerPurchaseBatchService.getById(gbDpgBatchId);
+//                batchEntity.setGbDpbSubtotal(String.format("%.1f", subTotal));
+//                gbDistributerPurchaseBatchService.updateById(batchEntity);
+//            }
         }
 
         return R.ok();

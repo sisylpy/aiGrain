@@ -46,7 +46,7 @@ public class GbDepFoodController {
 	 * 部门菜品列表：配方、主档商品、可选日期内销量。
 	 * <p>当 {@code startDate}、{@code stopDate}、{@code disId}、{@code depFatherId} 齐全时：在每条 {@code GbDepFoodEntity} 上填充 {@code gbDfBusinessInsight}
 	 *（周销量 0=周日、标价收入、type=1 实际/理论成本、{@code grossMarginRateOnListPrice} = (标价收入−type1 实际成本)÷标价收入；
-	 * {@code actualCostPerPortion123}、{@code blendedGrossMarginRateOnListPrice} = 部门标价下（标价−type1+2+3 单份实际成本）÷标价，与配料分析整菜 {@code actualCostPerPortion} 同口径；与 {@code wasteLossRatioInOutbound123} 区间损耗率并列），
+	 * {@code actualCostPerPortion123}、{@code actualCostTotalAmount123}（单份 type1+2+3 实际成本×本行实销份数，与配料分析整菜金额口径一致）、{@code blendedGrossMarginRateOnListPrice} = 部门标价下（标价−type1+2+3 单份实际成本）÷标价，与配料分析整菜 {@code actualCostPerPortion} 同口径；与 {@code wasteLossRatioInOutbound123} 区间损耗率并列），
 	 * 本响应同时带上 {@code businessInsightSummary}（含 {@code comprehensiveGrossMarginRateOnListPrice}：列表标价收入合计相对区间 1+2+3 出库总成本、及仅 type1 的 blended 毛利率等）、{@code scopeOutboundSubtotals}、{@code weekdayLegend}、{@code bossColumnHintsZh} 等；
 	 * 有销量时的配方行 {@code gbDistributerFoodEntity.gbdisFoodGoodsEntities} 另挂本区间出库价、type1 制作量/额、2+3 量/差分额、1+2+3 量/额。
 	 * {@code gbDfSalesAmount} 与经营分析总销量（子部门口径）对齐。缺参时 {@code gbDfSalesAmount} 为 {@code "0"}，且不填 {@code gbDfBusinessInsight}。</p>

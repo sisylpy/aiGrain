@@ -86,6 +86,47 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
         return result;
     }
 
+    @Override
+    public List<GbDepartmentGoodsStockEntity> queryDisGoodsBusiness(Integer disGoodsId, String startDate, String stopDate) {
+        Map<String, Object> mapMain = new HashMap<>();
+        mapMain.put("depGoodsId", disGoodsId);
+        mapMain.put("dayuStatus", -1);
+        mapMain.put("restWeight", 0);
+        if (startDate != null && !startDate.isEmpty()) {
+            mapMain.put("startDate", startDate);
+        }
+        if (stopDate != null && !stopDate.isEmpty()) {
+            mapMain.put("stopDate", stopDate);
+        }
+
+        List<GbDepartmentGoodsStockEntity> withRest = gbDepGoodsStockService.queryGoodsStockByParams(mapMain);
+
+        Map<String, Object> mapToday = new HashMap<>();
+        mapToday.put("depGoodsId", disGoodsId);
+        mapToday.put("dayuStatus", -1);
+        mapToday.put("date", DateUtils.formatWhatDay(0));
+        mapToday.put("equalRestWeight", 0);
+
+        List<GbDepartmentGoodsStockEntity> exhaustedToday = gbDepGoodsStockService.queryGoodsStockByParams(mapToday);
+
+        Map<Integer, GbDepartmentGoodsStockEntity> merged = new LinkedHashMap<>();
+        for (GbDepartmentGoodsStockEntity e : withRest) {
+            if (e.getGbDepartmentGoodsStockId() != null) {
+                merged.put(e.getGbDepartmentGoodsStockId(), e);
+            }
+        }
+        for (GbDepartmentGoodsStockEntity e : exhaustedToday) {
+            if (e.getGbDepartmentGoodsStockId() != null) {
+                merged.putIfAbsent(e.getGbDepartmentGoodsStockId(), e);
+            }
+        }
+        List<GbDepartmentGoodsStockEntity> result = new ArrayList<>(merged.values());
+        attachGoodsStockReduces(result);
+        log.debug("queryDepGoodsBusiness depGoodsId={} mergedStocks={}", disGoodsId, result.size());
+        return result;
+
+    }
+
     private void attachGoodsStockReduces(List<GbDepartmentGoodsStockEntity> stocks) {
         if (stocks.isEmpty()) {
             return;

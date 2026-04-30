@@ -8,6 +8,7 @@ import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
 import com.nongxinle.entity.GbDepFoodEntity;
 import com.nongxinle.entity.GbDistributerFoodEntity;
 import com.nongxinle.service.GbAiDailyRevenueExcelService;
+import com.nongxinle.service.GbAiDailyRevenueService;
 import com.nongxinle.service.GbDepartmentService;
 import com.nongxinle.service.GbDepFoodGoodsSalesService;
 import com.nongxinle.service.GbDepFoodSalesExcelImportService;
@@ -31,6 +32,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +44,7 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
     private final GbDepartmentService departmentService;
     private final GbDepFoodService gbDepFoodService;
     private final GbAiDailyRevenueExcelService dailyRevenueExcelService;
+    private final GbAiDailyRevenueService gbAiDailyRevenueService;
 
     @Override
     public Map<String, Object> importFoodSales(
@@ -202,6 +205,7 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
         int goodsRows = 0;
         int skippedUnknownFood = 0;
         List<String> warnings = new ArrayList<>();
+        Set<String> dailyRevenueSyncDates = new TreeSet<>();
 
         Map<String, BigDecimal> qtyByResolvedKey = new HashMap<>();
         Map<String, Date> dateByResolvedKey = new HashMap<>();
@@ -248,6 +252,7 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
                 continue;
             }
             String fullDate = GbDateTimeUtils.formatDay(recordDate);
+            dailyRevenueSyncDates.add(fullDate);
             String month = GbDateTimeUtils.formatYearMonth(recordDate);
             String year = GbDateTimeUtils.formatYear(recordDate);
             int weekday = GbDateTimeUtils.weekdayForAiDailyRevenue(recordDate);
@@ -308,6 +313,15 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
             }
         }
 
+        int dailyRevenueDaysSynced = 0;
+        Long depLong = departmentId.longValue();
+        Long disLong = distributerId.longValue();
+        for (String fullDate : dailyRevenueSyncDates) {
+            BigDecimal dineIn = sumFoodSalesSubtotalByFatherAndDay(departmentId, fullDate);
+            gbAiDailyRevenueService.upsertDineInRevenueOnly(depLong, disLong, GbDateTimeUtils.parseDay(fullDate), dineIn);
+            dailyRevenueDaysSynced++;
+        }
+
         Map<String, Object> out = new HashMap<>();
         out.put("inserted", inserted);
         out.put("updated", updated);
@@ -315,7 +329,34 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
         out.put("skippedUnknownFood", skippedUnknownFood);
         out.put("warnings", warnings);
         out.put("rows", cells.size());
+        out.put("dailyRevenueDaysSynced", dailyRevenueDaysSynced);
         return out;
+    }
+
+    private BigDecimal sumFoodSalesSubtotalByFatherAndDay(Integer depFatherId, String fullDate) {
+        List<GbDepFoodSalesEntity> rows = gbDepFoodSalesService.list(
+                new LambdaQueryWrapper<GbDepFoodSalesEntity>()
+                        .eq(GbDepFoodSalesEntity::getGbDfsDepFatherId, depFatherId)
+                        .eq(GbDepFoodSalesEntity::getGbDfsFullDate, fullDate));
+        if (rows == null || rows.isEmpty()) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal sum = BigDecimal.ZERO;
+        for (GbDepFoodSalesEntity r : rows) {
+            sum = sum.add(parseSubtotalBd(r.getGbDfsSubtotal()));
+        }
+        return sum.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal parseSubtotalBd(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            return new BigDecimal(raw.trim());
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
     }
 
     private static String depFoodLookupKey(Integer depFatherId, Integer foodRefId) {

@@ -473,7 +473,7 @@
     </select>
 
     <select id="queryPurGoodsMaxPrice" resultType="java.lang.String">
-        SELECT CAST(IFNULL(MAX(CAST(gdpg.gb_DPG_buy_price AS DECIMAL(18,4))), 0) AS CHAR)
+        SELECT CAST(ROUND(IFNULL(MAX(CAST(gdpg.gb_DPG_buy_price AS DECIMAL(18,4))), 0), 2) AS CHAR)
         FROM gb_distributer_purchase_goods AS gdpg
         LEFT JOIN gb_distributer_purchase_batch AS gdpb
         ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
@@ -484,7 +484,7 @@
     </select>
 
     <select id="queryPurGoodsMinPrice" resultType="java.lang.String">
-        SELECT CAST(IFNULL(MIN(CAST(gdpg.gb_DPG_buy_price AS DECIMAL(18,4))), 0) AS CHAR)
+        SELECT CAST(ROUND(IFNULL(MIN(CAST(gdpg.gb_DPG_buy_price AS DECIMAL(18,4))), 0), 2) AS CHAR)
         FROM gb_distributer_purchase_goods AS gdpg
         LEFT JOIN gb_distributer_purchase_batch AS gdpb
         ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
@@ -495,7 +495,7 @@
     </select>
 
     <select id="queryPurchaseGoodsPrice" resultType="java.lang.String">
-        SELECT CAST(IFNULL(MAX(CAST(gdpg.gb_DPG_buy_price AS DECIMAL(18,4))), 0) AS CHAR)
+        SELECT CAST(ROUND(IFNULL(MAX(CAST(gdpg.gb_DPG_buy_price AS DECIMAL(18,4))), 0), 2) AS CHAR)
         FROM gb_distributer_purchase_goods AS gdpg
         LEFT JOIN gb_distributer_purchase_batch AS gdpb
         ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
@@ -505,7 +505,7 @@
     </select>
 
     <select id="queryPurchaseGoodsWeight" resultType="java.lang.String">
-        SELECT CAST(IFNULL(SUM(CAST(gdpg.gb_DPG_buy_quantity AS DECIMAL(18,4))), 0) AS CHAR)
+        SELECT CAST(ROUND(IFNULL(SUM(CAST(gdpg.gb_DPG_buy_quantity AS DECIMAL(18,4))), 0), 2) AS CHAR)
         FROM gb_distributer_purchase_goods AS gdpg
         LEFT JOIN gb_distributer_purchase_batch AS gdpb
         ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
@@ -821,22 +821,26 @@
                t.price_fluctuation AS goodsPriceFluctuation
         FROM (
                  SELECT gb_DPG_dis_goods_id                                             AS goods_id,
-                        MAX(CAST(gb_DPG_buy_price AS DECIMAL(10, 1)))                   AS max_price,
-                        MIN(CAST(gb_DPG_buy_price AS DECIMAL(10, 1)))                   AS min_price,
-                        ROUND((MAX(CAST(gb_DPG_buy_price AS DECIMAL(10, 1))) -
-                               MIN(CAST(gb_DPG_buy_price AS DECIMAL(10, 1)))), 1)       AS price_diff,
-                        ROUND(((MAX(CAST(gb_DPG_buy_price AS DECIMAL(10, 1))) -
-                                MIN(CAST(gb_DPG_buy_price AS DECIMAL(10, 1)))) /
-                               NULLIF(MIN(CAST(gb_DPG_buy_price AS DECIMAL(10, 1))), 0)) * 100, 1) AS price_fluctuation
+                        MAX(CAST(TRIM(gb_DPG_buy_price) AS DECIMAL(10, 1)))           AS max_price,
+                        MIN(CAST(TRIM(gb_DPG_buy_price) AS DECIMAL(10, 1)))           AS min_price,
+                        ROUND((MAX(CAST(TRIM(gb_DPG_buy_price) AS DECIMAL(10, 1))) -
+                               MIN(CAST(TRIM(gb_DPG_buy_price) AS DECIMAL(10, 1)))), 1) AS price_diff,
+                        ROUND(((MAX(CAST(TRIM(gb_DPG_buy_price) AS DECIMAL(10, 1))) -
+                                MIN(CAST(TRIM(gb_DPG_buy_price) AS DECIMAL(10, 1)))) /
+                               NULLIF(MIN(CAST(TRIM(gb_DPG_buy_price) AS DECIMAL(10, 1))), 0)) * 100,
+                               1)                                                   AS price_fluctuation
                  FROM gb_distributer_purchase_goods
                  WHERE gb_DPG_stock_finish_date BETWEEN #{startDate} AND #{stopDate}
                    AND gb_DPG_distributer_id = #{disId}
                    AND gb_DPG_buy_price IS NOT NULL
+                   AND TRIM(gb_DPG_buy_price) &lt;&gt; ''
                    AND gb_DPG_status &gt; 2
                    <if test="typeNotEqual != null">
                    AND gb_DPG_purchase_type != #{typeNotEqual}
                    </if>
                  GROUP BY gb_DPG_dis_goods_id
+                 HAVING MAX(CAST(TRIM(gb_DPG_buy_price) AS DECIMAL(10, 1))) &gt;
+                        MIN(CAST(TRIM(gb_DPG_buy_price) AS DECIMAL(10, 1)))
              ) t
                  JOIN gb_distributer_goods g
                       ON g.gb_distributer_goods_id = t.goods_id
@@ -929,17 +933,14 @@
                dg.gb_dg_goods_standardname,
                dg.gb_dg_goods_standard_weight,
                dg.gb_dg_goods_brand,
-               dor.gb_department_orders_id,
-               dor.gb_DO_department_id,
-               dor.gb_DO_quantity,
-               dor.gb_DO_standard,
-               dor.gb_DO_price,
-               dor.gb_DO_subtotal,
-               dor.gb_DO_weight,
-               dor.gb_DO_status
+               dor.*,
+               ds.gb_department_name AS gb_DO_order_department_name,
+               df.gb_department_name AS gb_DO_parent_department_name
         from gb_distributer_purchase_goods gdpg
         left join gb_distributer_goods dg on dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
         left join gb_department_orders dor on dor.gb_DO_purchase_goods_id = gdpg.gb_distributer_purchase_goods_id
+        left join gb_department ds on ds.gb_department_id = dor.gb_DO_department_id
+        left join gb_department df on df.gb_department_id = ds.gb_department_father_id
         <where>
             <if test="batchId != null">
                 and gdpg.gb_DPG_batch_id = #{batchId}

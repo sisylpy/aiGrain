@@ -4,14 +4,17 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.nongxinle.entity.GbDepartmentEntity;
 import com.nongxinle.entity.GbDepFoodEntity;
 import com.nongxinle.entity.GbDepFoodSalesEntity;
+import com.nongxinle.entity.GbDistributerFoodEntity;
 import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
 import com.nongxinle.service.GbDepFoodBusinessInsightService;
+import com.nongxinle.service.GbDistributerFoodService;
 import com.nongxinle.service.GbDepFoodSalesService;
 import com.nongxinle.service.GbDepFoodService;
 import com.nongxinle.service.GbDepartmentGoodsStockReduceService;
 import com.nongxinle.service.GbDepartmentService;
 import com.nongxinle.service.GbDishCostAnalysisService;
 import com.nongxinle.utils.GbDepartmentGoodsStockReduceSupport;
+import com.nongxinle.utils.GrossMarginStandardDisplay;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -45,6 +48,7 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
     private final GbDepartmentService gbDepartmentService;
     private final GbDishCostAnalysisService gbDishCostAnalysisService;
     private final GbDepartmentGoodsStockReduceService gbDepartmentGoodsStockReduceService;
+    private final GbDistributerFoodService gbDistributerFoodService;
 
     @Override
     public Map<String, Object> buildInsight(Integer disId, Integer depFatherId, String startDate, String stopDate) {
@@ -80,6 +84,38 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         List<GbDepFoodEntity> foods = gbDepFoodService.queryDepAllFood(depMap);
         if (foods == null) {
             foods = Collections.emptyList();
+        }
+
+        Map<Integer, GbDistributerFoodEntity> disFoodById = new HashMap<>();
+        Map<Integer, GbDistributerFoodEntity> parentById = new HashMap<>();
+        if (!foods.isEmpty()) {
+            List<Integer> leafIds = new ArrayList<>();
+            for (GbDepFoodEntity fe : foods) {
+                if (fe.getGbDfFoodId() != null) {
+                    leafIds.add(fe.getGbDfFoodId());
+                }
+            }
+            if (!leafIds.isEmpty()) {
+                for (GbDistributerFoodEntity dr : gbDistributerFoodService.queryByIds(leafIds)) {
+                    if (dr.getGbDistributerFoodId() != null) {
+                        disFoodById.put(dr.getGbDistributerFoodId(), dr);
+                    }
+                }
+                Set<Integer> fatherIds = new HashSet<>();
+                for (GbDistributerFoodEntity drow : disFoodById.values()) {
+                    Integer p = drow.getGbDfFoodFatherId();
+                    if (p != null && p != 0) {
+                        fatherIds.add(p);
+                    }
+                }
+                if (!fatherIds.isEmpty()) {
+                    for (GbDistributerFoodEntity pr : gbDistributerFoodService.queryByIds(new ArrayList<>(fatherIds))) {
+                        if (pr.getGbDistributerFoodId() != null) {
+                            parentById.put(pr.getGbDistributerFoodId(), pr);
+                        }
+                    }
+                }
+            }
         }
 
         Object scopeOutboundForInterval = dishReport.get("scopeOutboundSubtotals");
@@ -157,17 +193,35 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
 
             BigDecimal actPp123 = foodId == null ? BigDecimal.ZERO : actPp123ByFoodId.getOrDefault(foodId, BigDecimal.ZERO);
             line.put("actualCostPerPortion123", insightCostPerPortionTwoDecimals(actPp123));
+            // 与 ingredientAnalysis / dishIngredientDashboard 整菜「单份实际」同口径的区间总金额（type1+2+3）
+            BigDecimal actualTotal123 = actPp123.multiply(totalQty).setScale(2, RoundingMode.HALF_UP);
+            line.put("actualCostTotalAmount123", actualTotal123.stripTrailingZeros().toPlainString());
+            BigDecimal blendedRatio123 = null;
             if (unitPrice.compareTo(BigDecimal.ZERO) > 0) {
                 BigDecimal margin123 = unitPrice.subtract(actPp123).divide(unitPrice, 8, RoundingMode.HALF_UP);
+                blendedRatio123 = margin123;
                 line.put("blendedGrossMarginRateOnListPrice",
                         GbDepartmentGoodsStockReduceSupport.formatRatioAsPercentTwoDecimals(margin123));
             } else {
                 boolean noPriceNoCost123 = unitPrice.signum() == 0 && actPp123.signum() == 0;
                 line.put("blendedGrossMarginRateOnListPrice", noPriceNoCost123 ? "0.00" : null);
+                if (noPriceNoCost123) {
+                    blendedRatio123 = BigDecimal.ZERO;
+                }
             }
 
             // 与 scopeOutbound 一致：区间 (2+3)/(1+2+3) 损耗率，与「单菜 grossMarginRateOnListPrice（仅 type1 成本）」并列展示
             line.put("wasteLossRatioInOutbound123", wasteLossRatioStringFromScope(scopeOutboundForInterval));
+
+            GbDistributerFoodEntity disRow = foodId == null ? null : disFoodById.get(foodId);
+            GbDistributerFoodEntity directParent = null;
+            if (disRow != null) {
+                Integer pid = disRow.getGbDfFoodFatherId();
+                if (pid != null && pid != 0) {
+                    directParent = parentById.get(pid);
+                }
+            }
+            GrossMarginStandardDisplay.putOnMap(line, blendedRatio123, directParent);
 
             dishes.add(line);
         }
@@ -262,13 +316,14 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
 
     /**
      * 顶部汇总：对当前列表每条 {@code gbDfBusinessInsight} 的标价收入、实际/理论成本求和，再算仅 type1 的 blended 毛利率；
-     * 另给出「标价收入 vs 本区间 1+2+3 出库总成本」的综合毛利率。出库维度损耗率与 {@code scopeOutboundSubtotals} 一致。
+     * 另汇总 {@code actualCostTotalAmount123}（type1+2+3 整菜区间实际成本）及「标价收入 vs 本区间 1+2+3 出库总成本」的综合毛利率。出库维度损耗率与 {@code scopeOutboundSubtotals} 一致。
      */
     private static Map<String, Object> summarizeBusinessInsightFromFoodRows(List<GbDepFoodEntity> foods,
             Map<String, Object> insight) {
         BigDecimal totalRev = BigDecimal.ZERO;
         BigDecimal totalActual = BigDecimal.ZERO;
         BigDecimal totalTheory = BigDecimal.ZERO;
+        BigDecimal totalActual123 = BigDecimal.ZERO;
         int rowCount = 0;
         if (foods != null) {
             for (GbDepFoodEntity f : foods) {
@@ -280,6 +335,8 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
                 totalRev = totalRev.add(GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("listPriceRevenue")));
                 totalActual = totalActual.add(GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("actualCostAmount")));
                 totalTheory = totalTheory.add(GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("theoryCostAmount")));
+                totalActual123 = totalActual123.add(
+                        GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("actualCostTotalAmount123")));
             }
         }
         BigDecimal subtotalOutbound123 = BigDecimal.ZERO;
@@ -294,6 +351,7 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         m.put("dishRowCount", rowCount);
         m.put("totalListPriceRevenue", plainMoneySummary(totalRev));
         m.put("totalActualCostAmount", plainMoneySummary(totalActual));
+        m.put("totalActualCostTotalAmount123", plainMoneySummary(totalActual123));
         m.put("totalTheoryCostAmount", plainMoneySummary(totalTheory));
         m.put("subtotalOutbound123FromScope", plainMoneySummary(subtotalOutbound123));
         if (totalRev.compareTo(BigDecimal.ZERO) > 0) {
@@ -349,8 +407,14 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         z.put("grossMarginRateOnListPrice", "0.00");
         z.put("grossMarginRateTheoryOnListPrice", "0.00");
         z.put("actualCostPerPortion123", "0.00");
+        z.put("actualCostTotalAmount123", "0");
         z.put("blendedGrossMarginRateOnListPrice", "0.00");
         z.put("wasteLossRatioInOutbound123", "0.00");
+        z.put("grossMarginStandardTarget", null);
+        z.put("grossMarginStandardFloatAbs", null);
+        z.put("grossMarginStandardBandLower", null);
+        z.put("grossMarginStandardBandUpper", null);
+        z.put("grossMarginLevel", GrossMarginStandardDisplay.LEVEL_UNKNOWN);
         return z;
     }
 
