@@ -1,6 +1,10 @@
 package com.nongxinle.config;
 
 import com.alibaba.fastjson2.support.spring6.http.converter.FastJsonHttpMessageConverter;
+import com.nongxinle.utils.ImagePaths;
+import com.nongxinle.utils.UploadFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.converter.HttpMessageConverter;
@@ -12,12 +16,21 @@ import java.util.List;
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
 
+    private static final Logger log = LoggerFactory.getLogger(WebMvcConfig.class);
+
+    /** 图片根目录（{@code application.properties} 的 {@code app.files.images-root}） */
+    private final String imagesRoot;
+
     /**
-     * 图片等资源根目录（对应旧项目 {@code location="file:///opt/tomcat/.../images/"} 的「images」这一层）。
-     * 由 {@code application.properties} 的 {@code app.files.images-root} 配置，生产用外挂盘，发版不覆盖上传文件。
+     * 在构造阶段写入 {@link UploadFile}，避免仅依赖 {@code @PostConstruct} 时在少数环境下早于首次请求未完成初始化
+     *（会导致 {@code UploadFile.deleteFile} / {@code upload} 报 “Image upload root not initialized”）。
      */
-    @Value("${app.files.images-root}")
-    private String imagesRoot;
+    public WebMvcConfig(@Value("${app.files.images-root}") String imagesRoot) {
+        this.imagesRoot = imagesRoot;
+        String normalized = UploadFile.normalizeConfiguredImagesRoot(imagesRoot);
+        UploadFile.setImagesRootDirectory(normalized);
+        log.info("Resolved app.files.images-root (upload + 静态子目录映射): [{}]", normalized);
+    }
 
     @Override
     public void configureMessageConverters(List<HttpMessageConverter<?>> converters) {
@@ -37,16 +50,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addResourceHandler("/v3/api-docs/**")
                 .addResourceLocations("classpath:/META-INF/resources/webjars/swagger-ui/");
 
-        // 图片与上传文件：根目录可指向 Tomcat app-data 等包外路径（见 application.properties 说明）
-        mapImageSubdir(registry, "/goodsVideo/**", "goodsVideo");
-        mapImageSubdir(registry, "/goodsImage/**", "goodsImage");
-        mapImageSubdir(registry, "/uploadImage/**", "uploadImage");
-        mapImageSubdir(registry, "/foodImage/**", "foodImage");
-        mapImageSubdir(registry, "/userImage/**", "userImage");
-        mapImageSubdir(registry, "/uploadClock/**", "uploadClock");
-        mapImageSubdir(registry, "/stockImages/**", "stockImages");
-        mapImageSubdir(registry, "/traceReports/**", "traceReports");
-        mapImageSubdir(registry, "/ocrImages/**", "ocrImages");
+        // 图片与上传文件：子目录与 {@link ImagePaths#RESOURCE_MOUNTS} 一致
+        for (ImagePaths.ResourceMount m : ImagePaths.RESOURCE_MOUNTS) {
+            mapImageSubdir(registry, m.urlPattern(), m.folderName());
+        }
     }
 
     /** 将 {@code /xxx/**} 映射到 {@code imagesRoot/xxx/} */

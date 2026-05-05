@@ -30,6 +30,10 @@ public class GbAiConversationEntity implements Serializable {
 	 */
 	private Long gbAiConversationDistributerId;
 	/**
+	 * 统计范围：0=单店(父部门子树) 1=集团(dis 下全部门)；见 {@link com.nongxinle.ai.scope.AiConversationScopeMode}
+	 */
+	private Integer gbAiConversationScopeMode;
+	/**
 	 *  用户ID
 	 */
 	private Long gbAiConversationUserId;

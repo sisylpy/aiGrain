@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.util.*;
 
 import static com.nongxinle.utils.DateUtils.*;
@@ -37,6 +38,24 @@ public class GbDistributerGoodsController {
     private GbDepartmentGoodsStockService gbDepGoodsStockService;
     @Autowired
     private GbJjOrderPurchaseLinkService gbJjOrderPurchaseLinkService;
+    @Autowired
+    private GbDistributerAliasService gbDistributerAliasService;
+    @Autowired
+    private NxJrdhSupplierService nxJrdhSupplierService;
+
+
+
+
+
+    @RequestMapping(value = "/changeGbGoodsFresh", method = RequestMethod.POST)
+    @ResponseBody
+    public R changeGbGoodsFresh(@RequestBody GbDistributerGoodsEntity gbGoods) {
+        Integer gbDistributerGoodsId = gbGoods.getGbDistributerGoodsId();
+
+        gbDgService.update(gbGoods);
+
+        return R.ok();
+    }
 
 
 
@@ -134,6 +153,7 @@ public class GbDistributerGoodsController {
         }
 
         List<GbDistributerGoodsEntity> goodsEntities = gbDgService.queryGbDisGoodsQuickSearchStr(map);
+
         return R.ok().put("data", goodsEntities);
     }
 
@@ -151,6 +171,19 @@ public class GbDistributerGoodsController {
 
         //商品信息
         GbDistributerGoodsEntity disGoods = gbDgService.getById(disGoodsId);
+
+        List<GbDistributerStandardEntity> gbDistributerStandardEntities = gbDistributerStandardService.queryDisStandardByDisGoodsIdGb(disGoodsId);
+        disGoods.setGbDistributerStandardEntities(gbDistributerStandardEntities);
+
+        List<GbDistributerAliasEntity> list = gbDistributerAliasService.queryDisAliasByDisGoodsId(disGoodsId);
+        disGoods.setGbDistributerAliasEntities(list);
+
+        if(disGoods.getGbDgGbSupplierId() != -1){
+            Integer gbDgGbSupplierId = disGoods.getGbDgGbSupplierId();
+            NxJrdhSupplierEntity byId = nxJrdhSupplierService.getById(gbDgGbSupplierId);
+            disGoods.setGbDistributerAppointSupplierEntity(byId);
+        }
+
 
         //3ri订单
         List<Map<String, Object>> orderList = new ArrayList<>();
@@ -238,23 +271,15 @@ public class GbDistributerGoodsController {
     public R canclePostDgnGoodsGb(Integer disGoodsId, Integer disGoodsFatherId, Integer disId) {
         Map<String, Object> map5 = new HashMap<>();
         map5.put("disGoodsId", disGoodsId);
-        System.out.println("mapapaap" + map5);
         Integer orderAmount = depOrdersService.queryGbDepartmentOrderAmount(map5);
         Integer stockCount = gbDepGoodsStockService.queryGoodsStockCount(map5);
-//        Integer integer = gbDepGoodsDailyService.queryDepGoodsDailyCount(map5);
         if (orderAmount > 0 || stockCount > 0) {
             return R.error(-1, "此商品在使用中");
         } else {
 
-            GbDistributerFatherGoodsEntity gbDistributerFatherGoodsEntity = dgfService.queryObject(disGoodsFatherId);
-            Integer gbDfgGoodsAmount = gbDistributerFatherGoodsEntity.getGbDfgGoodsAmount();
-            gbDistributerFatherGoodsEntity.setGbDfgGoodsAmount(gbDfgGoodsAmount - 1);
-            dgfService.update(gbDistributerFatherGoodsEntity);
-
             Map<String, Object> map1 = new HashMap<>();
             map1.put("disId", disId);
             map1.put("dgFatherId", disGoodsFatherId);
-            //搜索fatherId下有几个disGoods
             List<GbDistributerGoodsEntity> totalDisGoods = gbDgService.queryDisGoodsByParams(map1);
             //如果disGoods的父类只有一个商品
             if (totalDisGoods.size() == 1 && totalDisGoods.get(0).getGbDgNxGoodsId() != null) {
@@ -282,11 +307,9 @@ public class GbDistributerGoodsController {
                 }
                 dgfService.delete(disGoodsFatherId);
             } else {
-                //父类商品数量减去1
-                GbDistributerFatherGoodsEntity gbDistributerFatherGoodsEntity1 = dgfService.queryObject(disGoodsFatherId);
-                Integer gbDfgGoodsAmount1 = gbDistributerFatherGoodsEntity.getGbDfgGoodsAmount();
-                gbDistributerFatherGoodsEntity.setGbDfgGoodsAmount(gbDfgGoodsAmount1 - 1);
-                dgfService.update(gbDistributerFatherGoodsEntity1);
+                GbDistributerFatherGoodsEntity father = dgfService.queryObject(disGoodsFatherId);
+                father.setGbDfgGoodsAmount(father.getGbDfgGoodsAmount() - 1);
+                dgfService.update(father);
             }
 
             //删除订货单位
@@ -297,7 +320,6 @@ public class GbDistributerGoodsController {
                 }
             }
 
-//            int i = gbDgService.removeById(disGoodsId);
 
             Map<String, Object> map = new HashMap<>();
             map.put("disGoodsId", disGoodsId);
@@ -307,14 +329,17 @@ public class GbDistributerGoodsController {
                     gbDepDisGoodsService.removeById(disGoodsEntity.getGbDepartmentDisGoodsId());
                 }
             }
+
+            List<GbDistributerAliasEntity> aliasEntities = gbDistributerAliasService.queryDisAliasByDisGoodsId(disGoodsId);
+            if (!aliasEntities.isEmpty()) {
+                for (GbDistributerAliasEntity aliasEntity : aliasEntities) {
+                    gbDistributerAliasService.delete(aliasEntity.getGbDistributerAliasId());
+                }
+            }
+
+            gbDgService.delete(disGoodsId);
+
             return R.ok();
-
-//            if (i == 1) {
-//                return R.ok();
-//            } else {
-//                return R.error(-1, "删除失败");
-//            }
-
         }
     }
 
@@ -334,8 +359,8 @@ public class GbDistributerGoodsController {
         Integer oldGoodsType = oldGoodsEntity.getGbDgGoodsType();
         Integer gbDgGoodsType = gbGoods.getGbDgGoodsType();
 
-        // 修改商品采购方式
-        if (!oldDepartmentId.equals(nowDepartmentId) || !oldGoodsType.equals(gbDgGoodsType)) {
+        // 修改商品采购方式（部门/类型可能为 null，避免 old*.equals 触发 NPE）
+        if (!Objects.equals(oldDepartmentId, nowDepartmentId) || !Objects.equals(oldGoodsType, gbDgGoodsType)) {
             //查询是否有未完成订单
             Map<String, Object> map = new HashMap<>();
             map.put("disGoodsId", gbDistributerGoodsId);

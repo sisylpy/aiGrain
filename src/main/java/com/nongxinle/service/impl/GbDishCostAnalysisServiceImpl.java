@@ -46,6 +46,8 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     /** 以出库数量为主（按分销商商品聚合下列菜）。 */
     private static final String REPORT_KIND_OUTBOUND_QTY = "outboundqty";
     private static final int IN_BATCH = 900;
+    /** {@link #buildOutboundIngredientAnalysisReport} 分页时 {@code pageSize} 上限。 */
+    private static final int OUTBOUND_INGREDIENT_MAX_PAGE_SIZE = 500;
 
     /** 报表 data.bossColumnHintsZh：与 JSON 字段键一一对应的老板可读说明（白话）。 */
     private static final Map<String, String> BOSS_HINTS_SALES_DISH_ROW_ZH;
@@ -594,11 +596,14 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
 
     @Override
     public Map<String, Object> buildOutboundIngredientAnalysisReport(String startDate, String endDate, Integer disId,
-            String searchDepId, Integer depFatherId, String sortBy) {
+            String searchDepId, Integer depFatherId, String sortBy, String sortOrder, String goodsNameSearch, Integer page,
+            Integer pageSize) {
         if (startDate == null || endDate == null || disId == null) {
             throw new IllegalArgumentException("startDate、endDate、disId 不能为空");
         }
         String outboundSort = normalizeOutboundSortBy(sortBy);
+        String orderMode = normalizeOutboundSortOrder(sortOrder);
+        boolean sortAsc = "asc".equals(orderMode);
         IngredientAnalysisData d = loadIngredientAnalysisData(startDate, endDate, disId, searchDepId, depFatherId, null);
         List<PerDishAlloc> lines = collectPerDishAllocs(d);
         BigDecimal totalOutboundAmount = toBdFromDouble(
@@ -609,46 +614,57 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
                         gbDepartmentGoodsStockReduceService.queryReduceProduceWeightTotal(d.reduceParams))
                 .add(toBdFromDouble(gbDepartmentGoodsStockReduceService.queryReduceWasteWeightTotal(d.reduceParams)))
                 .add(toBdFromDouble(gbDepartmentGoodsStockReduceService.queryReduceLossWeightTotal(d.reduceParams)));
-        Map<Integer, List<PerDishAlloc>> byGood = new LinkedHashMap<>();
-        for (PerDishAlloc a : lines) {
-            byGood.computeIfAbsent(a.gId, k -> new ArrayList<>()).add(a);
-        }
+        Map<Integer, List<PerDishAlloc>> byGood = groupPerDishAllocsByGoods(lines);
+        Map<Integer, BigDecimal> utilPctByGood = computeOutboundUtilPercentByGoods(byGood);
         List<Integer> gIdOrder = new ArrayList<>(byGood.keySet());
         if ("outbound".equals(outboundSort)) {
+            Comparator<BigDecimal> cmp = sortAsc ? Comparator.naturalOrder() : Comparator.reverseOrder();
             gIdOrder.sort(Comparator.comparing(
                     (Integer gid) -> nz(d.reduceS.get(gid))
                             .add(nz(d.wasteS.get(gid)))
                             .add(nz(d.lossS.get(gid))),
-                    Comparator.reverseOrder())
+                    cmp)
                     .thenComparing(Comparator.comparingInt(gid -> gid)));
         } else if ("util".equals(outboundSort)) {
-            gIdOrder.sort(Comparator
-                    .comparing((Integer gid) -> {
-                        List<PerDishAlloc> ls = byGood.get(gid);
-                        if (ls == null) {
-                            return BigDecimal.valueOf(-1);
-                        }
-                        BigDecimal th = BigDecimal.ZERO;
-                        BigDecimal act = BigDecimal.ZERO;
-                        for (PerDishAlloc x : ls) {
-                            th = th.add(x.theoryRecipe);
-                            act = act.add(x.produceAllocW);
-                        }
-                        if (th.compareTo(BigDecimal.ZERO) <= 0) {
-                            return BigDecimal.valueOf(-1);
-                        }
-                        return act
-                                .divide(th, 8, RoundingMode.HALF_UP)
-                                .multiply(new BigDecimal("100"))
-                                .setScale(2, RoundingMode.HALF_UP);
-                    }, Comparator.reverseOrder())
-                    .thenComparing(Comparator.comparingInt(gid -> gid)));
+            gIdOrder.sort(buildOutboundUtilGoodsComparator(utilPctByGood, sortAsc));
         } else {
+            Comparator<BigDecimal> cmp = sortAsc ? Comparator.naturalOrder() : Comparator.reverseOrder();
             gIdOrder.sort(Comparator.comparing(
                     (Integer gid) -> nz(d.wasteW.get(gid)).add(nz(d.lossW.get(gid))),
-                    Comparator.reverseOrder())
+                    cmp)
                     .thenComparing(Comparator.comparingInt(gid -> gid)));
         }
+
+        String searchNorm = normalizeOutboundGoodsNameSearch(goodsNameSearch);
+        List<Integer> filteredGIds = new ArrayList<>();
+        for (Integer gId : gIdOrder) {
+            if (outboundIngredientGoodsMatchesNameSearch(gId, d, byGood.get(gId), searchNorm)) {
+                filteredGIds.add(gId);
+            }
+        }
+        int totalFiltered = filteredGIds.size();
+        int resolvedPage = 1;
+        Integer resolvedPageSize = null;
+        List<Integer> pageGIds = filteredGIds;
+        if (pageSize != null && pageSize > 0) {
+            resolvedPageSize = Math.min(pageSize, OUTBOUND_INGREDIENT_MAX_PAGE_SIZE);
+            resolvedPage = page == null || page < 1 ? 1 : page;
+            int from = (resolvedPage - 1) * resolvedPageSize;
+            if (from >= totalFiltered) {
+                pageGIds = Collections.emptyList();
+            } else {
+                int to = Math.min(from + resolvedPageSize, totalFiltered);
+                pageGIds = new ArrayList<>(filteredGIds.subList(from, to));
+            }
+        }
+
+        LocalDate curStart = parseIsoLocalDate(d.startDate);
+        LocalDate curEnd = parseIsoLocalDate(d.endDate);
+        IngredientAnalysisData dPrev = loadIngredientAnalysisData(curStart.minusMonths(1).toString(),
+                curEnd.minusMonths(1).toString(), disId, searchDepId, depFatherId, null);
+        Map<Integer, BigDecimal> utilPctPrev = computeOutboundUtilPercentByGoods(groupPerDishAllocsByGoods(collectPerDishAllocs(dPrev)));
+        int abnormalNow = countOutboundAbnormalIngredientsHighOrCritical(utilPctByGood);
+        int abnormalPrev = countOutboundAbnormalIngredientsHighOrCritical(utilPctPrev);
 
         BigDecimal allTheoryW = BigDecimal.ZERO;
         BigDecimal allProduceAllocForUtil = BigDecimal.ZERO;
@@ -666,7 +682,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
                     .setScale(2, RoundingMode.HALF_UP);
         }
         List<Map<String, Object>> ingredientsAnalysis = new ArrayList<>();
-        for (Integer gId : gIdOrder) {
+        for (Integer gId : pageGIds) {
             List<PerDishAlloc> ls = byGood.get(gId);
             BigDecimal sumThW = BigDecimal.ZERO;
             BigDecimal sumActW = BigDecimal.ZERO;
@@ -734,6 +750,9 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         summ.put("averageUtilizationRate", allTheoryW.compareTo(BigDecimal.ZERO) > 0
                 ? ingredientTwoDecimals(avgUtil)
                 : ingredientTwoDecimals(BigDecimal.ZERO));
+        summ.put("abnormalIngredientCount", abnormalNow);
+        summ.put("abnormalIngredientMomDelta", abnormalNow - abnormalPrev);
+        summ.put("priorMonthAbnormalIngredientCount", abnormalPrev);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("startDate", d.startDate);
         out.put("endDate", d.endDate);
@@ -741,29 +760,176 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         out.put("searchDepId", d.searchDepId);
         out.put("depFatherId", d.depFatherId);
         out.put("sortBy", outboundSort);
+        out.put("sortOrder", orderMode);
+        if (searchNorm != null) {
+            out.put("goodsNameSearch", searchNorm);
+        }
+        Map<String, Object> pagination = new LinkedHashMap<>();
+        pagination.put("page", resolvedPage);
+        pagination.put("pageSize", resolvedPageSize);
+        pagination.put("total", totalFiltered);
+        int totalPages = resolvedPageSize == null || resolvedPageSize <= 0
+                ? 1
+                : totalFiltered <= 0 ? 0 : (totalFiltered + resolvedPageSize - 1) / resolvedPageSize;
+        pagination.put("totalPages", totalPages);
+        out.put("pagination", pagination);
         out.put("summary", summ);
+        out.put("utilizationDistribution", buildOutboundUtilizationDistribution(utilPctByGood));
         out.put("ingredientsAnalysis", ingredientsAnalysis);
         out.put("disclaimerZh", OUTBOUND_INGREDIENT_DISCLAIMER_ZH);
         return out;
     }
 
-    /** 与接口 {@code sortBy} 约定一致，响应 {@code data.sortBy} 只返回 {@code sales} 或 {@code diff}。 */
+    @Override
+    public Map<String, Object> summarizeDisGoodsDayForReduceCurve(String day, Integer disId, Integer disGoodsId,
+            String searchDepId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        List<Map<String, Object>> dishBreakdown = new ArrayList<>();
+        if (day == null || day.trim().isEmpty() || disId == null || disGoodsId == null) {
+            out.put("theoryOutboundQty", ingredientTwoDecimals(BigDecimal.ZERO));
+            out.put("grossProfitContributionTotal", ingredientTwoDecimals(BigDecimal.ZERO));
+            out.put("dishIngredientDayBreakdown", dishBreakdown);
+            return out;
+        }
+        String d = day.trim();
+        IngredientAnalysisData data = loadIngredientAnalysisData(d, d, disId, searchDepId, null, null);
+        List<GbDistributerFoodGoodsEntity> recipeLines =
+                gbDistributerFoodGoodsService.queryFoodGoodsByDisGoodsId(disGoodsId, disId);
+        if (recipeLines == null || recipeLines.isEmpty()) {
+            recipeLines = gbDistributerFoodGoodsService.queryFoodGoodsByDisGoodsId(disGoodsId, null);
+        }
+        Set<Integer> candidateFoodIds = new HashSet<>();
+        if (recipeLines != null) {
+            for (GbDistributerFoodGoodsEntity line : recipeLines) {
+                if (line.getGbDfgFoodId() == null) {
+                    continue;
+                }
+                if (!GbDepartmentGoodsStockReduceSupport.isActiveFoodGoodsLine(line)) {
+                    continue;
+                }
+                candidateFoodIds.add(line.getGbDfgFoodId());
+            }
+        }
+        BigDecimal theoryOutboundQty = BigDecimal.ZERO;
+        BigDecimal grossProfitContributionTotal = BigDecimal.ZERO;
+        for (Integer foodId : candidateFoodIds) {
+            BigDecimal q = nz(data.salesQtyByFood.getOrDefault(foodId, BigDecimal.ZERO));
+            if (q.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            Map<String, Object> dishRow = buildIngredientAnalysisDishRow(foodId,
+                    data.theoryWtByFoodAndGoods.getOrDefault(foodId, Collections.emptyMap()),
+                    data.sumTheoryByGoods, data.sumRecipeUnitByGoods, data.sumSalesQtyByGoods, data.sumNeedByGoods,
+                    data.disGoodsById,
+                    data.reduceW, data.reduceS, data.wasteW, data.wasteS, data.lossW, data.lossS,
+                    data.salesQtyByFood.getOrDefault(foodId, BigDecimal.ZERO),
+                    data.salesSubtotalByFood.getOrDefault(foodId, BigDecimal.ZERO),
+                    data.scopeListPriceRevenueTotal, data.scopeSubtotalOutbound123);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> ingredientRows = (List<Map<String, Object>>) dishRow.get("ingredientRows");
+            if (ingredientRows == null || ingredientRows.isEmpty()) {
+                continue;
+            }
+            Map<String, Object> targetIr = null;
+            for (Map<String, Object> ir : ingredientRows) {
+                if (Objects.equals(disGoodsId, toInt(ir.get("disGoodsId")))) {
+                    targetIr = ir;
+                    break;
+                }
+            }
+            if (targetIr == null) {
+                continue;
+            }
+            GbDistributerFoodEntity foodEntity = gbDistributerFoodService.queryObject(foodId);
+            BigDecimal listUnit = GbDepartmentGoodsStockReduceSupport.coerceDecimal(
+                    foodEntity == null ? null : foodEntity.getGbDfFoodPrice());
+            BigDecimal listPriceRevenueDish = q.multiply(listUnit).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal totalTheoryDish = BigDecimal.ZERO;
+            for (Map<String, Object> ir : ingredientRows) {
+                BigDecimal thPpRow = GbDepartmentGoodsStockReduceSupport.coerceDecimal(ir.get("theoryCostPerPortion"));
+                totalTheoryDish = totalTheoryDish.add(thPpRow.multiply(q));
+            }
+            BigDecimal thPp = GbDepartmentGoodsStockReduceSupport.coerceDecimal(targetIr.get("theoryCostPerPortion"));
+            BigDecimal theoryUsage = GbDepartmentGoodsStockReduceSupport.coerceDecimal(targetIr.get("theoryUsage"));
+            theoryOutboundQty = theoryOutboundQty.add(theoryUsage);
+            // 与 dep 当日 dayOutbound123Subtotal 对齐：扣 type1+2+3 分摊（actualCostPerPortion×q），勿用仅 type1 的 produceCostPerPortion。
+            BigDecimal actPp = GbDepartmentGoodsStockReduceSupport.coerceDecimal(targetIr.get("actualCostPerPortion"));
+            BigDecimal actTotal = actPp.multiply(q);
+            BigDecimal listAlloc;
+            if (totalTheoryDish.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal thCostRow = thPp.multiply(q);
+                listAlloc = listPriceRevenueDish.multiply(thCostRow).divide(totalTheoryDish, 8, RoundingMode.HALF_UP);
+                grossProfitContributionTotal = grossProfitContributionTotal.add(listAlloc.subtract(actTotal));
+            } else {
+                // 全菜理论成本合计为 0（常见：原料未维护单价）时无法用成本占比分摊标价收入，但仍输出销售份数 / 配方用量等行，
+                // 否则 dayTheoryOutboundQty 有值而 dayDishIngredientSales 为空。
+                listAlloc = BigDecimal.ZERO;
+            }
+            Map<String, Object> br = new LinkedHashMap<>();
+            br.put("dishId", foodId);
+            br.put("dishName", foodEntity != null && foodEntity.getGbDfFoodName() != null
+                    ? foodEntity.getGbDfFoodName().trim() : "");
+            br.put("salesPortions", dishRow.get("salesPortions"));
+            br.put("salesAmount", dishRow.get("salesAmount"));
+            br.put("salesUnitPrice", dishRow.get("salesUnitPrice"));
+            br.put("recipeUnitPerDish", targetIr.get("recipeUnitPerDish"));
+            br.put("theoryIngredientQty", targetIr.get("theoryUsage"));
+            br.put("listRevenueAllocatedToIngredient", ingredientTwoDecimals(listAlloc));
+            br.put("outbound123CostAllocatedToIngredient", ingredientTwoDecimals(actTotal));
+            br.put("grossProfitContribution", ingredientTwoDecimals(listAlloc.subtract(actTotal)));
+            br.put("_sortSales", q);
+            dishBreakdown.add(br);
+        }
+        dishBreakdown.sort(Comparator.comparing((Map<String, Object> m) -> (BigDecimal) m.get("_sortSales"))
+                .reversed());
+        for (Map<String, Object> m : dishBreakdown) {
+            m.remove("_sortSales");
+        }
+        out.put("theoryOutboundQty", ingredientTwoDecimals(theoryOutboundQty));
+        out.put("grossProfitContributionTotal", ingredientTwoDecimals(grossProfitContributionTotal));
+        out.put("dishIngredientDayBreakdown", dishBreakdown);
+        return out;
+    }
+
+    /**
+     * 与接口 {@code sortBy} 约定一致，响应 {@code data.sortBy} 为 {@code sales|diff|actualcost}；
+     * 升降序见 {@link #normalizeIngredientSortOrder}、{@code data.sortOrder}。
+     */
     private static String normalizeIngredientSortBy(String sortBy) {
         if (sortBy == null || sortBy.isEmpty()) {
             return "sales";
         }
-        String s = sortBy.trim().toLowerCase(Locale.ROOT).replace(" ", "");
+        String s = sortBy.trim().toLowerCase(Locale.ROOT).replace(" ", "").replace("_", "");
         if ("sales".equals(s) || "salesamount".equals(s) || "销量".equals(s)) {
             return "sales";
         }
         if ("diff".equals(s) || "diffcost".equals(s) || "diffcostperportion".equals(s) || "成本差异".equals(s)) {
             return "diff";
         }
-        throw new IllegalArgumentException("sortBy 仅支持 sales(销量) 或 diff(按 diffCostPerPortion 成本差异绝对值降序)，当前: " + sortBy);
+        if ("actualcost".equals(s) || "actualcostperportion".equals(s) || "actualcostpp".equals(s)
+                || "单份实际成本".equals(s) || "实际成本".equals(s)) {
+            return "actualcost";
+        }
+        throw new IllegalArgumentException(
+                "sortBy 仅支持 sales(销售额)、diff(每份成本差异绝对值)、actualCost(单份实际成本 type1+2+3)，当前: " + sortBy);
+    }
+
+    private static String normalizeIngredientSortOrder(String sortOrder) {
+        if (sortOrder == null || sortOrder.trim().isEmpty()) {
+            return "desc";
+        }
+        String s = sortOrder.trim().toLowerCase(Locale.ROOT).replace(" ", "");
+        if ("asc".equals(s) || "ascending".equals(s) || "升序".equals(s)) {
+            return "asc";
+        }
+        if ("desc".equals(s) || "descending".equals(s) || "降序".equals(s)) {
+            return "desc";
+        }
+        throw new IllegalArgumentException("sortOrder 仅支持 asc(升序) 或 desc(降序)，当前: " + sortOrder);
     }
 
     /**
-     * 仅 {@code /outboundIngredientAnalysis}：响应 {@code data.sortBy} 为 {@code outbound|util|wasteloss} 之一。
+     * 仅 {@code /outboundIngredientAnalysis}：响应 {@code data.sortBy} 为 {@code outbound|util|wasteloss} 之一；{@code data.sortOrder} 为 {@code asc|desc}。
      * <p>1：全店分商品 1+2+3 出库**金额**；2：同料在报表内**利用率** (Σ仅 type1 生产分摊重量 / Σ本菜配方理论×100)；3：分商品 type2+type3 出库**重量**（业务上含损耗/废弃类出库）。</p>
      */
     private static String normalizeOutboundSortBy(String sortBy) {
@@ -788,13 +954,204 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
                 "outbound 排序 sortBy 仅支持 outbound(出库金额)、util(利用率)、wasteloss(损耗+损失重量)，当前: " + sortBy);
     }
 
+    /** {@code /outboundIngredientAnalysis} 升降序；默认 desc，与 {@link #normalizeOutboundSortBy} 独立。 */
+    private static String normalizeOutboundSortOrder(String sortOrder) {
+        if (sortOrder == null || sortOrder.trim().isEmpty()) {
+            return "desc";
+        }
+        String s = sortOrder.trim().toLowerCase(Locale.ROOT).replace(" ", "");
+        if ("asc".equals(s) || "ascending".equals(s) || "升序".equals(s)) {
+            return "asc";
+        }
+        if ("desc".equals(s) || "descending".equals(s) || "降序".equals(s)) {
+            return "desc";
+        }
+        throw new IllegalArgumentException("sortOrder 仅支持 asc(升序) 或 desc(降序)，当前: " + sortOrder);
+    }
+
+    private static String normalizeOutboundGoodsNameSearch(String goodsNameSearch) {
+        if (goodsNameSearch == null) {
+            return null;
+        }
+        String t = goodsNameSearch.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    /** 主档商品名、规格名；无主档时用配方行名称提示。大小写不敏感，子串匹配。 */
+    private static boolean outboundIngredientGoodsMatchesNameSearch(Integer gId, IngredientAnalysisData d,
+            List<PerDishAlloc> ls, String searchTrimmed) {
+        if (searchTrimmed == null) {
+            return true;
+        }
+        String needle = searchTrimmed.toLowerCase(Locale.ROOT);
+        GbDistributerGoodsEntity ge = d.disGoodsById == null ? null : d.disGoodsById.get(gId);
+        if (ge != null) {
+            if (outboundIngredientHaystackContains(needle, ge.getGbDgGoodsName())) {
+                return true;
+            }
+            if (outboundIngredientHaystackContains(needle, ge.getGbDgGoodsStandardname())) {
+                return true;
+            }
+        }
+        if (ls != null) {
+            for (PerDishAlloc a : ls) {
+                if (outboundIngredientHaystackContains(needle, a.goodsNameHint)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean outboundIngredientHaystackContains(String needleLower, String haystack) {
+        if (haystack == null || haystack.isEmpty()) {
+            return false;
+        }
+        return haystack.toLowerCase(Locale.ROOT).contains(needleLower);
+    }
+
+    private static Map<Integer, List<PerDishAlloc>> groupPerDishAllocsByGoods(List<PerDishAlloc> lines) {
+        Map<Integer, List<PerDishAlloc>> byGood = new LinkedHashMap<>();
+        if (lines == null) {
+            return byGood;
+        }
+        for (PerDishAlloc a : lines) {
+            byGood.computeIfAbsent(a.gId, k -> new ArrayList<>()).add(a);
+        }
+        return byGood;
+    }
+
+    /** 按商行聚合：Σ type1 生产分摊÷Σ 配方理论×100；无理论量的商品不出现于返回 Map。 */
+    private static Map<Integer, BigDecimal> computeOutboundUtilPercentByGoods(Map<Integer, List<PerDishAlloc>> byGood) {
+        Map<Integer, BigDecimal> utilPctByGood = new LinkedHashMap<>();
+        if (byGood == null) {
+            return utilPctByGood;
+        }
+        for (Map.Entry<Integer, List<PerDishAlloc>> en : byGood.entrySet()) {
+            BigDecimal sumThW = BigDecimal.ZERO;
+            BigDecimal sumProduceAllocForUtil = BigDecimal.ZERO;
+            for (PerDishAlloc a : en.getValue()) {
+                sumThW = sumThW.add(a.theoryRecipe);
+                sumProduceAllocForUtil = sumProduceAllocForUtil.add(a.produceAllocW);
+            }
+            if (sumThW.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal utilG = sumProduceAllocForUtil.divide(sumThW, 8, RoundingMode.HALF_UP)
+                        .multiply(new BigDecimal("100"))
+                        .setScale(2, RoundingMode.HALF_UP);
+                utilPctByGood.put(en.getKey(), utilG);
+            }
+        }
+        return utilPctByGood;
+    }
+
+    private static Comparator<Integer> buildOutboundUtilGoodsComparator(Map<Integer, BigDecimal> utilPctByGood,
+            boolean ascending) {
+        return (g1, g2) -> {
+            BigDecimal u1 = utilPctByGood.get(g1);
+            BigDecimal u2 = utilPctByGood.get(g2);
+            boolean h1 = u1 != null;
+            boolean h2 = u2 != null;
+            if (!h1 && !h2) {
+                return Integer.compare(g1, g2);
+            }
+            if (!h1) {
+                return 1;
+            }
+            if (!h2) {
+                return -1;
+            }
+            int c = ascending ? u1.compareTo(u2) : u2.compareTo(u1);
+            if (c != 0) {
+                return c;
+            }
+            return Integer.compare(g1, g2);
+        };
+    }
+
+    /**
+     * 「异常配料」计数：利用率档位为偏高({@link GbConstants.IngredientUtilizationLevel#CODE_HIGH}) 或
+     * 浪费严重({@link GbConstants.IngredientUtilizationLevel#CODE_CRITICAL})，与 {@link GbConstants.IngredientUtilizationLevel} 区间一致。
+     */
+    private static int countOutboundAbnormalIngredientsHighOrCritical(Map<Integer, BigDecimal> utilPctByGood) {
+        int n = 0;
+        if (utilPctByGood == null) {
+            return 0;
+        }
+        for (BigDecimal rate : utilPctByGood.values()) {
+            GbConstants.IngredientUtilizationLevel.LevelAndLabel u =
+                    GbConstants.IngredientUtilizationLevel.fromRatePercent(rate);
+            if (u == null) {
+                continue;
+            }
+            String lvl = u.getLevel();
+            if (GbConstants.IngredientUtilizationLevel.CODE_HIGH.equals(lvl)
+                    || GbConstants.IngredientUtilizationLevel.CODE_CRITICAL.equals(lvl)) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** 环图数据：四档计数及占「有利用率配料种类」的比例；档位区间见 {@link GbConstants.IngredientUtilizationLevel}。 */
+    private static Map<String, Object> buildOutboundUtilizationDistribution(Map<Integer, BigDecimal> utilPctByGood) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        counts.put(GbConstants.IngredientUtilizationLevel.CODE_CRITICAL, 0);
+        counts.put(GbConstants.IngredientUtilizationLevel.CODE_HIGH, 0);
+        counts.put(GbConstants.IngredientUtilizationLevel.CODE_NORMAL, 0);
+        counts.put(GbConstants.IngredientUtilizationLevel.CODE_LOW, 0);
+        int total = utilPctByGood != null ? utilPctByGood.size() : 0;
+        if (utilPctByGood != null) {
+            for (BigDecimal rate : utilPctByGood.values()) {
+                GbConstants.IngredientUtilizationLevel.LevelAndLabel u =
+                        GbConstants.IngredientUtilizationLevel.fromRatePercent(rate);
+                if (u == null) {
+                    continue;
+                }
+                counts.computeIfPresent(u.getLevel(), (k, v) -> v + 1);
+            }
+        }
+        List<Map<String, Object>> buckets = new ArrayList<>();
+        appendOutboundUtilizationBucket(buckets, counts, total, GbConstants.IngredientUtilizationLevel.CODE_CRITICAL,
+                GbConstants.IngredientUtilizationLevel.LABEL_ZH_CRITICAL, ">120%");
+        appendOutboundUtilizationBucket(buckets, counts, total, GbConstants.IngredientUtilizationLevel.CODE_HIGH,
+                GbConstants.IngredientUtilizationLevel.LABEL_ZH_HIGH, ">110%～120%");
+        appendOutboundUtilizationBucket(buckets, counts, total, GbConstants.IngredientUtilizationLevel.CODE_NORMAL,
+                GbConstants.IngredientUtilizationLevel.LABEL_ZH_NORMAL, "90%～110%");
+        appendOutboundUtilizationBucket(buckets, counts, total, GbConstants.IngredientUtilizationLevel.CODE_LOW,
+                GbConstants.IngredientUtilizationLevel.LABEL_ZH_LOW, "<90%");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("totalKindsWithUtilization", total);
+        out.put("buckets", buckets);
+        return out;
+    }
+
+    private static void appendOutboundUtilizationBucket(List<Map<String, Object>> buckets, Map<String, Integer> counts,
+            int total, String level, String labelZh, String rangeZh) {
+        int cnt = counts.getOrDefault(level, 0);
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("level", level);
+        row.put("labelZh", labelZh);
+        row.put("rangeZh", rangeZh);
+        row.put("count", cnt);
+        if (total > 0) {
+            BigDecimal pct = new BigDecimal(cnt).multiply(new BigDecimal("100"))
+                    .divide(new BigDecimal(total), 2, RoundingMode.HALF_UP);
+            row.put("percentOfKinds", ingredientTwoDecimals(pct));
+        } else {
+            row.put("percentOfKinds", ingredientTwoDecimals(BigDecimal.ZERO));
+        }
+        buckets.add(row);
+    }
+
     @Override
     public Map<String, Object> buildIngredientAnalysisReport(String startDate, String endDate, Integer disId,
-            String searchDepId, Integer depFatherId, String sortBy) {
+            String searchDepId, Integer depFatherId, String sortBy, String sortOrder) {
         if (startDate == null || endDate == null || disId == null) {
             throw new IllegalArgumentException("startDate、endDate、disId 不能为空");
         }
         String sortMode = normalizeIngredientSortBy(sortBy);
+        String orderMode = normalizeIngredientSortOrder(sortOrder);
+        boolean asc = "asc".equals(orderMode);
         IngredientAnalysisData d = loadIngredientAnalysisData(startDate, endDate, disId, searchDepId, depFatherId, null);
         List<Map<String, Object>> salesDishRows = new ArrayList<>();
         for (Integer foodId : d.allFoodIds) {
@@ -806,12 +1163,22 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
                     d.salesSubtotalByFood.getOrDefault(foodId, BigDecimal.ZERO),
                     d.scopeListPriceRevenueTotal, d.scopeSubtotalOutbound123));
         }
+        Comparator<BigDecimal> valueCmp = asc ? Comparator.naturalOrder() : Comparator.reverseOrder();
+        Comparator<BigDecimal> nullSafeBd = Comparator.nullsLast(valueCmp);
+        Comparator<Map<String, Object>> tieDishId = Comparator.comparing(
+                m -> (Integer) m.get("dishId"), Comparator.nullsLast(Comparator.naturalOrder()));
         if ("diff".equals(sortMode)) {
             salesDishRows.sort(Comparator.comparing(
-                    o -> toBd(o.get("diffCostPerPortion")).abs(), Comparator.reverseOrder()));
+                    (Map<String, Object> o) -> toBd(o.get("diffCostPerPortion")).abs(), nullSafeBd)
+                    .thenComparing(tieDishId));
+        } else if ("actualcost".equals(sortMode)) {
+            salesDishRows.sort(Comparator.comparing(
+                    (Map<String, Object> o) -> toBd(o.get("actualCostPerPortion")), nullSafeBd)
+                    .thenComparing(tieDishId));
         } else {
             salesDishRows.sort(Comparator.comparing(
-                    o -> toBd(o.get("salesAmount")), Comparator.reverseOrder()));
+                    (Map<String, Object> o) -> toBd(o.get("salesAmount")), nullSafeBd)
+                    .thenComparing(tieDishId));
         }
 
         logWawaCabbageIngredientReportSummary(d, salesDishRows);
@@ -831,6 +1198,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         out.put("searchDepId", searchDepId);
         out.put("depFatherId", depFatherId);
         out.put("sortBy", sortMode);
+        out.put("sortOrder", orderMode);
         out.put("scopeSalesSubtotals", scope);
         out.put("salesDishRows", salesDishRows);
         out.put("disclaimerZh", INGREDIENT_ANALYSIS_DISCLAIMER_ZH);
@@ -1863,6 +2231,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         row.put("salesUnitPrice", salesUnitStr);
         row.put("theoryCostPerPortion", thDishPp);
         row.put("actualCostPerPortion", acDishPp);
+        row.put("actualCostAmount", ingredientTwoDecimals(totalActualDish));
         row.put("diffCostPerPortion", diffDishPp);
         row.put("ingredientRows", ingredientRows);
         return row;

@@ -13,6 +13,7 @@ import com.nongxinle.service.NxAliasService;
 import com.nongxinle.service.NxGoodsService;
 import com.nongxinle.service.NxStandardService;
 import com.nongxinle.utils.GbConstants;
+import com.nongxinle.utils.ImagePaths;
 import com.nongxinle.utils.UploadFile;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import static com.nongxinle.utils.PinYin4jUtils.getEnglishKuohao;
 import static com.nongxinle.utils.PinYin4jUtils.getHeadStringByString;
@@ -144,7 +146,7 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
         if (file != null && !file.isEmpty()) {
             String originalName = goodsName.replaceAll("[\\\\/:*?\"<>|]", "");
             String headByString = hanziToPinyin(getEnglishKuohao(originalName));
-            filePath = UploadFile.uploadFileName("goodsImage", file, headByString);
+            filePath = UploadFile.uploadFileName(ImagePaths.GOODS, file, headByString);
         }
 
         Map<String, Object> map = new HashMap<>(3);
@@ -205,6 +207,85 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
         return goods;
     }
 
+
+    /**
+     * 按农鑫目录节点 id + 批发商 + 本地分类层级查找已有 {@code gb_distributer_father_goods}，
+     * 避免仅按名称 LIKE 时「二级分类」与「品名父」同名（如均为「鲜牛肉」）误命中刚插入的 level=2 节点。
+     */
+    private GbDistributerFatherGoodsEntity findDisFatherGoodsByNxLevel(int disId, Integer nxGoodsId, int level) {
+        if (nxGoodsId == null) {
+            return null;
+        }
+        List<GbDistributerFatherGoodsEntity> list = dgfService.queryDisFathersGoodsByNxGoodsId(nxGoodsId);
+        if (list == null || list.isEmpty()) {
+            return null;
+        }
+        for (GbDistributerFatherGoodsEntity e : list) {
+            if (e.getGbDfgDistributerId() == null || !Objects.equals(e.getGbDfgDistributerId(), disId)) {
+                continue;
+            }
+            if (e.getGbDfgFatherGoodsLevel() == null || e.getGbDfgFatherGoodsLevel() != level) {
+                continue;
+            }
+            return e;
+        }
+        return null;
+    }
+
+    /** 名称检索结果中挑选二级分类（level=1）；排除刚创建的品名父；优先 nx 与目录 grand 一致。 */
+    private static GbDistributerFatherGoodsEntity pickGrandFromAmbiguousNameHits(
+            List<GbDistributerFatherGoodsEntity> hits,
+            int excludeNewFatherGoodsId,
+            Integer nxGrandId) {
+        if (hits == null || hits.isEmpty()) {
+            return null;
+        }
+        GbDistributerFatherGoodsEntity byNx = null;
+        GbDistributerFatherGoodsEntity anyLevel1 = null;
+        for (GbDistributerFatherGoodsEntity e : hits) {
+            if (e == null || e.getGbDistributerFatherGoodsId() == null) {
+                continue;
+            }
+            if (e.getGbDistributerFatherGoodsId() == excludeNewFatherGoodsId) {
+                continue;
+            }
+            if (e.getGbDfgFatherGoodsLevel() == null || e.getGbDfgFatherGoodsLevel() != 1) {
+                continue;
+            }
+            if (anyLevel1 == null) {
+                anyLevel1 = e;
+            }
+            if (nxGrandId != null && nxGrandId.equals(e.getGbDfgNxGoodsId())) {
+                byNx = e;
+            }
+        }
+        return byNx != null ? byNx : anyLevel1;
+    }
+
+    private static GbDistributerFatherGoodsEntity pickGreatGrandFromAmbiguousNameHits(
+            List<GbDistributerFatherGoodsEntity> hits,
+            Integer nxGreatGrandId) {
+        if (hits == null || hits.isEmpty()) {
+            return null;
+        }
+        GbDistributerFatherGoodsEntity byNx = null;
+        GbDistributerFatherGoodsEntity anyLevel0 = null;
+        for (GbDistributerFatherGoodsEntity e : hits) {
+            if (e == null || e.getGbDistributerFatherGoodsId() == null) {
+                continue;
+            }
+            if (e.getGbDfgFatherGoodsLevel() == null || e.getGbDfgFatherGoodsLevel() != 0) {
+                continue;
+            }
+            if (anyLevel0 == null) {
+                anyLevel0 = e;
+            }
+            if (nxGreatGrandId != null && nxGreatGrandId.equals(e.getGbDfgNxGoodsId())) {
+                byNx = e;
+            }
+        }
+        return byNx != null ? byNx : anyLevel0;
+    }
 
     /**
      * 持久化批发商商品并维护父级分类树（与老项目逻辑一致）。
@@ -289,13 +370,19 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
             save(goods);
 
             String grandName = goods.getGbDgNxGrandName();
-            Map<String, Object> map2 = new HashMap<>();
-            map2.put("disId", GbDgDistributerId);
-            map2.put("fathersFatherName", grandName);
-            List<GbDistributerFatherGoodsEntity> grandGoodsFather = dgfService.queryHasDisFathersFather(map2);
+            GbDistributerFatherGoodsEntity existingGrand =
+                    findDisFatherGoodsByNxLevel(GbDgDistributerId, goods.getGbDgNxGrandId(), 1);
+            if (existingGrand == null) {
+                Map<String, Object> map2 = new HashMap<>();
+                map2.put("disId", GbDgDistributerId);
+                map2.put("fathersFatherName", grandName);
+                List<GbDistributerFatherGoodsEntity> grandGoodsFather = dgfService.queryHasDisFathersFather(map2);
+                existingGrand = pickGrandFromAmbiguousNameHits(
+                        grandGoodsFather, distributerFatherGoodsId, goods.getGbDgNxGrandId());
+            }
 
-            if (grandGoodsFather.size() > 0) {
-                GbDistributerFatherGoodsEntity gbDistributerFatherGoodsEntity = grandGoodsFather.get(0);
+            if (existingGrand != null) {
+                GbDistributerFatherGoodsEntity gbDistributerFatherGoodsEntity = existingGrand;
                 Integer nxDfgGoodsAmount = dgf.getGbDfgGoodsAmount();
                 dgf.setGbDfgGoodsAmount(nxDfgGoodsAmount + 1);
                 dgf.setGbDfgFathersFatherId(gbDistributerFatherGoodsEntity.getGbDistributerFatherGoodsId());
@@ -328,14 +415,20 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
                 goods.setGbDgDfgGoodsGrandId(grand.getGbDistributerFatherGoodsId());
                 updateById(goods);
 
-                Map<String, Object> map3 = new HashMap<>();
-                map3.put("disId", GbDgDistributerId);
                 String greatGrandName = goods.getGbDgNxGreatGrandName();
-                map3.put("fathersFatherName", greatGrandName);
-                List<GbDistributerFatherGoodsEntity> greatGrandGoodsFather = dgfService.queryHasDisFathersFather(map3);
+                GbDistributerFatherGoodsEntity existingGreatGrand =
+                        findDisFatherGoodsByNxLevel(GbDgDistributerId, goods.getGbDgNxGreatGrandId(), 0);
+                if (existingGreatGrand == null) {
+                    Map<String, Object> map3 = new HashMap<>();
+                    map3.put("disId", GbDgDistributerId);
+                    map3.put("fathersFatherName", greatGrandName);
+                    List<GbDistributerFatherGoodsEntity> greatGrandGoodsFather = dgfService.queryHasDisFathersFather(map3);
+                    existingGreatGrand = pickGreatGrandFromAmbiguousNameHits(
+                            greatGrandGoodsFather, goods.getGbDgNxGreatGrandId());
+                }
 
-                if (greatGrandGoodsFather.size() > 0) {
-                    GbDistributerFatherGoodsEntity gbDistributerFatherGoodsEntity = greatGrandGoodsFather.get(0);
+                if (existingGreatGrand != null) {
+                    GbDistributerFatherGoodsEntity gbDistributerFatherGoodsEntity = existingGreatGrand;
                     Integer disFatherId = gbDistributerFatherGoodsEntity.getGbDistributerFatherGoodsId();
                     grand.setGbDfgFathersFatherId(disFatherId);
                     Integer gbDfgGoodsAmount = grand.getGbDfgGoodsAmount();

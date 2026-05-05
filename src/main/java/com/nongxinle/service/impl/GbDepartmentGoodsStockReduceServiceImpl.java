@@ -71,6 +71,25 @@ public class GbDepartmentGoodsStockReduceServiceImpl extends ServiceImpl<GbDepar
     }
 
     @Override
+    public List<GbDepartmentEntity> queryReduceDepartment(Map<String, Object> map) {
+        List<GbDepartmentEntity> list = gbDepartmentGoodsStockReduceMapper.queryReduceDepartment(paramsForReduceStats(map));
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
+    public List<GbDepartmentGoodsStockReduceEntity> queryStockReduceListByParams(Map<String, Object> map) {
+        List<GbDepartmentGoodsStockReduceEntity> list =
+                gbDepartmentGoodsStockReduceMapper.queryStockReduceListByParams(paramsForReduceStats(map));
+        if (list == null || list.isEmpty()) {
+            return list != null ? list : Collections.emptyList();
+        }
+        for (GbDepartmentGoodsStockReduceEntity r : list) {
+            applyWxTypeAmountFields(r);
+        }
+        return list;
+    }
+
+    @Override
     public Double queryReduceCostSubtotal(Map<String, Object> map) {
         return gbDepartmentGoodsStockReduceMapper.queryReduceCostSubtotal(paramsForReduceStats(map));
     }
@@ -149,6 +168,11 @@ public class GbDepartmentGoodsStockReduceServiceImpl extends ServiceImpl<GbDepar
     @Override
     public Map<String, Object> queryReduceAllTypesTotal(Map<String, Object> map) {
         return gbDepartmentGoodsStockReduceMapper.queryReduceAllTypesTotal(map);
+    }
+
+    @Override
+    public Map<String, Object> queryReduceAllTypesTotalOnDailyRevenueDays(Map<String, Object> map) {
+        return gbDepartmentGoodsStockReduceMapper.queryReduceAllTypesTotalOnDailyRevenueDays(map);
     }
 
     @Override

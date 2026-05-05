@@ -65,12 +65,26 @@ public class GbDistributerPurchaseGoodsEntity implements Serializable {
 
 	private String gbDpgApplyDate;
 
+	/**
+	 *  订货批次id
+	 */
 	private Integer gbDpgBatchId;
 
+	/**
+	 *  采购员 gbDepartmentUserId
+	 */
 	private Integer gbDpgPurUserId;
 
+
+	/**
+	 *  采购单价
+	 */
 	private String gbDpgBuyPrice;
 
+
+	/**
+	 *  采购数量，按商品规格计量
+	 */
 	private String gbDpgBuyQuantity;
 
 	@TableField(exist = false)
@@ -84,8 +98,17 @@ public class GbDistributerPurchaseGoodsEntity implements Serializable {
     private Integer gbDpgTypeAddUserId;
 
     private Integer gbDpgInputType;
+	/**
+	 *  付款方式 0 为现金，1为记账
+	 */
     private Integer gbDpgPayType;
+	/**
+	 *  采购日期
+	 */
     private String gbDpgPurchaseDate;
+	/**
+	 *  采购总额
+	 */
     private String gbDpgBuySubtotal;
     private Integer gbDpgPurchaseDepartmentId;
     private String gbDpgPurchaseMonth;

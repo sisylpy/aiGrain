@@ -53,4 +53,8 @@ public class GbDistributerAliasServiceImpl implements GbDistributerAliasService 
 		gbDistributerAliasMapper.deleteBatchIds(Arrays.asList(gbDistributerAliasIds));
 	}
 
+	@Override
+	public List<GbDistributerAliasEntity> queryDisAliasByDisGoodsId(Integer disGoodsId) {
+		return gbDistributerAliasMapper.queryDisAliasByDisGoodsId(disGoodsId);
+	}
 }

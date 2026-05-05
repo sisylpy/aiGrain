@@ -10,6 +10,7 @@ import com.nongxinle.entity.GbDepartmentUserEntity;
 import com.nongxinle.entity.NxJrdhSupplierEntity;
 import com.nongxinle.service.GbDepFoodGoodsSalesService;
 import com.nongxinle.service.GbDepFoodSalesService;
+import com.nongxinle.service.GbDishCostAnalysisService;
 import com.nongxinle.service.GbDepartmentGoodsStockReduceService;
 import com.nongxinle.service.GbDepartmentGoodsStockReducePurFenxiService;
 import com.nongxinle.service.GbDepartmentGoodsStockReduceWithDayDataService;
@@ -33,6 +34,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import static com.nongxinle.utils.DateUtils.afterWhatDay;
@@ -52,6 +54,7 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
     private final GbDistributerFoodGoodsService gbDistributerFoodGoodsService;
     private final GbDistributerFoodService gbDistributerFoodService;
     private final GbDepartmentGoodsStockReduceWithDayDataService gbDepartmentGoodsStockReduceWithDayDataService;
+    private final GbDishCostAnalysisService gbDishCostAnalysisService;
 
 
     /**
@@ -171,12 +174,102 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
             sRow.put("salesPortions", fenxiSupportedSalesPortions(dQty));
             sRow.put("theoryUsage", fenxiSupportedQtyTwoDecimals(theoryRecipe));
             sRow.put("salesUsageFromOrders", fenxiSupportedQtyTwoDecimals(ingQty));
+            // actualUsage 在采购分析中由 {@link #outboundIngredientAlignedRowForPurFenxi} 与出库配料报表同口径覆盖
             sRow.put("actualUsage", fenxiSupportedQtyTwoDecimals(ingQty));
             sRow.put("diffUsage", fenxiSupportedQtyTwoDecimals(ingQty.subtract(theoryRecipe)));
             supportedDishes.add(sRow);
         }
         out.put("supportedDishes", supportedDishes);
         return out;
+    }
+
+    /**
+     * 对齐 {@link GbDishCostAnalysisServiceImpl#buildOutboundIngredientAnalysisReport}：本商行 {@code supportedDishes} 的 {@code actualUsage}
+     * 为仓库 type1 分摊并按比例分摊 type2/type3；并同步与本报表一致的部门范围内的菜名汇总与销售份数。未出现在出库明细行则返回 null。
+     */
+    private BigDecimal outboundIngredientAlignedRowForPurFenxi(Integer disGoodsId, Integer disId,
+            String startDate, String stopDate, Map<String, Object> fenxiDishIngredientResult) {
+        if (fenxiDishIngredientResult == null || disGoodsId == null || disId == null) {
+            return null;
+        }
+        Map<String, Object> report = gbDishCostAnalysisService.buildOutboundIngredientAnalysisReport(
+                startDate, stopDate, disId, null, null, "outbound", null, null, null, null);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> analyses =
+                (List<Map<String, Object>>) report.get("ingredientsAnalysis");
+        Map<String, Object> ingredientRow = null;
+        if (analyses != null) {
+            for (Map<String, Object> r : analyses) {
+                if (Objects.equals(disGoodsId, coerceInteger(r == null ? null : r.get("disGoodsId")))) {
+                    ingredientRow = r;
+                    break;
+                }
+            }
+        }
+        if (ingredientRow == null) {
+            return null;
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> outboundSupported =
+                (List<Map<String, Object>>) ingredientRow.get("supportedDishes");
+        fenxiDishIngredientResult.put("supportedDishes",
+                outboundSupported != null ? outboundSupported : new ArrayList<>());
+
+        StringBuilder dishNamesSb = new StringBuilder();
+        BigDecimal portionsTotalBd = BigDecimal.ZERO;
+        if (outboundSupported != null) {
+            for (Map<String, Object> sr : outboundSupported) {
+                if (sr == null) {
+                    continue;
+                }
+                Object dn = sr.get("dishName");
+                String nm = dn != null ? dn.toString().trim() : "";
+                if (!nm.isEmpty()) {
+                    if (dishNamesSb.length() > 0) {
+                        dishNamesSb.append('、');
+                    }
+                    dishNamesSb.append(nm);
+                }
+                portionsTotalBd =
+                        portionsTotalBd.add(GbDepartmentGoodsStockReduceSupport.coerceDecimal(sr.get("salesPortions")));
+            }
+        }
+        fenxiDishIngredientResult.put("dishFoodNames", dishNamesSb.toString());
+        fenxiDishIngredientResult.put("dishSalesQtyTotal",
+                portionsTotalBd.setScale(1, RoundingMode.HALF_UP).doubleValue());
+
+        return GbDepartmentGoodsStockReduceSupport.coerceDecimal(ingredientRow.get("actualUsage"));
+    }
+
+    private static Integer coerceInteger(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Integer) {
+            return (Integer) o;
+        }
+        if (o instanceof Number) {
+            return ((Number) o).intValue();
+        }
+        String s = o.toString().trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(s);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static double accumulateFoodIngredientSalesFromDaySeries(List<String> foodIngredientSalesDayValue) {
+        double sum = 0;
+        if (foodIngredientSalesDayValue != null) {
+            for (String s : foodIngredientSalesDayValue) {
+                sum += GbDepartmentGoodsStockReduceSupport.toDouble(s);
+            }
+        }
+        return sum;
     }
 
     /**
@@ -215,8 +308,28 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
         Integer integerPur = gbDistributerPurchaseGoodsService.queryGbPurchaseGoodsCount(map1);
         Map<String, Object> reduceExistsMap = GbDepartmentGoodsStockReduceSupport.buildReduceParamsForGoodsDay(
                 goodsEntity.getGbDgDistributerId(), disGoodsId, startDate, stopDate, howManyDaysInPeriod, null);
+
         Integer reduceRowCount = gbDepartmentGoodsStockReduceService.queryReduceTypeCount(reduceExistsMap);
         int integer = reduceRowCount == null ? 0 : reduceRowCount;
+
+        String preWeight = "0";
+        String preSubtotal = "0";
+        Map<String, Object> mapPreStock = new HashMap<>();
+        mapPreStock.put("disGoodsId", disGoodsId);
+        mapPreStock.put("disId", goodsEntity.getGbDgDistributerId());
+        mapPreStock.put("dateLt", startDate);
+        Integer stockDayCount = gbDepartmentGoodsStockService.queryGoodsStockCount(mapPreStock);
+        if (stockDayCount != null && stockDayCount > 0) {
+            Double restWeightSum = gbDepartmentGoodsStockService.queryDepGoodsRestWeightTotal(mapPreStock);
+            if (restWeightSum != null && restWeightSum > 0D) {
+                Double restSubtotalSum = gbDepartmentGoodsStockService.queryDepStockRestSubtotal(mapPreStock);
+                preWeight = new BigDecimal(restWeightSum).setScale(1, RoundingMode.HALF_UP).toString();
+                preSubtotal = new BigDecimal(restSubtotalSum != null ? restSubtotalSum : 0)
+                        .setScale(1, RoundingMode.HALF_UP)
+                        .toString();
+            }
+        }
+
         if (integer > 0 || (integerPur != null && integerPur > 0)) {
 
             Map<String, Object> mapDay = new HashMap<>();
@@ -261,24 +374,7 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
             String searchMinPrice = "0";
             String searchPerPrice = "0";
             int searchPurCount = 0;
-            String preWeight = "0";
-            String preSubtotal = "0";
             Map<String, Object> searchItem = new HashMap<>();
-
-            String prevDayStr = com.nongxinle.utils.GbDateTimeUtils.formatDay(
-                    com.nongxinle.utils.GbDateTimeUtils.parseLocalDay(startDate).minusDays(1));
-            Map<String, Object> mapPreStock = new HashMap<>();
-            mapPreStock.put("disGoodsId", disGoodsId);
-            mapPreStock.put("disId", goodsEntity.getGbDgDistributerId());
-            mapPreStock.put("date", prevDayStr);
-            Integer stockDayCount = gbDepartmentGoodsStockService.queryGoodsStockCount(mapPreStock);
-            if (stockDayCount != null && stockDayCount > 0) {
-                Double aDouble = gbDepartmentGoodsStockService.queryDepGoodsRestWeightTotal(mapPreStock);
-                Double aDoubleS = gbDepartmentGoodsStockService.queryDepStockRestSubtotal(mapPreStock);
-                preWeight = new BigDecimal(aDouble != null ? aDouble : 0).setScale(1, RoundingMode.HALF_UP).toString();
-                preSubtotal = new BigDecimal(aDoubleS != null ? aDoubleS : 0).setScale(1, RoundingMode.HALF_UP).toString();
-            }
-
 
             Map<String, Object> map = new HashMap<>();
             map.put("disId", goodsEntity.getGbDgDistributerId());
@@ -350,7 +446,7 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
                     mapDay.put("typeNotEqual", 9);
                     processDailyBusinessData(mapDay, produceDayValue, lossDayValue, wasteDayValue, returnDayValue);
                     processDailyBusinessData(mapDay, searchProduceDayValue, searchLossDayValue, searchWasteDayValue, searchReturnDayValue);
-                    processDailyPurSubtotalData(mapDay, whichDay, purchaseDayValue);
+                    processDailyPurUnitPriceData(mapDay, whichDay, purchaseDayValue);
                     foodIngredientSalesDayValue.add(String.format("%.1f",
                             gbDepartmentGoodsStockReduceWithDayDataService.sumFoodGoodsSalesIngredient(disGoodsId, whichDay, null)));
                 }
@@ -442,7 +538,7 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
 
                 processDailyBusinessData(mapDay, produceDayValue, lossDayValue, wasteDayValue, returnDayValue);
                 processDailyBusinessData(mapDay, searchProduceDayValue, searchLossDayValue, searchWasteDayValue, searchReturnDayValue);
-                processDailyPurSubtotalData(mapDay, startDate, purchaseDayValue);
+                processDailyPurUnitPriceData(mapDay, startDate, purchaseDayValue);
                 foodIngredientSalesDayValue.add(String.format("%.1f",
                         gbDepartmentGoodsStockReduceWithDayDataService.sumFoodGoodsSalesIngredient(disGoodsId, startDate, null)));
                 // 处理单日供货商数据
@@ -566,6 +662,8 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
 
             Integer fenxiDisId = goodsEntity.getGbDgDistributerId();
             Map<String, Object> dishIng = resolveFenxiLinkedDishSalesSummary(disGoodsId, fenxiDisId, startDate, stopDate);
+            BigDecimal outboundIngredientPeriodActualKg =
+                    outboundIngredientAlignedRowForPurFenxi(disGoodsId, fenxiDisId, startDate, stopDate, dishIng);
             mapResult.put("dishFoodNames", dishIng.get("dishFoodNames"));
             mapResult.put("dishSalesQtyTotal",
                     String.format("%.1f", (Double) dishIng.get("dishSalesQtyTotal")));
@@ -573,10 +671,10 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
             List<Map<String, Object>> supportedDishes =
                     (List<Map<String, Object>>) dishIng.get("supportedDishes");
             mapResult.put("supportedDishes", supportedDishes != null ? supportedDishes : new ArrayList<>());
-            double ingredientSalesPeriodTotal = 0;
-            for (String s : foodIngredientSalesDayValue) {
-                ingredientSalesPeriodTotal += GbDepartmentGoodsStockReduceSupport.toDouble(s);
-            }
+            double ingredientSalesPeriodTotal =
+                    outboundIngredientPeriodActualKg != null
+                            ? outboundIngredientPeriodActualKg.doubleValue()
+                            : accumulateFoodIngredientSalesFromDaySeries(foodIngredientSalesDayValue);
 
             mapResult.put("foodIngredientSalesQtyTotal", String.format("%.1f", ingredientSalesPeriodTotal));
 
@@ -854,6 +952,8 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
             Map<String, Object> mapResult = new HashMap<>();
 
             mapResult.put("code", -1);
+            mapResult.put("preWeight", preWeight);
+            mapResult.put("preSubtotal", preSubtotal);
             goodsEntity.setGoodsData(mapResult);
 
             // 设置默认值，避免 null
@@ -926,16 +1026,17 @@ public class GbDepartmentGoodsStockReducePurFenxiServiceImpl implements GbDepart
         }
     }
 
-    private void processDailyPurSubtotalData(Map<String, Object> mapDay, String whichDay, List<Map<String, Object>> purchaseDayValue) {
+    private void processDailyPurUnitPriceData(Map<String, Object> mapDay, String whichDay,
+            List<Map<String, Object>> purchaseDayValue) {
         Integer integer1 = gbDistributerPurchaseGoodsService.queryGbPurchaseGoodsCount(mapDay);
         log.debug("onda0101001010 {}", mapDay);
         Map<String, Object> map = new HashMap<>();
         map.put("date", whichDay);
         if (integer1 != null && integer1 > 0) {
-            Double subTotal = gbDistributerPurchaseGoodsService.queryPurchaseGoodsSubTotal(mapDay);
-            map.put("purSubtotal", String.format("%.1f", subTotal));
+            Double unit = gbDistributerPurchaseGoodsService.queryPurchaseGoodsWeightedAvgBuyPrice(mapDay);
+            map.put("purUnitPrice", String.format("%.1f", unit != null ? unit : 0D));
         } else {
-            map.put("purSubtotal", 0);
+            map.put("purUnitPrice", "0");
         }
         purchaseDayValue.add(map);
     }

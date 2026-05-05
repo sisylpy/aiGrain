@@ -52,6 +52,9 @@
             <if test="gbDepId != null">
                 and njs.nx_jrdhs_gb_department_id = #{gbDepId}
             </if>
+            <if test="gbDisId != null">
+                and njs.nx_jrdhs_gb_distributer_id = #{gbDisId}
+            </if>
         </where>
     </select>
 

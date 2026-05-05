@@ -18,6 +18,11 @@ public interface GbDepartmentOrdersMapper extends BaseMapper<GbDepartmentOrdersE
     Integer queryGbDepartmentOrderAmount(Map<String, Object> map);
 
     /**
+     * 指定分销商商品与时间范围内，已有订单的到货日期（去重、升序）。
+     */
+    List<String> queryDisGoodsDistinctArriveDates(Map<String, Object> map);
+
+    /**
      * 获取部门父级AI申请订单
      * @param depId 部门ID
      * @return 订单列表

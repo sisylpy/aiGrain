@@ -32,6 +32,18 @@ public class NxJrdhSupplierController {
 
 
 
+    //disGetAllSellers
+    @RequestMapping(value = "/gbDisGetAllSuppliers/{disId}")
+    @ResponseBody
+    public R gbDisGetAllSuppliers(@PathVariable Integer disId) {
+        Map<String, Object> map3 = new HashMap<>();
+        map3.put("gbDisId", disId);
+        System.out.println("map3" + map3);
+        List<NxJrdhSupplierEntity> nxJrdhSupplierEntities = nxJrdhSupplierService.queryJrdhSupplerByParams(map3);
+
+        return R.ok().put("data", nxJrdhSupplierEntities);
+    }
+
     @RequestMapping(value = "/updateJrdhSupplier", method = RequestMethod.POST)
     @ResponseBody
     public R updateJrdhSupplier (@RequestBody NxJrdhSupplierEntity supplier) {
@@ -67,7 +79,10 @@ public class NxJrdhSupplierController {
                 Double havePayOrderDouble = 0.0;
                 Double havePayReturn = 0.0;
 
+
+
                 Integer unPayCount = gbPurBatchService.queryDisPurchaseBatchCount(mapS);
+                System.out.println("mappsss" + mapS);
                 if (unPayCount > 0) {
                     unPayOrderDouble = gbPurBatchService.querySupplierUnSettleSubtotal(mapS);
                 }
@@ -80,6 +95,7 @@ public class NxJrdhSupplierController {
                 mapS.put("equalStatus", 4);
                 mapS.put("notEqualPurchaseType", 9);
                 mapS.put("purchaseType", null);
+                System.out.println("mappsss" + mapS);
                 Integer havePayCount = gbPurBatchService.queryDisPurchaseBatchCount(mapS);
                 if (havePayCount > 0) {
                     havePayOrderDouble = gbPurBatchService.querySupplierUnSettleSubtotal(mapS);

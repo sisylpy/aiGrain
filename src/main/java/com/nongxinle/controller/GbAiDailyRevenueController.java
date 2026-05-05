@@ -40,22 +40,25 @@ public class GbAiDailyRevenueController {
     /**
      * 获取营业额统计
      *
-     * @Description 按经营看板页面分区返回：天平（收入/支出）、底座（健康度与月度预测）、核心指标、经营分析、成本明细。扁平 stats 的键名为中文；小程序绑定请用 dashboard.bindings（英文键）。
+     * @Description 按经营看板页面分区返回：天平（收入/支出）、底座（健康度与月度预测）、核心指标、经营分析、成本明细。扁平 stats 的键名为中文；小程序绑定请用 dashboard.bindings（英文键）。路径参数 departmentId 为父部门 ID，与日营收 gb_ai_daily_revenue_department_id、核销 gb_dgsr_gb_department_father_id 一致。可选 startDate、endDate（yyyy-MM-dd）与营业额统计、核销汇总同一区间。
      */
     @GetMapping("/stats/{departmentId}")
-    @Operation(summary = "获取营业额统计", description = "分区结构化返回（dashboard）+ 扁平 stats；含收入端/支出端、健康度、月度预测、核心指标、经营分析、成本明细")
-    public R getStats(@Parameter(description = "部门/餐厅ID") @PathVariable Long departmentId) {
+    @Operation(summary = "获取营业额统计", description = "结构化 dashboard + 扁平 stats；可选 startDate、endDate（yyyy-MM-dd）；departmentId 为父部门 ID")
+    public R getStats(
+            @Parameter(description = "父部门/餐厅ID（与日营收 department_id、核销 father_id 一致）") @PathVariable Long departmentId,
+            @Parameter(description = "开始日期 yyyy-MM-dd，可选") @RequestParam(required = false) String startDate,
+            @Parameter(description = "结束日期 yyyy-MM-dd，可选") @RequestParam(required = false) String endDate) {
         GbAiRestaurantProfileEntity profile = profileService.getByDepartmentId(departmentId);
         if (profile == null) {
             return R.error("餐厅画像不存在");
         }
 
-        Map<String, Object> stats = dailyRevenueService.getStatsByDepartmentId(departmentId);
+        Map<String, Object> stats = dailyRevenueService.getStatsByDepartmentId(departmentId, startDate, endDate);
         if (stats == null || stats.get("days") == null || ((Number) stats.get("days")).intValue() == 0) {
             return R.error("暂无营业额数据");
         }
 
-        Map<String, Object> data = dailyRevenueDashboardService.buildStatsDashboard(departmentId, profile, stats);
+        Map<String, Object> data = dailyRevenueDashboardService.buildStatsDashboard(departmentId, profile, stats, startDate, endDate);
         return R.ok(data);
     }
 
@@ -69,11 +72,11 @@ public class GbAiDailyRevenueController {
      * @return 统计数据、曲线图数据、每日列表
      */
     @GetMapping("/list/{departmentId}")
-    @Operation(summary = "获取日营业额完整数据", description = "获取指定餐厅的日营业额完整数据，包含统计数据、曲线图数据、每日详情列表")
+    @Operation(summary = "获取日营业额完整数据", description = "统计数据、曲线图、每日列表；departmentId 为父部门 ID；可选 startDate、endDate（yyyy-MM-dd）")
     public R getList(
-            @Parameter(description = "部门/餐厅ID") @PathVariable Long departmentId,
-            @Parameter(description = "开始日期") @RequestParam(required = false) String startDate,
-            @Parameter(description = "结束日期") @RequestParam(required = false) String endDate) {
+            @Parameter(description = "父部门/餐厅ID（与日营收 department_id 一致）") @PathVariable Long departmentId,
+            @Parameter(description = "开始日期 yyyy-MM-dd，可选") @RequestParam(required = false) String startDate,
+            @Parameter(description = "结束日期 yyyy-MM-dd，可选") @RequestParam(required = false) String endDate) {
         Map<String, Object> result = dailyRevenueService.buildListPayload(departmentId, startDate, endDate);
         if (result == null) {
             return R.error("暂无营业额数据");
@@ -157,6 +160,44 @@ public class GbAiDailyRevenueController {
             @Parameter(description = "结束日期，格式：yyyy-MM-dd") @RequestParam("endDate") String endDate,
             @Parameter(description = "部门ID") @RequestParam("departmentId") Integer departmentId) throws IOException {
         dailyRevenueExcelService.writeDailyRevenueSmartTemplate(response, startDate, endDate, departmentId);
+    }
+
+    /**
+     * 合并模板：菜品 Sheet + 日营业额 Sheet（无堂食/当日营业额列）+ 使用说明
+     */
+    @GetMapping("/download-combined-template")
+    @Operation(summary = "合并模板下载", description = "一个工作簿：菜品日销售、日营业额（堂食由菜品汇总，不含当日/堂食营业额列）、使用说明")
+    public void downloadCombinedTemplate(HttpServletResponse response,
+            @Parameter(description = "开始日期 yyyy-MM-dd") @RequestParam("startDate") String startDate,
+            @Parameter(description = "结束日期 yyyy-MM-dd") @RequestParam("endDate") String endDate,
+            @Parameter(description = "部门ID") @RequestParam("departmentId") Integer departmentId) throws IOException {
+        dailyRevenueExcelService.writeDailyRevenueFoodCombinedTemplate(response, startDate, endDate, departmentId);
+    }
+
+    /**
+     * 合并 Excel 上传：先导入菜品 Sheet 并汇总堂食，再合并日营业额 Sheet（不覆盖堂食金额）
+     */
+    @PostMapping("/upload-combined-excel")
+    @Operation(summary = "合并Excel上传", description = "多 Sheet：先菜品日销售，再日营业额（外卖、订单数、顾客数、平台抽成、备注）；返回 foodSales、dailyRevenueSupplement")
+    public R uploadCombinedExcel(
+            @Parameter(description = "合并模板 Excel") @RequestParam("file") MultipartFile file,
+            @Parameter(description = "父部门ID") @RequestParam("departmentId") Long departmentId,
+            @Parameter(description = "分配者ID") @RequestParam("distributerId") Long distributerId) {
+        try {
+            Map<String, Object> result =
+                    dailyRevenueService.importCombinedDailyRevenueAndFoodFromExcel(file, departmentId, distributerId);
+            R ret = R.ok();
+            ret.putAll(result);
+            return ret;
+        } catch (IllegalArgumentException e) {
+            return R.error(e.getMessage());
+        } catch (IOException e) {
+            log.warn("upload-combined-excel read failed", e);
+            return R.error("文件读取失败：" + e.getMessage());
+        } catch (Exception e) {
+            log.warn("upload-combined-excel failed", e);
+            return R.error("Excel解析或保存失败：" + e.getMessage());
+        }
     }
 
 

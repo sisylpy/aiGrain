@@ -1,18 +1,14 @@
 package com.nongxinle.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.nongxinle.entity.GbDepartmentEntity;
-import com.nongxinle.entity.GbDepFoodGoodsSalesEntity;
-import com.nongxinle.entity.GbDepFoodSalesEntity;
-import com.nongxinle.entity.GbDistributerFoodEntity;
-import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
-import com.nongxinle.entity.GbDistributerGoodsEntity;
+import com.nongxinle.entity.*;
 import com.nongxinle.service.GbDepFoodGoodsSalesService;
 import com.nongxinle.service.GbDepFoodSalesService;
 import com.nongxinle.service.GbDepartmentGoodsStockReduceService;
 import com.nongxinle.service.GbDepartmentGoodsStockReduceWithDayDataService;
 import com.nongxinle.service.GbDepartmentGoodsStockService;
 import com.nongxinle.service.GbDepartmentService;
+import com.nongxinle.service.GbDishCostAnalysisService;
 import com.nongxinle.service.GbDistributerFoodGoodsService;
 import com.nongxinle.service.GbDistributerFoodService;
 import com.nongxinle.service.GbDistributerGoodsService;
@@ -25,13 +21,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.nongxinle.utils.DateUtils.afterWhatDay;
@@ -51,6 +41,7 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
     private final GbDepartmentService gbDepartmentService;
     private final GbDistributerGoodsService gbDistributerGoodsService;
     private final GbDepartmentGoodsStockService gbDepartmentGoodsStockService;
+    private final GbDishCostAnalysisService gbDishCostAnalysisService;
 
     @Override
     public Map<String, Object> buildReduceWithDayData(String startDate, String stopDate, Integer disGoodsId,
@@ -66,9 +57,7 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
             howManyDaysInPeriod = getHowManyDaysInPeriod(stopDate, startDate);
         }
         Map<String, Object> mapResult = new HashMap<>();
-        List<String> dateList = new ArrayList<>();
         List<Map<String, Object>> producelist = new ArrayList<>();
-        List<Map<String, Object>> foodSalesIngredientList = new ArrayList<>();
         List<Map<String, Object>> losslist = new ArrayList<>();
         List<Map<String, Object>> wastelist = new ArrayList<>();
         List<Map<String, Object>> listItem = new ArrayList<>();
@@ -81,7 +70,16 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
                 GbConstants.StockReduceType.LOSS));
         Integer integer1 = gbDepartmentGoodsStockReduceService.queryReduceTypeCount(map0);
         if (integer1 == null || integer1 == 0) {
-            throw new IllegalArgumentException("没有数据");
+            LambdaQueryWrapper<GbDepFoodGoodsSalesEntity> anyIng = new LambdaQueryWrapper<GbDepFoodGoodsSalesEntity>()
+                    .eq(GbDepFoodGoodsSalesEntity::getGbDfgsDisGoodsId, disGoodsId)
+                    .ge(GbDepFoodGoodsSalesEntity::getGbDfgsFullDate, startDate)
+                    .le(GbDepFoodGoodsSalesEntity::getGbDfgsFullDate, stopDate);
+            if (searchDepId != null && !"-1".equals(searchDepId)) {
+                anyIng.eq(GbDepFoodGoodsSalesEntity::getGbDfgsDepId, Integer.valueOf(searchDepId));
+            }
+            if (gbDepFoodGoodsSalesService.count(anyIng) == 0) {
+                throw new IllegalArgumentException("没有数据");
+            }
         }
         map0.remove("types");
 
@@ -114,11 +112,9 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
         double weightTotalPW = weightTotalSW + weightTotalTLW + weightTotalTWW;
 
         double foodSalesIngredientPeriod = 0.0;
-        if (howManyDaysInPeriod > 0) {
-            for (int i = 0; i < howManyDaysInPeriod + 1; i++) {
+        int spanDayCount = howManyDaysInPeriod > 0 ? howManyDaysInPeriod + 1 : 1;
+        for (int i = 0; i < spanDayCount; i++) {
                 String whichDay = i == 0 ? startDate : afterWhatDay(startDate, i);
-                String substring = whichDay.substring(8, 10);
-                dateList.add(substring);
 
                 Map<String, Object> map = GbDepartmentGoodsStockReduceSupport.buildReduceParamsForGoodsDay(disId, disGoodsId, whichDay, whichDay,
                         0, searchDepId);
@@ -142,17 +138,20 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
                             GbDepartmentGoodsStockReduceSupport.withReduceType(map, GbConstants.StockReduceType.PRODUCTION)));
                     weightDayTotal = produceSubtotal + lossSubtotal + wasteSubtotal;
                 }
+
+                double dayFoodIngredient = sumFoodGoodsSalesIngredient(disGoodsId, whichDay, searchDepId);
+                boolean hasOutbound123 = integer != null && integer > 0;
+                boolean hasDishIngredientSales = dayFoodIngredient > 1e-9;
+                if (!hasOutbound123 && !hasDishIngredientSales) {
+                    continue;
+                }
+
                 Map<String, Object> mapPro = new HashMap<>();
                 mapPro.put("date", whichDay);
                 mapPro.put("value", String.format("%.1f", produceSubtotal));
                 producelist.add(mapPro);
 
-                double dayFoodIngredient = sumFoodGoodsSalesIngredient(disGoodsId, whichDay, searchDepId);
                 foodSalesIngredientPeriod += dayFoodIngredient;
-                Map<String, Object> mapFoodIng = new HashMap<>();
-                mapFoodIng.put("date", whichDay);
-                mapFoodIng.put("value", String.format("%.1f", dayFoodIngredient));
-                foodSalesIngredientList.add(mapFoodIng);
 
                 Map<String, Object> mapLoss = new HashMap<>();
                 mapLoss.put("date", whichDay);
@@ -164,28 +163,44 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
                 mapWaste.put("value", String.format("%.1f", wasteSubtotal));
                 wastelist.add(mapWaste);
 
-                if (weightDayTotal > 0) {
+                Map<String, Object> mapReduce = new LinkedHashMap<>();
+                mapReduce.put("date", whichDay);
+                LinkedHashMap<Integer, GbDepartmentEntity> dayDepUnique = new LinkedHashMap<>();
+                if (integer != null && integer > 0) {
                     Map<String, Object> mapForReduceList = new HashMap<>(map);
                     mapForReduceList.remove("depId");
                     mapForReduceList.remove("depType");
                     log.debug("kanakndninteterere{}", mapForReduceList);
                     Integer integerD = gbDepartmentGoodsStockReduceService.queryReduceTypeCount(mapForReduceList);
-                    Map<String, Object> mapReduce = new HashMap<>();
-                    mapReduce.put("date", whichDay);
                     if (integerD != null && integerD > 0) {
-                        listItem.add(mapReduce);
+                        List<GbDepartmentEntity> gbDepartmentEntities =
+                                gbDepartmentGoodsStockReduceService.queryReduceDepartment(map);
+                        for (GbDepartmentEntity d : gbDepartmentEntities) {
+                            if (d.getGbDepartmentId() != null) {
+                                dayDepUnique.put(d.getGbDepartmentId(), d);
+                            }
+                        }
                     }
                 }
-            }
+                if (hasDishIngredientSales) {
+                    for (GbDepartmentEntity d : departmentEntitiesFromIngredientSales(disGoodsId, whichDay, searchDepId)) {
+                        if (d != null && d.getGbDepartmentId() != null) {
+                            dayDepUnique.putIfAbsent(d.getGbDepartmentId(), d);
+                        }
+                    }
+                }
+                List<GbDepartmentEntity> dayDepArr = dayDepUnique.isEmpty()
+                        ? new ArrayList<>()
+                        : getDepReduceDataAll(new ArrayList<>(dayDepUnique.values()), map);
+                mapReduce.put("arr", dayDepArr);
+                listItem.add(mapReduce);
         }
 
         mapResult.put("itemList", listItem);
         mapResult.put("produceList", producelist);
-        mapResult.put("foodSalesIngredientList", foodSalesIngredientList);
-        mapResult.put("foodSalesIngredientTotal",
-                BigDecimal.valueOf(foodSalesIngredientPeriod).setScale(1, RoundingMode.HALF_UP));
+        Map<String, Object> ingredientTheoryForAi = new LinkedHashMap<>();
         mapResult.put("foodSalesStats", buildFoodSalesStatsEmbedded(disGoodsId, disId, startDate, stopDate, searchDepId,
-                foodSalesIngredientList, foodSalesIngredientPeriod));
+                foodSalesIngredientPeriod, ingredientTheoryForAi));
 
         mapResult.put("subTotal", BigDecimal.valueOf(subTotal).setScale(1, RoundingMode.HALF_UP));
         mapResult.put("weightTotal", BigDecimal.valueOf(weightTotal).setScale(1, RoundingMode.HALF_UP));
@@ -199,16 +214,181 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
         mapResult.put("lossTotalWeight", BigDecimal.valueOf(weightTotalTLW).setScale(1, RoundingMode.HALF_UP));
         mapResult.put("wasteTotal", BigDecimal.valueOf(weightTotalTW).setScale(1, RoundingMode.HALF_UP));
         mapResult.put("wasteTotalWeight", BigDecimal.valueOf(weightTotalTWW).setScale(1, RoundingMode.HALF_UP));
-        mapResult.put("date", dateList);
 
         int spanDays = howManyDaysInPeriod > 0 ? howManyDaysInPeriod + 1 : 1;
         Map<String, Object> overallAiAnalysis = generateOverallAiAnalysis(
                 weightTotalS, weightTotalTL, weightTotalTW, disGoodsId, spanDays, weightTotalPW, weightTotalP);
+        Map<String, Object> aiMerge = new HashMap<>();
         if (overallAiAnalysis != null) {
-            mapResult.put("aiAnalysis", overallAiAnalysis);
+            aiMerge.putAll(overallAiAnalysis);
+        }
+        if (!ingredientTheoryForAi.isEmpty()) {
+            aiMerge.putAll(ingredientTheoryForAi);
+        }
+        if (!aiMerge.isEmpty()) {
+            mapResult.put("aiAnalysis", aiMerge);
         }
 
         return mapResult;
+    }
+
+
+
+    private List<GbDepartmentEntity> getDepReduceDataAll(
+            List<GbDepartmentEntity> gbDepartmentEntities, Map<String, Object> dayMap) {
+        for (GbDepartmentEntity departmentEntity : gbDepartmentEntities) {
+            Map<String, Object> depMap = new HashMap<>(dayMap);
+            depMap.remove("depType");
+            depMap.put("depId", departmentEntity.getGbDepartmentId());
+
+            applyDepartmentDayOutboundAndDishStats(departmentEntity, depMap);
+
+            List<GbDepartmentGoodsStockReduceEntity> reduceRows =
+                    gbDepartmentGoodsStockReduceService.queryStockReduceListByParams(depMap);
+            if (reduceRows == null || reduceRows.isEmpty()) {
+                departmentEntity.setDepartmentGoodsDailyEntity(null);
+                departmentEntity.setWasteReduceList(null);
+                continue;
+            }
+
+            departmentEntity.setWasteReduceList(reduceRows);
+
+            Double produceTotal = gbDepartmentGoodsStockReduceService.queryReduceProduceTotal(depMap);
+            Double wasteTotal = gbDepartmentGoodsStockReduceService.queryReduceWasteTotal(depMap);
+            Double lossTotal = gbDepartmentGoodsStockReduceService.queryReduceLossTotal(depMap);
+            Double returnTotal = gbDepartmentGoodsStockReduceService.queryReduceReturnTotal(depMap);
+            double v = GbDepartmentGoodsStockReduceSupport.nzD(produceTotal) + GbDepartmentGoodsStockReduceSupport.nzD(wasteTotal)
+                    + GbDepartmentGoodsStockReduceSupport.nzD(lossTotal) + GbDepartmentGoodsStockReduceSupport.nzD(returnTotal);
+            departmentEntity.setDepCostGoodsTotalString(String.format("%.1f", v));
+
+            Double produceTotalWeight = gbDepartmentGoodsStockReduceService.queryReduceProduceWeightTotal(depMap);
+            Double wasteTotalWeight = gbDepartmentGoodsStockReduceService.queryReduceWasteWeightTotal(depMap);
+            Double lossTotalWeight = gbDepartmentGoodsStockReduceService.queryReduceLossWeightTotal(depMap);
+            Double returnTotalWeight = gbDepartmentGoodsStockReduceService.queryReduceReturnWeightTotal(depMap);
+            double vW = GbDepartmentGoodsStockReduceSupport.nzD(produceTotalWeight) + GbDepartmentGoodsStockReduceSupport.nzD(wasteTotalWeight)
+                    + GbDepartmentGoodsStockReduceSupport.nzD(lossTotalWeight) + GbDepartmentGoodsStockReduceSupport.nzD(returnTotalWeight);
+            departmentEntity.setDepStockWeightTotalString(String.format("%.1f", vW));
+
+            Map<String, Object> weightTotals = gbDepartmentGoodsStockReduceService.queryReduceTypeWeightTotalsByScope(depMap);
+            GbDepartmentGoodsDailyEntity daily = new GbDepartmentGoodsDailyEntity();
+            daily.setGbDgdGbDepartmentId(departmentEntity.getGbDepartmentId());
+            Object disGoodsIdObj = depMap.get("disGoodsId");
+            if (disGoodsIdObj instanceof Integer) {
+                daily.setGbDgdGbDisGoodsId((Integer) disGoodsIdObj);
+            } else if (disGoodsIdObj != null) {
+                daily.setGbDgdGbDisGoodsId(Integer.valueOf(disGoodsIdObj.toString()));
+            }
+            Object dateVal = depMap.get("date");
+            if (dateVal != null) {
+                daily.setGbDgdDate(dateVal.toString());
+            } else {
+                Object start = depMap.get("startDate");
+                Object stop = depMap.get("stopDate");
+                if (start != null && stop != null && start.equals(stop)) {
+                    daily.setGbDgdDate(start.toString());
+                }
+            }
+            daily.setGbDgdProduceWeight(String.format("%.1f",
+                    GbDepartmentGoodsStockReduceSupport.toDouble(weightTotals != null ? weightTotals.get("produceWeight") : null)));
+            daily.setGbDgdLossWeight(String.format("%.1f",
+                    GbDepartmentGoodsStockReduceSupport.toDouble(weightTotals != null ? weightTotals.get("lossWeight") : null)));
+            daily.setGbDgdWasteWeight(String.format("%.1f",
+                    GbDepartmentGoodsStockReduceSupport.toDouble(weightTotals != null ? weightTotals.get("wasteWeight") : null)));
+            daily.setGbDgdReturnWeight(String.format("%.1f",
+                    GbDepartmentGoodsStockReduceSupport.toDouble(weightTotals != null ? weightTotals.get("returnWeight") : null)));
+            daily.setGbDgdProduceSubtotal(String.format("%.1f", GbDepartmentGoodsStockReduceSupport.nzD(produceTotal)));
+            daily.setGbDgdWasteSubtotal(String.format("%.1f", GbDepartmentGoodsStockReduceSupport.nzD(wasteTotal)));
+            daily.setGbDgdLossSubtotal(String.format("%.1f", GbDepartmentGoodsStockReduceSupport.nzD(lossTotal)));
+            daily.setGbDgdReturnSubtotal(String.format("%.1f", GbDepartmentGoodsStockReduceSupport.nzD(returnTotal)));
+            departmentEntity.setDepartmentGoodsDailyEntity(daily);
+        }
+        return gbDepartmentEntities;
+    }
+
+    /** itemList.arr：部门当日出库 1+2+3 重量/金额 + 当日本菜配方理论与毛利贡献（按部门 scope）。 */
+    private void applyDepartmentDayOutboundAndDishStats(GbDepartmentEntity departmentEntity, Map<String, Object> depMap) {
+        Map<String, Object> p123 = new HashMap<>(depMap);
+        p123.remove("type");
+        p123.put("types", Arrays.asList(
+                GbConstants.StockReduceType.PRODUCTION,
+                GbConstants.StockReduceType.WASTE,
+                GbConstants.StockReduceType.LOSS));
+        Double w123 = gbDepartmentGoodsStockReduceService.queryReduceWeightSum(p123);
+        departmentEntity.setDayOutbound123Weight(
+                BigDecimal.valueOf(GbDepartmentGoodsStockReduceSupport.nzD(w123))
+                        .setScale(2, RoundingMode.HALF_UP).toPlainString());
+        Double s123 = gbDepartmentGoodsStockReduceService.queryReduceCostSubtotal(p123);
+        departmentEntity.setDayOutbound123Subtotal(
+                BigDecimal.valueOf(GbDepartmentGoodsStockReduceSupport.nzD(s123))
+                        .setScale(2, RoundingMode.HALF_UP).toPlainString());
+
+        Integer disId = null;
+        Object disIdObj = depMap.get("disId");
+        if (disIdObj instanceof Integer) {
+            disId = (Integer) disIdObj;
+        } else if (disIdObj != null) {
+            disId = Integer.valueOf(disIdObj.toString());
+        }
+        Integer disGoodsId = null;
+        Object disGoodsIdObj = depMap.get("disGoodsId");
+        if (disGoodsIdObj instanceof Integer) {
+            disGoodsId = (Integer) disGoodsIdObj;
+        } else if (disGoodsIdObj != null) {
+            disGoodsId = Integer.valueOf(disGoodsIdObj.toString());
+        }
+        String dayStr = null;
+        Object dateVal = depMap.get("date");
+        if (dateVal != null) {
+            dayStr = dateVal.toString();
+        } else {
+            Object start = depMap.get("startDate");
+            Object stop = depMap.get("stopDate");
+            if (start != null && stop != null && start.equals(stop)) {
+                dayStr = start.toString();
+            }
+        }
+        if (dayStr != null && disId != null && disGoodsId != null && departmentEntity.getGbDepartmentId() != null) {
+            Map<String, Object> dish = gbDishCostAnalysisService.summarizeDisGoodsDayForReduceCurve(
+                    dayStr, disId, disGoodsId, String.valueOf(departmentEntity.getGbDepartmentId()));
+            Object th = dish != null ? dish.get("theoryOutboundQty") : null;
+            Object gp = dish != null ? dish.get("grossProfitContributionTotal") : null;
+            departmentEntity.setDayTheoryOutboundQty(th != null ? th.toString() : "0.00");
+            departmentEntity.setDayGrossProfitContributionTotal(gp != null ? gp.toString() : "0.00");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> salesRows =
+                    dish != null ? (List<Map<String, Object>>) dish.get("dishIngredientDayBreakdown") : null;
+            departmentEntity.setDayDishIngredientSales(
+                    salesRows == null ? new ArrayList<>() : new ArrayList<>(salesRows));
+        } else {
+            departmentEntity.setDayTheoryOutboundQty("0.00");
+            departmentEntity.setDayGrossProfitContributionTotal("0.00");
+            departmentEntity.setDayDishIngredientSales(new ArrayList<>());
+        }
+    }
+
+    /** 某日该原料在 gb_dep_food_goods_sales 中出现过的门店（出库为 0 时仍要能展示菜品销售拆分）。 */
+    private List<GbDepartmentEntity> departmentEntitiesFromIngredientSales(Integer disGoodsId, String fullDate,
+            String searchDepId) {
+        LambdaQueryWrapper<GbDepFoodGoodsSalesEntity> w = new LambdaQueryWrapper<GbDepFoodGoodsSalesEntity>()
+                .eq(GbDepFoodGoodsSalesEntity::getGbDfgsDisGoodsId, disGoodsId)
+                .eq(GbDepFoodGoodsSalesEntity::getGbDfgsFullDate, fullDate);
+        if (searchDepId != null && !"-1".equals(searchDepId)) {
+            w.eq(GbDepFoodGoodsSalesEntity::getGbDfgsDepId, Integer.valueOf(searchDepId));
+        }
+        LinkedHashSet<Integer> depIds = new LinkedHashSet<>();
+        for (GbDepFoodGoodsSalesEntity row : gbDepFoodGoodsSalesService.list(w)) {
+            if (row.getGbDfgsDepId() != null) {
+                depIds.add(row.getGbDfgsDepId());
+            }
+        }
+        List<GbDepartmentEntity> out = new ArrayList<>();
+        for (Integer depId : depIds) {
+            GbDepartmentEntity dep = gbDepartmentService.getById(depId);
+            if (dep != null) {
+                out.add(dep);
+            }
+        }
+        return out;
     }
 
     @Override
@@ -227,10 +407,10 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
     }
 
     private Map<String, Object> buildFoodSalesStatsEmbedded(Integer disGoodsId, Integer disId, String startDate,
-            String stopDate, String searchDepId, List<Map<String, Object>> ingredientByDay,
-            double ingredientPeriodTotal) {
-        log.debug("[DEBUG][foodSalesStats] buildFoodSalesStatsEmbedded 入参 disGoodsId={} disId={} startDate={} stopDate={} searchDepId={} ingredientByDay.size={} ingredientPeriodTotal={}",
-                disGoodsId, disId, startDate, stopDate, searchDepId, ingredientByDay.size(), ingredientPeriodTotal);
+            String stopDate, String searchDepId, double ingredientPeriodTotal,
+            Map<String, Object> ingredientMetricsForAi) {
+        log.debug("[DEBUG][foodSalesStats] buildFoodSalesStatsEmbedded 入参 disGoodsId={} disId={} startDate={} stopDate={} searchDepId={} ingredientPeriodTotal={}",
+                disGoodsId, disId, startDate, stopDate, searchDepId, ingredientPeriodTotal);
 
         LambdaQueryWrapper<GbDepFoodGoodsSalesEntity> w = new LambdaQueryWrapper<GbDepFoodGoodsSalesEntity>()
                 .eq(GbDepFoodGoodsSalesEntity::getGbDfgsDisGoodsId, disGoodsId)
@@ -241,45 +421,6 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
         }
         List<GbDepFoodGoodsSalesEntity> ingRows = gbDepFoodGoodsSalesService.list(w);
 
-        Map<Integer, BigDecimal> ingredientByFoodSalesId = new HashMap<>();
-        for (GbDepFoodGoodsSalesEntity r : ingRows) {
-            if (r.getGbDfgsFoodSalesId() == null) {
-                continue;
-            }
-            ingredientByFoodSalesId.merge(r.getGbDfgsFoodSalesId(),
-                    GbDepartmentGoodsStockReduceSupport.parseGoodsAmountString(r.getGbDfgsGoodsAmount()), BigDecimal::add);
-        }
-
-        List<Map<String, Object>> topLinked = ingredientByFoodSalesId.entrySet().stream()
-                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
-                .limit(25)
-                .map(e -> {
-                    Map<String, Object> row = new LinkedHashMap<>();
-                    row.put("gbDepFoodSalesId", e.getKey());
-                    row.put("ingredientAmount", e.getValue().setScale(1, RoundingMode.HALF_UP).doubleValue());
-                    GbDepFoodSalesEntity sale = gbDepFoodSalesService.getById(e.getKey());
-                    if (sale != null) {
-                        row.put("gbDfsFoodId", sale.getGbDfsFoodId());
-                        row.put("dishQty", GbDepartmentGoodsStockReduceSupport.parseGoodsAmountString(sale.getGbDfsAmount())
-                                .setScale(1, RoundingMode.HALF_UP).doubleValue());
-                    }
-                    return row;
-                })
-                .collect(Collectors.toList());
-
-        BigDecimal linkedDishQtyTotal = BigDecimal.ZERO;
-        for (Integer fsId : ingredientByFoodSalesId.keySet()) {
-            GbDepFoodSalesEntity sale = gbDepFoodSalesService.getById(fsId);
-            if (sale != null) {
-                linkedDishQtyTotal = linkedDishQtyTotal.add(GbDepartmentGoodsStockReduceSupport.parseGoodsAmountString(sale.getGbDfsAmount()));
-            }
-        }
-
-        Map<String, Object> dishSales = new HashMap<>();
-        dishSales.put("linkedSalesRowCount", ingredientByFoodSalesId.size());
-        dishSales.put("linkedDishQtyTotal", linkedDishQtyTotal.setScale(1, RoundingMode.HALF_UP).doubleValue());
-        dishSales.put("topDishesDrivingThisIngredient", topLinked);
-
         Map<String, Object> period = new HashMap<>();
         period.put("startDate", startDate);
         period.put("stopDate", stopDate);
@@ -289,11 +430,10 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
         filters.put("searchDepId", searchDepId);
 
         Map<String, Object> recipeAndTheory = buildRecipeTheoreticalAndDepDishSales(disGoodsId, disId, startDate,
-                stopDate, searchDepId, ingredientPeriodTotal);
+                stopDate, searchDepId, ingredientPeriodTotal, ingredientMetricsForAi);
 
         Map<String, Object> root = new HashMap<>();
         root.put("depFoodGoodsSalesRowCountInPeriod", ingRows.size());
-        root.put("dishSales", dishSales);
         root.put("period", period);
         root.put("filters", filters);
         root.putAll(recipeAndTheory);
@@ -312,7 +452,8 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
     }
 
     private Map<String, Object> buildRecipeTheoreticalAndDepDishSales(Integer disGoodsId, Integer disId,
-            String startDate, String stopDate, String searchDepId, double actualIngredientTotal) {
+            String startDate, String stopDate, String searchDepId, double actualIngredientTotal,
+            Map<String, Object> ingredientMetricsForAi) {
         log.debug("[DEBUG][foodSalesStats] buildRecipeTheoreticalAndDepDishSales 入参 disGoodsId={} disId={} startDate={} stopDate={} searchDepId={} actualIngredientTotal={}",
                 disGoodsId, disId, startDate, stopDate, searchDepId, actualIngredientTotal);
 
@@ -386,12 +527,15 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
             log.debug("[DEBUG][foodSalesStats] recipeAmountThisGoodByFood 为空 → recipeDishes 与 periodSales 均为空；请检查 gb_distributer_food_goods 是否有 gb_dfg_dis_goods_id={} 且 gb_dfg_dis_id={} 且状态有效",
                     disGoodsId, disId);
             out.put("recipeDishesUsingThisGood", recipeDishes);
+            out.put("supportedDishes", new ArrayList<>());
             Map<String, Object> tv = new LinkedHashMap<>();
             tv.put("theoreticalIngredientTotal", 0.0);
             tv.put("actualIngredientTotal", round1(actualIngredientTotal));
             tv.put("ingredientGapActualMinusTheoretical", round1(actualIngredientTotal));
             tv.put("ingredientGapPercentOfTheoretical", null);
-            out.put("theoreticalVsActual", tv);
+            if (ingredientMetricsForAi != null) {
+                ingredientMetricsForAi.putAll(tv);
+            }
             out.put("periodSalesByDepAndDish", new ArrayList<>());
             return out;
         }
@@ -453,6 +597,72 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
         log.debug("[DEBUG][foodSalesStats] periodSalesByDepAndDish 条数={} soldQtyByDepFood.keys={}",
                 depDishRows.size(), soldQtyByDepFood.keySet());
 
+        Map<Integer, BigDecimal> dishQtyByFoodId = new HashMap<>();
+        for (GbDepFoodSalesEntity s : salesRows) {
+            if (s.getGbDfsFoodId() == null) {
+                continue;
+            }
+            dishQtyByFoodId.merge(s.getGbDfsFoodId(),
+                    GbDepartmentGoodsStockReduceSupport.parseGoodsAmountString(s.getGbDfsAmount()),
+                    BigDecimal::add);
+        }
+        Set<Integer> saleIds = salesRows.stream()
+                .map(GbDepFoodSalesEntity::getGbDepFoodSalesId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Integer, Integer> foodSaleIdToFoodId = new HashMap<>();
+        for (GbDepFoodSalesEntity s : salesRows) {
+            if (s.getGbDepFoodSalesId() != null && s.getGbDfsFoodId() != null) {
+                foodSaleIdToFoodId.put(s.getGbDepFoodSalesId(), s.getGbDfsFoodId());
+            }
+        }
+        Map<Integer, BigDecimal> ingredientByFoodId = new HashMap<>();
+        if (!saleIds.isEmpty()) {
+            LambdaQueryWrapper<GbDepFoodGoodsSalesEntity> iw = new LambdaQueryWrapper<GbDepFoodGoodsSalesEntity>()
+                    .eq(GbDepFoodGoodsSalesEntity::getGbDfgsDisGoodsId, disGoodsId)
+                    .ge(GbDepFoodGoodsSalesEntity::getGbDfgsFullDate, startDate)
+                    .le(GbDepFoodGoodsSalesEntity::getGbDfgsFullDate, stopDate)
+                    .in(GbDepFoodGoodsSalesEntity::getGbDfgsFoodSalesId, saleIds);
+            if (searchDepId != null && !"-1".equals(searchDepId)) {
+                iw.eq(GbDepFoodGoodsSalesEntity::getGbDfgsDepId, Integer.valueOf(searchDepId));
+            }
+            for (GbDepFoodGoodsSalesEntity r : gbDepFoodGoodsSalesService.list(iw)) {
+                Integer fsId = r.getGbDfgsFoodSalesId();
+                Integer fid = fsId == null ? null : foodSaleIdToFoodId.get(fsId);
+                if (fid == null) {
+                    continue;
+                }
+                ingredientByFoodId.merge(fid,
+                        GbDepartmentGoodsStockReduceSupport.parseGoodsAmountString(r.getGbDfgsGoodsAmount()),
+                        BigDecimal::add);
+            }
+        }
+        List<Integer> orderedFoodIds = new ArrayList<>(recipeAmountThisGoodByFood.keySet());
+        orderedFoodIds.sort((a, b) -> dishQtyByFoodId.getOrDefault(b, BigDecimal.ZERO)
+                .compareTo(dishQtyByFoodId.getOrDefault(a, BigDecimal.ZERO)));
+        List<Map<String, Object>> supportedDishes = new ArrayList<>();
+        for (Integer fid : orderedFoodIds) {
+            BigDecimal dishU = recipeAmountThisGoodByFood.getOrDefault(fid, BigDecimal.ZERO);
+            BigDecimal dQty = dishQtyByFoodId.getOrDefault(fid, BigDecimal.ZERO);
+            BigDecimal ingQty = ingredientByFoodId.getOrDefault(fid, BigDecimal.ZERO);
+            BigDecimal theoryRecipe = dishU.multiply(dQty);
+            GbDistributerFoodEntity foodEntity = gbDistributerFoodService.queryObject(fid);
+            String dishName = foodEntity != null && foodEntity.getGbDfFoodName() != null
+                    ? foodEntity.getGbDfFoodName().trim()
+                    : "";
+            Map<String, Object> sRow = new LinkedHashMap<>();
+            sRow.put("dishId", fid);
+            sRow.put("dishName", dishName);
+            sRow.put("recipeUnitPerDish", supportedIngredientQtyTwoDecimals(dishU));
+            sRow.put("salesPortions", supportedSalesPortionsString(dQty));
+            sRow.put("theoryUsage", supportedIngredientQtyTwoDecimals(theoryRecipe));
+            sRow.put("salesUsageFromOrders", supportedIngredientQtyTwoDecimals(ingQty));
+            sRow.put("actualUsage", supportedIngredientQtyTwoDecimals(ingQty));
+            sRow.put("diffUsage", supportedIngredientQtyTwoDecimals(ingQty.subtract(theoryRecipe)));
+            supportedDishes.add(sRow);
+        }
+        out.put("supportedDishes", supportedDishes);
+
         BigDecimal actualBd = BigDecimal.valueOf(actualIngredientTotal);
         BigDecimal gap = actualBd.subtract(theoreticalTotal);
         Double gapPct = BigDecimal.ZERO.compareTo(theoreticalTotal) == 0 ? null
@@ -464,12 +674,24 @@ public class GbDepartmentGoodsStockReduceWithDayDataServiceImpl implements GbDep
         tv.put("actualIngredientTotal", actualBd.setScale(1, RoundingMode.HALF_UP).doubleValue());
         tv.put("ingredientGapActualMinusTheoretical", gap.setScale(1, RoundingMode.HALF_UP).doubleValue());
         tv.put("ingredientGapPercentOfTheoretical", gapPct);
-        out.put("theoreticalVsActual", tv);
+        if (ingredientMetricsForAi != null) {
+            ingredientMetricsForAi.putAll(tv);
+        }
         return out;
     }
 
     private static double round1(double v) {
         return BigDecimal.valueOf(v).setScale(1, RoundingMode.HALF_UP).doubleValue();
+    }
+
+    /**与同 {@link com.nongxinle.service.impl.GbDishCostAnalysisServiceImpl#buildOutboundIngredientAnalysisReport} 中 {@code supportedDishes} 数量格式一致（两位小数）。 */
+    private static String supportedIngredientQtyTwoDecimals(BigDecimal v) {
+        return (v != null ? v : BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    /** 与配料报表 {@code salesPortions} 一致：整数份字符串。 */
+    private static String supportedSalesPortionsString(BigDecimal v) {
+        return (v != null ? v : BigDecimal.ZERO).setScale(0, RoundingMode.HALF_UP).toPlainString();
     }
 
     private Map<String, Object> generateOverallAiAnalysis(Double totalProduce, Double totalLoss, Double totalWaste,

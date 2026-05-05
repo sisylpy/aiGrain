@@ -675,40 +675,40 @@ public class GbDepartmentOrdersController {
 
         List<Map<String, Object>> list = new ArrayList<>();
         if (howManyDaysInPeriod > 0) {
-            for (int i = 0; i < howManyDaysInPeriod + 1; i++) {
-                // dateList
-                String whichDay = "";
-                if (i == 0) {
-                    whichDay = startDate;
-                } else {
-                    whichDay = afterWhatDay(startDate, i);
-                }
+            Map<String, Object> rangeParams = new HashMap<>();
+            rangeParams.put("disGoodsId", disGoodsId);
+            rangeParams.put("equalStatus", 4);
+            rangeParams.put("startDate", startDate);
+            rangeParams.put("stopDate", stopDate);
+            if (searchDepIds != null && searchDepIds != -1) {
+                rangeParams.put("depId", searchDepIds);
+            }
+
+            List<String> datesWithOrders = gbDepartmentOrdersService.queryDisGoodsDistinctArriveDates(rangeParams);
+            for (String whichDay : datesWithOrders) {
                 Map<String, Object> mapResult = new HashMap<>();
                 mapResult.put("date", whichDay);
-                double total = 0;
+
                 Map<String, Object> mapDisGoods = new HashMap<>();
                 mapDisGoods.put("disGoodsId", disGoodsId);
                 mapDisGoods.put("arriveDate", whichDay);
                 mapDisGoods.put("equalStatus", 4);
-                if (searchDepIds != -1) {
-                    mapDisGoods.put("depIds", searchDepIds);
+                if (searchDepIds != null && searchDepIds != -1) {
+                    mapDisGoods.put("depId", searchDepIds);
                 }
-                List<GbDepartmentOrdersEntity> ordersEntities = new ArrayList<>();
 
-                System.out.println("deptyytt11111" + mapDisGoods);
-                Integer count = gbDepartmentOrdersService.queryGbDepartmentOrderAmount(mapDisGoods);
-                System.out.println("coudndndhdnddd" + count);
-                if (count > 0) {
-                    ordersEntities = gbDepartmentOrdersService.queryDisOrdersListByParams(mapDisGoods);
+                List<GbDepartmentOrdersEntity> ordersEntities =
+                        gbDepartmentOrdersService.queryDisOrdersListByParams(mapDisGoods);
+                double total = 0;
+                if (!ordersEntities.isEmpty()) {
                     total = gbDepartmentOrdersService.queryGbOrdersSubtotal(mapDisGoods);
                 }
 
                 mapResult.put("arr", ordersEntities);
                 mapResult.put("total", total);
-                if (ordersEntities.size() > 0) {
+                if (!ordersEntities.isEmpty()) {
                     list.add(mapResult);
                 }
-
             }
         } else {
             Map<String, Object> mapResult = new HashMap<>();
@@ -717,8 +717,8 @@ public class GbDepartmentOrdersController {
             Map<String, Object> mapDisGoods = new HashMap<>();
             mapDisGoods.put("disGoodsId", disGoodsId);
             mapDisGoods.put("equalStatus", 3);
-            if (searchDepIds != -1) {
-                mapDisGoods.put("depIds", searchDepIds);
+            if (searchDepIds != null && searchDepIds != -1) {
+                mapDisGoods.put("depId", searchDepIds);
             }
 
             List<GbDepartmentOrdersEntity> ordersEntities = new ArrayList<>();
@@ -730,10 +730,7 @@ public class GbDepartmentOrdersController {
             }
             mapResult.put("total", total);
             mapResult.put("arr", ordersEntities);
-            if (ordersEntities.size() > 0) {
-                list.add(mapResult);
-            }
-            if (ordersEntities.size() > 0) {
+            if (!ordersEntities.isEmpty()) {
                 list.add(mapResult);
             }
         }

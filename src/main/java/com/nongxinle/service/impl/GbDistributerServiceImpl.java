@@ -7,6 +7,7 @@ import com.nongxinle.mapper.GbDistributerMapper;
 import com.nongxinle.service.*;
 import com.nongxinle.utils.DateUtils;
 import com.nongxinle.utils.GbConstants;
+import com.nongxinle.utils.ImagePaths;
 import com.nongxinle.utils.PinYin4jUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -216,7 +217,7 @@ public class GbDistributerServiceImpl extends ServiceImpl<GbDistributerMapper, G
         GbDistributerFatherGoodsEntity greatGrand = new GbDistributerFatherGoodsEntity();
         greatGrand.setGbDfgDistributerId(nxDistributerId);
         greatGrand.setGbDfgFatherGoodsLevel(0);
-        greatGrand.setGbDfgFatherGoodsImg("goodsImage/logo.jpg");
+        greatGrand.setGbDfgFatherGoodsImg(ImagePaths.relative(ImagePaths.GOODS, "logo.jpg"));
         greatGrand.setGbDfgFatherGoodsName("临时添加");
         greatGrand.setGbDfgFatherGoodsColor("#757575");
         greatGrand.setGbDfgFathersFatherId(0);
@@ -225,7 +226,7 @@ public class GbDistributerServiceImpl extends ServiceImpl<GbDistributerMapper, G
         GbDistributerFatherGoodsEntity grand = new GbDistributerFatherGoodsEntity();
         grand.setGbDfgDistributerId(nxDistributerId);
         grand.setGbDfgFatherGoodsLevel(1);
-        grand.setGbDfgFatherGoodsImg("goodsImage/logo.jpg");
+        grand.setGbDfgFatherGoodsImg(ImagePaths.relative(ImagePaths.GOODS, "logo.jpg"));
         grand.setGbDfgFatherGoodsName("临时添加");
         grand.setGbDfgGoodsAmount(0);
         grand.setGbDfgFatherGoodsColor("#757575");
@@ -235,7 +236,7 @@ public class GbDistributerServiceImpl extends ServiceImpl<GbDistributerMapper, G
         GbDistributerFatherGoodsEntity father = new GbDistributerFatherGoodsEntity();
         father.setGbDfgDistributerId(nxDistributerId);
         father.setGbDfgFatherGoodsLevel(2);
-        father.setGbDfgFatherGoodsImg("goodsImage/logo.jpg");
+        father.setGbDfgFatherGoodsImg(ImagePaths.relative(ImagePaths.GOODS, "logo.jpg"));
         father.setGbDfgFatherGoodsName("临时添加");
         father.setGbDfgGoodsAmount(0);
         father.setGbDfgFatherGoodsColor("#757575");

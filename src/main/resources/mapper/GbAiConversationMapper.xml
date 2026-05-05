@@ -6,6 +6,7 @@
 		<id column="gb_ai_conversation_id" property="gbAiConversationId" />
 		<result column="gb_ai_conversation_department_id" property="gbAiConversationDepartmentId" />
 		<result column="gb_ai_conversation_distributer_id" property="gbAiConversationDistributerId" />
+		<result column="gb_ai_conversation_scope_mode" property="gbAiConversationScopeMode" />
 		<result column="gb_ai_conversation_type" property="gbAiConversationType" />
 		<result column="gb_ai_conversation_title" property="gbAiConversationTitle" />
 		<result column="gb_ai_conversation_create_time" property="gbAiConversationCreateTime" />

@@ -9,6 +9,7 @@ import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 订货部门实体
@@ -182,4 +183,50 @@ public class GbDepartmentEntity implements Serializable {
      */
     @TableField(exist = false)
     private List<GbDepartmentGoodsStockReduceEntity> wasteReduceList;
+
+
+    @TableField(exist = false)
+    private String depProduceGoodsTotalString;
+
+    @TableField(exist = false)
+    private String depLossGoodsTotalString;
+
+    @TableField(exist = false)
+    private String depWasteGoodsTotalString;
+
+    @TableField(exist = false)
+    private String depCostGoodsTotalString;
+
+
+    @TableField(exist = false)
+    private String depStockSubtotalString;
+
+    @TableField(exist = false)
+    private String depStockWeightTotalString;
+
+    /**
+     * 按日商品曲线：该部门当日本料的出库 1+2+3 重量合计（两位小数）、金额合计（两位小数，与 reduce subtotal 一致）。
+     */
+    @TableField(exist = false)
+    private String dayOutbound123Weight;
+
+    @TableField(exist = false)
+    private String dayOutbound123Subtotal;
+
+    /**
+     * 按日：该部门当日本料配方理论用量、毛利贡献金额（与 {@code GbDishCostAnalysisService#summarizeDisGoodsDayForReduceCurve} 同口径）。
+     */
+    @TableField(exist = false)
+    private String dayTheoryOutboundQty;
+
+    @TableField(exist = false)
+    private String dayGrossProfitContributionTotal;
+
+    /**
+     * 按日：本配料当日在各菜品上的销售拆解（与 {@code GbDishCostAnalysisService#summarizeDisGoodsDayForReduceCurve} 返回的
+     * {@code dishIngredientDayBreakdown} 一致）：实销份数、实收、每份配方用量、理论总用量、标价分摊到本料、本料 1+2+3 出库成本、毛利贡献。
+     */
+    @TableField(exist = false)
+    private List<Map<String, Object>> dayDishIngredientSales;
+
 }

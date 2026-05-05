@@ -50,6 +50,90 @@
         </where>
     </select>
 
+    <!-- 与 queryReduceTypeCount 条件一致；仅 type in (1,2,3)，去重部门（用于按日展开有出库的门店） -->
+    <select id="queryReduceDepartment" resultType="com.nongxinle.entity.GbDepartmentEntity">
+        select distinct gd.*
+        from gb_department_goods_stock_reduce as gbdssr
+        inner join gb_department as gd on gd.gb_department_id = gbdssr.gb_dgsr_gb_department_id
+        left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gbdssr.gb_dgsr_gb_dis_goods_id
+        <where>
+            and gbdssr.gb_dgsr_type in (1, 2, 3)
+            <if test="params.disId != null">
+                and gbdssr.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depFatherId != null">
+                and gbdssr.gb_dgsr_gb_department_father_id = #{params.depFatherId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.date != null">
+                and gbdssr.gb_dgsr_date = #{params.date}
+            </if>
+            <if test="params.startDate != null">
+                and gbdssr.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and gbdssr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                and (
+                    gbdssr.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+            <if test="params.disGoodsId != null">
+                and gbdssr.gb_dgsr_gb_dis_goods_id = #{params.disGoodsId}
+            </if>
+        </where>
+        order by ifnull(gd.gb_department_sort, 0), gd.gb_department_id
+    </select>
+
+    <!-- 与 queryReduceTypeCount 条件一致；明细含退货 type=4 -->
+    <select id="queryStockReduceListByParams" resultType="com.nongxinle.entity.GbDepartmentGoodsStockReduceEntity">
+        select gsr.*
+        from gb_department_goods_stock_reduce as gsr
+        left join gb_department as gd on gd.gb_department_id = gsr.gb_dgsr_gb_department_id
+        left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gsr.gb_dgsr_gb_dis_goods_id
+        <where>
+            and gsr.gb_dgsr_type in (1, 2, 3, 4)
+            <if test="params.disId != null">
+                and gsr.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                and gsr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depFatherId != null">
+                and gsr.gb_dgsr_gb_department_father_id = #{params.depFatherId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.date != null">
+                and gsr.gb_dgsr_date = #{params.date}
+            </if>
+            <if test="params.startDate != null">
+                and gsr.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and gsr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                and (
+                    gsr.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+            <if test="params.disGoodsId != null">
+                and gsr.gb_dgsr_gb_dis_goods_id = #{params.disGoodsId}
+            </if>
+        </where>
+        order by gsr.gb_dgsr_gb_department_id, gsr.gb_dgsr_date desc, gsr.gb_department_goods_stock_reduce_id desc
+    </select>
+
     <select id="queryReduceCostSubtotal" resultType="java.lang.Double">
         select IFNULL(sum(gbdssr.gb_dgsr_subtotal), 0) from gb_department_goods_stock_reduce as gbdssr
         left join gb_department as gd on gd.gb_department_id = gbdssr.gb_dgsr_gb_department_id
@@ -245,6 +329,57 @@
         left join gb_department gd on gd.gb_department_id = r.gb_dgsr_gb_department_father_id
         left join gb_distributer_goods gdd on gdd.gb_distributer_goods_id = r.gb_dgsr_gb_dis_goods_id
         <where>
+            <if test="params.departmentFatherId != null">
+                and r.gb_dgsr_gb_department_father_id = #{params.departmentFatherId}
+            </if>
+            <if test="params.departmentId != null">
+                and r.gb_dgsr_gb_department_id = #{params.departmentId}
+            </if>
+            <if test="params.disId != null">
+                and r.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                and r.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.startDate != null">
+                and r.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and r.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                and (
+                    r.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+        </where>
+    </select>
+
+    <!--
+        与 queryReduceAllTypesTotal 过滤条件一致，且仅汇总「该日已存在日营业额记录」的核销行：
+        r.gb_dgsr_date 与 gb_ai_daily_revenue 同部门、同自然日（按 record_date 格式化为 yyyy-MM-dd）。
+    -->
+    <select id="queryReduceAllTypesTotalOnDailyRevenueDays" resultType="java.util.Map">
+        select
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 1), 0) as produceTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 1), 0) as wasteTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 1), 0) as lossTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 1), 0) as returnTotal
+        from gb_department_goods_stock_reduce r
+        left join gb_department gd on gd.gb_department_id = r.gb_dgsr_gb_department_father_id
+        left join gb_distributer_goods gdd on gdd.gb_distributer_goods_id = r.gb_dgsr_gb_dis_goods_id
+        <where>
+            <if test="params.matchDailyRevenueDepartmentId != null">
+                and exists (
+                    select 1 from gb_ai_daily_revenue dr
+                    where dr.gb_ai_daily_revenue_department_id = #{params.matchDailyRevenueDepartmentId}
+                    and r.gb_dgsr_date = DATE_FORMAT(dr.gb_ai_daily_revenue_record_date, '%Y-%m-%d')
+                )
+            </if>
             <if test="params.departmentFatherId != null">
                 and r.gb_dgsr_gb_department_father_id = #{params.departmentFatherId}
             </if>

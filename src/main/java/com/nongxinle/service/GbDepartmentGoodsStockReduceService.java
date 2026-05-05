@@ -1,6 +1,7 @@
 package com.nongxinle.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.nongxinle.entity.GbDepartmentEntity;
 import com.nongxinle.entity.GbDepartmentGoodsStockReduceEntity;
 import com.nongxinle.entity.GbDistributerGoodsEntity;
 
@@ -16,6 +17,16 @@ public interface GbDepartmentGoodsStockReduceService extends IService<GbDepartme
      * 根据类型查询记录数量
      */
     Integer queryReduceTypeCount(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryReduceTypeCount} 相同过滤条件，返回当日（或区间）内有生产/废弃/损耗核销的部门列表。
+     */
+    List<GbDepartmentEntity> queryReduceDepartment(Map<String, Object> map);
+
+    /**
+     * 与统计口径一致的核销明细列表（含退货 type=4），用于替代原 gb_department_goods_daily + 日报关联查询。
+     */
+    List<GbDepartmentGoodsStockReduceEntity> queryStockReduceListByParams(Map<String, Object> map);
 
     /**
      * 查询成本小计
@@ -62,6 +73,11 @@ public interface GbDepartmentGoodsStockReduceService extends IService<GbDepartme
      * 查询所有类型的 subtotal 总和
      */
     Map<String, Object> queryReduceAllTypesTotal(Map<String, Object> map);
+
+    /**
+     * 同 {@link #queryReduceAllTypesTotal}，仅计入「该日已有日营业额」的核销日期。
+     */
+    Map<String, Object> queryReduceAllTypesTotalOnDailyRevenueDays(Map<String, Object> map);
 
     /**
      * 按 subtotal 查询 Top 商品

@@ -12,6 +12,7 @@ import com.nongxinle.service.GbDistributerService;
 import com.nongxinle.service.GbDistributerUserService;
 import com.nongxinle.service.NxJrdhUserService;
 import com.nongxinle.utils.GbConstants;
+import com.nongxinle.utils.ImagePaths;
 import com.nongxinle.utils.MyAPPIDConfig;
 import com.nongxinle.utils.R;
 import com.nongxinle.utils.UploadFile;
@@ -95,10 +96,7 @@ public class GbDistributerUserController {
             gbDistributerEntity.setGbDistributerStockCycle(0);
 
             GbDepartmentUserEntity managerUser = new GbDepartmentUserEntity();
-            String newUploadName = "uploadImage";
-            UploadFile.upload(session, newUploadName, file);
-            String filename = file.getOriginalFilename();
-            String filePath = newUploadName + "/" + filename;
+            String filePath = UploadFile.upload(session, ImagePaths.UPLOAD, file);
 //            //1 disuser save
             managerUser.setGbDuWxOpenId(openid);
             managerUser.setGbDuWxAvartraUrl(filePath);

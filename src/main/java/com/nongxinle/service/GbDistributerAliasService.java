@@ -23,4 +23,6 @@ public interface GbDistributerAliasService {
 	void delete(Integer gbDistributerAliasId);
 	
 	void deleteBatch(Integer[] gbDistributerAliasIds);
+
+    List<GbDistributerAliasEntity> queryDisAliasByDisGoodsId(Integer disGoodsId);
 }

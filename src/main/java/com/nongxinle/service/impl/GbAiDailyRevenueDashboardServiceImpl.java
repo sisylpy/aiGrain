@@ -5,6 +5,7 @@ import com.nongxinle.service.GbAiDailyRevenueDashboardService;
 import com.nongxinle.service.GbDepartmentGoodsStockReduceService;
 import com.nongxinle.utils.GbDateTimeUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -15,6 +16,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDashboardService {
@@ -22,11 +24,21 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
     private final GbDepartmentGoodsStockReduceService stockReduceService;
 
     @Override
-    public Map<String, Object> buildStatsDashboard(Long departmentId, GbAiRestaurantProfileEntity profile, Map<String, Object> stats) {
+    public Map<String, Object> buildStatsDashboard(Long departmentFatherId, GbAiRestaurantProfileEntity profile,
+                                                   Map<String, Object> stats, String startDate, String endDate) {
+        String qStart = (startDate != null && !startDate.isBlank()) ? startDate.trim() : null;
+        String qEnd = (endDate != null && !endDate.isBlank()) ? endDate.trim() : null;
+
         int days = ((Number) stats.get("days")).intValue();
         Map<String, Object> result = new HashMap<>();
 
         result.put("统计天数", days);
+        if (qStart != null) {
+            result.put("统计开始日期", qStart);
+        }
+        if (qEnd != null) {
+            result.put("统计结束日期", qEnd);
+        }
         BigDecimal avgDailyRevenue = toDecimal(stats.get("avg_daily_revenue"));
         result.put("日均营业额", formatStatNumber(avgDailyRevenue));
         result.put("总营业额", formatStatNumber(toDecimal(stats.get("total_revenue"))));
@@ -61,8 +73,15 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         result.put("日均外卖净收", formatStatNumber(toDecimal(stats.get("avg_takeout_net"))));
 
         Map<String, Object> costParams = new HashMap<>();
-        costParams.put("departmentFatherId", departmentId);
-        Map<String, Object> costStats = this.stockReduceService.queryReduceAllTypesTotal(costParams);
+        costParams.put("departmentFatherId", departmentFatherId);
+        costParams.put("matchDailyRevenueDepartmentId", departmentFatherId);
+        if (qStart != null) {
+            costParams.put("startDate", qStart);
+        }
+        if (qEnd != null) {
+            costParams.put("stopDate", qEnd);
+        }
+        Map<String, Object> costStats = this.stockReduceService.queryReduceAllTypesTotalOnDailyRevenueDays(costParams);
 
         BigDecimal produceCost = toDecimal(costStats.get("produceTotal"));
         BigDecimal wasteCost = toDecimal(costStats.get("wasteTotal"));
@@ -70,15 +89,33 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         BigDecimal returnCost = toDecimal(costStats.get("returnTotal"));
         BigDecimal productionCost = produceCost.add(wasteCost).add(lossCost);
         BigDecimal totalCost = productionCost.add(returnCost);
-        // 部门库存核销：制作(1)+损耗(2)+废弃/损失(3)，不含退货(4)；按营业额统计天数摊日均
+        BigDecimal wasteLossCost = wasteCost.add(lossCost);
+
+        BigDecimal produceShareOfReduce = BigDecimal.ZERO;
+        BigDecimal wasteLossShareOfReduce = BigDecimal.ZERO;
+        if (productionCost.compareTo(BigDecimal.ZERO) > 0) {
+            produceShareOfReduce = produceCost.multiply(BigDecimal.valueOf(100))
+                    .divide(productionCost, 2, RoundingMode.HALF_UP);
+            wasteLossShareOfReduce = wasteLossCost.multiply(BigDecimal.valueOf(100))
+                    .divide(productionCost, 2, RoundingMode.HALF_UP);
+        }
+
+        BigDecimal avgProduceDaily = produceCost.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
+        BigDecimal avgWasteLossDaily = wasteLossCost.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
         BigDecimal avgDepartmentReduceDaily = productionCost.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
-        BigDecimal expenseDailyTotal = dailyWage.add(dailyRent).add(avgDepartmentReduceDaily);
+        // 天平支出端合计：仅工资+租金+生产核销(type=1)；损耗/废弃(2+3)另行列示不计入本合计
+        BigDecimal expenseDailyTotal = dailyWage.add(dailyRent).add(avgProduceDaily);
 
         result.put("生产成本", formatStatNumber(produceCost));
         result.put("损耗成本", formatStatNumber(wasteCost));
         result.put("损失成本", formatStatNumber(lossCost));
+        result.put("损耗废弃合计", formatStatNumber(wasteLossCost));
         result.put("退货成本", formatStatNumber(returnCost));
         result.put("制作成本合计", formatStatNumber(productionCost));
+        result.put("制作占制作损耗废弃合计比例", formatStatNumber(produceShareOfReduce));
+        result.put("损耗废弃占制作损耗废弃合计比例", formatStatNumber(wasteLossShareOfReduce));
+        result.put("生产核销日均", formatStatNumber(avgProduceDaily));
+        result.put("损耗废弃核销日均", formatStatNumber(avgWasteLossDaily));
         result.put("部门核销制作损耗废弃日均", formatStatNumber(avgDepartmentReduceDaily));
         result.put("日均支出合计", formatStatNumber(expenseDailyTotal));
         result.put("总成本", formatStatNumber(totalCost));
@@ -86,7 +123,7 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         BigDecimal grossProfitMargin = BigDecimal.ZERO;
         BigDecimal totalNetRevenue = toDecimal(stats.get("total_revenue")).subtract(totalCoupon);
         if (totalNetRevenue.compareTo(BigDecimal.ZERO) > 0) {
-            grossProfitMargin = totalNetRevenue.subtract(totalCost)
+            grossProfitMargin = totalNetRevenue.subtract(produceCost)
                     .multiply(BigDecimal.valueOf(100))
                     .divide(totalNetRevenue, 2, RoundingMode.HALF_UP);
         }
@@ -95,9 +132,18 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
 
         result.put("参考日均固定开支", formatStatNumber(dailyFixedCost));
 
-        BigDecimal avgDailyStockCost = totalCost.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
+        BigDecimal avgDailyStockCost = produceCost.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
         BigDecimal profitAfterCost = avgNetRevenue.subtract(avgDailyStockCost).subtract(dailyFixedCost);
         BigDecimal profit = avgNetRevenue.subtract(dailyFixedCost);
+
+        BigDecimal operatingNetMarginPct = BigDecimal.ZERO;
+        if (avgNetRevenue.compareTo(BigDecimal.ZERO) > 0) {
+            operatingNetMarginPct = profitAfterCost.multiply(BigDecimal.valueOf(100))
+                    .divide(avgNetRevenue, 2, RoundingMode.HALF_UP);
+        }
+        result.put("经营净利率", formatStatNumber(operatingNetMarginPct));
+        result.put("经营净利率说明", "（日均净收−生产核销日均−日工资−日租金）/日均净收，画像月工资/月租按÷30摊到日");
+
         String status;
         String statusDesc;
         BigDecimal actualProfit;
@@ -149,9 +195,54 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
             riskMultiple = profitAfterCost.abs().divide(dailyTotalExpense, 2, RoundingMode.HALF_UP);
         }
 
-        BigDecimal healthPercent = grossProfitMargin.max(BigDecimal.ZERO).min(BigDecimal.valueOf(100));
-        String healthColor = healthColorForMargin(grossProfitMargin);
-        Map<String, String> safety = safetyForMargin(grossProfitMargin);
+        if (log.isInfoEnabled()) {
+            BigDecimal totalGross = toDecimal(stats.get("total_revenue"));
+            BigDecimal shareSum = produceShareOfReduce.add(wasteLossShareOfReduce);
+            log.info("[daily-revenue-dashboard] departmentFatherId={} queryRange={}..{} statsDays={} (mapper COUNT rows)",
+                    departmentFatherId,
+                    qStart != null ? qStart : "—",
+                    qEnd != null ? qEnd : "—",
+                    days);
+            log.info("[daily-revenue-dashboard] income: totalGross={} totalPlatformFee={} totalNet(totalGross-fee)={} "
+                            + "avgGrossPerDay={} avgNetPerDay(avgGross-fee/days)={}",
+                    totalGross.toPlainString(),
+                    totalCoupon.toPlainString(),
+                    totalNetRevenue.toPlainString(),
+                    avgDailyRevenue.toPlainString(),
+                    avgNetRevenue.toPlainString());
+            log.info("[daily-revenue-dashboard] stockReduce(only days with uploaded daily revenue, same dept+date as gb_ai_daily_revenue): "
+                            + "t1_produce={} t2_waste={} t3_loss={} "
+                            + "t4_return={} t123_sum={} | dailyAvg: produce/days={} (waste+loss)/days={}",
+                    produceCost.toPlainString(),
+                    wasteCost.toPlainString(),
+                    lossCost.toPlainString(),
+                    returnCost.toPlainString(),
+                    productionCost.toPlainString(),
+                    avgProduceDaily.toPlainString(),
+                    avgWasteLossDaily.toPlainString());
+            log.info("[daily-revenue-dashboard] profileFixed: monthlyWage+rent={} => dailyFixed(/30)={} dailyWage={} dailyRent={}",
+                    monthlyFixedCost.toPlainString(),
+                    dailyFixedCost.toPlainString(),
+                    dailyWage.toPlainString(),
+                    dailyRent.toPlainString());
+            log.info("[daily-revenue-dashboard] KPI: grossMargin%%=(totalNet-produce)/totalNet={}% "
+                            + "operatingNetMargin%%=profitAfterCost/avgNet={}% "
+                            + "profitAfterCost=avgNet-produce/days-dailyFixed={} "
+                            + "dailyTotalExpense(fixed+produce/days+platform/days)={} riskMultiple=|profit|/expense={} "
+                            + "shareOf(t123): produce%%={} wasteLoss%%={} (t1%%+t2+3%% should~100, got={})",
+                    grossProfitMargin.toPlainString(),
+                    operatingNetMarginPct.toPlainString(),
+                    profitAfterCost.toPlainString(),
+                    dailyTotalExpense.toPlainString(),
+                    riskMultiple.toPlainString(),
+                    produceShareOfReduce.toPlainString(),
+                    wasteLossShareOfReduce.toPlainString(),
+                    shareSum.toPlainString());
+        }
+
+        BigDecimal healthPercent = operatingNetMarginPct.max(BigDecimal.ZERO).min(BigDecimal.valueOf(100));
+        String healthColor = healthColorForOperatingNetMargin(operatingNetMarginPct);
+        Map<String, String> safety = safetyForOperatingNetMargin(operatingNetMarginPct);
 
         LocalDate today = GbDateTimeUtils.todayChina();
         int currentMonth = today.getMonthValue();
@@ -181,11 +272,12 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         Map<String, Object> expensePanel = new LinkedHashMap<>();
         expensePanel.put("sectionKey", "scale_expense");
         expensePanel.put("title", "支出端");
-        expensePanel.put("summary", labeledRow("日均支出合计", "日均支出合计（工资+租金+部门核销日均）", expenseDailyTotal));
+        expensePanel.put("summary", labeledRow("日均支出合计", "日均支出合计（工资+租金+生产核销日均 type=1）", expenseDailyTotal));
         expensePanel.put("rows", Arrays.asList(
                 labeledRow("工资日均", "工资（日均）", dailyWage),
                 labeledRow("租金日均", "租金（日均）", dailyRent),
-                labeledRow("支出日均", "支出(日均)", avgDepartmentReduceDaily)
+                labeledRow("生产核销日均", "生产核销日均（type=1，本期合计/统计天数）", avgProduceDaily),
+                labeledRow("损耗废弃日均", "损耗废弃日均（type=2+3，另计未计入上方合计）", avgWasteLossDaily)
         ));
         scaleBeam.put("expense", expensePanel);
 
@@ -209,7 +301,10 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         healthCard.put("sectionKey", "health");
         healthCard.put("title", "经营健康度");
         healthCard.put("rows", Arrays.asList(
-                labeledRow("利润率", "利润率（(总营业额-平台费-总库存成本)/总营业额）", grossProfitMargin)
+                labeledRow("食材毛利率", "（净营业额−生产核销）/净营业额；生产=type1", grossProfitMargin),
+                labeledRow("经营净利率", "（日均净收−生产核销日均−画像日工资−画像日租金）/日均净收", operatingNetMarginPct),
+                labeledRow("制作占比", "制作金额占 type1+2+3 合计%", produceShareOfReduce),
+                labeledRow("损耗废弃占比", "损耗+废弃金额占 type1+2+3 合计%", wasteLossShareOfReduce)
         ));
         Map<String, Object> safetyMap = new LinkedHashMap<>();
         safetyMap.put("level", safety.get("level"));
@@ -218,7 +313,9 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         healthCard.put("safety", safetyMap);
         Map<String, Object> riskRow = new LinkedHashMap<>();
         riskRow.put("label", "抗风险倍数");
-        riskRow.put("hint", isProfit ? "相对日均总支出的盈利倍数" : "相对日均总支出的亏损倍数");
+        riskRow.put("hint", isProfit
+                ? "老板白话：每天净赚的钱，是你店里「日人工/房租摊下来 + 生产原料 + 平台费」这一包的几倍——数字越大，相对越扛得住。"
+                : "老板白话：每天亏的这点钱，相当于「日人工/房租摊下来 + 生产原料 + 平台费」这一包的几成——数字越小，相对越好扛。");
         riskRow.put("value", formatStatNumber(riskMultiple));
         riskRow.put("unit", "x");
         riskRow.put("isProfit", isProfit);
@@ -266,8 +363,9 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
                 labeledRow("总营业额", "总营业额", toDecimal(stats.get("total_revenue"))),
                 labeledRow("日均净收入", "日均净收入（日均毛收-日均平台费）", avgNetRevenue),
                 labeledRow("参考日均固定开支", "参考日均固定开支", dailyFixedCost),
-                labeledRow("每日盈亏", "每日盈亏（净收-日均库存成本-固定）", profitAfterCost),
-                labeledRow("利润率", "利润率", grossProfitMargin),
+                labeledRow("每日盈亏", "每日盈亏（净收−日均生产核销−画像日工资−画像日租金）", profitAfterCost),
+                labeledRow("食材毛利率", "（净营业额−生产核销）/净营业额", grossProfitMargin),
+                labeledRow("经营净利率", "（日均净收−生产−日工资−日租金）/日均净收", operatingNetMarginPct),
                 labeledRow("状态", "状态", statusDesc)
         ));
         dashboard.put("operationAnalysis", analysis);
@@ -278,10 +376,12 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         Map<String, Object> makeSection = new LinkedHashMap<>();
         makeSection.put("title", "制作成本");
         makeSection.put("rows", Arrays.asList(
-                labeledRow("生产成本", "生产成本", produceCost),
-                labeledRow("损耗成本", "损耗成本", wasteCost),
-                labeledRow("损失成本", "损失成本", lossCost),
-                labeledRow("制作成本合计", "制作成本合计", productionCost)
+                labeledRow("生产成本", "生产成本（type=1）", produceCost),
+                labeledRow("损耗成本", "损耗成本（type=2）", wasteCost),
+                labeledRow("损失成本", "损失成本（type=3）", lossCost),
+                labeledRow("制作成本合计", "制作+损耗+废弃合计（不含退货）", productionCost),
+                labeledRow("制作占比", "制作金额占上述合计%", produceShareOfReduce),
+                labeledRow("损耗废弃占比", "损耗+废弃金额占上述合计%", wasteLossShareOfReduce)
         ));
         costBreakdown.put("production", makeSection);
         Map<String, Object> otherSection = new LinkedHashMap<>();
@@ -301,6 +401,16 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         bindings.put("dailyRent", formatStatNumber(dailyRent));
         bindings.put("avgPlatformFee", formatStatNumber(avgPlatformFee));
         bindings.put("avgDepartmentReduceDaily", formatStatNumber(avgDepartmentReduceDaily));
+        bindings.put("avgProduceReduceDaily", formatStatNumber(avgProduceDaily));
+        bindings.put("avgWasteLossReduceDaily", formatStatNumber(avgWasteLossDaily));
+        bindings.put("produceShareOfReduce", formatStatNumber(produceShareOfReduce));
+        bindings.put("wasteLossShareOfReduce", formatStatNumber(wasteLossShareOfReduce));
+        if (qStart != null) {
+            bindings.put("queryStartDate", qStart);
+        }
+        if (qEnd != null) {
+            bindings.put("queryEndDate", qEnd);
+        }
         bindings.put("dateStr", dateHeader.get("dateStr"));
         bindings.put("weekdayStr", dateHeader.get("weekdayStr"));
         bindings.put("currentMonth", currentMonth);
@@ -308,6 +418,7 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         bindings.put("daysPassed", daysPassed);
         bindings.put("monthDays", monthDays);
         bindings.put("profitMargin", formatStatNumber(grossProfitMargin));
+        bindings.put("operatingNetMargin", formatStatNumber(operatingNetMarginPct));
         bindings.put("healthPercent", formatStatNumber(healthPercent));
         bindings.put("healthColor", healthColor);
         bindings.put("safetyLevel", safety.get("level"));
@@ -382,37 +493,43 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         return row;
     }
 
-    private static String healthColorForMargin(BigDecimal margin) {
-        if (margin.compareTo(BigDecimal.ZERO) < 0) {
+    /**
+     * 经营健康度色带：与安全等级同一套分界（相对「经营净利率」%）。
+     */
+    private static String healthColorForOperatingNetMargin(BigDecimal operatingNetMarginPct) {
+        if (operatingNetMarginPct.compareTo(BigDecimal.ZERO) < 0) {
             return "#ef4444";
         }
-        if (margin.compareTo(new BigDecimal("20")) >= 0) {
+        if (operatingNetMarginPct.compareTo(new BigDecimal("15")) >= 0) {
             return "#22c55e";
         }
-        if (margin.compareTo(new BigDecimal("8")) >= 0) {
+        if (operatingNetMarginPct.compareTo(new BigDecimal("5")) >= 0) {
             return "#eab308";
         }
         return "#f97316";
     }
 
-    private static Map<String, String> safetyForMargin(BigDecimal margin) {
+    /**
+     * 安全等级：按「经营净利率」分档（已扣生产核销 type1 + 画像月工资/30 + 画像月租/30），非食材毛利率。
+     */
+    private static Map<String, String> safetyForOperatingNetMargin(BigDecimal operatingNetMarginPct) {
         Map<String, String> m = new LinkedHashMap<>();
-        if (margin.compareTo(new BigDecimal("15")) >= 0) {
+        if (operatingNetMarginPct.compareTo(new BigDecimal("15")) >= 0) {
             m.put("level", "high");
             m.put("text", "稳健");
-            m.put("desc", "利润率处于较好区间");
-        } else if (margin.compareTo(new BigDecimal("5")) >= 0) {
+            m.put("desc", "经营净利率处于较好区间（已含日人工与房租）");
+        } else if (operatingNetMarginPct.compareTo(new BigDecimal("5")) >= 0) {
             m.put("level", "mid");
             m.put("text", "一般");
-            m.put("desc", "有一定压力，关注成本与客流");
-        } else if (margin.compareTo(BigDecimal.ZERO) >= 0) {
+            m.put("desc", "有一定压力，关注客流、人效与租金（已含日人工与房租）");
+        } else if (operatingNetMarginPct.compareTo(BigDecimal.ZERO) >= 0) {
             m.put("level", "low");
             m.put("text", "偏紧");
-            m.put("desc", "利润空间有限");
+            m.put("desc", "经营净利空间有限（已含日人工与房租）");
         } else {
             m.put("level", "danger");
             m.put("text", "预警");
-            m.put("desc", "当前统计周期为亏损状态");
+            m.put("desc", "按日均净收扣除生产主料与房租人工后为亏损");
         }
         return m;
     }

@@ -1,7 +1,9 @@
 package com.nongxinle.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.nongxinle.dto.GbDepFoodDailySalesSubmitRequest;
 import com.nongxinle.entity.GbDepartmentEntity;
+import com.nongxinle.entity.GbAiDailyRevenueEntity;
 import com.nongxinle.entity.GbDepFoodGoodsSalesEntity;
 import com.nongxinle.entity.GbDepFoodSalesEntity;
 import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
@@ -28,7 +30,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -160,6 +162,18 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
     public Map<String, Object> importFoodSalesFromExcelMultipart(MultipartFile file, Integer departmentId, Integer distributerId)
             throws IOException {
         dailyRevenueExcelService.assertSpreadsheetUpload(file);
+        byte[] bytes = file.getBytes();
+        int sheet = dailyRevenueExcelService.resolveFoodSalesDataSheetIndex(bytes);
+        return importFoodSalesFromExcelMultipart(file, departmentId, distributerId, sheet, false);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> importFoodSalesFromExcelMultipart(MultipartFile file, Integer departmentId, Integer distributerId,
+            int sheetIndex, boolean allowEmptyFoodSheet)
+            throws IOException {
+        dailyRevenueExcelService.assertSpreadsheetUpload(file);
+        byte[] bytes = file.getBytes();
         GbDepartmentEntity department = departmentService.getById(departmentId);
         if (department == null) {
             throw new IllegalArgumentException("部门不存在");
@@ -195,17 +209,25 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
                 }
             }
         }
-        List<GbAiDailyRevenueExcelService.FoodSalesExcelCell> cells = dailyRevenueExcelService.parseFoodSalesExcel(file);
+        List<GbAiDailyRevenueExcelService.FoodSalesExcelCell> cells = dailyRevenueExcelService.parseFoodSalesExcel(bytes, sheetIndex);
         if (cells.isEmpty()) {
-            throw new IllegalArgumentException("Excel文件中没有有效的菜品销售数据");
+            if (!allowEmptyFoodSheet) {
+                throw new IllegalArgumentException("Excel文件中没有有效的菜品销售数据");
+            }
+            Map<String, Object> empty = new HashMap<>();
+            empty.put("inserted", 0);
+            empty.put("updated", 0);
+            empty.put("goodsRows", 0);
+            empty.put("skippedUnknownFood", 0);
+            empty.put("warnings", new ArrayList<String>());
+            empty.put("rows", 0);
+            empty.put("dailyRevenueDaysSynced", 0);
+            empty.put("skippedEmptyFoodSheet", true);
+            return empty;
         }
 
-        int inserted = 0;
-        int updated = 0;
-        int goodsRows = 0;
         int skippedUnknownFood = 0;
         List<String> warnings = new ArrayList<>();
-        Set<String> dailyRevenueSyncDates = new TreeSet<>();
 
         Map<String, BigDecimal> qtyByResolvedKey = new HashMap<>();
         Map<String, Date> dateByResolvedKey = new HashMap<>();
@@ -241,6 +263,325 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
             foodIdByResolvedKey.putIfAbsent(resolvedKey, depFood.getGbDfFoodId());
         }
 
+        FoodSalesAggResult agg = applyAggregatedFoodSalesUpserts(
+                distributerId,
+                qtyByResolvedKey,
+                dateByResolvedKey,
+                depIdByResolvedKey,
+                depFatherIdByResolvedKey,
+                foodIdByResolvedKey,
+                depFoodByDepAndFood);
+
+        int dailyRevenueDaysSynced = 0;
+        Long depLong = departmentId.longValue();
+        Long disLong = distributerId.longValue();
+        for (String fullDate : agg.syncDates) {
+            BigDecimal dineIn = sumFoodSalesSubtotalByFatherAndDay(departmentId, fullDate);
+            gbAiDailyRevenueService.upsertDineInRevenueOnly(depLong, disLong, GbDateTimeUtils.parseDay(fullDate), dineIn);
+            dailyRevenueDaysSynced++;
+        }
+
+        Map<String, Object> out = new HashMap<>();
+        out.put("inserted", agg.inserted);
+        out.put("updated", agg.updated);
+        out.put("goodsRows", agg.goodsRows);
+        out.put("skippedUnknownFood", skippedUnknownFood);
+        out.put("warnings", warnings);
+        out.put("rows", cells.size());
+        out.put("dailyRevenueDaysSynced", dailyRevenueDaysSynced);
+        return out;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> submitDailyFoodSalesAndRevenue(GbDepFoodDailySalesSubmitRequest req) {
+        if (req == null) {
+            throw new IllegalArgumentException("请求体不能为空");
+        }
+        if (req.getDepFatherId() == null) {
+            throw new IllegalArgumentException("depFatherId 不能为空");
+        }
+        if (req.getDistributerId() == null) {
+            throw new IllegalArgumentException("distributerId 不能为空");
+        }
+        if (req.getRecordDate() == null || req.getRecordDate().trim().isEmpty()) {
+            throw new IllegalArgumentException("recordDate 不能为空（yyyy-MM-dd）");
+        }
+        String fullDate = req.getRecordDate().trim();
+        Date recordDate = GbDateTimeUtils.parseDay(fullDate);
+        if (recordDate == null) {
+            throw new IllegalArgumentException("recordDate 格式须为 yyyy-MM-dd");
+        }
+        GbDepartmentEntity department = departmentService.getById(req.getDepFatherId());
+        if (department == null) {
+            throw new IllegalArgumentException("部门不存在");
+        }
+
+        Map<String, Object> depMap = new HashMap<>();
+        depMap.put("depFatherId", req.getDepFatherId());
+        List<GbDepFoodEntity> depFoods = gbDepFoodService.queryDepAllFood(depMap);
+        dailyRevenueExcelService.attachDistributerFood(depFoods);
+        Map<String, GbDepFoodEntity> depFoodByDepAndFood = new HashMap<>();
+        Map<String, GbDepFoodEntity> depFoodByFatherAndFood = new HashMap<>();
+        for (GbDepFoodEntity f : depFoods) {
+            if (f.getGbDfFoodId() == null) {
+                continue;
+            }
+            GbDistributerFoodEntity disFood = f.getGbDistributerFoodEntity();
+            if (disFood != null && disFood.getGbDfDistributerId() != null
+                    && !disFood.getGbDfDistributerId().equals(req.getDistributerId())) {
+                continue;
+            }
+            Integer depId = f.getGbDfDepId();
+            Integer depFatherId = parseIntSafe(f.getGbDfDepFatherId());
+            if (depId == null) {
+                continue;
+            }
+            depFoodByDepAndFood.putIfAbsent(depFoodLookupKey(depId, f.getGbDfFoodId()), f);
+            if (f.getGbDfFoodFatherId() != null) {
+                depFoodByDepAndFood.putIfAbsent(depFoodLookupKey(depId, f.getGbDfFoodFatherId()), f);
+            }
+            if (depFatherId != null) {
+                depFoodByFatherAndFood.putIfAbsent(depFoodLookupKey(depFatherId, f.getGbDfFoodId()), f);
+                if (f.getGbDfFoodFatherId() != null) {
+                    depFoodByFatherAndFood.putIfAbsent(depFoodLookupKey(depFatherId, f.getGbDfFoodFatherId()), f);
+                }
+            }
+        }
+
+        Map<String, BigDecimal> qtyByResolvedKey = new HashMap<>();
+        Map<String, Date> dateByResolvedKey = new HashMap<>();
+        Map<String, Integer> depIdByResolvedKey = new HashMap<>();
+        Map<String, Integer> depFatherIdByResolvedKey = new HashMap<>();
+        Map<String, Integer> foodIdByResolvedKey = new HashMap<>();
+        List<String> warnings = new ArrayList<>();
+        int skippedUnknownFood = 0;
+
+        if (req.getLines() != null) {
+            for (GbDepFoodDailySalesSubmitRequest.Line line : req.getLines()) {
+                if (line == null || line.getQuantity() == null
+                        || line.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                if (line.getDepId() == null || line.getFoodId() == null) {
+                    skippedUnknownFood++;
+                    warnings.add("跳过：depId 或 foodId 为空");
+                    continue;
+                }
+                GbDepFoodEntity depFood = depFoodByDepAndFood.get(depFoodLookupKey(line.getDepId(), line.getFoodId()));
+                if (depFood == null || depFood.getGbDfDepId() == null || depFood.getGbDfFoodId() == null) {
+                    skippedUnknownFood++;
+                    warnings.add("未匹配部门菜品：depId=" + line.getDepId() + " foodId=" + line.getFoodId());
+                    continue;
+                }
+                String resolvedKey = fullDate + "|" + depFood.getGbDfDepId() + "|" + depFood.getGbDfFoodId();
+                qtyByResolvedKey.merge(resolvedKey, line.getQuantity(), BigDecimal::add);
+                dateByResolvedKey.putIfAbsent(resolvedKey, recordDate);
+                depIdByResolvedKey.putIfAbsent(resolvedKey, depFood.getGbDfDepId());
+                depFatherIdByResolvedKey.putIfAbsent(resolvedKey, req.getDepFatherId());
+                foodIdByResolvedKey.putIfAbsent(resolvedKey, depFood.getGbDfFoodId());
+            }
+        }
+
+        Map<String, Object> foodStats = new HashMap<>();
+        if (!qtyByResolvedKey.isEmpty()) {
+            FoodSalesAggResult agg = applyAggregatedFoodSalesUpserts(
+                    req.getDistributerId(),
+                    qtyByResolvedKey,
+                    dateByResolvedKey,
+                    depIdByResolvedKey,
+                    depFatherIdByResolvedKey,
+                    foodIdByResolvedKey,
+                    depFoodByDepAndFood);
+            foodStats.put("inserted", agg.inserted);
+            foodStats.put("updated", agg.updated);
+            foodStats.put("goodsRows", agg.goodsRows);
+        } else {
+            foodStats.put("inserted", 0);
+            foodStats.put("updated", 0);
+            foodStats.put("goodsRows", 0);
+        }
+
+        BigDecimal dineIn = sumFoodSalesSubtotalByFatherAndDay(req.getDepFatherId(), fullDate);
+        gbAiDailyRevenueService.upsertDineInRevenueOnly(
+                req.getDepFatherId().longValue(),
+                req.getDistributerId().longValue(),
+                recordDate,
+                dineIn);
+
+        gbAiDailyRevenueService.mergeNonDineInDailyRevenueMetrics(
+                req.getDepFatherId().longValue(),
+                req.getDistributerId().longValue(),
+                recordDate,
+                req.getDineInOrders(),
+                req.getDineInCustomers(),
+                req.getTakeoutRevenue(),
+                req.getTakeoutOrders(),
+                req.getPlatformFee(),
+                req.getNotes());
+
+        Map<String, Object> out = new HashMap<>();
+        out.put("foodSales", foodStats);
+        out.put("skippedUnknownFood", skippedUnknownFood);
+        out.put("warnings", warnings);
+        Map<String, Object> sync = new HashMap<>();
+        sync.put("fullDate", fullDate);
+        sync.put("dineInRevenueFromDishes", dineIn);
+        out.put("dailyRevenueSync", sync);
+        return out;
+    }
+
+    @Override
+    public Map<String, Object> getDailyFoodSalesAndRevenue(Integer depFatherId, Integer distributerId,
+            String recordDate) {
+        if (depFatherId == null) {
+            throw new IllegalArgumentException("depFatherId 不能为空");
+        }
+        if (distributerId == null) {
+            throw new IllegalArgumentException("distributerId 不能为空");
+        }
+        String fullDate = recordDate != null && !recordDate.trim().isEmpty()
+                ? recordDate.trim()
+                : GbDateTimeUtils.formatDay(GbDateTimeUtils.todayChina());
+        Date recordDay;
+        try {
+            recordDay = GbDateTimeUtils.parseDay(fullDate);
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("recordDate 格式须为 yyyy-MM-dd");
+        }
+
+        List<GbDepFoodSalesEntity> salesRows = gbDepFoodSalesService.list(
+                new LambdaQueryWrapper<GbDepFoodSalesEntity>()
+                        .eq(GbDepFoodSalesEntity::getGbDfsDepFatherId, depFatherId)
+                        .eq(GbDepFoodSalesEntity::getGbDfsDistributerId, distributerId)
+                        .eq(GbDepFoodSalesEntity::getGbDfsFullDate, fullDate)
+                        .orderByAsc(GbDepFoodSalesEntity::getGbDfsDepId)
+                        .orderByAsc(GbDepFoodSalesEntity::getGbDfsFoodId));
+
+        List<GbDepFoodDailySalesSubmitRequest.Line> lines = new ArrayList<>();
+        if (salesRows != null) {
+            for (GbDepFoodSalesEntity s : salesRows) {
+                if (s == null || s.getGbDfsDepId() == null || s.getGbDfsFoodId() == null) {
+                    continue;
+                }
+                BigDecimal qty = parseAmount(s.getGbDfsAmount());
+                if (qty.compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                GbDepFoodDailySalesSubmitRequest.Line line = new GbDepFoodDailySalesSubmitRequest.Line();
+                line.setDepId(s.getGbDfsDepId());
+                line.setFoodId(s.getGbDfsFoodId());
+                line.setQuantity(qty);
+                lines.add(line);
+            }
+        }
+
+        Date dayStart = GbDateTimeUtils.startOfDay(recordDay);
+        Date dayEnd = GbDateTimeUtils.endOfDay(recordDay);
+        Map<String, Object> drParams = new HashMap<>();
+        drParams.put("departmentId", depFatherId.longValue());
+        drParams.put("startDate", dayStart);
+        drParams.put("endDate", dayEnd);
+        List<GbAiDailyRevenueEntity> drList = gbAiDailyRevenueService.queryDailyRevenueListByParams(drParams);
+        GbAiDailyRevenueEntity revRow = null;
+        if (drList != null && !drList.isEmpty()) {
+            revRow = drList.get(0);
+            if (drList.size() > 1) {
+                Long disLong = distributerId.longValue();
+                for (GbAiDailyRevenueEntity cand : drList) {
+                    if (cand.getGbAiDailyRevenueDistributerId() != null
+                            && cand.getGbAiDailyRevenueDistributerId().equals(disLong)) {
+                        revRow = cand;
+                        break;
+                    }
+                }
+            }
+        }
+
+        GbDepFoodDailySalesSubmitRequest dto = new GbDepFoodDailySalesSubmitRequest();
+        dto.setRecordDate(fullDate);
+        dto.setDepFatherId(depFatherId);
+        dto.setDistributerId(distributerId);
+        dto.setLines(lines);
+        if (revRow != null) {
+            dto.setDineInOrders(revRow.getGbAiDailyRevenueDineInOrders());
+            dto.setDineInCustomers(revRow.getGbAiDailyRevenueDineInCustomers());
+            dto.setTakeoutRevenue(revRow.getGbAiDailyRevenueTakeoutRevenue());
+            dto.setTakeoutOrders(revRow.getGbAiDailyRevenueTakeoutOrders());
+            dto.setPlatformFee(revRow.getGbAiDailyRevenuePlatformFee());
+            dto.setNotes(revRow.getGbAiDailyRevenueNotes());
+        }
+
+        BigDecimal dineInFromDishes = sumFoodSalesSubtotalByFatherAndDay(depFatherId, fullDate);
+
+        Map<String, Object> out = new HashMap<>();
+        out.put("submitShape", dto);
+        out.put("lineCount", lines.size());
+        out.put("dailyRevenue", buildDailyRevenueDayPayload(revRow, fullDate, depFatherId, distributerId, dineInFromDishes));
+        return out;
+    }
+
+    /**
+     * 当日 {@code gb_ai_daily_revenue} 一行（含总/净营业额生成列、堂食订单与人数、外卖与平台抽成），与 {@code submitShape} 指标一致并便于小程序直显。
+     */
+    private static Map<String, Object> buildDailyRevenueDayPayload(
+            GbAiDailyRevenueEntity revRow,
+            String recordDate,
+            Integer depFatherId,
+            Integer distributerId,
+            BigDecimal dineInRevenueFromDishes) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("recordDate", recordDate);
+        m.put("depFatherId", depFatherId);
+        m.put("distributerId", distributerId);
+        m.put("hasRecord", Boolean.valueOf(revRow != null));
+        m.put("dineInRevenueFromDishes", dineInRevenueFromDishes);
+        if (revRow == null) {
+            m.put("gbAiDailyRevenueId", null);
+            m.put("storedDistributerId", null);
+            m.put("dineInRevenueStored", null);
+            m.put("grossRevenue", null);
+            m.put("netRevenue", null);
+            m.put("dineInOrders", null);
+            m.put("dineInCustomers", null);
+            m.put("takeoutRevenue", null);
+            m.put("takeoutOrders", null);
+            m.put("platformFee", null);
+            m.put("notes", null);
+            m.put("weekday", null);
+            m.put("holiday", null);
+            return m;
+        }
+        m.put("gbAiDailyRevenueId", revRow.getGbAiDailyRevenueId());
+        m.put("storedDistributerId", revRow.getGbAiDailyRevenueDistributerId());
+        m.put("dineInRevenueStored", revRow.getGbAiDailyRevenueDineInRevenue());
+        m.put("grossRevenue", revRow.getGbAiDailyRevenueGrossRevenue());
+        m.put("netRevenue", revRow.getGbAiDailyRevenueNetRevenue());
+        m.put("dineInOrders", revRow.getGbAiDailyRevenueDineInOrders());
+        m.put("dineInCustomers", revRow.getGbAiDailyRevenueDineInCustomers());
+        m.put("takeoutRevenue", revRow.getGbAiDailyRevenueTakeoutRevenue());
+        m.put("takeoutOrders", revRow.getGbAiDailyRevenueTakeoutOrders());
+        m.put("platformFee", revRow.getGbAiDailyRevenuePlatformFee());
+        m.put("notes", revRow.getGbAiDailyRevenueNotes());
+        m.put("weekday", revRow.getGbAiDailyRevenueWeekday());
+        m.put("holiday", revRow.getGbAiDailyRevenueHoliday());
+        return m;
+    }
+
+    @Override
+    public Map<String, Object> updateDailyFoodSalesAndRevenue(GbDepFoodDailySalesSubmitRequest request) {
+        return submitDailyFoodSalesAndRevenue(request);
+    }
+
+    private FoodSalesAggResult applyAggregatedFoodSalesUpserts(
+            Integer distributerId,
+            Map<String, BigDecimal> qtyByResolvedKey,
+            Map<String, Date> dateByResolvedKey,
+            Map<String, Integer> depIdByResolvedKey,
+            Map<String, Integer> depFatherIdByResolvedKey,
+            Map<String, Integer> foodIdByResolvedKey,
+            Map<String, GbDepFoodEntity> depFoodByDepAndFood) {
+        FoodSalesAggResult r = new FoodSalesAggResult();
         for (Map.Entry<String, BigDecimal> e : qtyByResolvedKey.entrySet()) {
             String key = e.getKey();
             BigDecimal qty = e.getValue();
@@ -252,7 +593,7 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
                 continue;
             }
             String fullDate = GbDateTimeUtils.formatDay(recordDate);
-            dailyRevenueSyncDates.add(fullDate);
+            r.syncDates.add(fullDate);
             String month = GbDateTimeUtils.formatYearMonth(recordDate);
             String year = GbDateTimeUtils.formatYear(recordDate);
             int weekday = GbDateTimeUtils.weekdayForAiDailyRevenue(recordDate);
@@ -279,10 +620,10 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
 
             if (isNew) {
                 gbDepFoodSalesService.save(sales);
-                inserted++;
+                r.inserted++;
             } else {
                 gbDepFoodSalesService.updateById(sales);
-                updated++;
+                r.updated++;
                 gbDepFoodGoodsSalesService.remove(
                         new LambdaQueryWrapper<GbDepFoodGoodsSalesEntity>()
                                 .eq(GbDepFoodGoodsSalesEntity::getGbDfgsFoodSalesId, sales.getGbDepFoodSalesId()));
@@ -309,28 +650,17 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
                 ggs.setGbDfgsRevenueHoliday("");
 
                 gbDepFoodGoodsSalesService.save(ggs);
-                goodsRows++;
+                r.goodsRows++;
             }
         }
+        return r;
+    }
 
-        int dailyRevenueDaysSynced = 0;
-        Long depLong = departmentId.longValue();
-        Long disLong = distributerId.longValue();
-        for (String fullDate : dailyRevenueSyncDates) {
-            BigDecimal dineIn = sumFoodSalesSubtotalByFatherAndDay(departmentId, fullDate);
-            gbAiDailyRevenueService.upsertDineInRevenueOnly(depLong, disLong, GbDateTimeUtils.parseDay(fullDate), dineIn);
-            dailyRevenueDaysSynced++;
-        }
-
-        Map<String, Object> out = new HashMap<>();
-        out.put("inserted", inserted);
-        out.put("updated", updated);
-        out.put("goodsRows", goodsRows);
-        out.put("skippedUnknownFood", skippedUnknownFood);
-        out.put("warnings", warnings);
-        out.put("rows", cells.size());
-        out.put("dailyRevenueDaysSynced", dailyRevenueDaysSynced);
-        return out;
+    private static final class FoodSalesAggResult {
+        private int inserted;
+        private int updated;
+        private int goodsRows;
+        private final Set<String> syncDates = new TreeSet<>();
     }
 
     private BigDecimal sumFoodSalesSubtotalByFatherAndDay(Integer depFatherId, String fullDate) {

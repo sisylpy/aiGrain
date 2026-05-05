@@ -15,6 +15,11 @@ public interface GbDepartmentOrdersService extends IService<GbDepartmentOrdersEn
     Integer queryGbDepartmentOrderAmount(Map<String, Object> map);
 
     /**
+     * 分销商商品在时间范围内出现过订单的到货日期列表（升序）。
+     */
+    List<String> queryDisGoodsDistinctArriveDates(Map<String, Object> map);
+
+    /**
      * 获取部门父级AI申请订单
      * @param depId 部门ID
      * @return 订单列表

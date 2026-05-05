@@ -211,6 +211,11 @@ public class GbDistributerPurchaseGoodsServiceImpl extends ServiceImpl<GbDistrib
     }
 
     @Override
+    public Double queryPurchaseGoodsWeightedAvgBuyPrice(Map<String, Object> map) {
+        return baseMapper.queryPurchaseGoodsWeightedAvgBuyPrice(map);
+    }
+
+    @Override
     public String queryPurGoodsMaxPrice(Map<String, Object> map) {
         return baseMapper.queryPurGoodsMaxPrice(map);
     }

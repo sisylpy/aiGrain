@@ -77,11 +77,9 @@ public class NxJrdhUserController {
             jrdhUserEntity.setNxJrdhWxOpenId(openid);
             jrdhUserEntity.setNxJrdhJoinDate(formatWhatDay(0));
             //1,上传图片
-            String newUploadName = "uploadImage";
-            String realPath = UploadFile.upload(session, newUploadName, file);
+            String newUploadName = ImagePaths.UPLOAD;
+            String filePath = UploadFile.upload(session, newUploadName, file);
 
-            String filename = file.getOriginalFilename();
-            String filePath = newUploadName + "/" + filename;
             jrdhUserEntity.setNxJrdhWxNickName(userName);
             jrdhUserEntity.setNxJrdhWxAvartraUrl(filePath);
             jrdhUserEntity.setNxJrdhUrlChange(1);
@@ -132,10 +130,30 @@ public class NxJrdhUserController {
         return R.ok().put("data", nxJrdhUserEntity);
     }
 
-    @RequestMapping(value = "/updateJrdhUser", method = RequestMethod.POST)
+    /**
+     * 更新昵称；可选 multipart 头像。兼容原路径 {@code /updateJrdhUser} 与 {@code /updateJrdhUserWithFile}。
+     */
+    @PostMapping(value = {"/updateJrdhUser", "/updateJrdhUserWithFile"})
     @ResponseBody
-    public R updateJrdhUser(@RequestParam String userName, @RequestParam Integer userId) {
+    public R updateJrdhUser(@RequestParam(value = "file", required = false) MultipartFile file,
+                            @RequestParam String userName,
+                            @RequestParam Integer userId,
+                            HttpSession session) {
         NxJrdhUserEntity nxJrdhUserEntity = nxJrdhUserService.queryObject(userId);
+        if (nxJrdhUserEntity == null) {
+            return R.error(-1, "用户不存在");
+        }
+
+        if (file != null && !file.isEmpty()) {
+            String oldPath = nxJrdhUserEntity.getNxJrdhWxAvartraUrl();
+            if (oldPath != null && !oldPath.trim().isEmpty()) {
+                UploadFile.deleteFile(oldPath);
+            }
+            String filePath = UploadFile.upload(session, ImagePaths.UPLOAD, file);
+            nxJrdhUserEntity.setNxJrdhWxAvartraUrl(filePath);
+            nxJrdhUserEntity.setNxJrdhUrlChange(1);
+        }
+
         nxJrdhUserEntity.setNxJrdhWxNickName(userName);
         nxJrdhUserService.updateById(nxJrdhUserEntity);
 
@@ -147,37 +165,7 @@ public class NxJrdhUserController {
             }
         }
 
-        NxJrdhUserEntity nxJrdhUserEntity1 = nxJrdhUserService.queryObject(nxJrdhUserEntity.getNxJrdhUserId());
-        return R.ok().put("data", nxJrdhUserEntity1);
-    }
-
-    @RequestMapping(value = "/updateJrdhUserWithFile", produces = "text/html;charset=UTF-8")
-    @ResponseBody
-    public R updateJrdhUserWithFile(@RequestParam("file") MultipartFile file,
-                                    @RequestParam("userName") String userName,
-                                    @RequestParam("userId") Integer userId,
-                                    HttpSession session) {
-        //1,上传图片
-        String newUploadName = "uploadImage";
-        String realPath = UploadFile.upload(session, newUploadName, file);
-
-        String filename = file.getOriginalFilename();
-        String filePath = newUploadName + "/" + filename;
-        NxJrdhUserEntity nxJrdhUserEntity = nxJrdhUserService.queryObject(userId);
-        nxJrdhUserEntity.setNxJrdhWxNickName(userName);
-        nxJrdhUserEntity.setNxJrdhWxAvartraUrl(filePath);
-        nxJrdhUserEntity.setNxJrdhUrlChange(1);
-        nxJrdhUserService.updateById(nxJrdhUserEntity);
-
-        List<NxJrdhSupplierEntity> supplierEntities = nxJrdhSupplierService.querySupplierByUserId(userId);
-        if (supplierEntities.size() > 0) {
-            for (NxJrdhSupplierEntity supplierEntity : supplierEntities) {
-                supplierEntity.setNxJrdhsSupplierName(userName);
-                nxJrdhSupplierService.updateById(supplierEntity);
-            }
-        }
-        return R.ok();
-
+        return R.ok().put("data", nxJrdhUserService.queryObject(userId));
     }
 
     @RequestMapping(value = "/indexJrdhUserLoginJj/{code}")

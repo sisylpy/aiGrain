@@ -4,8 +4,10 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.nongxinle.ai.time.AiUserQueryTimeWindowLlmParser;
 
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -59,6 +61,8 @@ public final class SkillSelectionLlmParser {
                         // keep null
                     }
                 }
+                AiUserQueryTimeWindowLlmParser.LlmTimeOutcome statTime =
+                        AiUserQueryTimeWindowLlmParser.fromJsonObject(o.getJSONObject("statTime"));
                 LinkedHashSet<String> names = new LinkedHashSet<>();
                 JSONArray arr = o.getJSONArray("skills");
                 if (arr != null && arr.size() > 0) {
@@ -79,7 +83,8 @@ public final class SkillSelectionLlmParser {
                     }
                 }
                 String skillsCsv = names.isEmpty() ? "none" : String.join(",", names);
-                return new SkillSelectionResult(skillsCsv, facet, broadQuestion, confidence, true, ChatRouteSource.LLM);
+                return new SkillSelectionResult(skillsCsv, facet, broadQuestion, confidence, true, ChatRouteSource.LLM,
+                        List.of(), statTime);
             } catch (Exception e) {
                 return fallbackFromText(trimmed, userMessage);
             }
@@ -89,7 +94,7 @@ public final class SkillSelectionLlmParser {
 
     private static SkillSelectionResult emptyParse(String userMessage, boolean structuredOk) {
         boolean broad = SkillRouteFallback.inferBroadQuestionFallback(userMessage);
-        return new SkillSelectionResult("none", null, broad, null, structuredOk, ChatRouteSource.LLM);
+        return new SkillSelectionResult("none", null, broad, null, structuredOk, ChatRouteSource.LLM, List.of(), null);
     }
 
     private static SkillSelectionResult fallbackFromText(String trimmed, String userMessage) {
@@ -103,10 +108,11 @@ public final class SkillSelectionLlmParser {
         }
         if (!found.isEmpty()) {
             boolean broad = SkillRouteFallback.inferBroadQuestionFallback(userMessage);
-            return new SkillSelectionResult(String.join(",", found), null, broad, null, false, ChatRouteSource.LLM);
+            return new SkillSelectionResult(String.join(",", found), null, broad, null, false, ChatRouteSource.LLM,
+                    List.of(), null);
         }
         boolean broad = SkillRouteFallback.inferBroadQuestionFallback(userMessage);
-        return new SkillSelectionResult(trimmed, null, broad, null, false, ChatRouteSource.LLM);
+        return new SkillSelectionResult(trimmed, null, broad, null, false, ChatRouteSource.LLM, List.of(), null);
     }
 
     private static void addSkillIfValid(LinkedHashSet<String> names, String raw) {

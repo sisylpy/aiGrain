@@ -9,11 +9,20 @@ import com.nongxinle.entity.GbAiConversationEntity;
 import com.nongxinle.entity.GbAiMessageEntity;
 import com.nongxinle.entity.GbAiRestaurantProfileEntity;
 import com.nongxinle.entity.GbAiDailyRevenueEntity;
+import com.nongxinle.ai.scope.AiConversationScopeMode;
+import com.nongxinle.ai.scope.AiQueryScope;
+import com.nongxinle.ai.scope.AiQueryScopeAccess;
+import com.nongxinle.ai.scope.AiScopeResolver;
 import com.nongxinle.ai.orchestration.SkillHandoffParser;
 import com.nongxinle.ai.orchestration.SkillHandoffPayload;
 import com.nongxinle.ai.orchestration.SkillRouteFallback;
 import com.nongxinle.ai.orchestration.SkillSelectionLlmParser;
 import com.nongxinle.ai.orchestration.SkillSelectionResult;
+import com.nongxinle.ai.time.AiUserQueryTimeBucket;
+import com.nongxinle.ai.time.AiUserQueryTimeWindowLlmParser;
+import com.nongxinle.ai.time.AiUserQueryTimeWindowResolver;
+import com.nongxinle.ai.metric.MetricExecutionContextFactory;
+import com.nongxinle.ai.routing.SkillRouter;
 import com.nongxinle.entity.GbDistributerPurchaseBatchEntity;
 import com.nongxinle.entity.GbDistributerPurchaseGoodsEntity;
 import com.nongxinle.entity.NxJrdhSupplierEntity;
@@ -21,6 +30,7 @@ import com.nongxinle.entity.GbDepFoodSalesEntity;
 import com.nongxinle.entity.GbDepartmentGoodsStockEntity;
 import com.nongxinle.entity.GbDepartmentGoodsStockReduceEntity;
 import com.nongxinle.entity.GbDepartmentEntity;
+import com.nongxinle.entity.GbDepartmentUserEntity;
 import com.nongxinle.entity.GbDepFoodEntity;
 import com.nongxinle.entity.GbDistributerFoodEntity;
 import com.nongxinle.entity.GbDistributerGoodsEntity;
@@ -35,6 +45,7 @@ import com.nongxinle.mapper.GbDepFoodSalesMapper;
 import com.nongxinle.mapper.GbDepartmentGoodsStockMapper;
 import com.nongxinle.mapper.GbDepartmentGoodsStockReduceMapper;
 import com.nongxinle.mapper.GbDepartmentMapper;
+import com.nongxinle.mapper.GbDepartmentUserMapper;
 import com.nongxinle.mapper.GbDistributerFoodMapper;
 import com.nongxinle.mapper.GbDistributerGoodsMapper;
 import com.nongxinle.service.GbAiChatService;
@@ -61,8 +72,13 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /**
  * AI对话引擎实现
@@ -76,6 +92,11 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     private final GbAiConversationMapper conversationMapper;
     private final GbAiMessageMapper messageMapper;
     private final GbAiMemoryService memoryService;
+    private final AiScopeResolver aiScopeResolver;
+    private final AiQueryScopeAccess aiQueryScopeAccess;
+    private final SkillRouter skillRouter;
+    private final MetricExecutionContextFactory metricExecutionContextFactory;
+    private final GbDepartmentUserMapper departmentUserMapper;
     private final GbDepartmentMapper departmentMapper;
     private final GbAiRestaurantProfileMapper restaurantProfileMapper;
     private final GbAiRestaurantProfileService gbAiRestaurantProfileService;
@@ -131,6 +152,15 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             "ai-skill-profit-pilot.md"
     );
 
+    /**
+     * 主对话 System Prompt 注入：字段与业务口径说明（classpath Markdown）。
+     * 与 {@link #loadSkillFile(String)} 同源加载。
+     */
+    private static final String DATA_FIELD_LEXICON_FILE = "ai-data-field-lexicon.md";
+
+    /** 库存下钻按商品聚合时，缺失 {@code gb_dgsr_gb_dis_goods_id} 的占位键（真实商品主键均为正整数）。 */
+    private static final int DIS_GOODS_AGG_KEY_MISSING = Integer.MIN_VALUE;
+
     /** DeepSeek 监控：system 角色 content 预览字符上限（INFO 级别，避免单条日志过大） */
     private static final int LOG_PREVIEW_SYSTEM_CHARS = 1500;
     /** DeepSeek 监控：user/assistant 单条预览上限 */
@@ -140,35 +170,80 @@ public class GbAiChatServiceImpl implements GbAiChatService {
 
     /**
      * 组完主对话请求后的结果：正常调用主模型，或因成本三项固定成本未齐而短路（不调用第二次 DeepSeek）。
+     * {@code skillSelection} 供 handoff 修订轮与主链路一致地使用路由建议的 metric / 用户部门锚点。
+     * {@code resolvedStatWindow} 在正常查库路径下已由规则或 DeepSeek 解析；门禁短路时为 null。
      */
-    private record BuiltChatPayload(List<Map<String, String>> messages, boolean skipMainDeepSeek, String gateAssistantReply) {}
+    private record BuiltChatPayload(List<Map<String, String>> messages, boolean skipMainDeepSeek, String gateAssistantReply,
+                                    SkillSelectionResult skillSelection,
+                                    AiUserQueryTimeWindowResolver.Window resolvedStatWindow) {}
+
+    /**
+     * {@link #window()} 与 {@link #clarificationGateReply()} 互斥：有反问文案时不查库。
+     */
+    private record StatWindowResolution(AiUserQueryTimeWindowResolver.Window window, Optional<String> clarificationGateReply) {
+        static StatWindowResolution ok(AiUserQueryTimeWindowResolver.Window w) {
+            return new StatWindowResolution(w, Optional.empty());
+        }
+
+        static StatWindowResolution clarify(String reply) {
+            return new StatWindowResolution(null, Optional.of(reply));
+        }
+    }
 
     // ========== 对话核心方法 ==========
 
     @Override
-    public GbAiConversationEntity getOrCreateConversation(Long departmentId, Long userId, Integer type) {
-        log.info("获取或创建对话 - departmentId={}, userId={}, type={}", departmentId, userId, type);
+    public GbAiConversationEntity getOrCreateConversation(Long departmentId, Long distributerId,
+                                                            AiConversationScopeMode scopeMode,
+                                                            Long userId, Integer type) {
+        AiConversationScopeMode mode = scopeMode != null ? scopeMode : AiConversationScopeMode.STORE;
+        log.info("获取或创建对话 - mode={} departmentId={} distributerId={} userId={} type={}",
+                mode, departmentId, distributerId, userId, type);
+
+        Long effDistributerId = distributerId;
+        if (mode == AiConversationScopeMode.GROUP) {
+            if (effDistributerId == null) {
+                throw new IllegalArgumentException("集团模式必须提供 distributerId(disId)");
+            }
+        } else {
+            if (departmentId == null) {
+                throw new IllegalArgumentException("单店模式必须提供 departmentId(门店父部门)");
+            }
+            if (effDistributerId == null) {
+                GbDepartmentEntity d = departmentMapper.selectById(departmentId.intValue());
+                if (d != null && d.getGbDepartmentDisId() != null) {
+                    effDistributerId = d.getGbDepartmentDisId().longValue();
+                }
+            }
+        }
 
         LambdaQueryWrapper<GbAiConversationEntity> wrapper = new LambdaQueryWrapper<GbAiConversationEntity>()
-                .eq(GbAiConversationEntity::getGbAiConversationDepartmentId, departmentId)
                 .eq(GbAiConversationEntity::getGbAiConversationUserId, userId)
                 .eq(GbAiConversationEntity::getGbAiConversationStatus, 0)
-                .orderByDesc(GbAiConversationEntity::getGbAiConversationUpdateTime)
-                .last("LIMIT 1");
-
+                .orderByDesc(GbAiConversationEntity::getGbAiConversationUpdateTime);
         if (type != null) {
             wrapper.eq(GbAiConversationEntity::getGbAiConversationType, type);
         }
+        if (mode == AiConversationScopeMode.STORE) {
+            wrapper.eq(GbAiConversationEntity::getGbAiConversationDepartmentId, departmentId)
+                    .and(w -> w.eq(GbAiConversationEntity::getGbAiConversationScopeMode, AiConversationScopeMode.STORE.getCode())
+                            .or()
+                            .isNull(GbAiConversationEntity::getGbAiConversationScopeMode));
+        } else {
+            wrapper.eq(GbAiConversationEntity::getGbAiConversationDistributerId, effDistributerId)
+                    .eq(GbAiConversationEntity::getGbAiConversationScopeMode, AiConversationScopeMode.GROUP.getCode());
+        }
 
-        GbAiConversationEntity existing = conversationMapper.selectOne(wrapper);
+        GbAiConversationEntity existing = conversationMapper.selectOne(wrapper.last("LIMIT 1"));
         if (existing != null) {
             log.info("找到现有对话 - conversationId={}", existing.getGbAiConversationId());
             return existing;
         }
 
-        // 创建新对话
         GbAiConversationEntity conv = new GbAiConversationEntity();
-        conv.setGbAiConversationDepartmentId(departmentId);
+        conv.setGbAiConversationScopeMode(mode.getCode());
+        conv.setGbAiConversationDepartmentId(mode == AiConversationScopeMode.STORE ? departmentId : null);
+        conv.setGbAiConversationDistributerId(effDistributerId);
         conv.setGbAiConversationUserId(userId);
         conv.setGbAiConversationStatus(0);
         conv.setGbAiConversationTitle("新对话");
@@ -177,8 +252,19 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         conv.setGbAiConversationType(type != null ? type : 0);
 
         conversationMapper.insert(conv);
-        log.info("创建新对话成功 - conversationId={}", conv.getGbAiConversationId());
+        log.info("创建新对话成功 - conversationId={} mode={}", conv.getGbAiConversationId(), mode);
         return conv;
+    }
+
+    /**
+     * 部门用户 ID（gb_department_user）：请求体可省略 userId（旧客户端/测试）；此时用会话上的
+     * {@code gb_ai_conversation_user_id}，以便按登录用户收窄可见部门，并让采购等指标锚点生效。
+     */
+    private static Long effectiveDepartmentUserId(Long requestUserId, GbAiConversationEntity conv) {
+        if (requestUserId != null) {
+            return requestUserId;
+        }
+        return conv != null ? conv.getGbAiConversationUserId() : null;
     }
 
     @Override
@@ -194,18 +280,27 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 throw new RuntimeException("对话不存在");
             }
 
-            Long departmentId = conv.getGbAiConversationDepartmentId();
+            Long effectiveUserId = effectiveDepartmentUserId(userId, conv);
+            if (userId == null && effectiveUserId != null) {
+                log.info("[AI-CHAT][service] trace=non-stream step=user_id_fallback conversationId={} effectiveDepartmentUserId={}",
+                        conversationId, effectiveUserId);
+            }
+
+            Map<Integer, List<Integer>> deptSubtreeCache = new HashMap<>();
+            AiQueryScope scope = aiScopeResolver.resolve(conv, deptSubtreeCache);
+            scope = aiQueryScopeAccess.narrowForDepartmentUser(scope, effectiveUserId, deptSubtreeCache);
+            Long departmentId = scope.profileAnchorDepartmentId();
             Integer conversationType = conv.getGbAiConversationType();
-            log.info("[AI-CHAT][service] step=load_conversation conversationId={} departmentId={} conversationType={}",
-                    conversationId, departmentId, conversationType);
+            log.info("[AI-CHAT][service] step=load_conversation conversationId={} convDepartmentId={} profileAnchorDepartmentId={} conversationType={}",
+                    conversationId, conv.getGbAiConversationDepartmentId(), departmentId, conversationType);
 
             // 2. 保存用户消息
             log.info("[AI-CHAT][service] step=persist_user_message conversationId={}", conversationId);
-            saveMessage(conversationId, userId, conversationType, "user", userMessage);
+            saveMessage(conversationId, effectiveUserId, conversationType, "user", userMessage);
 
             // 3. 构建消息列表（内含第一次 DeepSeek：Skill 选择）
             log.info("[AI-CHAT][service] step=build_messages_begin conversationId={}", conversationId);
-            BuiltChatPayload payload = buildChatPayload(conv, userMessage);
+            BuiltChatPayload payload = buildChatPayload(conv, scope, userMessage, effectiveUserId, deptSubtreeCache);
             log.info("[AI-CHAT][service] step=build_messages_done conversationId={} outboundMessageCount={} skipMainDeepSeek={}",
                     conversationId, payload.messages().size(), payload.skipMainDeepSeek());
 
@@ -225,11 +320,12 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             String forProfileExtract = SkillHandoffParser.stripAllSkillHandoffFences(assistantReplyRaw);
             extractUserDataFromReply(forProfileExtract, departmentId);
 
-            String assistantReply = assistantUserVisibleAfterOptionalHandoff(assistantReplyRaw, userMessage, departmentId);
+            String assistantReply = assistantUserVisibleAfterOptionalHandoff(assistantReplyRaw, userMessage, scope,
+                    payload.skillSelection(), effectiveUserId);
 
             // 5. 保存 AI 回复
             log.info("[AI-CHAT][service] step=persist_assistant_message conversationId={}", conversationId);
-            GbAiMessageEntity assistantMsg = saveMessage(conversationId, userId, conversationType, "assistant", assistantReply);
+            GbAiMessageEntity assistantMsg = saveMessage(conversationId, effectiveUserId, conversationType, "assistant", assistantReply);
 
             // 6. 更新对话时间
             conv.setGbAiConversationUpdateTime(new Date());
@@ -242,7 +338,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
 
             // 7. 异步提取记忆
             log.info("[AI-CHAT][service] step=async_memory_extract conversationId={}", conversationId);
-            memoryService.extractMemories(conversationId, departmentId, userId, conversationType);
+            memoryService.extractMemories(conversationId, departmentId, effectiveUserId, conversationType);
 
             // 8. 异步提取用户数据（移交修订轮已在 assistantUserVisibleAfterOptionalHandoff 内处理）
             log.info("[AI-CHAT][service] step=async_profile_extract conversationId={}", conversationId);
@@ -262,8 +358,10 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 conversationId, userId, userMessage != null ? userMessage.length() : 0);
 
         SseEmitter emitter = new SseEmitter(120000L);
+        long sseWallStart = System.nanoTime();
 
         try {
+            long phaseStart = System.nanoTime();
             GbAiConversationEntity conv = conversationMapper.selectById(conversationId);
             if (conv == null) {
                 emitter.send(SseEmitter.event().name("error").data("对话不存在"));
@@ -271,30 +369,46 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 return emitter;
             }
 
-            Long departmentId = conv.getGbAiConversationDepartmentId();
-            Integer conversationType = conv.getGbAiConversationType();
-            log.info("[AI-CHAT][service] trace=sse step=load_conversation conversationId={} departmentId={}",
-                    conversationId, departmentId);
+            Long effectiveUserId = effectiveDepartmentUserId(userId, conv);
+            if (userId == null && effectiveUserId != null) {
+                log.info("[AI-CHAT][service] trace=sse step=user_id_fallback conversationId={} effectiveDepartmentUserId={}",
+                        conversationId, effectiveUserId);
+            }
 
-            // 保存用户消息
-            saveMessage(conversationId, userId, conversationType, "user", userMessage);
+            Map<Integer, List<Integer>> deptSubtreeCache = new HashMap<>();
+            AiQueryScope scope = aiScopeResolver.resolve(conv, deptSubtreeCache);
+            scope = aiQueryScopeAccess.narrowForDepartmentUser(scope, effectiveUserId, deptSubtreeCache);
+            Long departmentId = scope.profileAnchorDepartmentId();
+            Integer conversationType = conv.getGbAiConversationType();
+            log.info("[AI-CHAT][service] trace=sse step=load_conversation conversationId={} convDepartmentId={} profileAnchorDepartmentId={}",
+                    conversationId, conv.getGbAiConversationDepartmentId(), departmentId);
+
+            saveMessage(conversationId, effectiveUserId, conversationType, "user", userMessage);
+
+            log.info("[AI-CHAT][timing] conversationId={} phase=sse_preflight_ms={} (load_conv_scope_save_user)",
+                    conversationId, timingMs(phaseStart));
 
             // 构建消息（内含 Skill 选择 DeepSeek 调用）
             log.info("[AI-CHAT][service] trace=sse step=build_messages_begin conversationId={}", conversationId);
-            BuiltChatPayload payload = buildChatPayload(conv, userMessage);
+            phaseStart = System.nanoTime();
+            BuiltChatPayload payload = buildChatPayload(conv, scope, userMessage, effectiveUserId, deptSubtreeCache);
+            log.info("[AI-CHAT][timing] conversationId={} phase=build_chat_payload_ms={}",
+                    conversationId, timingMs(phaseStart));
             log.info("[AI-CHAT][service] trace=sse step=build_messages_done conversationId={} outboundMessageCount={} skipMainDeepSeek={}",
                     conversationId, payload.messages().size(), payload.skipMainDeepSeek());
 
             if (payload.skipMainDeepSeek()) {
                 log.info("[AI-CHAT][service] trace=sse step=main_reply_fixed_cost_gate conversationId={}", conversationId);
+                log.info("[AI-CHAT][timing] conversationId={} phase=sse_emitter_return_ms={} hint=fixed_cost_gate_path",
+                        conversationId, timingMs(sseWallStart));
                 completeSseWithDirectAssistantReply(emitter, payload.gateAssistantReply(),
-                        conversationId, userId, conv, departmentId);
+                        conversationId, effectiveUserId, conv, scope);
             } else {
-                callDeepSeekSSE(payload.messages(), emitter, conversationId, userId, conv, departmentId, userMessage);
+                log.info("[AI-CHAT][timing] conversationId={} phase=sse_emitter_return_before_worker_ms={} hint=main_model_runs_in_background_thread",
+                        conversationId, timingMs(sseWallStart));
+                callDeepSeekSSE(payload.messages(), emitter, conversationId, effectiveUserId, conv, scope, userMessage,
+                        payload.skillSelection());
             }
-
-            // 触发记忆提取
-            memoryService.extractMemories(conversationId, departmentId, userId, conversationType);
 
             return emitter;
 
@@ -352,9 +466,11 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             return 1;
         }
 
+        Long memoryDeptId = aiScopeResolver.resolve(conv).profileAnchorDepartmentId();
+
         // 1. 规则记忆：标记消息已处理
         memoryService.extractMemories(conversationId,
-                conv.getGbAiConversationDepartmentId(),
+                memoryDeptId,
                 conv.getGbAiConversationUserId(),
                 conv.getGbAiConversationType());
 
@@ -362,7 +478,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         try {
             String summaryResult = summarizeConversation(conversationId);
             memoryService.saveConversationSummary(conversationId,
-                    conv.getGbAiConversationDepartmentId(),
+                    memoryDeptId,
                     conv.getGbAiConversationUserId(),
                     summaryResult);
         } catch (Exception e) {
@@ -518,15 +634,50 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     }
 
     /**
+     * 规则解析与模型（首轮 statTime 或专用时间接口）给出的起止日完全一致时采用；不一致则请用户确认（不调主模型）。
+     */
+    private String buildTimeWindowConflictClarificationReply(AiUserQueryTimeWindowResolver.Window ruleWin,
+                                                           AiUserQueryTimeWindowResolver.Window llmWin) {
+        String rs = abbreviateForLog(StrUtil.blankToDefault(ruleWin.resolutionNote(), ""), 100);
+        String ls = abbreviateForLog(StrUtil.blankToDefault(llmWin.resolutionNote(), ""), 100);
+        return "钱多多老师这边发现：**固定规则**和**模型对你这句话的理解**，在「统计日期」上对不齐，需要先对齐口径再查数据。\n\n"
+                + "**系统按常用说法解析为**："
+                + ruleWin.startInclusive()
+                + " 至 "
+                + ruleWin.endInclusive()
+                + (StrUtil.isBlank(rs) ? "" : "\n（" + rs + "）")
+                + "\n\n"
+                + "**模型把你的话理解为**："
+                + llmWin.startInclusive()
+                + " 至 "
+                + llmWin.endInclusive()
+                + (StrUtil.isBlank(ls) ? "" : "\n（" + ls + "）")
+                + "\n\n"
+                + "请你**用一句话再说清楚**统计区间（可与上轮相同的口语，例如 **上个月** / **本月到现在** / **从开业到今天**），"
+                + "或直接写 **yyyy-MM-dd 至 yyyy-MM-dd**；说清楚后我会按你的口径重新拉数。";
+    }
+
+    /**
+     * 规则与 DeepSeek 都无法对齐时间口径时，请用户补充统计区间（不调主模型）。
+     */
+    private String buildTimeWindowClarificationGateReply() {
+        return "钱多多老师听你这句话里**带有和时间有关的字眼**（例如从开业起累计），但系统里没有可用的「开业/建档」锚点日期，或模型仍无法对齐口径。\n\n"
+                + "请你补一句：**开业是哪一天**（可说 yyyy年mm月dd日），或直接给一个统计区间，例如 **本月**、**上个月**、**本周**、"
+                + "**最近30天**、**2026年4月整月**、**今年第一季度**… 说清楚后我再按该区间拉流水和销量。\n\n"
+                + "若你只是想先看眼下汇总，也可以说：**就用本月到现在**。";
+    }
+
+    /**
      * 流式：不调用 DeepSeek，把固定成本门禁说明一次发给前端并落库。
      */
     private void completeSseWithDirectAssistantReply(SseEmitter emitter, String reply,
-            Long conversationId, Long userId, GbAiConversationEntity conv, Long departmentId) {
+            Long conversationId, Long userId, GbAiConversationEntity conv, AiQueryScope scope) {
+        long gateStart = System.nanoTime();
         try {
             if (StrUtil.isNotEmpty(reply)) {
                 String cleaned = SkillHandoffParser.stripAllSkillHandoffFences(reply);
                 String visible = stripAssistantUserVisibleTail(cleaned);
-                extractUserDataFromReply(cleaned, departmentId);
+                extractUserDataFromReply(cleaned, scope.profileAnchorDepartmentId());
                 emitter.send(SseEmitter.event().name("message").data(visible));
                 saveMessage(conversationId, userId, conv.getGbAiConversationType(), "assistant", visible);
                 conv.setGbAiConversationUpdateTime(new Date());
@@ -537,6 +688,10 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             }
             emitter.send(SseEmitter.event().name("done").data("[DONE]"));
             emitter.complete();
+            memoryService.extractMemories(conversationId, scope.profileAnchorDepartmentId(), userId,
+                    conv.getGbAiConversationType());
+            log.info("[AI-CHAT][timing] conversationId={} phase=sse_fixed_cost_gate_total_ms={}",
+                    conversationId, timingMs(gateStart));
         } catch (Exception e) {
             log.error("[AI-CHAT][sse] fixed_cost_gate emit failed: {}", e.getMessage(), e);
             try {
@@ -548,16 +703,21 @@ public class GbAiChatServiceImpl implements GbAiChatService {
 
     /**
      * 构建主对话请求
-     * 流程：Skill选择（DeepSeek）-> 若命中成本且三项固定成本不全则短路 -> 否则查库组最终 Prompt
+     * 流程：Skill选择（DeepSeek）-> 固定成本门禁 -> 时间口径（规则锚点 vs 模型窗口双重校验）-> 查库 -> 主模型
      */
-    private BuiltChatPayload buildChatPayload(GbAiConversationEntity conv, String userMessage) {
+    private BuiltChatPayload buildChatPayload(GbAiConversationEntity conv, AiQueryScope scope, String userMessage,
+                                              Long userId, Map<Integer, List<Integer>> deptSubtreeCache) {
+        long buildTotalStart = System.nanoTime();
         List<Map<String, String>> messages = new ArrayList<>();
 
-        Long departmentId = conv.getGbAiConversationDepartmentId();
+        Long departmentId = scope.profileAnchorDepartmentId();
         Integer conversationType = conv.getGbAiConversationType();
 
         // 1. 加载所有 Skills 摘要（用于Skill选择）
+        long phaseStart = System.nanoTime();
         String skillsBrief = loadAllSkillsBrief();
+        log.info("[AI-CHAT][timing] conversationId={} phase=build_load_skills_brief_ms={}",
+                conv.getGbAiConversationId(), timingMs(phaseStart));
         log.debug("Skills 摘要长度: {} 字", skillsBrief.length());
 
         // 2. 第一次调用 DeepSeek：让AI分析问题，选择合适的 Skill
@@ -575,38 +735,100 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 abbreviateForLog(skillSelectionPrompt, LOG_PREVIEW_SYSTEM_CHARS));
         log.debug("【Skill选择 - System 全文】\n{}", skillSelectionPrompt);
 
+        phaseStart = System.nanoTime();
         String rawSkillSelection = callDeepSeekApi(skillMessages, "skill-selection");
+        log.info("[AI-CHAT][timing] conversationId={} phase=build_skill_selection_llm_ms={}",
+                convId, timingMs(phaseStart));
         SkillSelectionResult llmParsed = SkillSelectionLlmParser.parseRaw(rawSkillSelection, userMessage);
-        SkillSelectionResult selection = SkillRouteFallback.apply(userMessage, llmParsed);
+        SkillSelectionResult selection = skillRouter.route(userMessage, llmParsed);
+
+        if (SkillRouteFallback.isSkillSelectionUnresolved(selection.skillsCsv())) {
+            log.info("[AI-CHAT][build] step=skill_selection_unresolved conversationId={} hint=will_second_pass_deepseek",
+                    convId);
+            String disambigPrompt = buildSkillDisambiguationPrompt(userMessage, skillsBrief);
+            List<Map<String, String>> retrySkillMessages = new ArrayList<>();
+            retrySkillMessages.add(Map.of("role", "system", "content", disambigPrompt));
+            retrySkillMessages.add(Map.of("role", "user", "content", "用户问题：\n" + userMessage));
+            log.info("[AI-CHAT][build] step=skill_selection_second_pass_prompt conversationId={} systemPromptChars={}",
+                    convId, disambigPrompt.length());
+            phaseStart = System.nanoTime();
+            String rawSecond = callDeepSeekApi(retrySkillMessages, "skill-disambiguation");
+            log.info("[AI-CHAT][timing] conversationId={} phase=build_skill_disambiguation_llm_ms={}",
+                    convId, timingMs(phaseStart));
+            SkillSelectionResult llmSecond = SkillSelectionLlmParser.parseRaw(rawSecond, userMessage);
+            SkillSelectionResult selection2 = skillRouter.route(userMessage, llmSecond);
+            if (!SkillRouteFallback.isSkillSelectionUnresolved(selection2.skillsCsv())) {
+                SkillSelectionResult picked = selection2;
+                if (picked.skillPhaseStatTime() == null && llmParsed.skillPhaseStatTime() != null) {
+                    picked = picked.withSkillPhaseStatTime(llmParsed.skillPhaseStatTime());
+                }
+                selection = picked;
+                log.info("[AI-CHAT][build] step=skill_selection_second_pass_ok conversationId={} skillsCsv={} rawChars={}",
+                        convId, selection.skillsCsv(), rawSecond != null ? rawSecond.length() : 0);
+            } else {
+                log.info("[AI-CHAT][build] step=skill_selection_second_pass_still_unresolved conversationId={} rawChars={}",
+                        convId, rawSecond != null ? rawSecond.length() : 0);
+            }
+            log.debug("【Skill二次路由 - System 全文】\n{}", disambigPrompt);
+            log.debug("Skill二次路由原始响应全文: {}", rawSecond);
+        }
+
         String selectedSkills = selection.skillsCsv();
-        log.info("[AI-CHAT][build] step=skill_selection_parsed conversationId={} skillsCsv={} costFacet={} broadQuestion={} routeSource={} confidence={} rawChars={}",
+        log.info("[AI-CHAT][build] step=skill_selection_parsed conversationId={} skillsCsv={} costFacet={} broadQuestion={} routeSource={} confidence={} suggestedMetricIds={} statTimeBucket={} rawChars={}",
                 convId, selectedSkills, selection.costFacet(), selection.broadQuestion(), selection.routeSource(),
                 selection.confidence(),
+                selection.suggestedMetricIds(),
+                selection.skillPhaseStatTime() != null ? selection.skillPhaseStatTime().bucket() : null,
                 rawSkillSelection != null ? rawSkillSelection.length() : 0);
         log.debug("Skill选择原始响应全文: {}", rawSkillSelection);
 
-        // 2b. 成本 skill + 三项固定成本不全：不调主 DeepSeek，不查库存/营收明细，直接门禁回复
+        // 2b/3a. 餐厅画像只查一次：成本门禁与下方事实段落共用
         String skillsLower = selectedSkills != null ? selectedSkills.toLowerCase(Locale.ROOT) : "";
-        if (skillsLower.contains("cost")) {
-            GbAiRestaurantProfileEntity profile = restaurantProfileMapper.selectOne(
+        GbAiRestaurantProfileEntity restaurantProfile = null;
+        phaseStart = System.nanoTime();
+        if (departmentId != null) {
+            restaurantProfile = restaurantProfileMapper.selectOne(
                     new LambdaQueryWrapper<GbAiRestaurantProfileEntity>()
                             .eq(GbAiRestaurantProfileEntity::getGbAiRestaurantProfileDepartmentId, departmentId));
-            if (!hasAllBasicFixedCosts(profile)) {
-                log.info("[AI-CHAT][build] step=fixed_cost_gate_short_circuit conversationId={} departmentId={}",
+        }
+        log.info("[AI-CHAT][timing] conversationId={} phase=build_restaurant_profile_db_ms={}",
+                convId, timingMs(phaseStart));
+        if (skillsLower.contains("cost")) {
+            if (!hasAllBasicFixedCosts(restaurantProfile)) {
+                log.info("[AI-CHAT][build] step=fixed_cost_gate_short_circuit conversationId={} profileAnchorDepartmentId={}",
                         convId, departmentId);
-                return new BuiltChatPayload(Collections.emptyList(), true, buildFixedCostMissingGateReply(profile));
+                log.info("[AI-CHAT][timing] conversationId={} phase=build_chat_payload_total_ms={} (short_circuit=fixed_cost_gate)",
+                        convId, timingMs(buildTotalStart));
+                return new BuiltChatPayload(Collections.emptyList(), true, buildFixedCostMissingGateReply(restaurantProfile),
+                        selection, null);
             }
         }
 
+        StatWindowResolution statWinRes = resolveTimeWindowForChat(convId, userMessage, restaurantProfile,
+                selection.skillPhaseStatTime());
+        if (statWinRes.clarificationGateReply().isPresent()) {
+            log.info("[AI-CHAT][build] step=time_window_clarification_gate_after_llm conversationId={}", convId);
+            log.info("[AI-CHAT][timing] conversationId={} phase=build_chat_payload_total_ms={} (short_circuit=time_window_clarification)",
+                    convId, timingMs(buildTotalStart));
+            return new BuiltChatPayload(Collections.emptyList(), true, statWinRes.clarificationGateReply().get(), selection,
+                    null);
+        }
+        AiUserQueryTimeWindowResolver.Window resolvedStatWindow = statWinRes.window();
+
         // 3. 根据选择的 Skill 类型，决定查询哪些相关数据
         log.info("[AI-CHAT][build] step=query_real_data_begin conversationId={}", convId);
-        String realDataSection = queryRealDataBySkills(departmentId, selectedSkills, userMessage, selection.costFacet());
+        phaseStart = System.nanoTime();
+        String realDataSection = queryRealDataBySkills(scope, selection, userMessage, userId, restaurantProfile,
+                deptSubtreeCache, resolvedStatWindow);
+        log.info("[AI-CHAT][timing] conversationId={} phase=build_query_real_data_ms={}",
+                convId, timingMs(phaseStart));
         log.info("[AI-CHAT][build] step=query_real_data_done conversationId={} sectionChars={}",
                 convId, realDataSection.length());
         log.debug("[AI-CHAT][build] step=query_real_data_done preview={}",
                 abbreviateForLog(realDataSection, 700));
 
         // 4. 构建最终 Prompt（包含身份 + 选中的 Skill名字 + 相关数据）
+        phaseStart = System.nanoTime();
         String finalSystemPrompt = buildFinalSystemPrompt(selectedSkills, realDataSection, conversationType,
                 selection.costFacet(), selection.broadQuestion());
         log.info("[AI-CHAT][build] step=final_system_prompt conversationId={} totalChars={}",
@@ -643,15 +865,21 @@ public class GbAiChatServiceImpl implements GbAiChatService {
 
         // 8. 添加当前用户消息
         messages.add(Map.of("role", "user", "content", userMessage));
+        log.info("[AI-CHAT][timing] conversationId={} phase=build_final_prompt_and_history_ms={}",
+                convId, timingMs(phaseStart));
         log.info("消息列表构建完成，共 {} 条", messages.size());
 
-        return new BuiltChatPayload(messages, false, null);
+        log.info("[AI-CHAT][timing] conversationId={} phase=build_chat_payload_total_ms={}",
+                convId, timingMs(buildTotalStart));
+
+        return new BuiltChatPayload(messages, false, null, selection, resolvedStatWindow);
     }
 
     /**
      * 构建用于 Skill 选择的 Prompt
      */
     private String buildSkillSelectionPrompt(String userMessage, String skillsContent) {
+        LocalDate statGuideDay = LocalDate.now();
         return "你是AI技能选择助手。根据用户的问题，从以下技能文件中选择最合适的1-2个技能。\n\n" +
                 "【技能列表】\n" + skillsContent + "\n\n" +
                 "【选择规则】\n" +
@@ -669,19 +897,60 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 "【broadQuestion】是否「泛指、未限定场景」的问法（与是否选 cost 无关，营收类泛问也必须标）：\n" +
                 "- true：如「怎么提高营业额」「有什么建议」「帮我看看经营」等一两句、未说渠道/客群/时段/痛点\n" +
                 "- false：已具体到「午市外卖」「老客复购」「五一活动」等\n\n" +
+                "【统计时间 statTime】（必填，与 skills 同一 JSON 顶层输出）\n" +
+                "服务端会把 statTime 与固定规则合并，解析本次查询经营数据的**默认统计起止日期**（口径与后续专用时间模型一致）。\n" +
+                "你必须阅读用户原话中的时间语义并归类：\n\n" +
+                AiUserQueryTimeWindowResolver.sharedLlmStatTimeBucketGuide(statGuideDay) +
+                "\n在顶层 JSON 增加对象 statTime，字段：\n"
+                + "- bucket（上表枚举，英文大写）、reason（不超过40字中文）。\n"
+                + "- calendar_year、calendar_month（仅 CALENDAR_MONTH 时必填月份 1～12；年份可 null）。\n"
+                + "- **stat_start_date**、**stat_end_date**：与数据库查询闭区间对齐；填 **yyyy-MM-dd**，或起点 **OPENING_ANCHOR**（=门店画像创建日）、终点 **TODAY**（=今天）。"
+                + "须与 bucket 一致；不知道真实开业日时不要编造日期，起点用 OPENING_ANCHOR。\n"
+                + "用户完全未提及时间：bucket 用 MTD，stat_start_date 填当月1日、stat_end_date 填 TODAY。\n\n" +
                 "【输出格式】\n" +
                 "只输出一行合法 JSON，不要 markdown 代码块，不要其它文字。\n" +
                 "可选字段：\n" +
                 "- confidence：0~1，表示你对 skills 选择的把握；把握低时服务端会用关键词规则兜底。\n" +
                 "- primarySkill：与 skills[0] 一致即可，便于日志（可省略）。\n" +
-                "示例：\n" +
-                "{\"skills\":[\"ai-skill-dish-cost-diagnosis.md\"],\"costFacet\":\"dish_structure\",\"broadQuestion\":false,\"confidence\":0.9}\n" +
-                "{\"skills\":[\"ai-skill-procurement-structure.md\"],\"costFacet\":null,\"broadQuestion\":false,\"confidence\":0.85}\n" +
-                "{\"skills\":[\"ai-skill-procurement-structure.md\",\"ai-skill-cost.md\"],\"costFacet\":\"procurement\",\"broadQuestion\":false,\"confidence\":0.88}\n" +
-                "{\"skills\":[\"ai-skill-revenue-boost.md\"],\"costFacet\":null,\"broadQuestion\":true,\"confidence\":0.55}\n" +
-                "若无合适技能：{\"skills\":[],\"costFacet\":null,\"broadQuestion\":false}\n" +
+                "示例（注意每条都含 statTime）：\n" +
+                "{\"skills\":[\"ai-skill-dish-cost-diagnosis.md\"],\"statTime\":{\"bucket\":\"MTD\",\"reason\":\"未指定区间默认本月至今\",\"calendar_year\":null,\"calendar_month\":null,\"stat_start_date\":\""
+                + statGuideDay.withDayOfMonth(1)
+                + "\",\"stat_end_date\":\"TODAY\"},\"costFacet\":\"dish_structure\",\"broadQuestion\":false,\"confidence\":0.9}\n" +
+                "{\"skills\":[\"ai-skill-dish-cost-diagnosis.md\"],\"statTime\":{\"bucket\":\"SINCE_OPENING\",\"reason\":\"用户问从营业第一天到今天\",\"calendar_year\":null,\"calendar_month\":null,\"stat_start_date\":\"OPENING_ANCHOR\",\"stat_end_date\":\"TODAY\"},\"costFacet\":null,\"broadQuestion\":false,\"confidence\":0.85}\n" +
+                "{\"skills\":[\"ai-skill-procurement-structure.md\"],\"statTime\":{\"bucket\":\"LAST_MONTH\",\"reason\":\"用户明确说上个月\",\"calendar_year\":null,\"calendar_month\":null,\"stat_start_date\":\""
+                + statGuideDay.withDayOfMonth(1).minusMonths(1).withDayOfMonth(1)
+                + "\",\"stat_end_date\":\""
+                + statGuideDay.withDayOfMonth(1).minusDays(1)
+                + "\"},\"costFacet\":null,\"broadQuestion\":false,\"confidence\":0.85}\n" +
+                "{\"skills\":[\"ai-skill-procurement-structure.md\",\"ai-skill-cost.md\"],\"statTime\":{\"bucket\":\"ROLLING_30\",\"reason\":\"用户要看最近一个月进货\",\"calendar_year\":null,\"calendar_month\":null,\"stat_start_date\":\""
+                + statGuideDay.minusDays(29)
+                + "\",\"stat_end_date\":\"TODAY\"},\"costFacet\":\"procurement\",\"broadQuestion\":false,\"confidence\":0.88}\n" +
+                "{\"skills\":[\"ai-skill-revenue-boost.md\"],\"statTime\":{\"bucket\":\"MTD\",\"reason\":\"泛问增收未限定时段\",\"calendar_year\":null,\"calendar_month\":null,\"stat_start_date\":\""
+                + statGuideDay.withDayOfMonth(1)
+                + "\",\"stat_end_date\":\"TODAY\"},\"costFacet\":null,\"broadQuestion\":true,\"confidence\":0.55}\n" +
+                "若无合适技能：{\"skills\":[],\"statTime\":{\"bucket\":\"MTD\",\"reason\":\"无关或无技能\",\"calendar_year\":null,\"calendar_month\":null,\"stat_start_date\":\""
+                + statGuideDay.withDayOfMonth(1)
+                + "\",\"stat_end_date\":\"TODAY\"},\"costFacet\":null,\"broadQuestion\":false}\n" +
                 "若 JSON 合法但 skills 为空数组，服务端会用关键词规则再推断一次（仍可能得到 none）。\n\n" +
                 "【用户问题】\n" + userMessage;
+    }
+
+    /**
+     * 首轮路由仍无法得到合法技能时：第二次请求 DeepSeek，强调必须从列表中选出技能（仍走同一套 JSON 解析与编目）。
+     */
+    private String buildSkillDisambiguationPrompt(String userMessage, String skillsContent) {
+        return "【二次技能路由】首次结构化结果经解析与规则合并后，系统仍**无法**得到任何有效的 ai-skill-*.md 文件名。\n" +
+                "请你**重新**阅读用户原话，从下方【技能列表】中选出 **1～2 个**最贴切的技能；**优先给出可落地的选择**，避免 skills 为空。\n\n" +
+                "【技能列表】\n" + skillsContent + "\n\n" +
+                "【硬性要求】\n" +
+                "- skills 数组元素必须是上表中出现过的完整文件名（含 .md）。\n" +
+                "- 只要问题与餐厅经营、成本、采购、营收、菜品、算账、人员、租金任一相关，就**不要**输出空 skills；" +
+                "宁可略宽选 ai-skill-profit-pilot.md 或 ai-skill-cost.md，也不要留空。\n" +
+                "- 仅在完全无关（与餐饮经营无关）时才输出 {\"skills\":[],\"costFacet\":null,\"broadQuestion\":true}。\n\n" +
+                "【costFacet / broadQuestion / confidence】含义与首轮 skill 选择说明一致（含 cost skill 时方可填 costFacet）。\n\n" +
+                "【statTime】与首轮相同：**必填**，顶层 JSON 须含 statTime（bucket、reason、calendar_*、**stat_start_date**、**stat_end_date**），规则见首轮「统计时间 statTime」与共享 bucket 说明；勿省略。\n\n" +
+                "【输出】只输出一行合法 JSON，不要 markdown 代码块，不要其它文字。\n\n" +
+                "【用户原话】\n" + userMessage;
     }
 
     /**
@@ -702,6 +971,16 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         sb.append("咨询方式（苏格拉底）：**好问题胜过快答案**。老板问得泛、或关键事实未对齐时，你要像良师一样——先**少量、精准的追问**帮他把目标、场景、数据边界说清楚，再下判断或给方案；**禁止**用长篇结论代替追问。追问与后文「苏格拉底前置」「成本/营收探索模式」一致，是同一套人格，不是额外任务。\n");
         sb.append("回复格式：开头必须用\"钱多多老师\"！例如：\"钱多多老师直接给你算笔账\" 或 \"钱多多老师直接看数据\" 或 \"钱多多老师直接告诉你\"。\n");
         sb.append("你的目标是帮助餐饮老板优化经营、提升利润。\n\n");
+
+        String dataFieldLexicon = loadDataFieldLexicon();
+        if (StrUtil.isNotEmpty(dataFieldLexicon)) {
+            sb.append("【数据字段词典】\n");
+            sb.append("以下术语与表字段含义为本对话统一口径；具体金额/行数以【餐厅真实数据】各块为准，释义以本节为准。\n");
+            sb.append(dataFieldLexicon);
+            sb.append("\n");
+        } else {
+            log.warn("[AI-CHAT] data field lexicon missing or empty: {}", DATA_FIELD_LEXICON_FILE);
+        }
 
         // 参考技能
         if (StrUtil.isNotEmpty(skillNames)) {
@@ -730,7 +1009,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             sb.append("【采购模式硬约束（无 cost skill 时也必须遵守）】\n");
             sb.append("- **严禁措辞**：「全部为自采」「100%自采」「没有供货商配送」「全无供货商」「完全没有供货商」——除非上文 **供货属性摘要**、**全批发商入库供货维度**及【本月采购数据】摘录各行 **nx_supplier_id** 一致表明无任何供货商维度（type=5 与 type=1 且 nx 为正均为 0）。否则只能说「本统计口径下…」，并引用摘要数字。\n");
             sb.append("- **采购/订货频率**：若上文有【订货/到货频率与习惯】（gb_department_orders 到货），优先用它谈节奏；**若该块列表为空**（窗口内无「到货≥minTimes」候选），通常表示**部门订货订单未录入或未走该链路**，不等于「你没采购」或「每次都是临时采购」——此时改用【本月采购数据】按 **入库完成日** 描述到货密度即可，**禁止**顺带下供货商定性结论。\n");
-            sb.append("- 【本月自采金额】块仅含 type=1，**不得**因它与采购合计接近就概括为「全部自采」。供货商维度以摘要与 nx 为准。\n");
+            sb.append("- 【本月自采金额】块为**自采口径**，**不得**因它与采购合计接近就概括为「全部自采」。供货商维度以摘要与 nx 为准。\n");
             sb.append("- 正文宜短：**宁可短而准**；与上文【回复规则】4g、4h 冲突时以本块与真实数据为准。\n\n");
         }
 
@@ -758,7 +1037,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             sb.append("4. 当用户已明确分析角度且【餐厅真实数据】对应该角度已足够（营业额天数充足、库存段有非零金额等）：少问多答，优先逐字引用注入块中的数字与天数；不要重复追问已出现的数字。\n");
             sb.append("5. 多维思考：固定/变动、时间、损耗等**各点一句带过**即可，禁止展开成长篇论述。\n");
             sb.append("6. 禁止编造数据库未提供的维度（如具体菜名对应 ID、供应商名称、准时率）；仅有 ID 聚合时只能谈金额结构。\n");
-            sb.append("7. **必须先阅读再回答**：凡上文【本月营业额数据】【本月库存减少数据】【本月采购数据】【本月供货商订货采购】【订货/到货频率与习惯】【本月采购单价波动（采购商品行）】【本月自采金额（采购商品行）】【供货商未结账款（采购批次）】中出现的金额、天数、行数，后文分析必须与之一致；**若【本月采购数据】标明「金额摘录已省略」**，不得以臆造明细回答采购金额排名。**采购单价波动**仅允许引用【本月采购单价波动】中的 **gb_DPG_buy_price（入库单价）**：最高/最低价必须同为该字段，**禁止**把 gb_DPG_buy_subtotal、摘录里的「金额」或其它总额当作单价；「给供货商订了哪些货」须用【本月供货商订货采购】（type=5），**勿与自采 type=1 混淆**；全量采购金额（若有注入）以【本月采购数据】为准；**自采金额**以【本月自采金额】为准；供货商欠款以【供货商未结账款】为准。**采购/进货/订货频率**若上文已注入【订货/到货频率与习惯】，回答频率优劣须以该块（gb_department_orders 到货）为主，**禁止**仅用【本月采购数据】入库笔数充当「订货频率」结论。**判断是否「全是自采、有无供货商配送」时**，必须同步阅读【本月采购数据】中的 **供货属性摘要**、**全批发商入库供货维度**及各摘录行的 **gb_DPG_purchase_nx_supplier_id**，**禁止**仅凭【本月自采金额】合计≈采购合计或「未见 type=5」断言「100%自采」「完全没有供货商配送」，也**禁止**在讨论频率话题时顺带做该类断言。\n");
+            sb.append("7. **必须先阅读再回答**：凡上文【本月营业额数据】【本月库存减少数据】【本月采购数据】【本月供货商订货采购】【订货/到货频率与习惯】【本月采购单价波动（采购商品行）】【本月自采金额（采购商品行）】【供货商未结账款（采购批次）】中出现的金额、天数、行数，后文分析必须与之一致；**若【本月采购数据】标明「金额摘录已省略」**，不得以臆造明细回答采购金额排名。**采购单价波动**仅允许引用【本月采购单价波动】中的 **gb_DPG_buy_price（入库单价）**：最高/最低价必须同为该字段，**禁止**把 gb_DPG_buy_subtotal、摘录里的「金额」或其它总额当作单价；「给供货商订了哪些货」须用【本月供货商订货采购】（配送商订货专用块），**勿与【本月自采】混淆**；**勿对用户念** `type=5`、`type=1` 等内部数字；全量采购金额（若有注入）以【本月采购数据】为准；**自采金额**以【本月自采金额】为准；供货商欠款以【供货商未结账款】为准。**采购/进货/订货频率**若上文已注入【订货/到货频率与习惯】，回答频率优劣须以该块（gb_department_orders 到货）为主，**禁止**仅用【本月采购数据】入库笔数充当「订货频率」结论。**判断是否「全是自采、有无供货商配送」时**，必须同步阅读【本月采购数据】中的 **供货属性摘要**、**全批发商入库供货维度**及各摘录行的 **gb_DPG_purchase_nx_supplier_id**，**禁止**仅凭【本月自采金额】合计≈采购合计或「未见 type=5」断言「100%自采」「完全没有供货商配送」，也**禁止**在讨论频率话题时顺带做该类断言。\n");
             sb.append("8. **成本场景篇幅**：面向老板的正文（不含 JSON、不含「数据完整性」块）**严格控制在 380 字以内**。\n\n");
         }
 
@@ -785,16 +1064,19 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             sb.append("4c. 「供货商/供应商未结、应付、欠款」：**只能**引用【供货商未结账款（采购批次）】中的净额与按供货商 Top；口径为 gb_distributer_purchase_batch 未结账(status=3)批次小计，**禁止**说系统无此数据若上文已给出数字。\n");
         }
         if (realDataSection != null && realDataSection.contains("【本月自采金额（采购商品行）】")) {
-            sb.append("4d. 「自采金额」：**只能**引用【本月自采金额（采购商品行）】中的合计与 Top；口径为 gb_distributer_purchase_goods 且 gb_DPG_purchase_type=1（GbConstants.PurchaseOrderType.SELF_PURCHASE），**禁止**用全量采购块或库存流水代替。**禁止**将「本块合计≈【本月采购数据】合计」解释为「全部为自采、无供货商」：同一表中可有 type=1 且 gb_DPG_purchase_nx_supplier_id 为正整数的供货商供货入库，以【本月采购数据】供货摘要与摘录为准。\n");
+            sb.append("4d. 「自采金额 / 自采入库单价」：**只能**引用【本月自采金额（采购商品行）】中的合计、Top 与入库单价表；后台筛选为自采采购行常量。**禁止**用全量采购块或库存流水代替。**对用户**勿念 `type=1`。**禁止**将「本块合计≈【本月采购数据】合计」解释为「全部为自采、无供货商」：须以【本月采购数据】供货摘要与摘录为准。\n");
         }
         if (realDataSection != null && realDataSection.contains("【本月采购单价波动（采购商品行）】")) {
             sb.append("4e. 「采购单价波动、最高价/最低价、前三名」：**最高与最低必须同为字段 gb_DPG_buy_price（入库单价）**；**严禁**使用【本月采购数据】或任意「金额¥」「小计」「gb_DPG_buy_subtotal」充当单价；表中「入库单价价差」= 最高入库单价−最低入库单价。**只能**引用【本月采购单价波动】核验表与摘录中的 buy_price；禁止编造与表矛盾的数字。\n");
         }
         if (realDataSection != null && realDataSection.contains("【本月供货商订货采购】")) {
-            sb.append("4f. 「给供货商/供应商订货了哪些、订货原料清单」：**只能**引用【本月供货商订货采购】（gb_DPG_purchase_type=5）；**禁止**说成「全部为自采」、禁止用【本月自采】(type=1) 或未按 type 区分的数据块代替。**type=5 为供货商订货**；**type=1 仍需对照 gb_DPG_purchase_nx_supplier_id**，正整数表示供货商维度入库，勿仅凭 type=1 统称自采。\n");
+            sb.append("4f. 「给供货商/供应商订货了哪些、订货原料清单」：**只能**引用【本月供货商订货采购】；**禁止**说成「全部为自采」、禁止用【本月自采】或未按块区分的数据代替。**对用户口语**勿提 `type=5`、`purchase_type`、`gb_DPG_*` 等内部代码；配送 vs 自采的区分在后台按字段理解即可。\n");
         }
         if (realDataSection != null && realDataSection.contains("【订货/到货频率与习惯】")) {
             sb.append("4h. 「采购/进货/订货频率怎么样、节奏好不好」：若上文有【订货/到货频率与习惯】，**优先引用该块**（gb_department_orders 到货日）；**禁止**用【本月采购数据】入库笔数、金额 Top 代替「订货频率」结论。**禁止**在该话题下顺带断言「没有供货商配送、全部自采」——供货商维度只能依据【本月采购数据】供货摘要、全批发商供货维度及 nx_supplier_id 摘录。\n");
+        }
+        if (realDataSection != null && realDataSection.contains("【本月库存减少数据】")) {
+            sb.append("4i. 「库存减少、废弃/损失、下钻 Top」：**只能**用上文中的**商品名称**（及金额）；**禁止**对用户单独说「商品 ID=…」「gb_DPG_dis_goods_id」；下钻表与【流水摘录】已解析名称时须照抄。若文中「废弃+损失(type=2+3) 按批次来源」里**供货商/配送商入库**侧金额＞0 或条数＞0，**禁止**说「配送货完全没有损耗/废弃」或「废弃+损失全是自采」；须以前述配送侧合计与【流水摘录】中「供货商配送」为准。\n");
         }
         sb.append("5. 如果用户提供了新的数据/数字，明确告知已记录\n");
         if (costSkill) {
@@ -945,7 +1227,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         }
         sb.append("\n");
 
-        // 3. 本月库存减少数据（成本、损耗、废弃、退货）
+        // 3. 本月库存减少数据（成本、废弃、损失成本、退货）
         sb.append("【本月库存减少数据】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
         sb.append("- 查询范围：gb_dgsr_department_father_id = ").append(departmentId)
                 .append(" 或 gb_dgsr_gb_department_id = ").append(departmentId).append("（与门店档案部门ID对齐）\n");
@@ -955,14 +1237,15 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 departmentId, monthStart, monthEnd);
 
         List<GbDepartmentGoodsStockReduceEntity> reduces = stockReduceMapper.selectList(queryWrapper);
+        enrichReduceListNxSupplierFromStock(reduces);
         log.info("【SQL结果】查到 {} 条库存减少记录", reduces.size());
 
-        // type: 1=成本, 2=损耗, 3=废弃, 4=退货
-        BigDecimal totalCost = BigDecimal.ZERO;     // 成本
-        BigDecimal totalLoss = BigDecimal.ZERO;      // 损耗
-        BigDecimal totalWaste = BigDecimal.ZERO;     // 废弃
-        BigDecimal totalReturn = BigDecimal.ZERO;    // 退货
-        int costCount = 0, lossCount = 0, wasteCount = 0, returnCount = 0;
+        // gb_dgsr_type 与 {@link GbConstants.StockReduceType} 一致：1=生产/成本 2=WASTE 废弃 3=LOSS 损失成本 4=退货
+        BigDecimal totalCost = BigDecimal.ZERO;
+        BigDecimal totalWaste = BigDecimal.ZERO;   // type 2 WASTE 废弃
+        BigDecimal totalLoss = BigDecimal.ZERO; // type 3 LOSS 损失成本
+        BigDecimal totalReturn = BigDecimal.ZERO;
+        int costCount = 0, wasteCount = 0, lossCount = 0, returnCount = 0;
 
         for (GbDepartmentGoodsStockReduceEntity r : reduces) {
             if (r.getGbDgsrSubtotal() != null && !r.getGbDgsrSubtotal().isEmpty()) {
@@ -976,12 +1259,12 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                                 costCount++;
                                 break;
                             case 2:
-                                totalLoss = totalLoss.add(subtotal);
-                                lossCount++;
-                                break;
-                            case 3:
                                 totalWaste = totalWaste.add(subtotal);
                                 wasteCount++;
+                                break;
+                            case 3:
+                                totalLoss = totalLoss.add(subtotal);
+                                lossCount++;
                                 break;
                             case 4:
                                 totalReturn = totalReturn.add(subtotal);
@@ -995,9 +1278,9 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             }
         }
 
-        sb.append("- 成本（type=1）: ¥").append(totalCost).append(" (").append(costCount).append(" 条记录)\n");
-        sb.append("- 损耗（type=2）: ¥").append(totalLoss).append(" (").append(lossCount).append(" 条记录)\n");
-        sb.append("- 废弃（type=3）: ¥").append(totalWaste).append(" (").append(wasteCount).append(" 条记录)\n");
+        sb.append("- 成本/生产（type=1）: ¥").append(totalCost).append(" (").append(costCount).append(" 条记录)\n");
+        sb.append("- 废弃（type=2, WASTE）: ¥").append(totalWaste).append(" (").append(wasteCount).append(" 条记录)\n");
+        sb.append("- 损失成本（type=3, LOSS）: ¥").append(totalLoss).append(" (").append(lossCount).append(" 条记录)\n");
         sb.append("- 退货（type=4）: ¥").append(totalReturn).append(" (").append(returnCount).append(" 条记录)\n");
 
         BigDecimal totalReduce = totalCost.add(totalLoss).add(totalWaste).add(totalReturn);
@@ -1018,8 +1301,8 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                         try {
                             BigDecimal subtotal = new BigDecimal(r.getGbDgsrSubtotal());
                             dayTotal = dayTotal.add(subtotal);
-                            String typeName = r.getGbDgsrType() != null ?
-                                    (r.getGbDgsrType() == 1 ? "成本" : r.getGbDgsrType() == 2 ? "损耗" : r.getGbDgsrType() == 3 ? "废弃" : "退货") : "未知";
+                            String typeName = r.getGbDgsrType() != null
+                                    ? stockReduceTypeLabel(r.getGbDgsrType()) : "未知";
                             sb.append(typeName).append("¥").append(subtotal).append(" ");
                         } catch (NumberFormatException ignored) {}
                     }
@@ -1052,27 +1335,234 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 .between(GbDepartmentGoodsStockReduceEntity::getGbDgsrDate, monthStart.toString(), monthEnd.toString());
     }
 
+    private static LambdaQueryWrapper<GbDepartmentGoodsStockReduceEntity> stockReduceMonthScope(
+            AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
+        List<Integer> ids = scope.getResolvedDepartmentIds();
+        if (ids == null || ids.isEmpty()) {
+            return new LambdaQueryWrapper<GbDepartmentGoodsStockReduceEntity>()
+                    .apply("1 = 0");
+        }
+        return new LambdaQueryWrapper<GbDepartmentGoodsStockReduceEntity>()
+                .and(w -> w.in(GbDepartmentGoodsStockReduceEntity::getGbDgsrGbDepartmentFatherId, ids)
+                        .or()
+                        .in(GbDepartmentGoodsStockReduceEntity::getGbDgsrGbDepartmentId, ids))
+                .between(GbDepartmentGoodsStockReduceEntity::getGbDgsrDate, monthStart.toString(), monthEnd.toString());
+    }
+
     /**
-     * 根据选择的 Skill 类型智能查询相关数据
-     * @param departmentId 部门ID
-     * @param selectedSkills 选中的Skill（文件名）
-     * @param userMessage 用户消息（用于更精准判断需要哪些数据）
-     * @param costFacet 成本子意图（来自第一步 JSON，可为 null）
-     * @return 格式化后的数据字符串
+     * reduce 行上 {@code gb_dgsr_stock_nx_supplier_id} 若为空，则用所扣库存批次 {@link GbDepartmentGoodsStockEntity#getGbDgsNxSupplierId()} 回填内存对象，
+     * 避免映射异常或历史未反填导致配送侧废弃/损失被算成「自采或未填」。
      */
-    private String queryRealDataBySkills(Long departmentId, String selectedSkills, String userMessage, String costFacet) {
-        // 转换为小写便于匹配
+    private void enrichReduceListNxSupplierFromStock(List<GbDepartmentGoodsStockReduceEntity> reduces) {
+        if (reduces == null || reduces.isEmpty()) {
+            return;
+        }
+        Set<Integer> stockIds = new HashSet<>();
+        for (GbDepartmentGoodsStockReduceEntity r : reduces) {
+            if (r.getGbDgsrStockNxSupplierId() == null && r.getGbDgsrGbGoodsStockId() != null) {
+                stockIds.add(r.getGbDgsrGbGoodsStockId());
+            }
+        }
+        if (stockIds.isEmpty()) {
+            return;
+        }
+        List<GbDepartmentGoodsStockEntity> stocks = departmentGoodsStockMapper.selectBatchIds(stockIds);
+        if (stocks == null || stocks.isEmpty()) {
+            return;
+        }
+        Map<Integer, Integer> nxByStockId = new HashMap<>(stocks.size() * 2);
+        for (GbDepartmentGoodsStockEntity s : stocks) {
+            if (s.getGbDepartmentGoodsStockId() != null) {
+                nxByStockId.put(s.getGbDepartmentGoodsStockId(), s.getGbDgsNxSupplierId());
+            }
+        }
+        int filled = 0;
+        for (GbDepartmentGoodsStockReduceEntity r : reduces) {
+            if (r.getGbDgsrStockNxSupplierId() != null || r.getGbDgsrGbGoodsStockId() == null) {
+                continue;
+            }
+            Integer nx = nxByStockId.get(r.getGbDgsrGbGoodsStockId());
+            if (nx != null) {
+                r.setGbDgsrStockNxSupplierId(nx);
+                filled++;
+            }
+        }
+        if (filled > 0) {
+            log.info("库存减少 nx 回填: {} 条（reduce 行未填，取自 gb_department_goods_stock.gb_dgs_nx_supplier_id）", filled);
+        }
+    }
+
+    /**
+     * 时间口径：固定规则锚点（含开业至今）与模型窗口双重校验——起止日一致则采用；不一致则反问确认。
+     * 用户话里无明显时间语义时默认本月 MTD，不与模型交叉校验（避免多余调用）。
+     */
+    private StatWindowResolution resolveTimeWindowForChat(Long conversationId, String userMessage,
+                                                          GbAiRestaurantProfileEntity restaurantProfile,
+                                                          AiUserQueryTimeWindowLlmParser.LlmTimeOutcome skillPhaseStatTime) {
+        LocalDate now = LocalDate.now();
+        String trimmed = StrUtil.trimToEmpty(userMessage);
+        if (StrUtil.isBlank(trimmed)) {
+            return StatWindowResolution.ok(AiUserQueryTimeWindowResolver.defaultEmptyUserMessageWindow(now));
+        }
+
+        Optional<AiUserQueryTimeWindowResolver.Window> rulePinned =
+                AiUserQueryTimeWindowResolver.resolveRulesOnly(trimmed, now);
+        if (rulePinned.isEmpty()) {
+            rulePinned = AiUserQueryTimeWindowResolver.tryOpeningToNowWindow(trimmed, now, restaurantProfile);
+        }
+
+        if (AiUserQueryTimeWindowResolver.isOpeningToNowCue(trimmed)
+                && AiUserQueryTimeWindowResolver.openingAnchorDate(restaurantProfile) == null) {
+            return StatWindowResolution.clarify(buildTimeWindowClarificationGateReply());
+        }
+
+        if (!AiUserQueryTimeWindowResolver.mayContainUnparsedTimeIntent(trimmed)) {
+            return StatWindowResolution.ok(AiUserQueryTimeWindowResolver.defaultMonthToDate(now));
+        }
+
+        Optional<AiUserQueryTimeWindowResolver.Window> llmPinned = resolveLlmPinnedStatWindow(conversationId, trimmed,
+                now, restaurantProfile, skillPhaseStatTime);
+
+        if (rulePinned.isPresent()) {
+            if (llmPinned.isEmpty()) {
+                log.warn("[AI-CHAT][build] step=time_window_llm_unusable_fallback_rule conversationId={}", conversationId);
+                return StatWindowResolution.ok(rulePinned.get());
+            }
+            if (statWindowsAgree(rulePinned.get(), llmPinned.get())) {
+                log.info("[AI-CHAT][build] step=time_window_rule_llm_agree conversationId={} start={} end={}",
+                        conversationId, rulePinned.get().startInclusive(), rulePinned.get().endInclusive());
+                return StatWindowResolution.ok(rulePinned.get());
+            }
+            log.info("[AI-CHAT][build] step=time_window_rule_llm_conflict conversationId={} ruleStart={} ruleEnd={} llmStart={} llmEnd={}",
+                    conversationId,
+                    rulePinned.get().startInclusive(), rulePinned.get().endInclusive(),
+                    llmPinned.get().startInclusive(), llmPinned.get().endInclusive());
+            return StatWindowResolution.clarify(
+                    buildTimeWindowConflictClarificationReply(rulePinned.get(), llmPinned.get()));
+        }
+
+        if (llmPinned.isPresent()) {
+            return StatWindowResolution.ok(llmPinned.get());
+        }
+
+        return StatWindowResolution.clarify(buildTimeWindowClarificationGateReply());
+    }
+
+    /** 首轮 statTime 可用则用；否则调用专用时间 DeepSeek。不可用（UNKNOWN 等）返回 empty。 */
+    private Optional<AiUserQueryTimeWindowResolver.Window> resolveLlmPinnedStatWindow(Long conversationId,
+            String trimmedUserMessage, LocalDate now, GbAiRestaurantProfileEntity restaurantProfile,
+            AiUserQueryTimeWindowLlmParser.LlmTimeOutcome skillPhaseStatTime) {
+        if (skillPhaseStatTime != null) {
+            log.info("[AI-CHAT][build] step=time_window_try_skill_phase conversationId={} bucket={} statStartRaw={} statEndRaw={} calendarYear={} calendarMonth={} reasonPreview={}",
+                    conversationId, skillPhaseStatTime.bucket(),
+                    skillPhaseStatTime.statStartDateRaw(), skillPhaseStatTime.statEndDateRaw(),
+                    skillPhaseStatTime.calendarYear(),
+                    skillPhaseStatTime.calendarMonth(), abbreviateForLog(skillPhaseStatTime.reason(), 120));
+            if (!needsTimeClarificationAfterLlm(skillPhaseStatTime, restaurantProfile, trimmedUserMessage)) {
+                return Optional.of(AiUserQueryTimeWindowResolver.windowFromLlmOutcome(now, skillPhaseStatTime,
+                        restaurantProfile));
+            }
+        }
+        AiUserQueryTimeWindowLlmParser.LlmTimeOutcome llm = resolveTimeWindowWithDeepSeek(conversationId,
+                trimmedUserMessage, now);
+        log.info("[AI-CHAT][build] step=time_window_bucket conversationId={} bucket={} statStartRaw={} statEndRaw={} calendarYear={} calendarMonth={} reasonPreview={}",
+                conversationId, llm.bucket(), llm.statStartDateRaw(), llm.statEndDateRaw(), llm.calendarYear(), llm.calendarMonth(),
+                abbreviateForLog(llm.reason(), 120));
+        if (needsTimeClarificationAfterLlm(llm, restaurantProfile, trimmedUserMessage)) {
+            return Optional.empty();
+        }
+        return Optional.of(AiUserQueryTimeWindowResolver.windowFromLlmOutcome(now, llm, restaurantProfile));
+    }
+
+    private static boolean statWindowsAgree(AiUserQueryTimeWindowResolver.Window a,
+                                            AiUserQueryTimeWindowResolver.Window b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        return Objects.equals(a.startInclusive(), b.startInclusive())
+                && Objects.equals(a.endInclusive(), b.endInclusive());
+    }
+
+    /**
+     * 用户明确「开业至今」但画像无建档日、DeepSeek UNKNOWN、CALENDAR_MONTH 不合法、或 SINCE_OPENING 却无法取锚点时反问。
+     */
+    private static boolean needsTimeClarificationAfterLlm(AiUserQueryTimeWindowLlmParser.LlmTimeOutcome o,
+                                                         GbAiRestaurantProfileEntity profile,
+                                                         String trimmedUserMessage) {
+        if (AiUserQueryTimeWindowLlmParser.isExplicitOpeningAnchorStart(o)
+                && AiUserQueryTimeWindowResolver.openingAnchorDate(profile) == null) {
+            return true;
+        }
+        if (AiUserQueryTimeWindowResolver.isOpeningToNowCue(trimmedUserMessage)
+                && AiUserQueryTimeWindowResolver.openingAnchorDate(profile) == null) {
+            return true;
+        }
+        if (o.bucket() == AiUserQueryTimeBucket.UNKNOWN) {
+            return true;
+        }
+        if (o.bucket() == AiUserQueryTimeBucket.CALENDAR_MONTH) {
+            Integer m = o.calendarMonth();
+            return m == null || m < 1 || m > 12;
+        }
+        if (o.bucket() == AiUserQueryTimeBucket.SINCE_OPENING
+                && AiUserQueryTimeWindowResolver.openingAnchorDate(profile) == null) {
+            return true;
+        }
+        return false;
+    }
+
+    private AiUserQueryTimeWindowLlmParser.LlmTimeOutcome resolveTimeWindowWithDeepSeek(Long conversationId,
+                                                                                       String userMessage,
+                                                                                       LocalDate today) {
+        try {
+            String sys = buildTimeWindowBucketPrompt(today);
+            List<Map<String, String>> msgs = new ArrayList<>(2);
+            msgs.add(Map.of("role", "system", "content", sys));
+            msgs.add(Map.of("role", "user", "content", userMessage));
+            String raw = callDeepSeekApi(msgs, "time-window-bucket");
+            return AiUserQueryTimeWindowLlmParser.parseRaw(raw);
+        } catch (Exception e) {
+            log.warn("[AI-CHAT][build] step=time_window_bucket_failed conversationId={} err={}",
+                    conversationId, e.getMessage());
+            return AiUserQueryTimeWindowLlmParser.LlmTimeOutcome.unknown("exception");
+        }
+    }
+
+    private static String buildTimeWindowBucketPrompt(LocalDate today) {
+        LocalDate t = today != null ? today : LocalDate.now();
+        return "你是餐厅经营数据统计的「时间口径」归类助手。\n"
+                + "根据用户问题，选出其最关心的统计数据时间区间类型 bucket（必须严格选一个）。\n"
+                + "若用户完全未提及时间、或时间与经营统计无关，选 MTD。\n\n"
+                + AiUserQueryTimeWindowResolver.sharedLlmStatTimeBucketGuide(t)
+                + "\n只允许输出一个 JSON 对象，不要 markdown、不要其它文字，格式如下：\n"
+                + "{\"bucket\":\"MTD\",\"reason\":\"不超过40字的中文简述\""
+                + ",\"calendar_year\":null,\"calendar_month\":null"
+                + ",\"stat_start_date\":\"yyyy-MM-dd 或 OPENING_ANCHOR\",\"stat_end_date\":\"yyyy-MM-dd 或 TODAY\"}\n";
+    }
+
+    /**
+     * 根据选择的 Skill 类型智能查询相关数据（并融合路由建议的 metric_id → 部门范围策略）。
+     *
+     * @param restaurantProfile 已按画像锚点部门加载的行；可与 {@link #buildChatPayload} 门禁共用，避免重复 select
+     */
+    private String queryRealDataBySkills(AiQueryScope scope, SkillSelectionResult selection, String userMessage,
+                                        Long userId, GbAiRestaurantProfileEntity restaurantProfile,
+                                        Map<Integer, List<Integer>> deptSubtreeCache,
+                                        AiUserQueryTimeWindowResolver.Window statWindow) {
+        String selectedSkills = selection.skillsCsv();
+        String costFacet = selection.costFacet();
+        List<String> suggestedMetricIds = selection.suggestedMetricIds();
+
+        Long departmentId = scope.profileAnchorDepartmentId();
         String skillsLower = selectedSkills != null ? selectedSkills.toLowerCase() : "";
         StringBuilder sb = new StringBuilder();
+        sb.append(scope.toMarkdownFactHeader());
 
-        log.info("根据Skill类型智能查询数据: {}", selectedSkills);
+        log.info("根据Skill类型智能查询数据: {} suggestedMetricIds={}", selectedSkills, suggestedMetricIds);
 
-        // 餐厅画像数据 - 所有Skill都需要这个基础数据
+        // 餐厅画像数据 - 所有Skill都需要这个基础数据（主路径已由 buildChatPayload 预查）
         sb.append("【餐厅基本信息】\n");
-        GbAiRestaurantProfileEntity profile = restaurantProfileMapper.selectOne(
-                new LambdaQueryWrapper<GbAiRestaurantProfileEntity>()
-                        .eq(GbAiRestaurantProfileEntity::getGbAiRestaurantProfileDepartmentId, departmentId)
-        );
+        GbAiRestaurantProfileEntity profile = restaurantProfile;
 
         // 提前提取3个基本固定成本数据（用于后续检查）
         BigDecimal dailyRevenue = null;
@@ -1101,9 +1591,11 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         }
         sb.append("\n");
 
-        LocalDate now = LocalDate.now();
-        LocalDate monthStart = now.withDayOfMonth(1);
-        LocalDate monthEnd = now;
+        LocalDate monthStart = statWindow.startInclusive();
+        LocalDate monthEnd = statWindow.endInclusive();
+        log.info("AI 注入数据统计区间: {} 至 {} — {}", monthStart, monthEnd, statWindow.resolutionNote());
+        sb.append("- **本段数据统计区间**：").append(monthStart).append(" 至 ").append(monthEnd)
+                .append("（").append(statWindow.resolutionNote()).append("）\n\n");
 
         // 检查成本分析所需的3个基本固定成本数据是否完整
         boolean hasRent = rentMonthly != null;
@@ -1133,20 +1625,20 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                     boolean procurementOnly = !costSkill && !dishCostSkill && !profitPilotSkill;
                     boolean omitReduceForReorderFocus = procurementOnly
                             && SkillRouteFallback.shouldAttachReorderHabitFacts(userMessage);
-                    sb.append(queryCostData(departmentId, monthStart, monthEnd, "procurement", userMessage,
-                            omitReduceForReorderFocus));
+                    sb.append(queryCostData(scope, monthStart, monthEnd, "procurement", userMessage,
+                            omitReduceForReorderFocus, suggestedMetricIds, userId, deptSubtreeCache));
                     if (!SkillRouteFallback.shouldAttachSelfPurchaseFacts(userMessage)) {
-                        sb.append(querySelfPurchaseGoodsFactsForAi(departmentId, monthStart, monthEnd));
+                        sb.append(querySelfPurchaseGoodsFactsForAi(scope, monthStart, monthEnd));
                     }
                     if (!SkillRouteFallback.shouldAttachSupplierUnsettledFacts(userMessage, "procurement")) {
-                        sb.append(querySupplierUnsettledFactsForAi(departmentId));
+                        sb.append(querySupplierUnsettledFactsForAi(scope));
                     }
                 }
             } else {
                 if (costSkill || dishCostSkill || profitPilotSkill) {
-                    sb.append(queryRevenueData(departmentId, monthStart, monthEnd));
+                    sb.append(queryRevenueData(scope, monthStart, monthEnd));
                 } else {
-                    sb.append(queryRevenueDataBrief(departmentId, monthStart, monthEnd));
+                    sb.append(queryRevenueDataBrief(scope, monthStart, monthEnd));
                 }
 
                 String facetToUse = costFacet;
@@ -1162,64 +1654,99 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 boolean procurementOnly = procurementSkill && !costSkill && !dishCostSkill && !profitPilotSkill;
                 boolean omitReduceForReorderFocus = procurementOnly
                         && SkillRouteFallback.shouldAttachReorderHabitFacts(userMessage);
-                sb.append(queryCostData(departmentId, monthStart, monthEnd, facetToUse, userMessage,
-                        omitReduceForReorderFocus));
+                sb.append(queryCostData(scope, monthStart, monthEnd, facetToUse, userMessage,
+                        omitReduceForReorderFocus, suggestedMetricIds, userId, deptSubtreeCache));
 
                 if (dishCostSkill) {
-                    sb.append(queryDishSalesFacts(departmentId, monthStart, monthEnd));
+                    sb.append(queryDishSalesFacts(scope, monthStart, monthEnd));
                     sb.append(queryDishCostAnalysisFactsForAi(departmentId, monthStart, monthEnd));
                 }
                 if (procurementSkill) {
                     if (!SkillRouteFallback.shouldAttachSelfPurchaseFacts(userMessage)) {
-                        sb.append(querySelfPurchaseGoodsFactsForAi(departmentId, monthStart, monthEnd));
+                        sb.append(querySelfPurchaseGoodsFactsForAi(scope, monthStart, monthEnd));
                     }
                     if (!SkillRouteFallback.shouldAttachSupplierUnsettledFacts(userMessage, facetToUse)) {
-                        sb.append(querySupplierUnsettledFactsForAi(departmentId));
+                        sb.append(querySupplierUnsettledFactsForAi(scope));
                     }
                 }
                 if (profitPilotSkill) {
-                    sb.append(queryDishSalesFacts(departmentId, monthStart, monthEnd));
+                    sb.append(queryDishSalesFacts(scope, monthStart, monthEnd));
                 }
             }
         } else if (skillsLower.contains("revenue") || skillsLower.contains("营收") || skillsLower.contains("boost")) {
             // 营收提升Skill - 查询营业额数据
-            sb.append(queryRevenueData(departmentId, monthStart, monthEnd));
+            sb.append(queryRevenueData(scope, monthStart, monthEnd));
             if (SkillRouteFallback.shouldAttachDishSalesFacts(userMessage)) {
-                sb.append(queryDishSalesFacts(departmentId, monthStart, monthEnd));
+                sb.append(queryDishSalesFacts(scope, monthStart, monthEnd));
             }
         } else {
             // data-extractor 或其他 - 查询简要的营业额数据作为参考
-            sb.append(queryRevenueDataBrief(departmentId, monthStart, monthEnd));
+            sb.append(queryRevenueDataBrief(scope, monthStart, monthEnd));
         }
 
         if (SkillRouteFallback.shouldAttachInventoryFacts(userMessage)) {
-            sb.append(queryInventorySnapshotForAi(departmentId));
+            sb.append(queryInventorySnapshotForAi(scope, userMessage));
         }
 
         return sb.toString();
     }
 
     /**
-     * 当前部门在库批次剩余成本汇总（仅作事实注入；模型不得用其它段落数字「推算」库存金额）。
+     * 当前部门在库批次汇总（仅作事实注入）。仅包含 {@code gb_dgs_rest_weight > 0} 的批次；「在库最久」类问法按批次日升序摘录。
      */
-    private String queryInventorySnapshotForAi(Long departmentId) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("【当前库存快照】\n");
-        sb.append("- 口径：gb_department_goods_stock.gb_dgs_rest_subtotal（批次剩余成本）按部门汇总；与「本月入库/出库条数」无直接换算关系。\n");
-        sb.append("- **批次供货属性**：字段 **gb_dgs_nx_supplier_id**：**-1**=自采入库批次；**正整数**=nx 供货商 ID（供货商配送）。回答「在库这批是自采还是供货商送的」**必须**看该字段。\n");
+    private String queryInventorySnapshotForAi(Long departmentId, String userMessage) {
+        StringBuilder scopeBullet = new StringBuilder();
         int dep = departmentIdAsIntOrSentinel(departmentId);
         if (dep == Integer.MIN_VALUE) {
-            sb.append("- 部门 ID 无效，未查询。\n\n");
-            return sb.toString();
+            return "【当前库存快照】\n- 部门 ID 无效，未查询。\n\n";
         }
-        List<GbDepartmentGoodsStockEntity> rows = departmentGoodsStockMapper.selectList(
+        List<GbDepartmentGoodsStockEntity> allRows = departmentGoodsStockMapper.selectList(
                 new LambdaQueryWrapper<GbDepartmentGoodsStockEntity>()
                         .and(w -> w.eq(GbDepartmentGoodsStockEntity::getGbDgsGbDepartmentFatherId, dep)
                                 .or()
                                 .eq(GbDepartmentGoodsStockEntity::getGbDgsGbDepartmentId, dep)));
-        sb.append("- 查询范围：gb_dgs_gb_department_father_id = ").append(dep)
-                .append(" 或 gb_dgs_gb_department_id = ").append(dep).append("\n");
-        sb.append("- 在库批次数（行数）: ").append(rows.size()).append("\n");
+        scopeBullet.append("- 查询范围：gb_dgs_gb_department_father_id = ").append(dep)
+                .append(" 或 gb_dgs_gb_department_id = ").append(dep);
+        return buildInventorySnapshotMarkdown(allRows, scopeBullet.toString(), userMessage);
+    }
+
+    private String queryInventorySnapshotForAi(AiQueryScope scope, String userMessage) {
+        List<Integer> ids = scope.getResolvedDepartmentIds();
+        if (ids == null || ids.isEmpty()) {
+            return "【当前库存快照】\n- 展开部门列表为空，未查询。\n\n";
+        }
+        List<GbDepartmentGoodsStockEntity> allRows = departmentGoodsStockMapper.selectList(
+                new LambdaQueryWrapper<GbDepartmentGoodsStockEntity>()
+                        .and(w -> w.in(GbDepartmentGoodsStockEntity::getGbDgsGbDepartmentFatherId, ids)
+                                .or()
+                                .in(GbDepartmentGoodsStockEntity::getGbDgsGbDepartmentId, ids)));
+        String scopeBullet = "- 查询范围：gb_dgs_gb_department_father_id ∈ 或 gb_dgs_gb_department_id ∈ AI 展开部门节点（共 "
+                + ids.size() + " 个 ID）";
+        return buildInventorySnapshotMarkdown(allRows, scopeBullet, userMessage);
+    }
+
+    /**
+     * @param allRows    部门条件下全部库存行（可先含 rest_weight=0）
+     * @param scopeBullet 不含末尾换行的范围说明行
+     */
+    private String buildInventorySnapshotMarkdown(List<GbDepartmentGoodsStockEntity> allRows, String scopeBullet,
+            String userMessage) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("【当前库存快照】\n");
+        sb.append("- 口径：**仅统计 gb_dgs_rest_weight > 0 的批次**（仍有剩余实物重量；重量为 0 或未回填则视为无库存，不参与排行与金额汇总）。\n");
+        sb.append("- 剩余成本：gb_dgs_rest_subtotal；与「本月入库/出库条数」无直接换算关系。\n");
+        sb.append("- **批次供货属性**：字段 **gb_dgs_nx_supplier_id**：**-1**=自采入库批次；**正整数**=nx 供货商 ID（供货商配送）。回答「在库这批是自采还是供货商送的」**必须**看该字段。\n");
+        sb.append(scopeBullet).append("\n");
+        sb.append("- 部门条件命中的库存行数(含剩余重量≤0): ").append(allRows.size()).append("\n");
+
+        List<GbDepartmentGoodsStockEntity> rows = new ArrayList<>();
+        for (GbDepartmentGoodsStockEntity row : allRows) {
+            if (isPositiveRestWeight(row)) {
+                rows.add(row);
+            }
+        }
+        sb.append("- 剩余重量>0 的批次数: ").append(rows.size()).append("\n");
+
         BigDecimal totalRest = BigDecimal.ZERO;
         for (GbDepartmentGoodsStockEntity row : rows) {
             String rest = row.getGbDgsRestSubtotal();
@@ -1229,62 +1756,155 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             try {
                 totalRest = totalRest.add(new BigDecimal(rest.trim()));
             } catch (Exception ignored) {
-                // 跳过无法解析的金额字段
             }
         }
-        sb.append("- 剩余成本合计: ¥").append(totalRest.setScale(2, RoundingMode.HALF_UP)).append("\n");
+        sb.append("- 剩余成本合计(仅重量>0批次): ¥").append(totalRest.setScale(2, RoundingMode.HALF_UP)).append("\n");
+
         List<GbDepartmentGoodsStockEntity> sorted = new ArrayList<>(rows);
-        sorted.removeIf(row -> {
-            String rest = row.getGbDgsRestSubtotal();
-            if (StrUtil.isEmpty(rest)) {
-                return true;
-            }
-            try {
-                return new BigDecimal(rest.trim()).compareTo(BigDecimal.ZERO) <= 0;
-            } catch (Exception e) {
-                return true;
-            }
-        });
-        sorted.sort((a, b) -> {
-            try {
-                return new BigDecimal(b.getGbDgsRestSubtotal().trim())
-                        .compareTo(new BigDecimal(a.getGbDgsRestSubtotal().trim()));
-            } catch (Exception e) {
-                return 0;
-            }
-        });
+        boolean oldestFirst = inventoryOldestBatchIntent(userMessage);
+        if (oldestFirst) {
+            sorted.sort(GbAiChatServiceImpl::compareStockBatchDateAsc);
+        } else {
+            sorted.sort((a, b) -> {
+                try {
+                    return new BigDecimal(b.getGbDgsRestSubtotal().trim())
+                            .compareTo(new BigDecimal(a.getGbDgsRestSubtotal().trim()));
+                } catch (Exception e) {
+                    return 0;
+                }
+            });
+        }
         int cap = Math.min(20, sorted.size());
         if (cap > 0) {
-            sb.append("- 【在库批次摘录】（按剩余成本降序最多 20 条；单价 gb_dgs_price）：\n");
+            String sortDesc = oldestFirst ? "按批次日升序（在库最久/库龄最长优先）" : "按剩余成本降序";
+            sb.append("- 【在库批次摘录】（").append(sortDesc).append("；最多 20 条；单价 gb_dgs_price；重量 gb_dgs_rest_weight）：\n");
             Map<Integer, String> nameCache = new HashMap<>();
             for (int i = 0; i < cap; i++) {
                 GbDepartmentGoodsStockEntity row = sorted.get(i);
                 String nm = goodsNameFromCache(row.getGbDgsGbDisGoodsId(), nameCache);
                 String day = StrUtil.blankToDefault(row.getGbDgsDate(), "?");
                 String price = StrUtil.blankToDefault(row.getGbDgsPrice(), "?");
-                String rest = row.getGbDgsRestSubtotal();
+                String restSub = row.getGbDgsRestSubtotal();
+                String rw = StrUtil.blankToDefault(row.getGbDgsRestWeight(), "?");
                 sb.append("  - ").append(nm).append("，批次日 ").append(day)
                         .append("，单价 ").append(price)
-                        .append("，剩余成本 ¥").append(rest)
+                        .append("，剩余重量 ").append(rw)
+                        .append("，剩余成本 ¥").append(StrUtil.blankToDefault(restSub, "?"))
                         .append("，").append(nxSupplierChannelShort(row.getGbDgsNxSupplierId()))
                         .append("\n");
             }
         }
-        sb.append("- 回答「库存还有多少钱/剩多少」时，**只能**引用本块「剩余成本合计」与「在库批次数」；不得用营业额、库存减少流水条数或其它段落臆造库存总额。\n\n");
+        sb.append("- 回答「库存还有多少钱/剩多少」时，**只能**引用本块「剩余成本合计」与「剩余重量>0 批次数」；不得用营业额、库存减少流水条数或其它段落臆造库存总额。\n");
+        if (oldestFirst) {
+            sb.append("- 回答「库存时间最长/库龄最长/在库最久」时：以本块**批次日最早**且**剩余重量>0**的批次为准；同一商品多批次会多行列出。\n");
+        }
+        sb.append("\n");
         return sb.toString();
     }
 
-    /**
-     * 查询成本数据（库存减少）：含商品名/部门名/日期的流水摘录，以及按供应商/商品 ID 的 Top 聚合（下钻用）。
-     * <p>订货/采购频率类问题且仅命中 procurement-structure、未带通用成本 skill 时，可跳过 reduce 表查询（出库≠进货节奏）。</p>
-     */
-    private String queryCostData(Long departmentId, LocalDate monthStart, LocalDate monthEnd, String costFacet,
-                                 String userMessage) {
-        return queryCostData(departmentId, monthStart, monthEnd, costFacet, userMessage, false);
+    private static boolean isPositiveRestWeight(GbDepartmentGoodsStockEntity row) {
+        if (row == null) {
+            return false;
+        }
+        String w = row.getGbDgsRestWeight();
+        if (StrUtil.isBlank(w)) {
+            return false;
+        }
+        try {
+            return new BigDecimal(w.trim()).compareTo(BigDecimal.ZERO) > 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
-    private String queryCostData(Long departmentId, LocalDate monthStart, LocalDate monthEnd, String costFacet,
+    /** 「在库最久 / 库龄 / 库存时间最长」等：按 gb_dgs_date 升序排批次。 */
+    private static boolean inventoryOldestBatchIntent(String userMessage) {
+        if (StrUtil.isBlank(userMessage)) {
+            return false;
+        }
+        String u = userMessage.toLowerCase(Locale.ROOT);
+        if (u.contains("库龄")) {
+            return true;
+        }
+        if ((u.contains("库存") || u.contains("存货") || u.contains("在库"))
+                && (u.contains("最长") || u.contains("最久") || u.contains("最早"))) {
+            return true;
+        }
+        if ((u.contains("在库") || u.contains("存货")) && u.contains("多久")) {
+            return true;
+        }
+        return false;
+    }
+
+    private static LocalDate parseFlexibleStockDate(String raw) {
+        if (StrUtil.isBlank(raw)) {
+            return null;
+        }
+        String s = raw.trim();
+        if (s.length() >= 10) {
+            s = s.substring(0, 10);
+        }
+        try {
+            return LocalDate.parse(s);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 批次日升序：越早入库越靠前；日期缺失排后。 */
+    private static int compareStockBatchDateAsc(GbDepartmentGoodsStockEntity a, GbDepartmentGoodsStockEntity b) {
+        LocalDate da = parseFlexibleStockDate(a.getGbDgsDate());
+        LocalDate db = parseFlexibleStockDate(b.getGbDgsDate());
+        if (da == null && db == null) {
+            return Integer.compare(
+                    nzId(a.getGbDepartmentGoodsStockId()),
+                    nzId(b.getGbDepartmentGoodsStockId()));
+        }
+        if (da == null) {
+            return 1;
+        }
+        if (db == null) {
+            return -1;
+        }
+        int c = da.compareTo(db);
+        if (c != 0) {
+            return c;
+        }
+        return Integer.compare(
+                nzId(a.getGbDepartmentGoodsStockId()),
+                nzId(b.getGbDepartmentGoodsStockId()));
+    }
+
+    private static int nzId(Integer id) {
+        return id != null ? id : 0;
+    }
+
+    /**
+     * 查询成本数据（库存减少）：含商品名/部门名/日期的流水摘录，以及按供货商维度、**按商品名称**的 Top 聚合（下钻用）。
+     * <p>订货/采购频率类问题且仅命中 procurement-structure、未带通用成本 skill 时，可跳过 reduce 表查询（出库≠进货节奏）。</p>
+     */
+    private String queryCostData(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd, String costFacet,
+                                 String userMessage) {
+        return queryCostData(scope, monthStart, monthEnd, costFacet, userMessage, false, List.of(), null);
+    }
+
+    private String queryCostData(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd, String costFacet,
                                  String userMessage, boolean omitStockReduceSection) {
+        return queryCostData(scope, monthStart, monthEnd, costFacet, userMessage, omitStockReduceSection, List.of(),
+                null);
+    }
+
+    private String queryCostData(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd, String costFacet,
+                                 String userMessage, boolean omitStockReduceSection,
+                                 List<String> suggestedMetricIds, Long userId) {
+        return queryCostData(scope, monthStart, monthEnd, costFacet, userMessage, omitStockReduceSection,
+                suggestedMetricIds, userId, null);
+    }
+
+    private String queryCostData(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd, String costFacet,
+                                 String userMessage, boolean omitStockReduceSection,
+                                 List<String> suggestedMetricIds, Long userId,
+                                 Map<Integer, List<Integer>> deptSubtreeCache) {
         StringBuilder sb = new StringBuilder();
         sb.append("【本月库存减少数据】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
         if (StrUtil.isNotEmpty(costFacet)) {
@@ -1293,25 +1913,33 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         if (omitStockReduceSection) {
             sb.append("- 本回合用户关切为**订货/采购频率节奏**：未查询 gb_department_goods_stock_reduce。"
                     + "出库流水为「扣库存成本」，与「进货/订货节奏」口径不同；频率请以【订货/到货频率与习惯】与【本月采购数据】入库完成日为准。\n\n");
-            appendPurchaseReorderSupplierFacts(sb, departmentId, monthStart, monthEnd, costFacet, userMessage);
-            log.info("成本分析查询: departmentId={}, omitStockReduce=reorder_focus procurement-only", departmentId);
+            appendPurchaseReorderSupplierFacts(sb, scope, monthStart, monthEnd, costFacet, userMessage,
+                    suggestedMetricIds, userId, deptSubtreeCache);
+            log.info("成本分析查询: scopeMode={} resolvedDeptCount={} omitStockReduce=reorder_focus procurement-only",
+                    scope.getMode(), scope.getResolvedDepartmentIds().size());
             return sb.toString();
         }
 
-        sb.append("- gb_dgsr_type 含义: 1=成本类金额, 2=损耗, 3=废弃, 4=退货\n");
-        sb.append("- **出库所扣批次的供货属性**：gb_department_goods_stock_reduce.**gb_dgsr_stock_nx_supplier_id**（源自入库批次 gb_department_goods_stock.**gb_dgs_nx_supplier_id**）：**-1**=自采；**正整数**=供货商 ID。回答「这笔出库/成本是自采还是供货商送的」须引用流水摘录中的该项；与 gb_DPG_purchase_type 并列参考，勿互相臆替。\n");
+        sb.append("- gb_dgsr_type 含义（与 GbConstants.StockReduceType 一致）: 1=生产/成本(PRODUCTION), 2=废弃(WASTE), 3=损失成本(LOSS), 4=退货(RETURN)\n");
+        sb.append("- **出库所扣批次的供货属性**：**gb_dgsr_stock_nx_supplier_id**（源自入库批次 **gb_dgs_nx_supplier_id**）：**非空且 ≠ -1**（一般为正整数）→ **供货商/配送商入库** 批次；**-1** → **自采** 批次；**null** → 字段未回填，**勿**擅自推断。回答「配送/供货商来的货有没有损耗」等，仅当本字段满足**非空且≠-1** 才归入**配送侧**；与 gb_DPG_purchase_type 并列参考，勿互相臆替。\n");
 
-        LambdaQueryWrapper<GbDepartmentGoodsStockReduceEntity> queryWrapper = stockReduceMonthScope(departmentId, monthStart, monthEnd);
-        sb.append("- 查询范围：gb_dgsr_department_father_id = ").append(departmentId)
-                .append(" 或 gb_dgsr_gb_department_id = ").append(departmentId).append("\n");
+        LambdaQueryWrapper<GbDepartmentGoodsStockReduceEntity> queryWrapper = stockReduceMonthScope(scope, monthStart, monthEnd);
+        sb.append("- 查询范围：出库部门或父部门 ∈ AI 展开部门节点（共 ")
+                .append(scope.getResolvedDepartmentIds().size()).append(" 个 ID）\n");
 
         List<GbDepartmentGoodsStockReduceEntity> reduces = stockReduceMapper.selectList(queryWrapper);
-        log.info("成本分析查询: departmentId={}, 查到 {} 条库存减少记录", departmentId, reduces.size());
+        enrichReduceListNxSupplierFromStock(reduces);
+        log.info("成本分析查询: scopeMode={} resolvedDeptCount={} 查到 {} 条库存减少记录",
+                scope.getMode(), scope.getResolvedDepartmentIds().size(), reduces.size());
         sb.append("- 匹配行数: ").append(reduces.size()).append("（为 0 才表示本条件未查到流水）\n");
 
-        BigDecimal totalCost = BigDecimal.ZERO, totalLoss = BigDecimal.ZERO, totalWaste = BigDecimal.ZERO, totalReturn = BigDecimal.ZERO;
+        BigDecimal totalCost = BigDecimal.ZERO, totalWaste = BigDecimal.ZERO, totalLoss = BigDecimal.ZERO, totalReturn = BigDecimal.ZERO;
+        BigDecimal wasteLossSupplierBatchSubtotal = BigDecimal.ZERO;
+        int wasteLossSupplierBatchCount = 0;
+        BigDecimal wasteLossSelfOrNxUnsetSubtotal = BigDecimal.ZERO;
+        int wasteLossSelfOrNxUnsetCount = 0;
         Map<String, BigDecimal> supplierType1 = new HashMap<>();
-        Map<String, BigDecimal> goodsWasteLoss = new HashMap<>();
+        Map<Integer, BigDecimal> goodsWasteLoss = new HashMap<>();
 
         for (GbDepartmentGoodsStockReduceEntity r : reduces) {
             if (r.getGbDgsrSubtotal() == null || r.getGbDgsrSubtotal().isEmpty()) {
@@ -1326,21 +1954,35 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 String supplierKey = r.getGbDgsrStockNxSupplierId() != null
                         ? "nx_supplier_id=" + r.getGbDgsrStockNxSupplierId()
                         : "supplier=未关联";
-                String goodsKey = r.getGbDgsrGbDisGoodsId() != null
-                        ? "gb_dgsr_gb_dis_goods_id=" + r.getGbDgsrGbDisGoodsId()
-                        : "goods=未关联";
+                int goodsAggKey = r.getGbDgsrGbDisGoodsId() != null
+                        ? r.getGbDgsrGbDisGoodsId()
+                        : DIS_GOODS_AGG_KEY_MISSING;
                 switch (type) {
                     case 1:
                         totalCost = totalCost.add(subtotal);
                         supplierType1.merge(supplierKey, subtotal, BigDecimal::add);
                         break;
                     case 2:
-                        totalLoss = totalLoss.add(subtotal);
-                        goodsWasteLoss.merge(goodsKey, subtotal, BigDecimal::add);
+                        totalWaste = totalWaste.add(subtotal);
+                        goodsWasteLoss.merge(goodsAggKey, subtotal, BigDecimal::add);
+                        if (isSupplierDeliveryStockNx(r.getGbDgsrStockNxSupplierId())) {
+                            wasteLossSupplierBatchSubtotal = wasteLossSupplierBatchSubtotal.add(subtotal);
+                            wasteLossSupplierBatchCount++;
+                        } else {
+                            wasteLossSelfOrNxUnsetSubtotal = wasteLossSelfOrNxUnsetSubtotal.add(subtotal);
+                            wasteLossSelfOrNxUnsetCount++;
+                        }
                         break;
                     case 3:
-                        totalWaste = totalWaste.add(subtotal);
-                        goodsWasteLoss.merge(goodsKey, subtotal, BigDecimal::add);
+                        totalLoss = totalLoss.add(subtotal);
+                        goodsWasteLoss.merge(goodsAggKey, subtotal, BigDecimal::add);
+                        if (isSupplierDeliveryStockNx(r.getGbDgsrStockNxSupplierId())) {
+                            wasteLossSupplierBatchSubtotal = wasteLossSupplierBatchSubtotal.add(subtotal);
+                            wasteLossSupplierBatchCount++;
+                        } else {
+                            wasteLossSelfOrNxUnsetSubtotal = wasteLossSelfOrNxUnsetSubtotal.add(subtotal);
+                            wasteLossSelfOrNxUnsetCount++;
+                        }
                         break;
                     case 4:
                         totalReturn = totalReturn.add(subtotal);
@@ -1354,25 +1996,36 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         }
 
         BigDecimal totalReduce = totalCost.add(totalLoss).add(totalWaste).add(totalReturn);
-        sb.append("- 成本(type=1): ¥").append(totalCost).append(", 损耗(type=2): ¥").append(totalLoss)
-                .append(", 废弃(type=3): ¥").append(totalWaste).append(", 退货(type=4): ¥").append(totalReturn).append("\n");
+        sb.append("- 成本(type=1): ¥").append(totalCost).append(", 废弃(type=2): ¥").append(totalWaste)
+                .append(", 损失成本(type=3): ¥").append(totalLoss).append(", 退货(type=4): ¥").append(totalReturn).append("\n");
+        sb.append("- **废弃+损失(type=2+3) 按批次来源**：**供货商/配送商入库**（**gb_dgsr_stock_nx_supplier_id 非空且≠-1**）合计 ¥")
+                .append(wasteLossSupplierBatchSubtotal.setScale(2, RoundingMode.HALF_UP)).append("（")
+                .append(wasteLossSupplierBatchCount).append(" ）；**自采或 nx 未填/-1** 合计 ¥")
+                .append(wasteLossSelfOrNxUnsetSubtotal.setScale(2, RoundingMode.HALF_UP)).append("（")
+                .append(wasteLossSelfOrNxUnsetCount).append(" ）。用户问「配送商品有没有**损耗/废弃/损失**」时，**以前者（配送侧）金额与条数为准**。\n");
         sb.append("- 库存减少总计: ¥").append(totalReduce).append("\n");
 
         appendStockReduceReadableLines(sb, reduces, 20);
         appendTopMoneyLines(sb, "【下钻】本月 type=1 成本金额按 nx_supplier_id Top10（**-1**=自采；其它正整数=供货商 ID）", supplierType1, 10);
-        appendTopMoneyLines(sb, "【下钻】本月损耗+废弃(type=2+3)按分销商品 ID Top10（可与上文流水摘录对照）", goodsWasteLoss, 10);
+        appendTopMoneyLinesByDisGoodsNames(sb, "【下钻】本月废弃+损失成本(type=2+3)按商品名称 Top10（可与上文流水摘录对照）", goodsWasteLoss, 10);
         sb.append("\n");
 
-        appendPurchaseReorderSupplierFacts(sb, departmentId, monthStart, monthEnd, costFacet, userMessage);
+        appendPurchaseReorderSupplierFacts(sb, scope, monthStart, monthEnd, costFacet, userMessage,
+                suggestedMetricIds, userId, deptSubtreeCache);
 
         return sb.toString();
     }
 
     /** 订货习惯 + 采购表 + 单价波动 + 自采 + 供货未结（紧跟在库存减少块之后或替代该块）。 */
-    private void appendPurchaseReorderSupplierFacts(StringBuilder sb, Long departmentId, LocalDate monthStart,
-                                                    LocalDate monthEnd, String costFacet, String userMessage) {
+    private void appendPurchaseReorderSupplierFacts(StringBuilder sb, AiQueryScope scope, LocalDate monthStart,
+                                                    LocalDate monthEnd, String costFacet, String userMessage,
+                                                    List<String> suggestedMetricIds, Long userId,
+                                                    Map<Integer, List<Integer>> deptSubtreeCache) {
         if (SkillRouteFallback.shouldAttachReorderHabitFacts(userMessage)) {
-            int dep = departmentIdAsIntOrSentinel(departmentId);
+            Long habitAnchor = scope.getDepartmentFatherId() != null
+                    ? scope.getDepartmentFatherId()
+                    : scope.profileAnchorDepartmentId();
+            int dep = departmentIdAsIntOrSentinel(habitAnchor);
             if (dep != Integer.MIN_VALUE) {
                 sb.append(gbDepartmentReorderReminderService.buildAiReorderHabitFactsMarkdown(dep, null, null, 25));
             }
@@ -1385,43 +2038,89 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         boolean wantPurchaseFacts = SkillRouteFallback.shouldAttachPurchaseFacts(userMessage, costFacet);
 
         if (supplierOrderCue) {
-            sb.append(querySupplierOrderPurchaseGoodsFactsForAi(departmentId, monthStart, monthEnd));
+            sb.append(querySupplierOrderPurchaseGoodsFactsForAi(scope, monthStart, monthEnd));
         }
         if (wantPurchaseFacts) {
             if (purchasePriceVolatilityIntent) {
-                sb.append(queryPurchaseGoodsFactsForAiVolatilityOmitSubtotalExcerpt(departmentId, monthStart, monthEnd));
+                sb.append(queryPurchaseGoodsFactsForAiVolatilityOmitSubtotalExcerpt(scope, monthStart, monthEnd,
+                        suggestedMetricIds, userId, deptSubtreeCache));
             } else if (!(supplierOrderCue && !broadPurchaseCue)) {
-                sb.append(queryPurchaseGoodsFactsForAi(departmentId, monthStart, monthEnd));
+                sb.append(queryPurchaseGoodsFactsForAi(scope, monthStart, monthEnd, suggestedMetricIds, userId,
+                        deptSubtreeCache));
             }
         }
+        if (wantPurchaseFacts && SkillRouteFallback.shouldAttachPurchaseUnitPriceExtremeFacts(userMessage)
+                && (!supplierOrderCue || broadPurchaseCue)) {
+            sb.append(queryPurchaseUnitPriceExtremeLinesForAi(scope, monthStart, monthEnd, suggestedMetricIds,
+                    userMessage, userId, deptSubtreeCache));
+        }
         if (purchasePriceVolatilityIntent) {
-            sb.append(queryPurchasePriceVolatilityFactsForAi(departmentId, monthStart, monthEnd, userMessage));
+            sb.append(queryPurchasePriceVolatilityFactsForAi(scope, monthStart, monthEnd, userMessage));
         }
         if (SkillRouteFallback.shouldAttachSelfPurchaseFacts(userMessage)) {
-            sb.append(querySelfPurchaseGoodsFactsForAi(departmentId, monthStart, monthEnd));
+            sb.append(querySelfPurchaseGoodsFactsForAi(scope, monthStart, monthEnd));
         }
         if (SkillRouteFallback.shouldAttachSupplierUnsettledFacts(userMessage, costFacet)) {
-            sb.append(querySupplierUnsettledFactsForAi(departmentId));
+            sb.append(querySupplierUnsettledFactsForAi(scope));
         }
+    }
+
+    private Integer userDepartmentAnchor(Long departmentUserId) {
+        if (departmentUserId == null || departmentUserId > Integer.MAX_VALUE || departmentUserId < Integer.MIN_VALUE) {
+            return null;
+        }
+        GbDepartmentUserEntity u = departmentUserMapper.selectById(departmentUserId.intValue());
+        return u != null ? u.getGbDuDepartmentId() : null;
+    }
+
+    private String pickPrimaryProcurementMetricId(List<String> suggestedMetricIds) {
+        if (suggestedMetricIds != null) {
+            for (String id : suggestedMetricIds) {
+                if (StrUtil.isBlank(id)) {
+                    continue;
+                }
+                if ("procurement_buy_subtotal_mtd".equals(id) || "procurement_amount".equals(id)) {
+                    return id;
+                }
+            }
+        }
+        return "procurement_amount";
+    }
+
+    private List<Integer> resolveProcurementDepartmentIdsForAi(AiQueryScope scope, List<String> suggestedMetricIds,
+                                                                 Long userId,
+                                                                 Map<Integer, List<Integer>> deptSubtreeCache) {
+        Integer anchor = userDepartmentAnchor(userId);
+        String mid = pickPrimaryProcurementMetricId(suggestedMetricIds);
+        List<Integer> ids = metricExecutionContextFactory.build(mid, scope, anchor, deptSubtreeCache)
+                .getEffectiveDepartmentIds();
+        if (ids == null || ids.isEmpty()) {
+            return new ArrayList<>(scope.getResolvedDepartmentIds());
+        }
+        return ids;
     }
 
     /**
      * 本月采购明细事实：来自 gb_distributer_purchase_goods.gb_DPG_buy_subtotal（与库存减少 type=1 不是同一口径）。
+     * <p>部门 IN 范围由 {@link com.nongxinle.ai.metric.MetricExecutionContextFactory} 按路由建议的 metric_id 与登录用户锚点解析。</p>
      */
-    private String queryPurchaseGoodsFactsForAi(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
+    private String queryPurchaseGoodsFactsForAi(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd,
+                                                List<String> suggestedMetricIds, Long userId,
+                                                Map<Integer, List<Integer>> deptSubtreeCache) {
         StringBuilder sb = new StringBuilder();
         sb.append("【本月采购数据】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
         sb.append("- 口径：gb_distributer_purchase_goods.gb_DPG_buy_subtotal；日期筛选用 gb_DPG_stock_finish_date（入库完成日），与 gb_department_goods_stock_reduce 的出库成本不同。\n");
         sb.append("- 状态：gb_DPG_status &gt; 2；排除 gb_DPG_purchase_type = 9（与现有采购统计接口一致）。\n");
         sb.append("- **区分自采 vs 供货商配送**：**gb_DPG_purchase_nx_supplier_id** 与入库批次 **gb_department_goods_stock.gb_dgs_nx_supplier_id** 同语义：**-1**=自采；正整数=供货商 ID（可与 gb_DPG_purchase_type 对照，勿只凭类型臆断）。\n");
 
-        Integer disId = resolveDistributerIdForDepartment(departmentId);
-        int rootDep = departmentIdAsIntOrSentinel(departmentId);
-        if (disId == null || rootDep == Integer.MIN_VALUE) {
-            sb.append("- 无法解析批发商 ID 或部门 ID，未查询采购表。\n\n");
+        int disId = scope.getDisIdForPurchaseQueries();
+        if (disId <= 0) {
+            sb.append("- 无法解析批发商 ID，未查询采购表。\n\n");
             return sb.toString();
         }
-        List<Integer> depIds = resolvePurchaseDepartmentIdsForAi(rootDep);
+        String metricUsed = pickPrimaryProcurementMetricId(suggestedMetricIds);
+        List<Integer> depIds = new ArrayList<>(resolveProcurementDepartmentIdsForAi(scope, suggestedMetricIds, userId,
+                deptSubtreeCache));
         if (depIds.isEmpty()) {
             sb.append("- 无采购部门范围，未查询。\n\n");
             return sb.toString();
@@ -1438,7 +2137,10 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                         .isNotNull(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate)
                         .ge(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d0)
                         .le(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d1));
-        log.info("采购事实查询: departmentId={}, disId={}, depIds={}, 行数={}", departmentId, disId, depIds, rows.size());
+        log.info("采购事实查询: metricId={} scopeMode={} disId={} depIds.size={} 行数={}",
+                metricUsed, scope.getMode(), disId, depIds.size(), rows.size());
+        sb.append("- **指标口径**: metric_id=").append(metricUsed)
+                .append("（部门范围按 ai-metrics 中 scope_strategy 与会话/用户锚点解析）\n");
         sb.append("- 批发商 ID: ").append(disId).append("；采购部门 ID in ").append(depIds).append("\n");
         sb.append("- 匹配采购行数: ").append(rows.size()).append("\n");
         appendPurchaseSupplyMixSummary(sb, rows);
@@ -1471,13 +2173,12 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         if (top.isEmpty()) {
             sb.append("- 按商品汇总：无有效金额行（可能入库未完成或未写入采购表）。\n");
         } else {
-            sb.append("- 按分销商品 ID 汇总采购金额 Top（回答「采购金额最高」须引用本表，勿用库存减少 type=1）：\n");
+            sb.append("- 按**商品名称**汇总采购金额 Top（回答「采购金额最高」须引用本表，勿用库存减少 type=1；**勿**对用户单独念数字商品 ID）：\n");
             Map<Integer, String> nameCache = new HashMap<>();
             int rank = 1;
             for (Map.Entry<Integer, BigDecimal> e : top) {
                 String nm = goodsNameFromCache(e.getKey(), nameCache);
-                sb.append("  ").append(rank++).append(". ").append(nm)
-                        .append(" (gb_DPG_dis_goods_id=").append(e.getKey()).append("): ¥")
+                sb.append("  ").append(rank++).append(". ").append(nm).append(": ¥")
                         .append(e.getValue().setScale(2, RoundingMode.HALF_UP)).append("\n");
             }
         }
@@ -1497,8 +2198,11 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             GbDistributerPurchaseGoodsEntity r = excerpt.get(i);
             String nm = goodsNameFromCache(r.getGbDpgDisGoodsId(), excerptNameCache);
             String day = StrUtil.isBlank(r.getGbDpgStockFinishDate()) ? "?" : r.getGbDpgStockFinishDate();
-            sb.append("  - ").append(nm).append("，入库完成日 ").append(day)
-                    .append("，金额 ¥").append(r.getGbDpgBuySubtotal())
+            sb.append("  - ").append(nm).append("，入库完成日 ").append(day);
+            if (StrUtil.isNotBlank(r.getGbDpgBuyPrice())) {
+                sb.append("，单价 ¥").append(r.getGbDpgBuyPrice().trim());
+            }
+            sb.append("，金额 ¥").append(r.getGbDpgBuySubtotal())
                     .append("，purchase_type=").append(r.getGbDpgPurchaseType() == null ? "?" : r.getGbDpgPurchaseType())
                     .append("，").append(nxSupplierChannelShort(r.getGbDpgPurchaseNxSupplierId()))
                     .append("\n");
@@ -1508,42 +2212,210 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     }
 
     /**
-     * 本月向供货商订货（配送商）入库：{@code gb_DPG_purchase_type} = {@link GbConstants.PurchaseOrderType#DELIVERY_SUPPLIER}（5），非自采 type=1。
-     * <p>与同批发商采购统计一致：按 {@code gb_DPG_distributer_id} 全量入库行统计，**不按** {@code gb_DPG_purchase_department_id} 收窄。</p>
+     * 按入库单价 {@code gb_DPG_buy_price} 升序/降序摘录行，用于「单价最小/最大」等（主采购块按金额排序且波动块可能无榜）。
      */
-    private String querySupplierOrderPurchaseGoodsFactsForAi(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
+    private String queryPurchaseUnitPriceExtremeLinesForAi(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd,
+                                                           List<String> suggestedMetricIds, String userMessage,
+                                                           Long userId, Map<Integer, List<Integer>> deptSubtreeCache) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("【本月采购入库单价摘录】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        sb.append("- **口径**：**gb_DPG_buy_price**=入库单价；**绝非** gb_DPG_buy_subtotal。筛选条件与同月【本月采购数据】一致。\n");
+        sb.append("- 同一配料若多笔入库单价不同，下表逐行展示；**「单价最小」取升序第 1 行**。\n");
+
+        int disId = scope.getDisIdForPurchaseQueries();
+        if (disId <= 0) {
+            sb.append("- 无法解析批发商 ID，未查询。\n\n");
+            return sb.toString();
+        }
+        List<Integer> depIds = new ArrayList<>(resolveProcurementDepartmentIdsForAi(scope, suggestedMetricIds, userId,
+                deptSubtreeCache));
+        if (depIds.isEmpty()) {
+            sb.append("- 无采购部门范围，未查询。\n\n");
+            return sb.toString();
+        }
+        String d0 = monthStart.toString();
+        String d1 = monthEnd.toString();
+        List<GbDistributerPurchaseGoodsEntity> rows = distributerPurchaseGoodsMapper.selectList(
+                new LambdaQueryWrapper<GbDistributerPurchaseGoodsEntity>()
+                        .eq(GbDistributerPurchaseGoodsEntity::getGbDpgDistributerId, disId)
+                        .in(GbDistributerPurchaseGoodsEntity::getGbDpgPurchaseDepartmentId, depIds)
+                        .gt(GbDistributerPurchaseGoodsEntity::getGbDpgStatus, 2)
+                        .ne(GbDistributerPurchaseGoodsEntity::getGbDpgPurchaseType, 9)
+                        .isNotNull(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate)
+                        .ge(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d0)
+                        .le(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d1));
+        List<GbDistributerPurchaseGoodsEntity> withPrice = new ArrayList<>();
+        for (GbDistributerPurchaseGoodsEntity r : rows) {
+            if (parseBuyPriceNullable(r) != null) {
+                withPrice.add(r);
+            }
+        }
+        log.info("[AI-PUR-PRICE] extreme_lines disId={} depIds.size={} rows={} withBuyPrice={}",
+                disId, depIds.size(), rows.size(), withPrice.size());
+        if (withPrice.isEmpty()) {
+            sb.append("- 本月无有效 **gb_DPG_buy_price** 的入库行，无法按单价排序。\n\n");
+            return sb.toString();
+        }
+
+        String u = userMessage.toLowerCase(Locale.ROOT);
+        boolean wantMin = u.contains("最小") || u.contains("最低") || u.contains("最便宜");
+        boolean wantMax = u.contains("最大") || u.contains("最高") || u.contains("最贵");
+        Map<Integer, String> nameCache = new HashMap<>();
+        Map<Integer, String> pricingUnitCache = new HashMap<>();
+        if (wantMin) {
+            List<GbDistributerPurchaseGoodsEntity> asc = new ArrayList<>(withPrice);
+            asc.sort(Comparator.comparing(this::parseBuyPriceNullable, Comparator.nullsLast(Comparator.naturalOrder())));
+            sb.append("- **入库单价升序（「单价最小/最低/最便宜」引用第 1 行）**：\n");
+            for (int i = 0; i < asc.size() && i < 15; i++) {
+                appendOnePurchasePriceFactLine(sb, asc.get(i), i + 1, nameCache, pricingUnitCache);
+            }
+        }
+        if (wantMax) {
+            List<GbDistributerPurchaseGoodsEntity> desc = new ArrayList<>(withPrice);
+            desc.sort((a, b) -> {
+                BigDecimal pa = parseBuyPriceNullable(a);
+                BigDecimal pb = parseBuyPriceNullable(b);
+                if (pa == null && pb == null) {
+                    return 0;
+                }
+                if (pa == null) {
+                    return 1;
+                }
+                if (pb == null) {
+                    return -1;
+                }
+                return pb.compareTo(pa);
+            });
+            sb.append("- **入库单价降序（「单价最高/最贵/最大」引用第 1 行）**：\n");
+            for (int i = 0; i < desc.size() && i < 15; i++) {
+                appendOnePurchasePriceFactLine(sb, desc.get(i), i + 1, nameCache, pricingUnitCache);
+            }
+        }
+        sb.append("\n");
+        return sb.toString();
+    }
+
+    private BigDecimal parseBuyPriceNullable(GbDistributerPurchaseGoodsEntity r) {
+        if (r == null || StrUtil.isBlank(r.getGbDpgBuyPrice())) {
+            return null;
+        }
+        try {
+            return new BigDecimal(r.getGbDpgBuyPrice().trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void appendOnePurchasePriceFactLine(StringBuilder sb, GbDistributerPurchaseGoodsEntity r, int rank,
+                                               Map<Integer, String> nameCache,
+                                               Map<Integer, String> pricingUnitCache) {
+        String nm = goodsNameFromCache(r.getGbDpgDisGoodsId(), nameCache);
+        String day = StrUtil.isBlank(r.getGbDpgStockFinishDate()) ? "?" : r.getGbDpgStockFinishDate();
+        sb.append("  ").append(rank).append(". ").append(nm)
+                .append("，入库完成日 ").append(day)
+                .append("，入库单价(gb_DPG_buy_price，计价单位=主档 gb_dg_goods_standardname，缺则本行 gb_DPG_standard) ");
+        appendBuyPriceWithMasterPricingUnit(sb, StrUtil.blankToDefault(r.getGbDpgBuyPrice(), "?"), r.getGbDpgDisGoodsId(),
+                r, pricingUnitCache, null);
+        sb.append("，数量 ").append(StrUtil.blankToDefault(r.getGbDpgBuyQuantity(), "?"))
+                .append("，本行规格 gb_DPG_standard=").append(StrUtil.blankToDefault(r.getGbDpgStandard(), "?"))
+                .append("，金额小计 ¥").append(StrUtil.blankToDefault(r.getGbDpgBuySubtotal(), "?"))
+                .append("，").append(nxSupplierChannelShort(r.getGbDpgPurchaseNxSupplierId()))
+                .append("\n");
+    }
+
+    /**
+     * 计价单位：优先 {@link GbDistributerGoodsEntity#getGbDgGoodsStandardname()}（主档），否则本采购行
+     * {@link GbDistributerPurchaseGoodsEntity#getGbDpgStandard()}。
+     */
+    /**
+     * @param masterStandardOverride 若已知主档 {@link GbDistributerGoodsEntity#getGbDgGoodsStandardname()}，优先作计价单位（避免重复查库）
+     */
+    private void appendBuyPriceWithMasterPricingUnit(StringBuilder sb, String priceDisplay, Integer goodsId,
+                                                     GbDistributerPurchaseGoodsEntity r,
+                                                     Map<Integer, String> pricingUnitCache,
+                                                     String masterStandardOverride) {
+        sb.append("¥").append(priceDisplay);
+        String unit = StrUtil.trimToEmpty(masterStandardOverride);
+        if (StrUtil.isBlank(unit)) {
+            unit = goodsPricingUnitFromCache(goodsId, pricingUnitCache);
+        }
+        if (StrUtil.isBlank(unit) && r != null) {
+            unit = StrUtil.trimToEmpty(r.getGbDpgStandard());
+        }
+        if (StrUtil.isNotBlank(unit)) {
+            sb.append("/").append(unit);
+        }
+    }
+
+    private String goodsPricingUnitFromCache(Integer goodsId, Map<Integer, String> pricingUnitCache) {
+        if (goodsId == null) {
+            return "";
+        }
+        return pricingUnitCache.computeIfAbsent(goodsId, this::loadDisGoodsPricingUnit);
+    }
+
+    private String loadDisGoodsPricingUnit(Integer goodsId) {
+        GbDistributerGoodsEntity g = distributerGoodsMapper.selectById(goodsId);
+        if (g == null || StrUtil.isBlank(g.getGbDgGoodsStandardname())) {
+            return "";
+        }
+        return g.getGbDgGoodsStandardname().trim();
+    }
+
+    /**
+     * 本月向供货商订货（配送商）入库：{@code gb_DPG_purchase_type} = {@link GbConstants.PurchaseOrderType#DELIVERY_SUPPLIER}（5）。
+     * <p>集团视角：按 {@code gb_DPG_distributer_id} 全量；单店视角：另按 {@code gb_DPG_purchase_department_id} 落在门店展开部门内收窄。</p>
+     */
+    private String querySupplierOrderPurchaseGoodsFactsForAi(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
         StringBuilder sb = new StringBuilder();
         sb.append("【本月供货商订货采购】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
-        sb.append("- **gb_DPG_purchase_type**：**1**=自采；**5**=向供货商/配送商订货（DELIVERY_SUPPLIER）。**本块仅统计 type=5。**\n");
+        sb.append("- **范围**：本月 **向配送商/供货商订货**的入库商品行（系统字段 `gb_DPG_purchase_type=5`）。**对老板口语回复**：只说「配送商/供货商订货」，**勿**复述 `type=5`、`gb_DPG_*` 等内部代码。\n");
         sb.append("- **供货字段**：入库行 **gb_DPG_purchase_nx_supplier_id** 与同批次 **gb_dgs_nx_supplier_id** 对齐：正整数=供货商 ID；-1 表示自采（本块一般为供货商）。\n");
-        sb.append("- **统计范围**：全批发商 `gb_DPG_distributer_id`（不按采购部门收窄），与前台采购统计同口径，避免配送入库挂在子部门时漏数。\n");
-        sb.append("- 金额：gb_DPG_buy_subtotal；日期：gb_DPG_stock_finish_date；gb_DPG_status&gt;2。\n");
-        sb.append("- **回答「供货商配送了哪些原料」须引用本块**；勿用【本月自采】或未区分 type 的采购汇总；勿把 type=5 说成自采。\n");
+        if (scope.getMode() == AiConversationScopeMode.GROUP) {
+            sb.append("- **统计范围（集团）**：全批发商 `gb_DPG_distributer_id`，不按采购部门收窄。\n");
+        } else {
+            sb.append("- **统计范围（单店）**：同批发商下，且 `gb_DPG_purchase_department_id` ∈ 门店展开部门。\n");
+        }
+        sb.append("- **金额**：**gb_DPG_buy_subtotal** = 本条入库**金额小计**（数量×单价等汇总后的行金额），**不是**入库单价。\n");
+        sb.append("- **单价**：**gb_DPG_buy_price** = **入库单价**；**计价单位**优先取分销商品主档 **gb_dg_goods_standardname**（`GbDistributerGoodsEntity`），缺省再用本行 **gb_DPG_standard**。\n");
+        sb.append("- 日期：gb_DPG_stock_finish_date；gb_DPG_status&gt;2。\n");
+        sb.append("- **回答「供货商配送了哪些原料」须引用本块**；勿用【本月自采】或未区分口径的采购汇总取代本块。\n");
 
-        Integer disId = resolveDistributerIdForDepartment(departmentId);
-        if (disId == null) {
+        int disId = scope.getDisIdForPurchaseQueries();
+        if (disId <= 0) {
             sb.append("- 无法解析批发商 ID，未查询。\n\n");
             return sb.toString();
         }
 
         String d0 = monthStart.toString();
         String d1 = monthEnd.toString();
-        List<GbDistributerPurchaseGoodsEntity> rows = distributerPurchaseGoodsMapper.selectList(
-                new LambdaQueryWrapper<GbDistributerPurchaseGoodsEntity>()
-                        .eq(GbDistributerPurchaseGoodsEntity::getGbDpgDistributerId, disId)
-                        .eq(GbDistributerPurchaseGoodsEntity::getGbDpgPurchaseType, GbConstants.PurchaseOrderType.DELIVERY_SUPPLIER)
-                        .gt(GbDistributerPurchaseGoodsEntity::getGbDpgStatus, 2)
-                        .isNotNull(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate)
-                        .ge(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d0)
-                        .le(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d1));
+        LambdaQueryWrapper<GbDistributerPurchaseGoodsEntity> qw = new LambdaQueryWrapper<GbDistributerPurchaseGoodsEntity>()
+                .eq(GbDistributerPurchaseGoodsEntity::getGbDpgDistributerId, disId)
+                .eq(GbDistributerPurchaseGoodsEntity::getGbDpgPurchaseType, GbConstants.PurchaseOrderType.DELIVERY_SUPPLIER)
+                .gt(GbDistributerPurchaseGoodsEntity::getGbDpgStatus, 2)
+                .isNotNull(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate)
+                .ge(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d0)
+                .le(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d1);
+        if (scope.getMode() == AiConversationScopeMode.STORE && !scope.getResolvedDepartmentIds().isEmpty()) {
+            qw.in(GbDistributerPurchaseGoodsEntity::getGbDpgPurchaseDepartmentId, scope.getResolvedDepartmentIds());
+        }
+        List<GbDistributerPurchaseGoodsEntity> rows = distributerPurchaseGoodsMapper.selectList(qw);
 
-        log.info("[AI-SUPPLIER-ORDER] departmentId={} disId={} scope=distributer_wide type=5 rows={}", departmentId, disId, rows.size());
+        log.info("[AI-SUPPLIER-ORDER] scopeMode={} disId={} type=5 rows={}", scope.getMode(), disId, rows.size());
         sb.append("- 批发商 ID: ").append(disId).append("\n");
-        sb.append("- 匹配订货入库行数(type=5): ").append(rows.size()).append("\n");
+        sb.append("- 匹配配送商/供货商订货入库行数: ").append(rows.size()).append("\n");
 
-        Map<Integer, BigDecimal> byGoods = new HashMap<>();
+        Map<Integer, BigDecimal> byGoodsSubtotal = new HashMap<>();
+        Map<Integer, BigDecimal> maxUnitPriceByGoods = new HashMap<>();
         BigDecimal monthTotal = BigDecimal.ZERO;
         for (GbDistributerPurchaseGoodsEntity r : rows) {
+            Integer gid = r.getGbDpgDisGoodsId();
+            if (gid != null) {
+                BigDecimal unit = parseBuyPriceNullable(r);
+                if (unit != null) {
+                    maxUnitPriceByGoods.merge(gid, unit, (a, b) -> a.compareTo(b) >= 0 ? a : b);
+                }
+            }
             String sub = r.getGbDpgBuySubtotal();
             if (StrUtil.isBlank(sub)) {
                 continue;
@@ -1551,31 +2423,41 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             try {
                 BigDecimal amt = new BigDecimal(sub.trim());
                 monthTotal = monthTotal.add(amt);
-                Integer gid = r.getGbDpgDisGoodsId();
                 if (gid != null) {
-                    byGoods.merge(gid, amt, BigDecimal::add);
+                    byGoodsSubtotal.merge(gid, amt, BigDecimal::add);
                 }
             } catch (Exception ignored) {
                 // skip
             }
         }
-        sb.append("- 本月订货入库金额合计(仅 type=5, gb_DPG_buy_subtotal): ¥").append(monthTotal.setScale(2, RoundingMode.HALF_UP)).append("\n");
+        sb.append("- 本月订货入库金额合计（**gb_DPG_buy_subtotal** 汇总，配送商订货口径）: ¥")
+                .append(monthTotal.setScale(2, RoundingMode.HALF_UP)).append("\n");
 
-        List<Map.Entry<Integer, BigDecimal>> top = byGoods.entrySet().stream()
+        List<Map.Entry<Integer, BigDecimal>> top = byGoodsSubtotal.entrySet().stream()
                 .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
                 .limit(40)
                 .toList();
         if (top.isEmpty()) {
             sb.append("- 按商品汇总：无有效金额行。若业务实际有配送但此处为空，请核对入库行是否仍记为 type=1，或是否未写入 gb_DPG_stock_finish_date。**勿**臆造配送清单。\n");
         } else {
-            sb.append("- **供货商配送涉及原料/商品**（按金额降序列出）：\n");
+            sb.append("- **供货商配送涉及原料/商品**（按 **金额小计** 降序；下列「小计」=gb_DPG_buy_subtotal 按商品合计，**切勿**当作单价）：\n");
             Map<Integer, String> nameCache = new HashMap<>();
+            Map<Integer, String> pricingUnitCache = new HashMap<>();
             int rank = 1;
             for (Map.Entry<Integer, BigDecimal> e : top) {
                 String nm = goodsNameFromCache(e.getKey(), nameCache);
+                BigDecimal maxUnit = maxUnitPriceByGoods.get(e.getKey());
                 sb.append("  ").append(rank++).append(". ").append(nm)
-                        .append(" (gb_DPG_dis_goods_id=").append(e.getKey()).append("): ¥")
-                        .append(e.getValue().setScale(2, RoundingMode.HALF_UP)).append("\n");
+                        .append("：小计 **¥").append(e.getValue().setScale(2, RoundingMode.HALF_UP))
+                        .append("**（subtotal 合计）");
+                if (maxUnit != null) {
+                    sb.append("；入库单价（gb_DPG_buy_price）本块最高 ");
+                    appendBuyPriceWithMasterPricingUnit(sb, maxUnit.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                            e.getKey(), null, pricingUnitCache, null);
+                } else {
+                    sb.append("；**无有效 gb_DPG_buy_price**，无法报单价");
+                }
+                sb.append("\n");
             }
         }
         sb.append("\n");
@@ -1585,21 +2467,24 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     /**
      * 用户问「单价波动」时注入：省略采购金额摘录，避免模型把 gb_DPG_buy_subtotal 误认为 gb_DPG_buy_price。
      */
-    private String queryPurchaseGoodsFactsForAiVolatilityOmitSubtotalExcerpt(Long departmentId, LocalDate monthStart,
-                                                                             LocalDate monthEnd) {
+    private String queryPurchaseGoodsFactsForAiVolatilityOmitSubtotalExcerpt(AiQueryScope scope, LocalDate monthStart,
+                                                                             LocalDate monthEnd,
+                                                                             List<String> suggestedMetricIds,
+                                                                             Long userId,
+                                                                             Map<Integer, List<Integer>> deptSubtreeCache) {
         StringBuilder sb = new StringBuilder();
         sb.append("【本月采购数据】（单价波动场景 · **金额摘录已省略**）(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
         sb.append("- **字段区分**：**gb_DPG_buy_subtotal** = 本条入库「采购金额/小计」，常为几十～几百元；**gb_DPG_buy_price** = **入库单价**。回答单价波动时 **只能**用后者。\n");
         sb.append("- **严禁**把本段合计或历史上下文里的「金额¥」当成某一商品的单价。\n");
         sb.append("- **供货属性**：每笔入库行可查 **gb_DPG_purchase_nx_supplier_id**（-1 自采；正整数供货商 ID），与批次 **gb_dgs_nx_supplier_id** 对应。\n");
 
-        Integer disId = resolveDistributerIdForDepartment(departmentId);
-        int rootDep = departmentIdAsIntOrSentinel(departmentId);
-        if (disId == null || rootDep == Integer.MIN_VALUE) {
+        int disId = scope.getDisIdForPurchaseQueries();
+        if (disId <= 0) {
             sb.append("- 无法解析批发商 ID 或部门 ID。\n\n");
             return sb.toString();
         }
-        List<Integer> depIds = resolvePurchaseDepartmentIdsForAi(rootDep);
+        List<Integer> depIds = new ArrayList<>(resolveProcurementDepartmentIdsForAi(scope, suggestedMetricIds, userId,
+                deptSubtreeCache));
         if (depIds.isEmpty()) {
             sb.append("- 无采购部门范围。\n\n");
             return sb.toString();
@@ -1628,8 +2513,8 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 // skip
             }
         }
-        log.info("[AI-VOL] purchase_subtotal_block_omitted_excerpt departmentId={} disId={} depIds={} rows={} monthTotal={}",
-                departmentId, disId, depIds, rows.size(), monthTotal);
+        log.info("[AI-VOL] purchase_subtotal_block_omitted_excerpt scopeMode={} disId={} depIds.size={} rows={} monthTotal={}",
+                scope.getMode(), disId, depIds.size(), rows.size(), monthTotal);
         sb.append("- 批发商 ID: ").append(disId).append("；采购部门 ID in ").append(depIds).append("\n");
         sb.append("- 匹配采购行数: ").append(rows.size()).append("\n");
         appendPurchaseSupplyMixSummary(sb, rows);
@@ -1644,7 +2529,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
      * 共用 {@link GbDistributerPurchaseGoodsMapper#queryGbPurchaseGoodsTopPriceFluctuation}（全批发商 disId 口径，不按采购部门收窄）。
      * 仅当用户只问「自采」且未出现采购/进货时，仍按部门范围自采行聚合。
      */
-    private String queryPurchasePriceVolatilityFactsForAi(Long departmentId, LocalDate monthStart, LocalDate monthEnd,
+    private String queryPurchasePriceVolatilityFactsForAi(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd,
                                                           String userMessage) {
         StringBuilder sb = new StringBuilder();
         sb.append("【本月采购单价波动（采购商品行）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
@@ -1654,9 +2539,16 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         sb.append("- 排名：Mapper 初筛后按**入库行逐项核验**重排，最多展示 10 条（与前台接口同源 SQL，额外剔除「单价实质相同」的假波动）。\n");
         sb.append("- **自采/供货商判定**：摘录行均带 **gb_DPG_purchase_nx_supplier_id**（**-1**=自采；正整数=供货商 ID），与同批次 **gb_dgs_nx_supplier_id** 对齐；勿仅用 gb_DPG_purchase_type 与用户口述「配送」强行对应。\n");
 
-        Integer disId = resolveDistributerIdForDepartment(departmentId);
-        int rootDep = departmentIdAsIntOrSentinel(departmentId);
-        if (disId == null || rootDep == Integer.MIN_VALUE) {
+        int disId = scope.getDisIdForPurchaseQueries();
+        int rootDep;
+        if (scope.getDepartmentFatherId() != null) {
+            rootDep = departmentIdAsIntOrSentinel(scope.getDepartmentFatherId());
+        } else if (!scope.getResolvedDepartmentIds().isEmpty()) {
+            rootDep = scope.getResolvedDepartmentIds().get(0);
+        } else {
+            rootDep = Integer.MIN_VALUE;
+        }
+        if (disId <= 0 || rootDep == Integer.MIN_VALUE) {
             sb.append("- 无法解析批发商 ID 或部门 ID，未查询。\n\n");
             return sb.toString();
         }
@@ -1665,8 +2557,8 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         String d0 = monthStart.toString();
         String d1 = monthEnd.toString();
 
-        log.info("[AI-VOL] step=entry departmentId={} disId={} dateRange={}..{} selfOnly={}",
-                departmentId, disId, d0, d1, selfOnly);
+        log.info("[AI-VOL] step=entry scopeMode={} disId={} dateRange={}..{} selfOnly={}",
+                scope.getMode(), disId, d0, d1, selfOnly);
 
         if (!selfOnly) {
             Map<String, Object> fluctMap = new HashMap<>();
@@ -1711,7 +2603,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 return b.vol().spread().compareTo(a.vol().spread());
             });
 
-            logDeptScopedPurchaseVolatilityDiag(departmentId, disId, rootDep, d0, d1);
+            logDeptScopedPurchaseVolatilityDiag(scope.profileAnchorDepartmentId(), disId, rootDep, d0, d1);
 
             sb.append("- 批发商 ID: ").append(disId).append("\n");
             sb.append("- **核验规则**：逐行读取 **gb_DPG_buy_price**；至少两种不同入库单价才上榜。排名按核验后的相对波动降序。\n");
@@ -1723,19 +2615,24 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             int showLimit = Math.min(10, verified.size());
             sb.append("- **入库单价波动 Top（gb_DPG_buy_price；已核验；前三名须逐字照抄）**：\n");
             Map<Integer, String> nameCache = new HashMap<>();
+            Map<Integer, String> volTopUnitCache = new HashMap<>();
             List<Integer> topThreeIds = new ArrayList<>();
             for (int i = 0; i < showLimit; i++) {
                 VerifiedPurchaseVolatilityRow row = verified.get(i);
                 GbDistributerGoodsEntity g = row.meta();
                 ReconciledPurchaseVolatility v = row.vol();
                 Integer gid = g.getGbDistributerGoodsId();
+                String masterStd = g != null ? g.getGbDgGoodsStandardname() : null;
                 String nm = StrUtil.isNotBlank(g.getGbDgGoodsName())
                         ? g.getGbDgGoodsName()
                         : goodsNameFromCache(gid, nameCache);
-                sb.append("  ").append(i + 1).append(". ").append(nm).append(" (gb_DPG_dis_goods_id=").append(gid).append(")")
-                        .append(" **最低入库单价**¥").append(v.minPrice().setScale(1, RoundingMode.HALF_UP))
-                        .append(" **最高入库单价**¥").append(v.maxPrice().setScale(1, RoundingMode.HALF_UP))
-                        .append(" **入库单价价差**¥").append(v.spread().setScale(1, RoundingMode.HALF_UP))
+                sb.append("  ").append(i + 1).append(". ").append(nm).append(" **最低入库单价**");
+                appendBuyPriceWithMasterPricingUnit(sb, v.minPrice().setScale(1, RoundingMode.HALF_UP).toPlainString(),
+                        gid, null, volTopUnitCache, masterStd);
+                sb.append(" **最高入库单价**");
+                appendBuyPriceWithMasterPricingUnit(sb, v.maxPrice().setScale(1, RoundingMode.HALF_UP).toPlainString(),
+                        gid, null, volTopUnitCache, masterStd);
+                sb.append(" **入库单价价差**¥").append(v.spread().setScale(1, RoundingMode.HALF_UP))
                         .append(" 波动幅度").append(v.fluctuationPercent().setScale(1, RoundingMode.HALF_UP)).append("%")
                         .append(" 入库行数").append(v.lineCount()).append("\n");
                 if (i < 3 && gid != null) {
@@ -1748,12 +2645,12 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         }
 
         // --- 仅「自采」：仍按采购部门 + 子部门收窄 ---
-        sb.append("- 范围：**仅自采**（gb_DPG_purchase_type=").append(GbConstants.PurchaseOrderType.SELF_PURCHASE).append("），按本部门+子部门采购范围。\n");
+        sb.append("- 范围：**仅自采入库**（门店自采采购行；**勿对用户念 type 数字或内部字段名**），按本部门+子部门采购范围。\n");
 
-        List<Integer> depIds = resolvePurchaseDepartmentIdsForAi(rootDep);
+        List<Integer> depIds = new ArrayList<>(scope.getResolvedDepartmentIds());
         if (depIds.isEmpty()) {
             sb.append("- 无采购部门范围，未查询。\n\n");
-            log.warn("[AI-VOL] step=self_only_abort departmentId={} disId={} reason=no_dep_ids", departmentId, disId);
+            log.warn("[AI-VOL] step=self_only_abort scopeMode={} disId={} reason=no_dep_ids", scope.getMode(), disId);
             return sb.toString();
         }
 
@@ -1769,8 +2666,8 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 .le(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d1);
 
         List<GbDistributerPurchaseGoodsEntity> rows = distributerPurchaseGoodsMapper.selectList(qw);
-        log.info("[AI-VOL] step=self_only_query departmentId={} disId={} depIds={} matchingRows={}",
-                departmentId, disId, depIds, rows.size());
+        log.info("[AI-VOL] step=self_only_query scopeMode={} disId={} depIds={} matchingRows={}",
+                scope.getMode(), disId, depIds, rows.size());
 
         List<VolatilityGoodsAgg> ranked = rankPurchaseVolatilityFromPurchaseRows(rows);
         if (!ranked.isEmpty()) {
@@ -1793,17 +2690,21 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             return sb.toString();
         }
 
-        sb.append("- **价格波动 Top（自采·按部门收窄；均为 gb_DPG_buy_price）**：\n");
+        sb.append("- **价格波动 Top（自采·按部门收窄；均为 gb_DPG_buy_price；单位=主档 gb_dg_goods_standardname）**：\n");
         Map<Integer, String> nameCache = new HashMap<>();
+        Map<Integer, String> selfVolUnitCache = new HashMap<>();
         int limit = Math.min(15, ranked.size());
         List<Integer> topThreeIds = new ArrayList<>();
         for (int i = 0; i < limit; i++) {
             VolatilityGoodsAgg ag = ranked.get(i);
             String nm = goodsNameFromCache(ag.goodsId(), nameCache);
-            sb.append("  ").append(i + 1).append(". ").append(nm).append(" (gb_DPG_dis_goods_id=").append(ag.goodsId()).append(")")
-                    .append(" **最低入库单价**¥").append(ag.minPrice().setScale(4, RoundingMode.HALF_UP))
-                    .append(" **最高入库单价**¥").append(ag.maxPrice().setScale(4, RoundingMode.HALF_UP))
-                    .append(" **入库单价价差**¥").append(ag.spread().setScale(4, RoundingMode.HALF_UP))
+            sb.append("  ").append(i + 1).append(". ").append(nm).append(" **最低入库单价**");
+            appendBuyPriceWithMasterPricingUnit(sb, ag.minPrice().setScale(4, RoundingMode.HALF_UP).toPlainString(),
+                    ag.goodsId(), null, selfVolUnitCache, null);
+            sb.append(" **最高入库单价**");
+            appendBuyPriceWithMasterPricingUnit(sb, ag.maxPrice().setScale(4, RoundingMode.HALF_UP).toPlainString(),
+                    ag.goodsId(), null, selfVolUnitCache, null);
+            sb.append(" **入库单价价差**¥").append(ag.spread().setScale(4, RoundingMode.HALF_UP))
                     .append(" 波动幅度").append(ag.fluctuationPercent().setScale(1, RoundingMode.HALF_UP)).append("%")
                     .append(" 有效笔数").append(ag.pointCount()).append("\n");
             if (i < 3) {
@@ -1904,7 +2805,8 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         if (goodsIds == null || goodsIds.isEmpty()) {
             return;
         }
-        sb.append("- 摘录（前 3 个品：每笔 **入库单价** `gb_DPG_buy_price`，**不是**小计）：\n");
+        sb.append("- 摘录（前 3 个品：每笔 **入库单价** `gb_DPG_buy_price`，**不是**小计；**勿**对用户口述 purchase_type 数字）：\n");
+        Map<Integer, String> pricingUnitCache = new HashMap<>();
         for (Integer gid : goodsIds) {
             if (gid == null) {
                 continue;
@@ -1929,9 +2831,10 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                     continue;
                 }
                 String day = StrUtil.blankToDefault(r.getGbDpgStockFinishDate(), "?");
-                sb.append("    - ").append(day).append(" ¥").append(p.get().setScale(4, RoundingMode.HALF_UP))
-                        .append(" (gb_DPG_buy_price)，purchase_type=").append(r.getGbDpgPurchaseType() == null ? "?" : r.getGbDpgPurchaseType())
-                        .append("，").append(nxSupplierChannelShort(r.getGbDpgPurchaseNxSupplierId()))
+                sb.append("    - ").append(day).append(" ");
+                appendBuyPriceWithMasterPricingUnit(sb, p.get().setScale(4, RoundingMode.HALF_UP).toPlainString(), gid, r,
+                        pricingUnitCache, null);
+                sb.append(" (gb_DPG_buy_price)，").append(nxSupplierChannelShort(r.getGbDpgPurchaseNxSupplierId()))
                         .append("\n");
             }
         }
@@ -1943,7 +2846,8 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         if (goodsIds == null || goodsIds.isEmpty()) {
             return;
         }
-        sb.append("- 摘录（波动 Top 前 3 个品，按入库日）：\n");
+        sb.append("- 摘录（波动 Top 前 3 个品，按入库日；**勿**对用户口述 purchase_type 数字）：\n");
+        Map<Integer, String> pricingUnitCache = new HashMap<>();
         Map<Integer, VolatilityGoodsAgg> byId = new HashMap<>();
         for (VolatilityGoodsAgg a : ranked) {
             byId.put(a.goodsId(), a);
@@ -1963,9 +2867,10 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             int cap = Math.min(12, pts.size());
             for (int j = 0; j < cap; j++) {
                 VolatilityPricePoint p = pts.get(j);
-                sb.append("    - ").append(p.finishDate()).append(" ¥").append(p.price().setScale(4, RoundingMode.HALF_UP))
-                        .append(" (gb_DPG_buy_price)，purchase_type=").append(p.purchaseType() == null ? "?" : p.purchaseType())
-                        .append("，").append(nxSupplierChannelShort(p.nxSupplierId()))
+                sb.append("    - ").append(p.finishDate()).append(" ");
+                appendBuyPriceWithMasterPricingUnit(sb, p.price().setScale(4, RoundingMode.HALF_UP).toPlainString(), gid,
+                        null, pricingUnitCache, null);
+                sb.append(" (gb_DPG_buy_price)，").append(nxSupplierChannelShort(p.nxSupplierId()))
                         .append("\n");
             }
         }
@@ -2051,22 +2956,20 @@ public class GbAiChatServiceImpl implements GbAiChatService {
      * 本月自采：采购商品行 {@code gb_DPG_purchase_type} = {@link GbConstants.PurchaseOrderType#SELF_PURCHASE}，
      * 金额汇总 {@code gb_DPG_buy_subtotal}（与「本月采购数据」全量口径区分）。
      */
-    private String querySelfPurchaseGoodsFactsForAi(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
+    private String querySelfPurchaseGoodsFactsForAi(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
         StringBuilder sb = new StringBuilder();
         sb.append("【本月自采金额（采购商品行）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
-        sb.append("- 表：gb_distributer_purchase_goods；自采条件：gb_DPG_purchase_type=")
-                .append(GbConstants.PurchaseOrderType.SELF_PURCHASE)
-                .append("（GbConstants.PurchaseOrderType.SELF_PURCHASE）。\n");
-        sb.append("- **勿误解**：本块仅筛 **purchase_type=1**；其中仍可有 **gb_DPG_purchase_nx_supplier_id 为正整数** 的供货商供货入库。**禁止**因「本块合计≈【本月采购数据】合计」对用户断言「100%自采、无供货商配送」——须看【本月采购数据】中的供货摘要与摘录。\n");
+        sb.append("- **范围**：本月 **门店自采**采购入库行（系统内为自采常量 `SELF_PURCHASE`）。**对老板口语**只说「自采」，**勿**复述 `type=1`、`purchase_type`、字段名。\n");
+        sb.append("- **勿误解**：本块为自采口径；其中仍可有 **gb_DPG_purchase_nx_supplier_id 为正** 的供货商供货入库。**禁止**因「本块合计≈【本月采购数据】合计」断言「100%自采、无供货商配送」——须看【本月采购数据】供货摘要与摘录。\n");
+        sb.append("- **计价单位**：展示入库单价时优先 **gb_distributer_goods.gb_dg_goods_standardname**（如斤、袋），缺省用本行 **gb_DPG_standard**。\n");
         sb.append("- 金额：gb_DPG_buy_subtotal；日期：gb_DPG_stock_finish_date（入库完成日）；状态：gb_DPG_status&gt;2。\n");
 
-        Integer disId = resolveDistributerIdForDepartment(departmentId);
-        int rootDep = departmentIdAsIntOrSentinel(departmentId);
-        if (disId == null || rootDep == Integer.MIN_VALUE) {
+        int disId = scope.getDisIdForPurchaseQueries();
+        if (disId <= 0) {
             sb.append("- 无法解析批发商 ID 或部门 ID，未查询。\n\n");
             return sb.toString();
         }
-        List<Integer> depIds = resolvePurchaseDepartmentIdsForAi(rootDep);
+        List<Integer> depIds = new ArrayList<>(scope.getResolvedDepartmentIds());
         if (depIds.isEmpty()) {
             sb.append("- 无采购部门范围，未查询。\n\n");
             return sb.toString();
@@ -2082,7 +2985,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                         .isNotNull(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate)
                         .ge(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d0)
                         .le(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d1));
-        log.info("自采事实查询: departmentId={}, disId={}, depIds={}, 行数={}", departmentId, disId, depIds, rows.size());
+        log.info("自采事实查询: scopeMode={} disId={} depIds={}, 行数={}", scope.getMode(), disId, depIds, rows.size());
         sb.append("- 批发商 ID: ").append(disId).append("；采购部门 ID in ").append(depIds).append("\n");
         sb.append("- 匹配行数: ").append(rows.size()).append("\n");
 
@@ -2114,11 +3017,48 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             for (Map.Entry<Integer, BigDecimal> e : top) {
                 sb.append("  ").append(rank++).append(". ")
                         .append(goodsNameFromCache(e.getKey(), nameCache))
-                        .append(" (gb_DPG_dis_goods_id=").append(e.getKey()).append("): ¥")
+                        .append(": ¥")
                         .append(e.getValue().setScale(2, RoundingMode.HALF_UP)).append("\n");
             }
         }
-        sb.append("- 回答「自采金额」须引用本块合计；勿用全量【本月采购数据】或库存减少代替。\n\n");
+
+        Map<Integer, BigDecimal> maxPriceByGoods = new HashMap<>();
+        Map<Integer, GbDistributerPurchaseGoodsEntity> exemplarRowForMaxUnitPrice = new HashMap<>();
+        for (GbDistributerPurchaseGoodsEntity r : rows) {
+            Integer gid = r.getGbDpgDisGoodsId();
+            BigDecimal pu = parseBuyPriceNullable(r);
+            if (gid == null || pu == null) {
+                continue;
+            }
+            BigDecimal old = maxPriceByGoods.get(gid);
+            if (old == null || pu.compareTo(old) > 0) {
+                maxPriceByGoods.put(gid, pu);
+                exemplarRowForMaxUnitPrice.put(gid, r);
+            }
+        }
+        if (!maxPriceByGoods.isEmpty()) {
+            List<Map.Entry<Integer, BigDecimal>> topUnitPx = maxPriceByGoods.entrySet().stream()
+                    .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                    .limit(10)
+                    .toList();
+            sb.append("- **自采入库单价 Top（gb_DPG_buy_price；同品取本月最高价一笔；单位=主档 gb_dg_goods_standardname）**：\n");
+            Map<Integer, String> nameCachePx = new HashMap<>();
+            Map<Integer, String> pricingUnitCache = new HashMap<>();
+            int rk = 1;
+            for (Map.Entry<Integer, BigDecimal> e : topUnitPx) {
+                GbDistributerPurchaseGoodsEntity rx = exemplarRowForMaxUnitPrice.get(e.getKey());
+                sb.append("  ").append(rk++).append(". ").append(goodsNameFromCache(e.getKey(), nameCachePx))
+                        .append(" 入库单价 ");
+                appendBuyPriceWithMasterPricingUnit(sb, e.getValue().setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                        e.getKey(), rx, pricingUnitCache, null);
+                if (rx != null && StrUtil.isNotBlank(rx.getGbDpgStockFinishDate())) {
+                    sb.append("（入库完成日 ").append(rx.getGbDpgStockFinishDate()).append("）");
+                }
+                sb.append("\n");
+            }
+        }
+
+        sb.append("- 回答「自采金额 / 自采单价」须引用本块；勿用全量【本月采购数据】或库存减少代替。\n\n");
         return sb.toString();
     }
 
@@ -2126,7 +3066,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
      * 供货商未结账款：与 {@code GbDistributerPurchaseBatchController#sellerDistributerPurchaseBatchsGb} 一致，
      * 未结进货 = status {@link GbConstants.DistributorPurchaseBatchStatus#RECEIPT_FINISHED} 且非退货批次；未结退货单独扣减。
      */
-    private String querySupplierUnsettledFactsForAi(Long departmentId) {
+    private String querySupplierUnsettledFactsForAi(AiQueryScope scope) {
         StringBuilder sb = new StringBuilder();
         sb.append("【供货商未结账款（采购批次）】\n");
         sb.append("- 表：gb_distributer_purchase_batch；金额：gb_dpb_subtotal。\n");
@@ -2135,13 +3075,12 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 .append(GbConstants.PurchaseOrderType.RETURN).append("；未结退货：status=3 且 type=")
                 .append(GbConstants.PurchaseOrderType.RETURN).append("；净未结=进货小计−退货小计。\n");
 
-        Integer disId = resolveDistributerIdForDepartment(departmentId);
-        int rootDep = departmentIdAsIntOrSentinel(departmentId);
-        if (disId == null || rootDep == Integer.MIN_VALUE) {
-            sb.append("- 无法解析批发商或部门，未查询。\n\n");
+        int disId = scope.getDisIdForPurchaseQueries();
+        List<Integer> depIds = new ArrayList<>(scope.getResolvedDepartmentIds());
+        if (disId <= 0 || depIds.isEmpty()) {
+            sb.append("- 无法解析批发商或部门范围，未查询。\n\n");
             return sb.toString();
         }
-        List<Integer> depIds = resolvePurchaseDepartmentIdsForAi(rootDep);
         sb.append("- 批发商 ID: ").append(disId).append("；采购部门（gb_dpb_pur_department_id）in ").append(depIds).append("\n");
 
         List<GbDistributerPurchaseBatchEntity> normalRows = distributerPurchaseBatchMapper.selectList(
@@ -2160,8 +3099,8 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         BigDecimal unPayOrder = sumPurchaseBatchSubtotals(normalRows);
         BigDecimal unPayReturn = sumPurchaseBatchSubtotals(returnRows);
         BigDecimal net = unPayOrder.subtract(unPayReturn).setScale(2, RoundingMode.HALF_UP);
-        log.info("未结账款事实: departmentId={}, disId={}, 未结进货批次数={}, 未结退货批次数={}, net={}",
-                departmentId, disId, normalRows.size(), returnRows.size(), net);
+        log.info("未结账款事实: scopeMode={} disId={}, 未结进货批次数={}, 未结退货批次数={}, net={}",
+                scope.getMode(), disId, normalRows.size(), returnRows.size(), net);
 
         sb.append("- 未结进货批次数: ").append(normalRows.size()).append("，小计: ¥")
                 .append(unPayOrder.setScale(2, RoundingMode.HALF_UP)).append("\n");
@@ -2277,6 +3216,26 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
                 .limit(limit)
                 .forEach(e -> sb.append("  - ").append(e.getKey()).append(": ¥").append(e.getValue()).append("\n"));
+    }
+
+    /** 下钻：按分销商品 ID 聚合的金额，输出为**商品名称**（对用户勿展示数字 ID）。 */
+    private void appendTopMoneyLinesByDisGoodsNames(StringBuilder sb, String title, Map<Integer, BigDecimal> totalsByGoodsId,
+                                                  int limit) {
+        if (totalsByGoodsId == null || totalsByGoodsId.isEmpty()) {
+            return;
+        }
+        sb.append(title).append("\n");
+        Map<Integer, String> nameCache = new HashMap<>();
+        totalsByGoodsId.entrySet().stream()
+                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                .limit(limit)
+                .forEach(e -> {
+                    String label = e.getKey() != null && e.getKey() != DIS_GOODS_AGG_KEY_MISSING
+                            ? goodsNameFromCache(e.getKey(), nameCache)
+                            : "未关联商品";
+                    sb.append("  - ").append(label).append(": ¥")
+                            .append(e.getValue().setScale(2, RoundingMode.HALF_UP)).append("\n");
+                });
     }
 
     /**
@@ -2428,6 +3387,14 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 .append("；若均为 0，也请避免绝对化，可写「本统计口径下未见供货商维度记录」。\n");
     }
 
+    /**
+     * 库存减少行所扣批次是否视为供货商/配送商入库：与 {@link GbDepartmentGoodsStockReduceEntity#getGbDgsrStockNxSupplierId()} 约定一致，
+     * {@code null} 或 {@code -1} 不是配送商侧。
+     */
+    private static boolean isSupplierDeliveryStockNx(Integer gbDgsrStockNxSupplierId) {
+        return gbDgsrStockNxSupplierId != null && gbDgsrStockNxSupplierId != -1;
+    }
+
     private static String nxSupplierChannelShort(Integer nxSupplierId) {
         if (nxSupplierId == null) {
             return "nx_supplier_id 未填";
@@ -2446,9 +3413,9 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             case 1:
                 return "成本";
             case 2:
-                return "损耗";
-            case 3:
                 return "废弃";
+            case 3:
+                return "损失成本";
             case 4:
                 return "退货";
             default:
@@ -2466,12 +3433,12 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     private String loadDisGoodsName(Integer id) {
         GbDistributerGoodsEntity g = distributerGoodsMapper.selectById(id);
         if (g == null) {
-            return "分销商品(ID=" + id + ")";
+            return "未命名商品";
         }
         if (StrUtil.isNotBlank(g.getGbDgGoodsName())) {
             return g.getGbDgGoodsName();
         }
-        return "分销商品(ID=" + id + ")";
+        return "未命名商品";
     }
 
     private String deptNameFromCache(Integer id, Map<Integer, String> cache) {
@@ -2492,12 +3459,52 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         return "部门(ID=" + id + ")";
     }
 
+    private static long inclusiveDaySpan(LocalDate start, LocalDate end) {
+        if (start == null || end == null || start.isAfter(end)) {
+            return 0;
+        }
+        return start.until(end, ChronoUnit.DAYS) + 1;
+    }
+
+    private static LocalDate revenueRecordLocalDate(GbAiDailyRevenueEntity r) {
+        if (r == null || r.getGbAiDailyRevenueRecordDate() == null) {
+            return null;
+        }
+        return r.getGbAiDailyRevenueRecordDate().toInstant()
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate();
+    }
+
+    private static long distinctRevenueRecordDays(List<GbAiDailyRevenueEntity> revenues) {
+        if (revenues == null || revenues.isEmpty()) {
+            return 0;
+        }
+        return revenues.stream()
+                .map(GbAiChatServiceImpl::revenueRecordLocalDate)
+                .filter(Objects::nonNull)
+                .distinct()
+                .count();
+    }
+
+    private static String distinctRevenueDatesSortedCsv(List<GbAiDailyRevenueEntity> revenues) {
+        if (revenues == null || revenues.isEmpty()) {
+            return "";
+        }
+        return revenues.stream()
+                .map(GbAiChatServiceImpl::revenueRecordLocalDate)
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted()
+                .map(LocalDate::toString)
+                .collect(Collectors.joining(", "));
+    }
+
     /**
      * 查询营收数据
      */
     private String queryRevenueData(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
         StringBuilder sb = new StringBuilder();
-        sb.append("【本月营业额数据】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        sb.append("【营业额数据（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
 
         List<GbAiDailyRevenueEntity> revenues = dailyRevenueMapper.selectList(
                 new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
@@ -2518,15 +3525,23 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             }
 
             BigDecimal totalRevenue = totalDineIn.add(totalTakeout).subtract(totalPlatformFee);
-            int daysInMonth = LocalDate.now().getDayOfMonth();
-            double avgDaily = totalRevenue.doubleValue() / revenues.size();
+            long spanDays = inclusiveDaySpan(monthStart, monthEnd);
+            long distinctDays = distinctRevenueRecordDays(revenues);
+            double denom = distinctDays > 0 ? distinctDays : revenues.size();
+            double avgDaily = totalRevenue.doubleValue() / denom;
 
-            sb.append("- 记录天数: ").append(revenues.size()).append(" 天（共 ").append(daysInMonth).append(" 天）\n");
+            sb.append("- 区间内日历天数（首尾包含）: ").append(spanDays).append(" 天\n");
+            sb.append("- 表中有营收记录的**不同日期**数: ").append(distinctDays).append(" 天（明细行数 ").append(revenues.size()).append("）\n");
+            sb.append("- 有营业额记录的日期: ").append(distinctRevenueDatesSortedCsv(revenues)).append("\n");
+            LocalDate today = LocalDate.now();
+            if (monthStart.equals(today.withDayOfMonth(1)) && monthEnd.equals(today)) {
+                sb.append("- 说明：区间为当前自然月截至今日（本月日历已过 ").append(today.getDayOfMonth()).append(" 天）\n");
+            }
             sb.append("- 堂食营收: ¥").append(totalDineIn).append(", 外卖营收: ¥").append(totalTakeout).append("\n");
-            sb.append("- 平台抽成: ¥").append(totalPlatformFee).append(", 本月总营收: ¥").append(totalRevenue).append("\n");
-            sb.append("- 日均营收: ¥").append(String.format("%.2f", avgDaily)).append("\n\n");
+            sb.append("- 平台抽成: ¥").append(totalPlatformFee).append(", 区间总营收: ¥").append(totalRevenue).append("\n");
+            sb.append("- 日均营收（按有记录的不同日期数）: ¥").append(String.format("%.2f", avgDaily)).append("\n\n");
         } else {
-            sb.append("- 暂无本月营业额数据\n\n");
+            sb.append("- 该区间内暂无 gb_ai_daily_revenue 营业额明细\n\n");
         }
 
         return sb.toString();
@@ -2537,7 +3552,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
      */
     private String queryRevenueDataBrief(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
         StringBuilder sb = new StringBuilder();
-        sb.append("【本月营收概况】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        sb.append("【营收概况（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
 
         List<GbAiDailyRevenueEntity> revenues = dailyRevenueMapper.selectList(
                 new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
@@ -2556,15 +3571,112 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             }
 
             BigDecimal totalRevenue = totalDineIn.add(totalTakeout).subtract(totalPlatformFee);
-            int daysInMonth = LocalDate.now().getDayOfMonth();
-            double avgDaily = totalRevenue.doubleValue() / revenues.size();
+            long spanDays = inclusiveDaySpan(monthStart, monthEnd);
+            long distinctDays = distinctRevenueRecordDays(revenues);
+            double denom = distinctDays > 0 ? distinctDays : revenues.size();
+            double avgDaily = totalRevenue.doubleValue() / denom;
 
-            sb.append("- 已记录 ").append(revenues.size()).append(" 天（共 ").append(daysInMonth).append(" 天）\n");
-            sb.append("- 本月总营收: ¥").append(totalRevenue).append(", 日均: ¥").append(String.format("%.2f", avgDaily)).append("\n\n");
+            sb.append("- 区间内日历天数（首尾包含）: ").append(spanDays).append(" 天；有营收记录的**不同日期**: ").append(distinctDays).append(" 天（行数 ").append(revenues.size()).append("）\n");
+            sb.append("- 有记录的日期: ").append(distinctRevenueDatesSortedCsv(revenues)).append("\n");
+            sb.append("- 区间总营收: ¥").append(totalRevenue).append(", 日均（按不同日期）: ¥").append(String.format("%.2f", avgDaily)).append("\n\n");
         } else {
-            sb.append("- 暂无本月营业额数据\n\n");
+            sb.append("- 该区间内暂无营业额明细\n\n");
         }
 
+        return sb.toString();
+    }
+
+    private String queryRevenueData(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
+        List<Long> qids = scope.resolvedDepartmentIdsAsLong();
+        if (qids.isEmpty()) {
+            return queryRevenueData(scope.profileAnchorDepartmentId(), monthStart, monthEnd);
+        }
+        if (qids.size() == 1) {
+            return queryRevenueData(qids.get(0), monthStart, monthEnd);
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("【营业额数据（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        sb.append("- 查询范围：gb_ai_daily_revenue 部门 ID in ").append(qids).append("\n");
+        List<GbAiDailyRevenueEntity> revenues = dailyRevenueMapper.selectList(
+                new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
+                        .in(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, qids)
+                        .between(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, monthStart, monthEnd)
+                        .orderByAsc(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate));
+        log.info("营收查询(多部门): deptIds={} rows={}", qids.size(), revenues.size());
+        if (!revenues.isEmpty()) {
+            BigDecimal totalDineIn = BigDecimal.ZERO, totalTakeout = BigDecimal.ZERO, totalPlatformFee = BigDecimal.ZERO;
+            for (GbAiDailyRevenueEntity r : revenues) {
+                if (r.getGbAiDailyRevenueDineInRevenue() != null) {
+                    totalDineIn = totalDineIn.add(r.getGbAiDailyRevenueDineInRevenue());
+                }
+                if (r.getGbAiDailyRevenueTakeoutRevenue() != null) {
+                    totalTakeout = totalTakeout.add(r.getGbAiDailyRevenueTakeoutRevenue());
+                }
+                if (r.getGbAiDailyRevenuePlatformFee() != null) {
+                    totalPlatformFee = totalPlatformFee.add(r.getGbAiDailyRevenuePlatformFee());
+                }
+            }
+            BigDecimal totalRevenue = totalDineIn.add(totalTakeout).subtract(totalPlatformFee);
+            long spanDays = inclusiveDaySpan(monthStart, monthEnd);
+            long distinctDays = distinctRevenueRecordDays(revenues);
+            double denom = distinctDays > 0 ? distinctDays : revenues.size();
+            double avgDaily = totalRevenue.doubleValue() / denom;
+            sb.append("- 区间内日历天数（首尾包含）: ").append(spanDays).append(" 天\n");
+            sb.append("- 表中有营收记录的**不同日期**数: ").append(distinctDays).append(" 天（明细行数 ").append(revenues.size()).append("；多部门同日可能多行）\n");
+            sb.append("- 有营业额记录的日期: ").append(distinctRevenueDatesSortedCsv(revenues)).append("\n");
+            LocalDate today = LocalDate.now();
+            if (monthStart.equals(today.withDayOfMonth(1)) && monthEnd.equals(today)) {
+                sb.append("- 说明：区间为当前自然月截至今日（本月日历已过 ").append(today.getDayOfMonth()).append(" 天）\n");
+            }
+            sb.append("- 堂食营收: ¥").append(totalDineIn).append(", 外卖营收: ¥").append(totalTakeout).append("\n");
+            sb.append("- 平台抽成: ¥").append(totalPlatformFee).append(", 区间总营收: ¥").append(totalRevenue).append("\n");
+            sb.append("- 日均营收（按有记录的不同日期数）: ¥").append(String.format("%.2f", avgDaily)).append("\n\n");
+        } else {
+            sb.append("- 该区间内暂无 gb_ai_daily_revenue 营业额明细\n\n");
+        }
+        return sb.toString();
+    }
+
+    private String queryRevenueDataBrief(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
+        List<Long> qids = scope.resolvedDepartmentIdsAsLong();
+        if (qids.isEmpty()) {
+            return queryRevenueDataBrief(scope.profileAnchorDepartmentId(), monthStart, monthEnd);
+        }
+        if (qids.size() == 1) {
+            return queryRevenueDataBrief(qids.get(0), monthStart, monthEnd);
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("【营收概况（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        sb.append("- 查询范围：部门 ID in ").append(qids).append("\n");
+        List<GbAiDailyRevenueEntity> revenues = dailyRevenueMapper.selectList(
+                new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
+                        .in(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, qids)
+                        .between(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, monthStart, monthEnd)
+                        .orderByAsc(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate));
+        if (!revenues.isEmpty()) {
+            BigDecimal totalDineIn = BigDecimal.ZERO, totalTakeout = BigDecimal.ZERO, totalPlatformFee = BigDecimal.ZERO;
+            for (GbAiDailyRevenueEntity r : revenues) {
+                if (r.getGbAiDailyRevenueDineInRevenue() != null) {
+                    totalDineIn = totalDineIn.add(r.getGbAiDailyRevenueDineInRevenue());
+                }
+                if (r.getGbAiDailyRevenueTakeoutRevenue() != null) {
+                    totalTakeout = totalTakeout.add(r.getGbAiDailyRevenueTakeoutRevenue());
+                }
+                if (r.getGbAiDailyRevenuePlatformFee() != null) {
+                    totalPlatformFee = totalPlatformFee.add(r.getGbAiDailyRevenuePlatformFee());
+                }
+            }
+            BigDecimal totalRevenue = totalDineIn.add(totalTakeout).subtract(totalPlatformFee);
+            long spanDays = inclusiveDaySpan(monthStart, monthEnd);
+            long distinctDays = distinctRevenueRecordDays(revenues);
+            double denom = distinctDays > 0 ? distinctDays : revenues.size();
+            double avgDaily = totalRevenue.doubleValue() / denom;
+            sb.append("- 区间内日历天数（首尾包含）: ").append(spanDays).append(" 天；有营收记录的**不同日期**: ").append(distinctDays).append(" 天（行数 ").append(revenues.size()).append("）\n");
+            sb.append("- 有记录的日期: ").append(distinctRevenueDatesSortedCsv(revenues)).append("\n");
+            sb.append("- 区间总营收: ¥").append(totalRevenue).append(", 日均（按不同日期）: ¥").append(String.format("%.2f", avgDaily)).append("\n\n");
+        } else {
+            sb.append("- 该区间内暂无营业额明细\n\n");
+        }
         return sb.toString();
     }
 
@@ -2606,6 +3718,13 @@ public class GbAiChatServiceImpl implements GbAiChatService {
 
     /**
      * 按 gb_dep_food_sales 聚合同月菜品销量（份），供热销类问题核对。
+     */
+    private String queryDishSalesFacts(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
+        return buildDishSalesFactsWithRecital(scope, monthStart, monthEnd).markdown();
+    }
+
+    /**
+     * 单部门父 ID（兼容旧调用链）。
      */
     private String queryDishSalesFacts(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
         return buildDishSalesFactsWithRecital(departmentId, monthStart, monthEnd).markdown();
@@ -2943,9 +4062,75 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         }
     }
 
+    private DishSalesBuilt buildDishSalesFactsWithRecital(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
+        List<Integer> ids = scope.getResolvedDepartmentIds();
+        if (ids.isEmpty()) {
+            return buildDishSalesFactsWithRecital(scope.profileAnchorDepartmentId(), monthStart, monthEnd);
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("【菜品销量聚合】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        sb.append("- 数据来源: gb_dep_food_sales.gb_dfs_amount 按份累加；部门匹配 gb_dfs_dep_id 或 gb_dfs_dep_father_id ∈ 展开部门\n");
+        List<GbDepFoodSalesEntity> rows = depFoodSalesMapper.selectList(
+                new LambdaQueryWrapper<GbDepFoodSalesEntity>()
+                        .and(w -> w.in(GbDepFoodSalesEntity::getGbDfsDepId, ids)
+                                .or()
+                                .in(GbDepFoodSalesEntity::getGbDfsDepFatherId, ids))
+                        .between(GbDepFoodSalesEntity::getGbDfsFullDate, monthStart.toString(), monthEnd.toString())
+        );
+        sb.append("- 匹配行数: ").append(rows.size()).append("\n");
+        if (rows.isEmpty()) {
+            sb.append("- 暂无菜品销量明细（可能未导入或未写入 gb_dep_food_sales）。\n");
+            return new DishSalesBuilt(sb.toString(), Optional.empty());
+        }
+        Map<Integer, BigDecimal> qtyByFood = new HashMap<>();
+        for (GbDepFoodSalesEntity r : rows) {
+            if (r.getGbDfsFoodId() == null || StrUtil.isBlank(r.getGbDfsAmount())) {
+                continue;
+            }
+            try {
+                BigDecimal q = new BigDecimal(r.getGbDfsAmount().trim());
+                if (q.compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                qtyByFood.merge(r.getGbDfsFoodId(), q, BigDecimal::add);
+            } catch (NumberFormatException ignored) {
+                // skip
+            }
+        }
+        if (qtyByFood.isEmpty()) {
+            sb.append("- 有记录但可解析的有效销量为 0。\n");
+            return new DishSalesBuilt(sb.toString(), Optional.empty());
+        }
+        List<Map.Entry<Integer, BigDecimal>> sorted = new ArrayList<>(qtyByFood.entrySet());
+        sorted.sort((a, b) -> b.getValue().compareTo(a.getValue()));
+        sb.append("- Top 菜品（按份，最多 15）：\n");
+        int n = 0;
+        for (Map.Entry<Integer, BigDecimal> e : sorted) {
+            if (n >= 15) {
+                break;
+            }
+            String name = resolveFoodNameForAi(e.getKey());
+            sb.append("  - ").append(name).append("（菜品 ID ").append(e.getKey()).append("）：共 ")
+                    .append(e.getValue().stripTrailingZeros().toPlainString()).append(" 份\n");
+            n++;
+        }
+        Map.Entry<Integer, BigDecimal> top = sorted.get(0);
+        String topName = resolveFoodNameForAi(top.getKey());
+        String topQty = top.getValue().stripTrailingZeros().toPlainString();
+        String secondName = "";
+        String secondQty = "";
+        if (sorted.size() > 1) {
+            Map.Entry<Integer, BigDecimal> s = sorted.get(1);
+            secondName = resolveFoodNameForAi(s.getKey());
+            secondQty = s.getValue().stripTrailingZeros().toPlainString();
+        }
+        DishSalesRecital recital = new DishSalesRecital(rows.size(), topName, topQty, secondName, secondQty);
+        return new DishSalesBuilt(sb.toString(), Optional.of(recital));
+    }
+
     private DishSalesBuilt buildDishSalesFactsWithRecital(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
         StringBuilder sb = new StringBuilder();
-        sb.append("【本月菜品销量聚合】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        sb.append("【菜品销量聚合】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
         sb.append("- 数据来源: gb_dep_food_sales.gb_dfs_amount 按份累加；部门匹配 gb_dfs_dep_id 或 gb_dfs_dep_father_id\n");
         int dep = departmentIdAsIntOrSentinel(departmentId);
         if (dep == Integer.MIN_VALUE) {
@@ -3107,6 +4292,11 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         return "";
     }
 
+    /** 加载主对话用数据字段词典（与 Skill 同源从 classpath 读取）。 */
+    private String loadDataFieldLexicon() {
+        return StrUtil.nullToEmpty(loadSkillFile(DATA_FIELD_LEXICON_FILE));
+    }
+
     /**
      * 保存消息
      */
@@ -3132,6 +4322,10 @@ public class GbAiChatServiceImpl implements GbAiChatService {
      */
     private void extractUserDataFromReply(String reply, Long departmentId) {
         if (StrUtil.isBlank(reply)) return;
+        if (departmentId == null) {
+            log.debug("无画像锚点部门，跳过从 AI 回复提取用户数据");
+            return;
+        }
 
         try {
             // 尝试从 JSON 格式中提取数据
@@ -3266,7 +4460,8 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     /**
      * 主回复：剥离 skill_handoff 后算用户可见正文；若模型声明移交则再拉补充事实并调用第二轮修订。
      */
-    private String assistantUserVisibleAfterOptionalHandoff(String rawMain, String userMessage, Long departmentId) {
+    private String assistantUserVisibleAfterOptionalHandoff(String rawMain, String userMessage, AiQueryScope scope,
+                                                            SkillSelectionResult skillSelection, Long userId) {
         String cleanedMain = SkillHandoffParser.stripAllSkillHandoffFences(rawMain);
         Optional<SkillHandoffPayload> ho = SkillHandoffParser.parseLastSkillHandoff(rawMain);
         if (ho.isEmpty()) {
@@ -3275,7 +4470,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         log.info("[AI-CHAT][handoff] toSkill={} reasonPreview={}", ho.get().toSkill(),
                 abbreviateForLog(ho.get().reason(), 200));
         String firstVisible = stripAssistantUserVisibleTail(cleanedMain);
-        HandoffFactPayload factPayload = buildHandoffFactPayload(ho.get(), departmentId);
+        HandoffFactPayload factPayload = buildHandoffFactPayload(ho.get(), scope, skillSelection, userId);
         String facts = factPayload.markdown();
         List<Map<String, String>> revisionMessages = buildHandoffRevisionMessages(
                 userMessage, firstVisible, facts, ho.get(), factPayload.dishRecital());
@@ -3284,41 +4479,44 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             return firstVisible;
         }
         String cleaned2 = SkillHandoffParser.stripAllSkillHandoffFences(raw2);
-        extractUserDataFromReply(cleaned2, departmentId);
+        extractUserDataFromReply(cleaned2, scope.profileAnchorDepartmentId());
         String visible2 = stripAssistantUserVisibleTail(cleaned2);
         return enforceDishSalesHandoffVisible(visible2, ho.get().toSkill(), factPayload.dishRecital());
     }
 
     private record HandoffFactPayload(String markdown, Optional<DishSalesRecital> dishRecital) {}
 
-    private HandoffFactPayload buildHandoffFactPayload(SkillHandoffPayload ho, Long departmentId) {
+    private HandoffFactPayload buildHandoffFactPayload(SkillHandoffPayload ho, AiQueryScope scope,
+                                                      SkillSelectionResult skillSelection, Long userId) {
         LocalDate now = LocalDate.now();
         LocalDate monthStart = now.withDayOfMonth(1);
         LocalDate monthEnd = now;
+        Long anchor = scope.profileAnchorDepartmentId();
+        List<String> hoMetricIds = skillSelection != null ? skillSelection.suggestedMetricIds() : List.of();
         return switch (ho.toSkill()) {
-            case "cost" -> new HandoffFactPayload(buildHandoffCostFacts(departmentId, monthStart, monthEnd), Optional.empty());
-            case "revenue" -> new HandoffFactPayload(queryRevenueData(departmentId, monthStart, monthEnd), Optional.empty());
-            case "data_extractor" -> new HandoffFactPayload(queryRevenueDataBrief(departmentId, monthStart, monthEnd), Optional.empty());
+            case "cost" -> new HandoffFactPayload(buildHandoffCostFacts(scope, monthStart, monthEnd), Optional.empty());
+            case "revenue" -> new HandoffFactPayload(queryRevenueData(scope, monthStart, monthEnd), Optional.empty());
+            case "data_extractor" -> new HandoffFactPayload(queryRevenueDataBrief(scope, monthStart, monthEnd), Optional.empty());
             case "dish_sales" -> {
-                DishSalesBuilt b = buildDishSalesFactsWithRecital(departmentId, monthStart, monthEnd);
-                String md = b.markdown() + "\n" + queryRevenueDataBrief(departmentId, monthStart, monthEnd);
+                DishSalesBuilt b = buildDishSalesFactsWithRecital(scope, monthStart, monthEnd);
+                String md = b.markdown() + "\n" + queryRevenueDataBrief(scope, monthStart, monthEnd);
                 yield new HandoffFactPayload(md, b.recital());
             }
             case "dish_cost" -> new HandoffFactPayload(
-                    queryDishSalesFacts(departmentId, monthStart, monthEnd)
-                            + "\n" + queryDishCostAnalysisFactsForAi(departmentId, monthStart, monthEnd),
+                    queryDishSalesFacts(scope, monthStart, monthEnd)
+                            + "\n" + queryDishCostAnalysisFactsForAi(anchor, monthStart, monthEnd),
                     Optional.empty());
             case "procurement" -> new HandoffFactPayload(
-                    queryPurchaseGoodsFactsForAi(departmentId, monthStart, monthEnd)
-                            + querySelfPurchaseGoodsFactsForAi(departmentId, monthStart, monthEnd)
-                            + querySupplierUnsettledFactsForAi(departmentId),
+                    queryPurchaseGoodsFactsForAi(scope, monthStart, monthEnd, hoMetricIds, userId, null)
+                            + querySelfPurchaseGoodsFactsForAi(scope, monthStart, monthEnd)
+                            + querySupplierUnsettledFactsForAi(scope),
                     Optional.empty());
             case "profit_pilot" -> new HandoffFactPayload(
-                    queryRevenueData(departmentId, monthStart, monthEnd)
-                            + queryCostData(departmentId, monthStart, monthEnd, "overview", "")
-                            + queryDishSalesFacts(departmentId, monthStart, monthEnd),
+                    queryRevenueData(scope, monthStart, monthEnd)
+                            + queryCostData(scope, monthStart, monthEnd, "overview", "")
+                            + queryDishSalesFacts(scope, monthStart, monthEnd),
                     Optional.empty());
-            default -> new HandoffFactPayload(queryRevenueDataBrief(departmentId, monthStart, monthEnd), Optional.empty());
+            default -> new HandoffFactPayload(queryRevenueDataBrief(scope, monthStart, monthEnd), Optional.empty());
         };
     }
 
@@ -3360,23 +4558,100 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         return m;
     }
 
-    private String buildHandoffCostFacts(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
-        GbAiRestaurantProfileEntity profile = restaurantProfileMapper.selectOne(
-                new LambdaQueryWrapper<GbAiRestaurantProfileEntity>()
-                        .eq(GbAiRestaurantProfileEntity::getGbAiRestaurantProfileDepartmentId, departmentId));
+    private String buildHandoffCostFacts(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
+        Long anchor = scope.profileAnchorDepartmentId();
+        GbAiRestaurantProfileEntity profile = null;
+        if (anchor != null) {
+            profile = restaurantProfileMapper.selectOne(
+                    new LambdaQueryWrapper<GbAiRestaurantProfileEntity>()
+                            .eq(GbAiRestaurantProfileEntity::getGbAiRestaurantProfileDepartmentId, anchor));
+        }
         if (!hasAllBasicFixedCosts(profile)) {
             return "【移交补充】门店档案中月租金/月工资/月其它固定成本未齐备，无法拉取完整成本与库存对照流水；请提示用户补齐三项后再做细拆。\n";
         }
         StringBuilder sb = new StringBuilder();
-        sb.append(queryRevenueData(departmentId, monthStart, monthEnd));
-        sb.append(queryCostData(departmentId, monthStart, monthEnd, null, ""));
+        sb.append(queryRevenueData(scope, monthStart, monthEnd));
+        sb.append(queryCostData(scope, monthStart, monthEnd, null, ""));
         return sb.toString();
     }
 
     // ========== DeepSeek API 调用 ==========
 
     /**
-     * 去掉仅用于服务端解析、不宜展示给终端用户的内容：「数据完整性」声明块、末尾 ```json 数据提取块。
+     * 流式过程中若最后一个 {@literal ```json} 代码块尚未闭合，则暂不把该 fence 及之后内容算入用户可见区，避免 skill_handoff 等漏到端上。
+     */
+    private static String holdBackIncompleteTrailingJsonFence(String raw) {
+        if (StrUtil.isBlank(raw)) {
+            return raw;
+        }
+        int fence = raw.lastIndexOf("```json");
+        if (fence < 0) {
+            return raw;
+        }
+        int innerStart = fence + 7;
+        int close = raw.indexOf("```", innerStart);
+        if (close > innerStart) {
+            return raw;
+        }
+        return raw.substring(0, fence);
+    }
+
+    /** 与 {@link #stripAssistantUserVisibleTail} 一致，但先对未闭合的 json 代码 fence 做 hold-back，供 SSE 增量下发。 */
+    private String streamingUserVisiblePreview(String accumulatedRaw) {
+        if (StrUtil.isBlank(accumulatedRaw)) {
+            return "";
+        }
+        String staged = holdBackIncompleteTrailingJsonFence(accumulatedRaw);
+        String stripped = SkillHandoffParser.stripAllSkillHandoffFences(staged);
+        return stripAssistantUserVisibleTail(stripped);
+    }
+
+    /**
+     * SSE：下发用户可见增量。多数场景追加 {@code delta}；若可见串因剔除块变为非前缀延伸（如「数据完整性」截断），则发 {@code message} 整段替换。
+     *
+     * @param sseDeltaEvents     统计本连接发出的 delta 次数
+     * @param sseMessageEvents   统计 message（整段替换）次数
+     * @param workerStartNanos   后台线程起点，用于首包耗时
+     * @param loggedFirstSseEmit 是否已打 {@code sse_time_to_first_emit_ms}
+     */
+    private void sendVisibleStreamingDelta(SseEmitter emitter, StringBuilder clientEmitted, String newFullVisible,
+            long conversationId, AtomicInteger sseDeltaEvents, AtomicInteger sseMessageEvents,
+            long workerStartNanos, AtomicBoolean loggedFirstSseEmit) throws IOException {
+        if (newFullVisible == null) {
+            newFullVisible = "";
+        }
+        String cur = clientEmitted.toString();
+        if (newFullVisible.startsWith(cur)) {
+            if (newFullVisible.length() > cur.length()) {
+                String delta = newFullVisible.substring(cur.length());
+                if (loggedFirstSseEmit.compareAndSet(false, true)) {
+                    log.info("[AI-CHAT][timing] conversationId={} phase=sse_time_to_first_emit_ms={}",
+                            conversationId, timingMs(workerStartNanos));
+                }
+                emitter.send(SseEmitter.event().name("delta").data(delta));
+                clientEmitted.append(delta);
+                int n = sseDeltaEvents.incrementAndGet();
+                // 控制台/文件须为 UTF-8；此处打印的是 Java 正确 Unicode，若日志里仍乱码则是 IDE/终端编码问题。
+                log.debug("[AI-CHAT][sse-out] conversationId={} event=delta idx={} addChars={} clientTotalChars={} snippet={}",
+                        conversationId, n, delta.length(), clientEmitted.length(), abbreviateForLog(delta, 120));
+            }
+        } else {
+            if (loggedFirstSseEmit.compareAndSet(false, true)) {
+                log.info("[AI-CHAT][timing] conversationId={} phase=sse_time_to_first_emit_ms={}",
+                        conversationId, timingMs(workerStartNanos));
+            }
+            emitter.send(SseEmitter.event().name("message").data(newFullVisible));
+            clientEmitted.setLength(0);
+            clientEmitted.append(newFullVisible);
+            int n = sseMessageEvents.incrementAndGet();
+            log.info("[AI-CHAT][sse-out] conversationId={} event=message idx={} replaceChars={} utf8Bytes={} preview={}",
+                    conversationId, n, newFullVisible.length(), newFullVisible.getBytes(StandardCharsets.UTF_8).length,
+                    abbreviateForLog(newFullVisible, 400));
+        }
+    }
+
+    /**
+     * 去掉仅用于服务端解析、不宜展示给终端用户的内容：「数据完整性」声明块、末尾 json 代码块。
      * 注意：{@link #extractUserDataFromReply} 必须在截断前使用原始全文调用。
      */
     private String stripAssistantUserVisibleTail(String raw) {
@@ -3419,6 +4694,11 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             return text;
         }
         return text.substring(0, maxChars) + "...[截断,总长度=" + text.length() + "]";
+    }
+
+    /** 阶段耗时（毫秒），与 {@link System#nanoTime()} 配对使用。 */
+    private static long timingMs(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000L;
     }
 
     /**
@@ -3514,12 +4794,18 @@ public class GbAiChatServiceImpl implements GbAiChatService {
      * 调用 DeepSeek API（流式 SSE）
      */
     private void callDeepSeekSSE(List<Map<String, String>> messages, SseEmitter emitter,
-                                 Long conversationId, Long userId, GbAiConversationEntity conv, Long departmentId,
-                                 String userMessage) {
+                                 Long conversationId, Long userId, GbAiConversationEntity conv, AiQueryScope scope,
+                                 String userMessage, SkillSelectionResult skillSelection) {
         new Thread(() -> {
             StringBuilder fullReply = new StringBuilder();
+            StringBuilder clientEmitted = new StringBuilder();
+            AtomicInteger sseDeltaEvents = new AtomicInteger();
+            AtomicInteger sseMessageEvents = new AtomicInteger();
 
             try {
+                long workerStart = System.nanoTime();
+                AtomicBoolean loggedFirstSseEmit = new AtomicBoolean();
+
                 log.info("[AI-CHAT][DeepSeek] trace=sse step=http_begin phase=sse-main-reply conversationId={}", conversationId);
                 logDeepSeekRequestPayload("sse-main-reply", messages);
 
@@ -3538,6 +4824,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                         .post(RequestBody.create(body.toString(), MediaType.parse("application/json; charset=utf-8")))
                         .build();
 
+                long tStream = System.nanoTime();
                 try (Response response = httpClient.newCall(request).execute()) {
                     log.info("[AI-CHAT][DeepSeek] trace=sse phase=sse-main-reply conversationId={} httpStatus={}",
                             conversationId, response.code());
@@ -3569,12 +4856,14 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                                 JSONArray choices = chunk.getJSONArray("choices");
 
                                 if (choices != null && !choices.isEmpty()) {
-                                    JSONObject delta = choices.getJSONObject(0).getJSONObject("delta");
-                                    if (delta != null) {
-                                        String content = delta.getStr("content", "");
+                                    JSONObject deltaObj = choices.getJSONObject(0).getJSONObject("delta");
+                                    if (deltaObj != null) {
+                                        String content = deltaObj.getStr("content", "");
                                         if (StrUtil.isNotEmpty(content)) {
                                             fullReply.append(content);
-                                            // 不在流式过程中下发正文，避免把末尾 JSON/数据完整性块发给客户端；结束后统一发剥离版
+                                            sendVisibleStreamingDelta(emitter, clientEmitted,
+                                                    streamingUserVisiblePreview(fullReply.toString()), conversationId,
+                                                    sseDeltaEvents, sseMessageEvents, workerStart, loggedFirstSseEmit);
                                         }
                                     }
                                 }
@@ -3584,19 +4873,50 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                         }
                     }
 
-                    // 完整回复：先解析 JSON（原始），再剥离后一次下发 SSE 并落库
+                    log.info("[AI-CHAT][timing] conversationId={} phase=sse_deepseek_main_stream_http_read_ms={}",
+                            conversationId, timingMs(tStream));
+
+                    // 流结束后再刷一次（闭合 fence 后可能还有可见尾段）
+                    sendVisibleStreamingDelta(emitter, clientEmitted, streamingUserVisiblePreview(fullReply.toString()),
+                            conversationId, sseDeltaEvents, sseMessageEvents, workerStart, loggedFirstSseEmit);
+
                     String replyRaw = fullReply.toString();
                     log.info("[AI-CHAT][DeepSeek] trace=sse phase=sse-main-reply conversationId={} aggregatedChars={}",
                             conversationId, replyRaw.length());
                     logDeepSeekResponsePayload("sse-main-reply", replyRaw);
 
                     String forProfile = SkillHandoffParser.stripAllSkillHandoffFences(replyRaw);
-                    extractUserDataFromReply(forProfile, departmentId);
-                    String replyVisible = assistantUserVisibleAfterOptionalHandoff(replyRaw, userMessage, departmentId);
-                    if (StrUtil.isNotEmpty(replyVisible)) {
-                        emitter.send(SseEmitter.event().name("message").data(replyVisible));
+                    extractUserDataFromReply(forProfile, scope.profileAnchorDepartmentId());
+                    long tHandoff = System.nanoTime();
+                    String replyVisible = assistantUserVisibleAfterOptionalHandoff(replyRaw, userMessage, scope,
+                            skillSelection, userId);
+                    log.info("[AI-CHAT][timing] conversationId={} phase=sse_handoff_and_visible_reconcile_ms={}",
+                            conversationId, timingMs(tHandoff));
+                    if (replyVisible == null) {
+                        replyVisible = "";
+                    }
+                    // handoff 二轮修订等与首轮流式拼接不一致时，用 message 整段替换
+                    if (!replyVisible.contentEquals(clientEmitted.toString())) {
+                        if (StrUtil.isNotEmpty(replyVisible)) {
+                            if (loggedFirstSseEmit.compareAndSet(false, true)) {
+                                log.info("[AI-CHAT][timing] conversationId={} phase=sse_time_to_first_emit_ms={}",
+                                        conversationId, timingMs(workerStart));
+                            }
+                            emitter.send(SseEmitter.event().name("message").data(replyVisible));
+                            clientEmitted.setLength(0);
+                            clientEmitted.append(replyVisible);
+                            int n = sseMessageEvents.incrementAndGet();
+                            log.info("[AI-CHAT][sse-out] conversationId={} event=message idx={} reason=final_reconcile replaceChars={} utf8Bytes={} preview={}",
+                                    conversationId, n, replyVisible.length(), replyVisible.getBytes(StandardCharsets.UTF_8).length,
+                                    abbreviateForLog(replyVisible, 400));
+                        }
                     }
 
+                    log.info("[AI-CHAT][sse-out] conversationId={} step=sse_emit_summary deltaEvents={} messageEvents={} finalVisibleChars={} preview={}",
+                            conversationId, sseDeltaEvents.get(), sseMessageEvents.get(), clientEmitted.length(),
+                            abbreviateForLog(clientEmitted.toString(), 320));
+
+                    long tPersist = System.nanoTime();
                     if (StrUtil.isNotEmpty(replyVisible)) {
                         saveMessage(conversationId, userId, conv.getGbAiConversationType(), "assistant", replyVisible);
                         conv.setGbAiConversationUpdateTime(new Date());
@@ -3607,8 +4927,17 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                         conversationMapper.updateById(conv);
                     }
 
+                    memoryService.extractMemories(conversationId, scope.profileAnchorDepartmentId(), userId,
+                            conv.getGbAiConversationType());
+
+                    log.info("[AI-CHAT][timing] conversationId={} phase=sse_persist_assistant_and_memory_ms={}",
+                            conversationId, timingMs(tPersist));
+
                     emitter.send(SseEmitter.event().name("done").data("[DONE]"));
                     emitter.complete();
+
+                    log.info("[AI-CHAT][timing] conversationId={} phase=sse_worker_thread_total_ms={} (deepseek_stream+handoff+persist+done)",
+                            conversationId, timingMs(workerStart));
 
                 } catch (Exception e) {
                     log.error("SSE 处理异常: {}", e.getMessage(), e);

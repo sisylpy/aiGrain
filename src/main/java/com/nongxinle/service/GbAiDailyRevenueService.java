@@ -25,8 +25,12 @@ public interface GbAiDailyRevenueService extends IService<GbAiDailyRevenueEntity
 
 	/**
 	 * 获取营业额统计数据
+	 *
+	 * @param departmentFatherId 父部门/餐厅 ID（与核销 gb_dgsr_gb_department_father_id 一致）
+	 * @param startDate          可选，yyyy-MM-dd
+	 * @param endDate            可选，yyyy-MM-dd
 	 */
-	Map<String, Object> getStatsByDepartmentId(Long departmentId);
+	Map<String, Object> getStatsByDepartmentId(Long departmentFatherId, String startDate, String endDate);
 
 	/**
 	 * 列表接口：查询并组装 chartData + dailyList；无数据时返回 {@code null}。
@@ -50,11 +54,25 @@ public interface GbAiDailyRevenueService extends IService<GbAiDailyRevenueEntity
 	void upsertDineInRevenueOnly(Long departmentId, Long distributerId, Date recordDate, BigDecimal dineInRevenue);
 
 	/**
+	 * 合并非堂食相关指标：堂食订单/顾客数、外卖营业额/订单数、平台抽成、备注。
+	 * 不修改堂食营业额；{@code null} 的字段表示不覆盖库中已有值。
+	 */
+	void mergeNonDineInDailyRevenueMetrics(Long departmentId, Long distributerId, Date recordDate,
+			Integer dineInOrders, Integer dineInCustomers, BigDecimal takeoutRevenue,
+			Integer takeoutOrders, BigDecimal platformFee, String notes);
+
+	/**
 	 * 日营业额 Excel 批量导入（解析 + 校验 + 按日 upsert）。
 	 *
 	 * @return 含 total、inserted、updated、errors、errorMessages
 	 */
 	Map<String, Object> importDailyRevenueFromExcel(MultipartFile file, Long departmentId, Long distributerId)
+			throws IOException;
+
+	/**
+	 * 合并 Excel：先导入「菜品日销售」Sheet 并汇总堂食，再合并「日营业额」Sheet（无堂食/当日营业额列）的外卖等指标。
+	 */
+	Map<String, Object> importCombinedDailyRevenueAndFoodFromExcel(MultipartFile file, Long departmentId, Long distributerId)
 			throws IOException;
 
 }

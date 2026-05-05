@@ -46,6 +46,7 @@ public class GbDepartmentDisGoodsController {
         Map<String, Object> map = new HashMap<>();
         map.put("disId", disId);
         map.put("supplierId", supplierId);
+        System.out.println("amappaaappa" + map);
 
         // 1. 获取总数
         List<Integer > disGoodsIds =   gbDepartmentDisGoodsService.queryOnlyDisGoodsIds(map);
@@ -57,16 +58,14 @@ public class GbDepartmentDisGoodsController {
         map.put("offset", (page - 1) * limit);
         log.info("查询参数: limit={}, offset={}", limit, (page - 1) * limit);
         log.info("map查询: {}", map);
-        TreeSet<GbDistributerGoodsEntity> currentPageSet = gbDepartmentDisGoodsService.disQueryDisGoodsWithOrderForAiTree(map);
-        log.info("当前页数据量Tree: {}", currentPageSet.size());
+        List<GbDistributerGoodsEntity> currentPageList = gbDepartmentDisGoodsService.disQueryDisGoodsWithOrderForAiTree(map);
+        log.info("当前页数据量: {}", currentPageList.size());
 
         // 4. 处理每个商品的提示文本
-//        for(GbDistributerGoodsEntity distributerGoodsEntity: currentPageSet){
+//        for(GbDistributerGoodsEntity distributerGoodsEntity: currentPageList){
 //            gbDistributerGoodsService.getStockTotal(distributerGoodsEntity);
 //        }
-        log.info("最终返回数据量: {}", currentPageSet.size());
-        // 5. 返回分页数据
-        List<GbDistributerGoodsEntity> currentPageList = new ArrayList<>(currentPageSet);
+        log.info("最终返回数据量: {}", currentPageList.size());
 
         // 3. 返回分页数据
        Map<String, Object> pageMap = new HashMap<>();
@@ -264,15 +263,15 @@ public class GbDepartmentDisGoodsController {
         // 2. 获取当前页数据
         map.put("limit", limit);
         map.put("offset", (page - 1) * limit);
-        TreeSet<GbDistributerGoodsEntity> currentPageSet = gbDepartmentDisGoodsService.disQueryDisGoodsWithOrderForAiTree(map);
-        
+        List<GbDistributerGoodsEntity> currentPageList = gbDepartmentDisGoodsService.disQueryDisGoodsWithOrderForAiTree(map);
+
         // 3. 返回分页数据
         Map<String, Object> pageMap = new HashMap<>();
         pageMap.put("totalCount", total);
         pageMap.put("pageSize", limit);
         pageMap.put("totalPage", (total + limit - 1) / limit);
         pageMap.put("currPage", page);
-        pageMap.put("list", currentPageSet);
+        pageMap.put("list", currentPageList);
         
         return R.ok().put("page", pageMap);
     }

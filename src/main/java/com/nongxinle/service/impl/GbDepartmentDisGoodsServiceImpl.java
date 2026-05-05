@@ -122,7 +122,7 @@ public class GbDepartmentDisGoodsServiceImpl extends ServiceImpl<GbDepartmentDis
     }
 
     @Override
-    public TreeSet<GbDistributerGoodsEntity> disQueryDisGoodsWithOrderForAiTree(Map<String, Object> map) {
+    public List<GbDistributerGoodsEntity> disQueryDisGoodsWithOrderForAiTree(Map<String, Object> map) {
         return baseMapper.disQueryDisGoodsWithOrderForAiTree(map);
     }
 

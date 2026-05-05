@@ -12,9 +12,12 @@ public interface GbAiDailyRevenueDashboardService {
     /**
      * 构建 /stats 接口完整 data（含 dashboard、stats、profile）。
      *
-     * @param departmentId 部门/餐厅 ID
-     * @param profile      已加载的餐厅画像
-     * @param stats        {@link GbAiDailyRevenueService#getStatsByDepartmentId(Long)} 的原始结果
+     * @param departmentFatherId 父部门/餐厅 ID（与日营收 department_id、核销 father_id 一致）
+     * @param profile            已加载的餐厅画像
+     * @param stats              {@link GbAiDailyRevenueService#getStatsByDepartmentId(Long, String, String)} 的原始结果
+     * @param startDate          可选，与统计查询一致的 yyyy-MM-dd
+     * @param endDate            可选
      */
-    Map<String, Object> buildStatsDashboard(Long departmentId, GbAiRestaurantProfileEntity profile, Map<String, Object> stats);
+    Map<String, Object> buildStatsDashboard(Long departmentFatherId, GbAiRestaurantProfileEntity profile,
+                                          Map<String, Object> stats, String startDate, String endDate);
 }

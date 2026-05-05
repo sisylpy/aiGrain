@@ -28,6 +28,11 @@ public class GbDepartmentOrdersServiceImpl extends ServiceImpl<GbDepartmentOrder
     }
 
     @Override
+    public List<String> queryDisGoodsDistinctArriveDates(Map<String, Object> map) {
+        return gbDepartmentOrdersMapper.queryDisGoodsDistinctArriveDates(map);
+    }
+
+    @Override
     public List<GbDepartmentOrdersEntity> queryApplyAiFatherOrders(Integer depId) {
         return gbDepartmentOrdersMapper.queryApplyAiFatherOrders(depId);
     }

@@ -70,4 +70,10 @@ public class NxJrdhSupplierEntity implements Serializable {
      */
     @TableField(exist = false)
     private GbDistributerEntity gbDistributerEntity;
+
+    /**
+     * 供货商用户（非数据库字段）
+     */
+    @TableField(exist = false)
+    private NxJrdhUserEntity jrdhUserEntity;
 }

@@ -184,7 +184,7 @@
         <result property="gbDgsSellingPrice" column="gb_dgs_selling_price"/>
         <result property="gbDgsSellingSubtotal" column="gb_dgs_selling_subtotal"/>
         <result property="gbDgsGbDistributerId" column="gb_dgs_gb_distributer_id"/>
-        <result property="gbDgsNxDistributerId" column="gb_dgs_nx_distributer_id"/>
+        <result property="gbDgsNxSupplierId" column="gb_dgs_nx_supplier_id"/>
         <result property="gbDgsGbDisGoodsFatherId" column="gb_dgs_gb_dis_goods_father_id"/>
         <result property="gbDgsGbDisGoodsGrandId" column="gb_dgs_gb_dis_goods_grand_id"/>
         <result property="gbDgsGbDisGoodsGreatId" column="gb_dgs_gb_dis_goods_great_id"/>
@@ -239,110 +239,313 @@
 
     <!-- disGetDepDisGoodsCataGb: 获取部门商品分类（二级嵌套结构） -->
     <!-- 老项目结构：great-grand (gg/一级分类) -> grand (g/二级分类) -> 部门商品 -->
+    <!-- 仅批发商 disId、无部门范围时：合并「gb_department_dis_goods 已关联」与「仅有配送商品、全局无部门关联」 -->
     <select id="disGetDepDisGoodsCataGb" resultMap="depDisGoodsCataGb">
-        SELECT
-               gg.gb_distributer_father_goods_id       AS 'gg_gb_distributer_father_goods_id',
-               gg.gb_dfg_fathers_father_id             AS 'gg_gb_dfg_fathers_father_id',
-               gg.gb_dfg_father_goods_name             AS 'gg_gb_dfg_father_goods_name',
-               gg.gb_dfg_father_goods_img_large        AS 'gg_gb_dfg_father_goods_img_large',
-               gg.gb_dfg_father_goods_img              AS 'gg_gb_dfg_father_goods_img',
-               gg.gb_dfg_father_goods_sort             AS 'gg_gb_dfg_father_goods_sort',
-               g.gb_distributer_father_goods_id        AS 'g_gb_distributer_father_goods_id',
-               g.gb_dfg_fathers_father_id              AS 'g_gb_dfg_fathers_father_id',
-               g.gb_dfg_nx_goods_id                   AS 'g_gb_dfg_nx_goods_id',
-               g.gb_dfg_father_goods_name              AS 'g_gb_dfg_father_goods_name',
-               g.gb_dfg_father_goods_sort              AS 'g_gb_dfg_father_goods_sort',
-               ddg.gb_department_dis_goods_id          AS 'gb_department_dis_goods_id',
-               ddg.gb_DDG_department_id                AS 'gb_DDG_department_id',
-               ddg.gb_DDG_department_father_id        AS 'gb_DDG_department_father_id',
-               ddg.gb_DDG_dis_goods_id                 AS 'gb_DDG_dis_goods_id',
-               ddg.gb_DDG_dis_goods_father_id          AS 'gb_DDG_dis_goods_father_id',
-               ddg.gb_DDG_dis_goods_grand_id           AS 'gb_DDG_dis_goods_grand_id',
-               ddg.gb_DDG_dis_goods_great_id           AS 'gb_DDG_dis_goods_great_id',
-               ddg.gb_DDG_gb_dis_id                    AS 'gb_DDG_gb_dis_id',
-               ddg.gb_DDG_nx_distributer_id            AS 'gb_DDG_nx_distributer_id',
-               ddg.gb_DDG_nx_distributer_goods_id      AS 'gb_DDG_nx_distributer_goods_id',
-               ddg.gb_DDG_dep_goods_name                AS 'gb_DDG_dep_goods_name',
-               ddg.gb_DDG_order_goods_name             AS 'gb_DDG_order_goods_name',
-               ddg.gb_DDG_order_price_level            AS 'gb_DDG_order_price_level',
-               ddg.gb_DDG_print_standard               AS 'gb_DDG_print_standard',
-               ddg.gb_DDG_show_standard_id            AS 'gb_DDG_show_standard_id',
-               ddg.gb_DDG_show_standard_name          AS 'gb_DDG_show_standard_name',
-               ddg.gb_DDG_show_standard_scale         AS 'gb_DDG_show_standard_scale',
-               ddg.gb_DDG_selling_price                AS 'gb_DDG_selling_price',
-               ddg.gb_DDG_order_date                   AS 'gb_DDG_order_date',
-               ddg.gb_DDG_order_price                  AS 'gb_DDG_order_price',
-               ddg.gb_DDG_order_quantity               AS 'gb_DDG_order_quantity',
-               ddg.gb_DDG_order_remark                 AS 'gb_DDG_order_remark',
-               ddg.gb_DDG_order_standard               AS 'gb_DDG_order_standard',
-               ddg.gb_DDG_order_weight                 AS 'gb_DDG_order_weight',
-               ddg.gb_DDG_goods_type                   AS 'gb_DDG_goods_type',
-               ddg.gb_DDG_stock_total_subtotal         AS 'gb_DDG_stock_total_subtotal',
-               ddg.gb_DDG_stock_total_weight           AS 'gb_DDG_stock_total_weight',
-               ddg.gb_DDG_prepare_total_weight         AS 'gb_DDG_prepare_total_weight',
-               dg.gb_distributer_goods_id              AS 'gb_distributer_goods_id',
-               dg.gb_dg_goods_name                     AS 'gb_dg_goods_name',
-               dg.gb_dg_goods_standardname             AS 'gb_dg_goods_standardname',
-               dg.gb_dg_goods_standard_weight          AS 'gb_dg_goods_standard_weight',
-               dg.gb_dg_goods_price                    AS 'gb_dg_goods_price',
-               dg.gb_dg_goods_lowest_price             AS 'gb_dg_goods_lowest_price',
-               dg.gb_dg_goods_highest_price            AS 'gb_dg_goods_highest_price',
-               dg.gb_dg_control_price                  AS 'gb_dg_control_price',
-               dg.gb_dg_control_fresh                  AS 'gb_dg_control_fresh',
-               dg.gb_dg_fresh_warn_hour                AS 'gb_dg_fresh_warn_hour',
-               dg.gb_dg_fresh_waste_hour               AS 'gb_dg_fresh_waste_hour',
-               dg.gb_dg_goods_inventory_type           AS 'gb_dg_goods_inventory_type',
-               dg.gb_dg_goods_type                     AS 'gb_dg_goods_type',
-               dg.gb_dg_is_franchise_price             AS 'gb_dg_is_franchise_price',
-               dg.gb_dg_franchise_price_one            AS 'gb_dg_franchise_price_one',
-               dg.gb_dg_franchise_price_two            AS 'gb_dg_franchise_price_two',
-               dg.gb_dg_franchise_price_three          AS 'gb_dg_franchise_price_three',
-               dg.gb_dg_is_self_control                AS 'gb_dg_is_self_control',
-               dg.gb_dg_self_price                     AS 'gb_dg_self_price',
-               dg.gb_dg_goods_sort                     AS 'gb_dg_goods_sort',
-               dg.gb_dg_goods_sons_sort                AS 'gb_dg_goods_sons_sort',
-               dg.gb_dg_nx_father_img                  AS 'gb_dg_nx_father_img',
-               dg.gb_dg_nx_father_img_large            AS 'gb_dg_nx_father_img_large',
-               dg.gb_dg_gb_supplier_id                AS 'gb_dg_gb_supplier_id',
-               dg.gb_dg_nx_distributer_id              AS 'gb_dg_nx_distributer_id',
-               dg.gb_dg_nx_distributer_goods_id        AS 'gb_dg_nx_distributer_goods_id'
-        FROM gb_department_dis_goods AS ddg
-        LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = ddg.gb_DDG_dis_goods_id
-        LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = ddg.gb_DDG_dis_goods_grand_id
-        LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
-        <where>
-            <if test="depFatherId != null">
-                AND ddg.gb_DDG_department_father_id = #{depFatherId}
-            </if>
-            <if test="depId != null">
-                AND ddg.gb_DDG_department_id = #{depId}
-            </if>
-            <if test="pull != null">
-                AND dg.gb_dg_pull_off = #{pull}
-            </if>
-            <if test="supplierId != null">
-                AND dg.gb_dg_gb_supplier_id = #{supplierId}
-            </if>
-            <if test="disId != null">
-                AND g.gb_dfg_distributer_id = #{disId} AND gg.gb_dfg_distributer_id = #{disId}
-            </if>
-            <if test="goodsType != null">
-                AND dg.gb_dg_goods_type = #{goodsType}
-            </if>
-            <if test="price != null">
-                AND dg.gb_dg_control_price = #{price}
-            </if>
-            <if test="fresh != null">
-                AND dg.gb_dg_control_fresh = #{fresh}
-            </if>
-            <if test="isPrice != null">
-                AND dg.gb_dg_is_franchise_price = #{isPrice}
-            </if>
-            <if test="isSelf != null">
-                AND dg.gb_dg_is_self_control = #{isSelf}
-            </if>
-        </where>
-        ORDER BY gg.gb_dfg_father_goods_sort, g.gb_dfg_father_goods_sort, ddg.gb_DDG_department_id
+        <choose>
+            <when test="disId != null and depId == null and depFatherId == null">
+                SELECT * FROM (
+                    SELECT
+                           gg.gb_distributer_father_goods_id       AS 'gg_gb_distributer_father_goods_id',
+                           gg.gb_dfg_fathers_father_id             AS 'gg_gb_dfg_fathers_father_id',
+                           gg.gb_dfg_father_goods_name             AS 'gg_gb_dfg_father_goods_name',
+                           gg.gb_dfg_father_goods_img_large        AS 'gg_gb_dfg_father_goods_img_large',
+                           gg.gb_dfg_father_goods_img              AS 'gg_gb_dfg_father_goods_img',
+                           gg.gb_dfg_father_goods_sort             AS 'gg_gb_dfg_father_goods_sort',
+                           g.gb_distributer_father_goods_id        AS 'g_gb_distributer_father_goods_id',
+                           g.gb_dfg_fathers_father_id              AS 'g_gb_dfg_fathers_father_id',
+                           g.gb_dfg_nx_goods_id                   AS 'g_gb_dfg_nx_goods_id',
+                           g.gb_dfg_father_goods_name              AS 'g_gb_dfg_father_goods_name',
+                           g.gb_dfg_father_goods_sort              AS 'g_gb_dfg_father_goods_sort',
+                           ddg.gb_department_dis_goods_id          AS 'gb_department_dis_goods_id',
+                           ddg.gb_DDG_department_id                AS 'gb_DDG_department_id',
+                           ddg.gb_DDG_department_father_id        AS 'gb_DDG_department_father_id',
+                           ddg.gb_DDG_dis_goods_id                 AS 'gb_DDG_dis_goods_id',
+                           ddg.gb_DDG_dis_goods_father_id          AS 'gb_DDG_dis_goods_father_id',
+                           ddg.gb_DDG_dis_goods_grand_id           AS 'gb_DDG_dis_goods_grand_id',
+                           ddg.gb_DDG_dis_goods_great_id           AS 'gb_DDG_dis_goods_great_id',
+                           ddg.gb_DDG_gb_dis_id                    AS 'gb_DDG_gb_dis_id',
+                           ddg.gb_DDG_nx_distributer_id            AS 'gb_DDG_nx_distributer_id',
+                           ddg.gb_DDG_nx_distributer_goods_id      AS 'gb_DDG_nx_distributer_goods_id',
+                           ddg.gb_DDG_dep_goods_name                AS 'gb_DDG_dep_goods_name',
+                           ddg.gb_DDG_order_goods_name             AS 'gb_DDG_order_goods_name',
+                           ddg.gb_DDG_order_price_level            AS 'gb_DDG_order_price_level',
+                           ddg.gb_DDG_print_standard               AS 'gb_DDG_print_standard',
+                           ddg.gb_DDG_show_standard_id            AS 'gb_DDG_show_standard_id',
+                           ddg.gb_DDG_show_standard_name          AS 'gb_DDG_show_standard_name',
+                           ddg.gb_DDG_show_standard_scale         AS 'gb_DDG_show_standard_scale',
+                           ddg.gb_DDG_selling_price                AS 'gb_DDG_selling_price',
+                           ddg.gb_DDG_order_date                   AS 'gb_DDG_order_date',
+                           ddg.gb_DDG_order_price                  AS 'gb_DDG_order_price',
+                           ddg.gb_DDG_order_quantity               AS 'gb_DDG_order_quantity',
+                           ddg.gb_DDG_order_remark                 AS 'gb_DDG_order_remark',
+                           ddg.gb_DDG_order_standard               AS 'gb_DDG_order_standard',
+                           ddg.gb_DDG_order_weight                 AS 'gb_DDG_order_weight',
+                           ddg.gb_DDG_goods_type                   AS 'gb_DDG_goods_type',
+                           ddg.gb_DDG_stock_total_subtotal         AS 'gb_DDG_stock_total_subtotal',
+                           ddg.gb_DDG_stock_total_weight           AS 'gb_DDG_stock_total_weight',
+                           ddg.gb_DDG_prepare_total_weight         AS 'gb_DDG_prepare_total_weight',
+                           dg.gb_distributer_goods_id              AS 'gb_distributer_goods_id',
+                           dg.gb_dg_goods_name                     AS 'gb_dg_goods_name',
+                           dg.gb_dg_goods_standardname             AS 'gb_dg_goods_standardname',
+                           dg.gb_dg_goods_standard_weight          AS 'gb_dg_goods_standard_weight',
+                           dg.gb_dg_goods_price                    AS 'gb_dg_goods_price',
+                           dg.gb_dg_goods_lowest_price             AS 'gb_dg_goods_lowest_price',
+                           dg.gb_dg_goods_highest_price            AS 'gb_dg_goods_highest_price',
+                           dg.gb_dg_control_price                  AS 'gb_dg_control_price',
+                           dg.gb_dg_control_fresh                  AS 'gb_dg_control_fresh',
+                           dg.gb_dg_fresh_warn_hour                AS 'gb_dg_fresh_warn_hour',
+                           dg.gb_dg_fresh_waste_hour               AS 'gb_dg_fresh_waste_hour',
+                           dg.gb_dg_goods_inventory_type           AS 'gb_dg_goods_inventory_type',
+                           dg.gb_dg_goods_type                     AS 'gb_dg_goods_type',
+                           dg.gb_dg_is_franchise_price             AS 'gb_dg_is_franchise_price',
+                           dg.gb_dg_franchise_price_one            AS 'gb_dg_franchise_price_one',
+                           dg.gb_dg_franchise_price_two            AS 'gb_dg_franchise_price_two',
+                           dg.gb_dg_franchise_price_three          AS 'gb_dg_franchise_price_three',
+                           dg.gb_dg_is_self_control                AS 'gb_dg_is_self_control',
+                           dg.gb_dg_self_price                     AS 'gb_dg_self_price',
+                           dg.gb_dg_goods_sort                     AS 'gb_dg_goods_sort',
+                           dg.gb_dg_goods_sons_sort                AS 'gb_dg_goods_sons_sort',
+                           dg.gb_dg_nx_father_img                  AS 'gb_dg_nx_father_img',
+                           dg.gb_dg_nx_father_img_large            AS 'gb_dg_nx_father_img_large',
+                           dg.gb_dg_gb_supplier_id                AS 'gb_dg_gb_supplier_id',
+                           dg.gb_dg_nx_distributer_id              AS 'gb_dg_nx_distributer_id',
+                           dg.gb_dg_nx_distributer_goods_id        AS 'gb_dg_nx_distributer_goods_id'
+                    FROM gb_department_dis_goods AS ddg
+                    LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = ddg.gb_DDG_dis_goods_id
+                    LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = ddg.gb_DDG_dis_goods_grand_id
+                    LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
+                    <where>
+                        AND g.gb_dfg_distributer_id = #{disId} AND gg.gb_dfg_distributer_id = #{disId}
+                        AND dg.gb_distributer_goods_id IS NOT NULL
+                        <if test="pull != null">
+                            AND dg.gb_dg_pull_off = #{pull}
+                        </if>
+                        <if test="supplierId != null">
+                            AND dg.gb_dg_gb_supplier_id = #{supplierId}
+                        </if>
+                        <if test="goodsType != null">
+                            AND dg.gb_dg_goods_type = #{goodsType}
+                        </if>
+                        <if test="price != null">
+                            AND dg.gb_dg_control_price = #{price}
+                        </if>
+                        <if test="fresh != null">
+                            AND dg.gb_dg_control_fresh = #{fresh}
+                        </if>
+                        <if test="isPrice != null">
+                            AND dg.gb_dg_is_franchise_price = #{isPrice}
+                        </if>
+                        <if test="isSelf != null">
+                            AND dg.gb_dg_is_self_control = #{isSelf}
+                        </if>
+                    </where>
+                    UNION ALL
+                    SELECT
+                           gg.gb_distributer_father_goods_id       AS 'gg_gb_distributer_father_goods_id',
+                           gg.gb_dfg_fathers_father_id             AS 'gg_gb_dfg_fathers_father_id',
+                           gg.gb_dfg_father_goods_name             AS 'gg_gb_dfg_father_goods_name',
+                           gg.gb_dfg_father_goods_img_large        AS 'gg_gb_dfg_father_goods_img_large',
+                           gg.gb_dfg_father_goods_img              AS 'gg_gb_dfg_father_goods_img',
+                           gg.gb_dfg_father_goods_sort             AS 'gg_gb_dfg_father_goods_sort',
+                           g.gb_distributer_father_goods_id        AS 'g_gb_distributer_father_goods_id',
+                           g.gb_dfg_fathers_father_id              AS 'g_gb_dfg_fathers_father_id',
+                           g.gb_dfg_nx_goods_id                   AS 'g_gb_dfg_nx_goods_id',
+                           g.gb_dfg_father_goods_name              AS 'g_gb_dfg_father_goods_name',
+                           g.gb_dfg_father_goods_sort              AS 'g_gb_dfg_father_goods_sort',
+                           -(dg.gb_distributer_goods_id)           AS 'gb_department_dis_goods_id',
+                           NULL                                   AS 'gb_DDG_department_id',
+                           NULL                                   AS 'gb_DDG_department_father_id',
+                           dg.gb_distributer_goods_id             AS 'gb_DDG_dis_goods_id',
+                           dg.gb_dg_dfg_goods_father_id           AS 'gb_DDG_dis_goods_father_id',
+                           dg.gb_dg_dfg_goods_grand_id            AS 'gb_DDG_dis_goods_grand_id',
+                           dg.gb_dg_dfg_goods_great_id            AS 'gb_DDG_dis_goods_great_id',
+                           #{disId}                               AS 'gb_DDG_gb_dis_id',
+                           dg.gb_dg_nx_distributer_id             AS 'gb_DDG_nx_distributer_id',
+                           dg.gb_dg_nx_distributer_goods_id       AS 'gb_DDG_nx_distributer_goods_id',
+                           dg.gb_dg_goods_name                    AS 'gb_DDG_dep_goods_name',
+                           NULL                                   AS 'gb_DDG_order_goods_name',
+                           NULL                                   AS 'gb_DDG_order_price_level',
+                           NULL                                   AS 'gb_DDG_print_standard',
+                           NULL                                   AS 'gb_DDG_show_standard_id',
+                           NULL                                   AS 'gb_DDG_show_standard_name',
+                           NULL                                   AS 'gb_DDG_show_standard_scale',
+                           NULL                                   AS 'gb_DDG_selling_price',
+                           NULL                                   AS 'gb_DDG_order_date',
+                           NULL                                   AS 'gb_DDG_order_price',
+                           NULL                                   AS 'gb_DDG_order_quantity',
+                           NULL                                   AS 'gb_DDG_order_remark',
+                           NULL                                   AS 'gb_DDG_order_standard',
+                           NULL                                   AS 'gb_DDG_order_weight',
+                           dg.gb_dg_goods_type                    AS 'gb_DDG_goods_type',
+                           NULL                                   AS 'gb_DDG_stock_total_subtotal',
+                           NULL                                   AS 'gb_DDG_stock_total_weight',
+                           NULL                                   AS 'gb_DDG_prepare_total_weight',
+                           dg.gb_distributer_goods_id              AS 'gb_distributer_goods_id',
+                           dg.gb_dg_goods_name                     AS 'gb_dg_goods_name',
+                           dg.gb_dg_goods_standardname             AS 'gb_dg_goods_standardname',
+                           dg.gb_dg_goods_standard_weight          AS 'gb_dg_goods_standard_weight',
+                           dg.gb_dg_goods_price                    AS 'gb_dg_goods_price',
+                           dg.gb_dg_goods_lowest_price             AS 'gb_dg_goods_lowest_price',
+                           dg.gb_dg_goods_highest_price            AS 'gb_dg_goods_highest_price',
+                           dg.gb_dg_control_price                  AS 'gb_dg_control_price',
+                           dg.gb_dg_control_fresh                  AS 'gb_dg_control_fresh',
+                           dg.gb_dg_fresh_warn_hour                AS 'gb_dg_fresh_warn_hour',
+                           dg.gb_dg_fresh_waste_hour               AS 'gb_dg_fresh_waste_hour',
+                           dg.gb_dg_goods_inventory_type           AS 'gb_dg_goods_inventory_type',
+                           dg.gb_dg_goods_type                     AS 'gb_dg_goods_type',
+                           dg.gb_dg_is_franchise_price             AS 'gb_dg_is_franchise_price',
+                           dg.gb_dg_franchise_price_one            AS 'gb_dg_franchise_price_one',
+                           dg.gb_dg_franchise_price_two            AS 'gb_dg_franchise_price_two',
+                           dg.gb_dg_franchise_price_three          AS 'gb_dg_franchise_price_three',
+                           dg.gb_dg_is_self_control                AS 'gb_dg_is_self_control',
+                           dg.gb_dg_self_price                     AS 'gb_dg_self_price',
+                           dg.gb_dg_goods_sort                     AS 'gb_dg_goods_sort',
+                           dg.gb_dg_goods_sons_sort                AS 'gb_dg_goods_sons_sort',
+                           dg.gb_dg_nx_father_img                  AS 'gb_dg_nx_father_img',
+                           dg.gb_dg_nx_father_img_large            AS 'gb_dg_nx_father_img_large',
+                           dg.gb_dg_gb_supplier_id                AS 'gb_dg_gb_supplier_id',
+                           dg.gb_dg_nx_distributer_id              AS 'gb_dg_nx_distributer_id',
+                           dg.gb_dg_nx_distributer_goods_id        AS 'gb_dg_nx_distributer_goods_id'
+                    FROM gb_distributer_goods AS dg
+                    INNER JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = dg.gb_dg_dfg_goods_grand_id
+                    INNER JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
+                    <where>
+                        AND dg.gb_dg_distributer_id = #{disId}
+                        AND g.gb_dfg_distributer_id = #{disId} AND gg.gb_dfg_distributer_id = #{disId}
+                        AND NOT EXISTS (
+                            SELECT 1 FROM gb_department_dis_goods ddx WHERE ddx.gb_DDG_dis_goods_id = dg.gb_distributer_goods_id
+                        )
+                        <if test="pull != null">
+                            AND dg.gb_dg_pull_off = #{pull}
+                        </if>
+                        <if test="supplierId != null">
+                            AND dg.gb_dg_gb_supplier_id = #{supplierId}
+                        </if>
+                        <if test="goodsType != null">
+                            AND dg.gb_dg_goods_type = #{goodsType}
+                        </if>
+                        <if test="price != null">
+                            AND dg.gb_dg_control_price = #{price}
+                        </if>
+                        <if test="fresh != null">
+                            AND dg.gb_dg_control_fresh = #{fresh}
+                        </if>
+                        <if test="isPrice != null">
+                            AND dg.gb_dg_is_franchise_price = #{isPrice}
+                        </if>
+                        <if test="isSelf != null">
+                            AND dg.gb_dg_is_self_control = #{isSelf}
+                        </if>
+                    </where>
+                ) AS cata_union
+                ORDER BY gg_gb_dfg_father_goods_sort, g_gb_dfg_father_goods_sort, gb_department_dis_goods_id
+            </when>
+            <otherwise>
+                SELECT
+                       gg.gb_distributer_father_goods_id       AS 'gg_gb_distributer_father_goods_id',
+                       gg.gb_dfg_fathers_father_id             AS 'gg_gb_dfg_fathers_father_id',
+                       gg.gb_dfg_father_goods_name             AS 'gg_gb_dfg_father_goods_name',
+                       gg.gb_dfg_father_goods_img_large        AS 'gg_gb_dfg_father_goods_img_large',
+                       gg.gb_dfg_father_goods_img              AS 'gg_gb_dfg_father_goods_img',
+                       gg.gb_dfg_father_goods_sort             AS 'gg_gb_dfg_father_goods_sort',
+                       g.gb_distributer_father_goods_id        AS 'g_gb_distributer_father_goods_id',
+                       g.gb_dfg_fathers_father_id              AS 'g_gb_dfg_fathers_father_id',
+                       g.gb_dfg_nx_goods_id                   AS 'g_gb_dfg_nx_goods_id',
+                       g.gb_dfg_father_goods_name              AS 'g_gb_dfg_father_goods_name',
+                       g.gb_dfg_father_goods_sort              AS 'g_gb_dfg_father_goods_sort',
+                       ddg.gb_department_dis_goods_id          AS 'gb_department_dis_goods_id',
+                       ddg.gb_DDG_department_id                AS 'gb_DDG_department_id',
+                       ddg.gb_DDG_department_father_id        AS 'gb_DDG_department_father_id',
+                       ddg.gb_DDG_dis_goods_id                 AS 'gb_DDG_dis_goods_id',
+                       ddg.gb_DDG_dis_goods_father_id          AS 'gb_DDG_dis_goods_father_id',
+                       ddg.gb_DDG_dis_goods_grand_id           AS 'gb_DDG_dis_goods_grand_id',
+                       ddg.gb_DDG_dis_goods_great_id           AS 'gb_DDG_dis_goods_great_id',
+                       ddg.gb_DDG_gb_dis_id                    AS 'gb_DDG_gb_dis_id',
+                       ddg.gb_DDG_nx_distributer_id            AS 'gb_DDG_nx_distributer_id',
+                       ddg.gb_DDG_nx_distributer_goods_id      AS 'gb_DDG_nx_distributer_goods_id',
+                       ddg.gb_DDG_dep_goods_name                AS 'gb_DDG_dep_goods_name',
+                       ddg.gb_DDG_order_goods_name             AS 'gb_DDG_order_goods_name',
+                       ddg.gb_DDG_order_price_level            AS 'gb_DDG_order_price_level',
+                       ddg.gb_DDG_print_standard               AS 'gb_DDG_print_standard',
+                       ddg.gb_DDG_show_standard_id            AS 'gb_DDG_show_standard_id',
+                       ddg.gb_DDG_show_standard_name          AS 'gb_DDG_show_standard_name',
+                       ddg.gb_DDG_show_standard_scale         AS 'gb_DDG_show_standard_scale',
+                       ddg.gb_DDG_selling_price                AS 'gb_DDG_selling_price',
+                       ddg.gb_DDG_order_date                   AS 'gb_DDG_order_date',
+                       ddg.gb_DDG_order_price                  AS 'gb_DDG_order_price',
+                       ddg.gb_DDG_order_quantity               AS 'gb_DDG_order_quantity',
+                       ddg.gb_DDG_order_remark                 AS 'gb_DDG_order_remark',
+                       ddg.gb_DDG_order_standard               AS 'gb_DDG_order_standard',
+                       ddg.gb_DDG_order_weight                 AS 'gb_DDG_order_weight',
+                       ddg.gb_DDG_goods_type                   AS 'gb_DDG_goods_type',
+                       ddg.gb_DDG_stock_total_subtotal         AS 'gb_DDG_stock_total_subtotal',
+                       ddg.gb_DDG_stock_total_weight           AS 'gb_DDG_stock_total_weight',
+                       ddg.gb_DDG_prepare_total_weight         AS 'gb_DDG_prepare_total_weight',
+                       dg.gb_distributer_goods_id              AS 'gb_distributer_goods_id',
+                       dg.gb_dg_goods_name                     AS 'gb_dg_goods_name',
+                       dg.gb_dg_goods_standardname             AS 'gb_dg_goods_standardname',
+                       dg.gb_dg_goods_standard_weight          AS 'gb_dg_goods_standard_weight',
+                       dg.gb_dg_goods_price                    AS 'gb_dg_goods_price',
+                       dg.gb_dg_goods_lowest_price             AS 'gb_dg_goods_lowest_price',
+                       dg.gb_dg_goods_highest_price            AS 'gb_dg_goods_highest_price',
+                       dg.gb_dg_control_price                  AS 'gb_dg_control_price',
+                       dg.gb_dg_control_fresh                  AS 'gb_dg_control_fresh',
+                       dg.gb_dg_fresh_warn_hour                AS 'gb_dg_fresh_warn_hour',
+                       dg.gb_dg_fresh_waste_hour               AS 'gb_dg_fresh_waste_hour',
+                       dg.gb_dg_goods_inventory_type           AS 'gb_dg_goods_inventory_type',
+                       dg.gb_dg_goods_type                     AS 'gb_dg_goods_type',
+                       dg.gb_dg_is_franchise_price             AS 'gb_dg_is_franchise_price',
+                       dg.gb_dg_franchise_price_one            AS 'gb_dg_franchise_price_one',
+                       dg.gb_dg_franchise_price_two            AS 'gb_dg_franchise_price_two',
+                       dg.gb_dg_franchise_price_three          AS 'gb_dg_franchise_price_three',
+                       dg.gb_dg_is_self_control                AS 'gb_dg_is_self_control',
+                       dg.gb_dg_self_price                     AS 'gb_dg_self_price',
+                       dg.gb_dg_goods_sort                     AS 'gb_dg_goods_sort',
+                       dg.gb_dg_goods_sons_sort                AS 'gb_dg_goods_sons_sort',
+                       dg.gb_dg_nx_father_img                  AS 'gb_dg_nx_father_img',
+                       dg.gb_dg_nx_father_img_large            AS 'gb_dg_nx_father_img_large',
+                       dg.gb_dg_gb_supplier_id                AS 'gb_dg_gb_supplier_id',
+                       dg.gb_dg_nx_distributer_id              AS 'gb_dg_nx_distributer_id',
+                       dg.gb_dg_nx_distributer_goods_id        AS 'gb_dg_nx_distributer_goods_id'
+                FROM gb_department_dis_goods AS ddg
+                LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = ddg.gb_DDG_dis_goods_id
+                LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = ddg.gb_DDG_dis_goods_grand_id
+                LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
+                <where>
+                    <if test="depFatherId != null">
+                        AND ddg.gb_DDG_department_father_id = #{depFatherId}
+                    </if>
+                    <if test="depId != null">
+                        AND ddg.gb_DDG_department_id = #{depId}
+                    </if>
+                    <if test="pull != null">
+                        AND dg.gb_dg_pull_off = #{pull}
+                    </if>
+                    <if test="supplierId != null">
+                        AND dg.gb_dg_gb_supplier_id = #{supplierId}
+                    </if>
+                    <if test="disId != null">
+                        AND g.gb_dfg_distributer_id = #{disId} AND gg.gb_dfg_distributer_id = #{disId}
+                    </if>
+                    <if test="goodsType != null">
+                        AND dg.gb_dg_goods_type = #{goodsType}
+                    </if>
+                    <if test="price != null">
+                        AND dg.gb_dg_control_price = #{price}
+                    </if>
+                    <if test="fresh != null">
+                        AND dg.gb_dg_control_fresh = #{fresh}
+                    </if>
+                    <if test="isPrice != null">
+                        AND dg.gb_dg_is_franchise_price = #{isPrice}
+                    </if>
+                    <if test="isSelf != null">
+                        AND dg.gb_dg_is_self_control = #{isSelf}
+                    </if>
+                </where>
+                ORDER BY gg.gb_dfg_father_goods_sort, g.gb_dfg_father_goods_sort, ddg.gb_DDG_department_id
+            </otherwise>
+        </choose>
     </select>
 
     <!-- queryDepGoodsCount: 获取部门商品总数 -->
@@ -509,39 +712,42 @@
         </where>
     </select>
 
-    <!-- 查询分销商商品ID列表 -->
+    <!-- 查询分销商商品ID列表：排序与原 ddg 口径一致 — gg(一级) → g(grand) → f(father) → gb_dg_goods_sort / sons_sort -->
     <select id="queryOnlyDisGoodsIds" resultType="java.lang.Integer">
-        SELECT dg.gb_distributer_goods_id
-        FROM gb_department_dis_goods AS ddg
-        LEFT JOIN gb_distributer_goods AS dg ON dg.gb_distributer_goods_id = ddg.gb_DDG_dis_goods_id
-        LEFT JOIN gb_distributer_father_goods AS f ON f.gb_distributer_father_goods_id = dg.gb_dg_dfg_goods_father_id
-        LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = f.gb_dfg_fathers_father_id
+        SELECT gdg.gb_distributer_goods_id
+        FROM gb_distributer_goods AS gdg
+        LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = gdg.gb_dg_dfg_goods_grand_id
         LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
+        LEFT JOIN gb_distributer_father_goods AS f ON f.gb_distributer_father_goods_id = gdg.gb_dg_dfg_goods_father_id
         <where>
-            <if test="depId != null">
-                AND ddg.gb_DDG_department_id = #{depId}
-            </if>
             <if test="disId != null">
-                AND dg.gb_dg_distributer_id = #{disId}
+                AND gdg.gb_dg_distributer_id = #{disId}
+            </if>
+            <if test="depId != null">
+                AND EXISTS (
+                    SELECT 1 FROM gb_department_dis_goods AS ddg
+                    WHERE ddg.gb_DDG_dis_goods_id = gdg.gb_distributer_goods_id
+                    AND ddg.gb_DDG_department_id = #{depId}
+                )
             </if>
             <if test="pull != null">
-                AND dg.gb_dg_pull_off = #{pull}
+                AND gdg.gb_dg_pull_off = #{pull}
             </if>
             <if test="goodsType != null">
-                AND dg.gb_dg_goods_type = #{goodsType}
+                AND gdg.gb_dg_goods_type = #{goodsType}
             </if>
             <if test="price != null">
-                AND dg.gb_dg_control_price = #{price}
+                AND gdg.gb_dg_control_price = #{price}
             </if>
             <if test="fresh != null">
-                AND dg.gb_dg_control_fresh = #{fresh}
+                AND gdg.gb_dg_control_fresh = #{fresh}
             </if>
             <if test="supplierId != null">
-                AND dg.gb_dg_gb_supplier_id = #{supplierId}
+                AND gdg.gb_dg_gb_supplier_id = #{supplierId}
             </if>
         </where>
-        GROUP BY dg.gb_distributer_goods_id
-        ORDER BY MIN(gg.gb_dfg_father_goods_sort), MIN(g.gb_dfg_father_goods_sort), MIN(f.gb_dfg_father_goods_sort), MIN(dg.gb_dg_goods_sort)
+        ORDER BY gg.gb_dfg_father_goods_sort, g.gb_dfg_father_goods_sort, f.gb_dfg_father_goods_sort,
+                 gdg.gb_dg_goods_sort, gdg.gb_dg_goods_sons_sort, gdg.gb_distributer_goods_id DESC
     </select>
 
     <!-- queryDepartmentGoodsForAi: 根据参数查询部门商品（AI用） -->
@@ -567,14 +773,16 @@
         ORDER BY gdgs.gb_department_goods_stock_id
     </select>
 
-    <!-- 按批发商分页查询商品数量 -->
+    <!-- 按批发商分页查询商品数量：与 queryOnlyDisGoodsIds / disQueryDisGoodsWithOrderForAiTree 一致，以 gb_distributer_goods 为准 -->
     <select id="queryDisGoodsCount" resultType="java.lang.Integer">
-        SELECT COUNT(DISTINCT gddg.gb_DDG_dis_goods_id)
-        FROM gb_department_dis_goods AS gddg
-        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
+        SELECT COUNT(*)
+        FROM gb_distributer_goods AS gdg
         <where>
             <if test="disId != null">
                 AND gdg.gb_dg_distributer_id = #{disId}
+            </if>
+            <if test="supplierId != null">
+                AND gdg.gb_dg_gb_supplier_id = #{supplierId}
             </if>
             <if test="goodsType != null and goodsType &lt; 99">
                 AND gdg.gb_dg_goods_type = #{goodsType}
@@ -588,16 +796,20 @@
         </where>
     </select>
 
-    <!-- 按批发商分页查询商品 -->
+    <!-- 按批发商分页查询商品（部门关联行；排序：gg→g→ddf/ddg.father→商品 sort） -->
     <select id="disQueryDisGoodsWithOrderForAi" resultType="com.nongxinle.entity.GbDepartmentDisGoodsEntity">
-        SELECT gddg.*, ggfg.gb_dfg_father_goods_sort AS ggfg_sort, gdfg.gb_dfg_father_goods_sort AS gdfg_sort
+        SELECT gddg.*
         FROM gb_department_dis_goods AS gddg
         LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
-        LEFT JOIN gb_distributer_father_goods AS gdfg ON gdfg.gb_distributer_father_goods_id = gdg.gb_dg_dfg_goods_father_id
-        LEFT JOIN gb_distributer_father_goods AS ggfg ON ggfg.gb_distributer_father_goods_id = gdfg.gb_dfg_fathers_father_id
+        LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = gddg.gb_DDG_dis_goods_grand_id
+        LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
+        LEFT JOIN gb_distributer_father_goods AS ddf ON ddf.gb_distributer_father_goods_id = gddg.gb_DDG_dis_goods_father_id
         <where>
             <if test="disId != null">
-                AND gdg.gb_dg_distributer_id = #{disId}
+                AND g.gb_dfg_distributer_id = #{disId} AND gg.gb_dfg_distributer_id = #{disId}
+            </if>
+            <if test="supplierId != null">
+                AND gdg.gb_dg_gb_supplier_id = #{supplierId}
             </if>
             <if test="goodsType != null and goodsType &lt; 99">
                 AND gdg.gb_dg_goods_type = #{goodsType}
@@ -610,21 +822,22 @@
             </if>
         </where>
         GROUP BY gddg.gb_department_dis_goods_id
-        ORDER BY ggfg_sort, gdfg_sort, gddg.gb_department_dis_goods_id DESC
+        ORDER BY gg.gb_dfg_father_goods_sort, g.gb_dfg_father_goods_sort, ddf.gb_dfg_father_goods_sort,
+                 gdg.gb_dg_goods_sort, gdg.gb_dg_goods_sons_sort, gddg.gb_department_dis_goods_id DESC
         <if test="limit != null">
             LIMIT #{limit} OFFSET #{offset}
         </if>
     </select>
 
-    <!-- 按批发商分页查询商品（返回批发商商品实体，TreeSet用） -->
+    <!-- 按批发商分页查询商品（返回批发商商品实体）；须用 List 保留 ORDER BY，TreeSet 仅按商品 id 比较会打乱分类顺序 -->
     <select id="disQueryDisGoodsWithOrderForAiTree" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
-        SELECT DISTINCT gdg.*, ggfg.gb_dfg_father_goods_sort AS ggfg_sort, gdfg.gb_dfg_father_goods_sort AS gdfg_sort,
+        SELECT gdg.*,
         IFNULL(stockStats.goodsStockTotal, 0) as 'goodsStockTotal',
         IFNULL(stockStats.goodsStockWeightTotal, 0) as 'goodsStockWeightTotal'
         FROM gb_distributer_goods AS gdg
-        LEFT JOIN gb_department_dis_goods AS gddg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
-        LEFT JOIN gb_distributer_father_goods AS gdfg ON gdfg.gb_distributer_father_goods_id = gdg.gb_dg_dfg_goods_father_id
-        LEFT JOIN gb_distributer_father_goods AS ggfg ON ggfg.gb_distributer_father_goods_id = gdfg.gb_dfg_fathers_father_id
+        LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = gdg.gb_dg_dfg_goods_grand_id
+        LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
+        LEFT JOIN gb_distributer_father_goods AS f ON f.gb_distributer_father_goods_id = gdg.gb_dg_dfg_goods_father_id
         LEFT JOIN (
             SELECT gb_dgs_gb_dis_goods_id,
                    SUM(gb_dgs_rest_subtotal) as goodsStockTotal,
@@ -637,6 +850,9 @@
             <if test="disId != null">
                 AND gdg.gb_dg_distributer_id = #{disId}
             </if>
+            <if test="supplierId != null">
+                AND gdg.gb_dg_gb_supplier_id = #{supplierId}
+            </if>
             <if test="goodsType != null and goodsType &lt; 99">
                 AND gdg.gb_dg_goods_type = #{goodsType}
             </if>
@@ -647,7 +863,8 @@
                 AND gdg.gb_dg_pull_off = 1
             </if>
         </where>
-        ORDER BY ggfg_sort, gdfg_sort, gdg.gb_distributer_goods_id DESC
+        ORDER BY gg.gb_dfg_father_goods_sort, g.gb_dfg_father_goods_sort, f.gb_dfg_father_goods_sort,
+                 gdg.gb_dg_goods_sort, gdg.gb_dg_goods_sons_sort, gdg.gb_distributer_goods_id DESC
         <if test="limit != null">
             LIMIT #{limit} OFFSET #{offset}
         </if>

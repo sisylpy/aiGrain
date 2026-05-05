@@ -42,6 +42,43 @@ public class GbDepartmentUserController {
 
 
 
+    /**
+     * 部门用户修改信息：昵称必选；头像 {@code file} 可选（有文件则替换上传图并删除旧文件）。
+     */
+    @RequestMapping(value = "/updateGbDepUserWithFile", produces = "text/html;charset=UTF-8")
+    @ResponseBody
+    public R updateGbDepUserWithFile(@RequestParam(value = "file", required = false) MultipartFile file,
+                                     @RequestParam("userName") String userName,
+                                     @RequestParam("userId") Integer userId,
+                                     @RequestParam("depId") Integer depId,
+                                     HttpSession session) {
+        GbDepartmentUserEntity gbDepartmentUserEntity = gbDepartmentUserService.getById(userId);
+        if (gbDepartmentUserEntity == null) {
+            return R.error(-1, "用户不存在");
+        }
+
+        if (file != null && !file.isEmpty()) {
+            String oldPath = gbDepartmentUserEntity.getGbDuWxAvartraUrl();
+            if (oldPath != null && !oldPath.trim().isEmpty()) {
+                UploadFile.deleteFile(oldPath);
+            }
+            String filePath = UploadFile.upload(session, ImagePaths.UPLOAD, file);
+            gbDepartmentUserEntity.setGbDuWxAvartraUrl(filePath);
+            gbDepartmentUserEntity.setGbDuUrlChange(1);
+        }
+
+        gbDepartmentUserEntity.setGbDuWxNickName(userName);
+        gbDepartmentUserService.updateById(gbDepartmentUserEntity);
+
+        GbDepartmentEntity gbDepartmentEntity = gbDepartmentService.getById(depId);
+        gbDepartmentService.updateById(gbDepartmentEntity);
+
+        return R.ok().put("data", gbDepartmentUserService.getById(userId));
+
+    }
+
+
+
     @RequestMapping(value = "/gbLogin/{code}")
     @ResponseBody
     public R gbLogin(@PathVariable String code) {
@@ -120,11 +157,7 @@ public class GbDepartmentUserController {
 
             GbDepartmentUserEntity purUser = new GbDepartmentUserEntity();
             //1,上传图片
-            String newUploadName = "uploadImage";
-            String realPath = UploadFile.upload(session, newUploadName, file);
-
-            String filename = file.getOriginalFilename();
-            String filePath = newUploadName + "/" + filename;
+            String filePath = UploadFile.upload(session, ImagePaths.UPLOAD, file);
             //1 disuser save
             purUser.setGbDuWxOpenId(openid);
             purUser.setGbDuWxAvartraUrl(filePath);
@@ -202,11 +235,7 @@ public class GbDepartmentUserController {
         if (depUserEntities == null && nxJrdhUserEntity == null) {
 
             //1,上传图片
-            String newUploadName = "uploadImage";
-            String realPath = UploadFile.upload(session, newUploadName, file);
-
-            String filename = file.getOriginalFilename();
-            String filePath = newUploadName + "/" + filename;
+            String filePath = UploadFile.upload(session, ImagePaths.UPLOAD, file);
             //1 disuser save
             GbDepartmentUserEntity gbDepartmentUserEntity = new GbDepartmentUserEntity();
             gbDepartmentUserEntity.setGbDuUrlChange(1);

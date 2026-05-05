@@ -2,6 +2,7 @@ package com.nongxinle.service;
 
 import com.nongxinle.entity.GbAiConversationEntity;
 import com.nongxinle.entity.GbAiMessageEntity;
+import com.nongxinle.ai.scope.AiConversationScopeMode;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
@@ -12,13 +13,20 @@ import java.util.List;
 public interface GbAiChatService {
 
     /**
-     * 创建或恢复对话
-     * @param departmentId 部门/餐厅ID
-     * @param userId 部门用户ID
-     * @param type 对话类型 (0=普通聊天, 1=促销活动/销售额, 2=公众号相关)
-     * @return 对话实体
+     * 创建或恢复对话（单店默认）
      */
-    GbAiConversationEntity getOrCreateConversation(Long departmentId, Long userId, Integer type);
+    default GbAiConversationEntity getOrCreateConversation(Long departmentId, Long userId, Integer type) {
+        return getOrCreateConversation(departmentId, null, AiConversationScopeMode.STORE, userId, type);
+    }
+
+    /**
+     * 创建或恢复对话
+     * @param departmentId 单店必填：门店父部门 ID；集团模式可 null
+     * @param distributerId 集团必填：批发商/集团 disId；单店可选（未传则从部门反推）
+     * @param scopeMode {@link AiConversationScopeMode#STORE} 或 {@link AiConversationScopeMode#GROUP}
+     */
+    GbAiConversationEntity getOrCreateConversation(Long departmentId, Long distributerId, AiConversationScopeMode scopeMode,
+                                                   Long userId, Integer type);
 
     /**
      * 发送消息（非流式，用于测试）

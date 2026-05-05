@@ -1,5 +1,6 @@
 package com.nongxinle.controller;
 
+import com.nongxinle.ai.scope.AiConversationScopeMode;
 import com.nongxinle.entity.GbAiConversationEntity;
 import com.nongxinle.entity.GbAiMessageEntity;
 import com.nongxinle.service.GbAiChatService;
@@ -10,7 +11,6 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -29,21 +29,39 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class GbAiChatController {
 
+    /** 与 Spring {@code MediaType.TEXT_EVENT_STREAM} + UTF-8 一致；须为字面量以便 {@link PostMapping#produces} 编译期常量校验。 */
+    private static final String SSE_UTF8 = "text/event-stream;charset=UTF-8";
+
     private final GbAiChatService chatService;
     private final GbAiMemoryService memoryService;
 
     /**
      * 创建或恢复对话
      *
-     * @Description 根据部门ID和用户ID创建新对话或获取已有对话
+     * @param departmentId 单店：门店父部门 ID；集团：可省略
+     * @param distributerId 集团必填 disId；单店可省略
+     * @param scopeMode STORE(默认) 或 GROUP
      * @param type 对话类型 (0=普通聊天, 1=促销活动/销售额, 2=公众号相关)
      */
     @PostMapping("/conversation")
-    @Operation(summary = "创建或恢复对话", description = "根据部门ID和用户ID创建新对话或获取已有对话")
-    public R createConversation(@Parameter(description = "部门ID") @RequestParam Long departmentId,
+    @Operation(summary = "创建或恢复对话",
+            description = "根据用户ID创建或恢复对话。单店(STORE)：传 departmentId(门店父部门)。集团(GROUP)：传 scopeMode=GROUP 与 distributerId(disId)，departmentId 可省略。")
+    public R createConversation(@Parameter(description = "单店必填：门店父部门 ID；集团模式可省略") @RequestParam(required = false) Long departmentId,
+                                @Parameter(description = "集团必填：批发商/集团 disId；单店可省略（可从部门反推）") @RequestParam(required = false) Long distributerId,
+                                @Parameter(description = "统计范围：STORE(默认)=单店子树，GROUP=该 dis 下全部门") @RequestParam(required = false) String scopeMode,
                                 @Parameter(description = "部门用户ID") @RequestParam Long userId,
                                 @Parameter(description = "对话类型: 0=普通聊天, 1=促销活动/销售额, 2=公众号相关") @RequestParam(required = false) Integer type) {
-        GbAiConversationEntity conv = chatService.getOrCreateConversation(departmentId, userId, type);
+        AiConversationScopeMode mode = AiConversationScopeMode.fromApiString(scopeMode);
+        if (mode == AiConversationScopeMode.GROUP) {
+            if (distributerId == null) {
+                return R.error(-1, "集团模式(scopeMode=GROUP)必须提供 distributerId(disId)");
+            }
+        } else {
+            if (departmentId == null) {
+                return R.error(-1, "单店模式必须提供 departmentId(门店父部门)");
+            }
+        }
+        GbAiConversationEntity conv = chatService.getOrCreateConversation(departmentId, distributerId, mode, userId, type);
         return R.ok().put("data", conv);
     }
 
@@ -77,8 +95,8 @@ public class GbAiChatController {
      *
      * @Description 发送消息并以SSE流式返回AI回复
      */
-    @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @Operation(summary = "发送消息（SSE流式）", description = "发送消息并以SSE流式返回AI回复")
+    @PostMapping(value = "/stream", produces = SSE_UTF8)
+    @Operation(summary = "发送消息（SSE流式）", description = "SSE 事件：delta=用户可见正文增量（可拼接）；message=整段替换（如 handoff 修订后与首轮流式不一致）；done=结束；error=错误。")
     public SseEmitter streamChat(@Parameter(description = "对话ID") @RequestParam Long conversationId,
                                  @RequestBody SendMessageDTO body) {
         String message = body.getMessage();
@@ -88,6 +106,7 @@ public class GbAiChatController {
         String preview = message == null ? "" : (msgLen <= 200 ? message : message.substring(0, 200) + "…");
         log.info("[AI-CHAT][stream] step=entry conversationId={} userId={} sourceTopicId={} messageChars={} messagePreview={}",
                 conversationId, userId, sourceTopicId, msgLen, preview);
+        log.info("[AI-CHAT][stream] step=sse_response_headers conversationId={} Content-Type={}", conversationId, SSE_UTF8);
         return chatService.streamChat(conversationId, userId, message);
     }
 

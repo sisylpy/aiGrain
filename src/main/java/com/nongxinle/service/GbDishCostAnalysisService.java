@@ -20,19 +20,24 @@ public interface GbDishCostAnalysisService {
      * 配料分析：销售汇总、按菜按配方( q×u )实收口径，type2/3 在扣减无菜品关联时按「本行 type1 占全店 type1」同比分摊到本菜本料。
      *
      * @param endDate 同 {@link #buildReport} 的 {@code stopDate}
-     * @param sortBy  {@code sales|salesAmount|销量} 按实收销售额降序；{@code diff|diffCostPerPortion|成本差异} 按每份成本差异绝对值降序；空则同 sales
+     * @param sortBy  {@code sales|salesAmount|销量} 实收销售额；{@code diff|diffCostPerPortion|成本差异} 每份成本差异绝对值；{@code actualCost|actualCostPerPortion} 每道菜<strong>单份</strong>实际成本（type1+2+3，{@code actualCostPerPortion}）；空则同 sales
+     * @param sortOrder {@code desc|asc|降序|升序}，默认 {@code desc}
      */
     Map<String, Object> buildIngredientAnalysisReport(String startDate, String endDate, Integer disId, String searchDepId,
-            Integer depFatherId, String sortBy);
+            Integer depFatherId, String sortBy, String sortOrder);
 
     /**
      * 按分销商商品（配料）聚合的出库分析：同区间与配料分摊口径，汇总出库金额/重量及按料行的理论、实际、差异与涉及菜品行。
      *
-     * @param sortBy {@code outbound|outboundAmount} 本商品 1+2+3 出库**金额**合计降序；{@code util|utilization|利用率} 同料**利用率**降序，无理论为末；
-     *             {@code wasteloss|waste2loss3|损耗损失} 本商品 type2+type3 出库**重量**合计降序。空为 outbound。
+     * @param sortBy {@code outbound|outboundAmount} 本商品 1+2+3 出库**金额**合计；{@code util|utilization|利用率} 同料**利用率**，无理论为末；
+     *             {@code wasteloss|waste2loss3|损耗损失} 本商品 type2+type3 出库**重量**合计。空为 outbound。
+     * @param sortOrder {@code desc|asc|降序|升序}，默认 {@code desc}，与 {@code sortBy} 组合控制升降序
+     * @param goodsNameSearch 按分销商商品名称模糊匹配（含规格名、配方侧名称提示）；空则不过滤
+     * @param page 页码，从 1 起；仅当 {@code pageSize} 有效时参与分页
+     * @param pageSize 每页条数，{@code null} 或 ≤0 表示不分页（返回全部匹配行，兼容旧调用）
      */
     Map<String, Object> buildOutboundIngredientAnalysisReport(String startDate, String endDate, Integer disId, String searchDepId,
-            Integer depFatherId, String sortBy);
+            Integer depFatherId, String sortBy, String sortOrder, String goodsNameSearch, Integer page, Integer pageSize);
 
     /**
      * 按 {@code /ingredientAnalysis} 同一口径生成各菜的 {@code ingredientRows}（Map 列表），供部门菜品列表等复用。
@@ -68,4 +73,15 @@ public interface GbDishCostAnalysisService {
      */
     Map<Integer, Map<String, String>> getDishPerPortionCosts123ByFoodIds(String startDate, String endDate, Integer disId,
             Integer depFatherId, Set<Integer> foodIds);
+
+    /**
+     * 单日、单分销商商品：配方理论出库量（配料行 {@code theoryUsage} 之和）。
+     * <p><b>毛利贡献金额</b>：各涉及菜品上，按理论成本占比将「标价×销量」分摊到该料行后，减去该料行
+     * {@code actualCostPerPortion}×销量（type1+2+3 分摊成本，与 {@code dayOutbound123Subtotal} 同属 1+2+3 口径），
+     * 再汇总；<b>不是</b> {@link #buildDishIngredientDashboard} 里 {@code grossProfitContributionPerPortion}（后者仅扣 type1 {@code produceCostPerPortion}）。</p>
+     *
+     * @return {@code theoryOutboundQty}、{@code grossProfitContributionTotal} 均为两位小数字符串；
+     *         {@code dishIngredientDayBreakdown} 为按菜行列表（实销份数、实收、本料配方用量、理论总用量、标价分摊收入、1+2+3 分摊成本、毛利贡献；金额类两位小数）
+     */
+    Map<String, Object> summarizeDisGoodsDayForReduceCurve(String day, Integer disId, Integer disGoodsId, String searchDepId);
 }

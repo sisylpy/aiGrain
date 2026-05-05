@@ -45,6 +45,16 @@ public interface GbDepartmentGoodsStockService extends IService<GbDepartmentGood
     Double queryDepGoodsRestWeightTotal(Map<String, Object> map);
 
     /**
+     * 入库批次采购成本合计 SUM({@code gb_dgs_subtotal})，筛选条件与 {@link #queryGoodsStockCount} 一致。
+     */
+    Double queryDepGoodsSubtotal(Map<String, Object> map);
+
+    /**
+     * 入库批次重量合计 SUM({@code gb_dgs_weight})，筛选条件与 {@link #queryGoodsStockCount} 一致。
+     */
+    Double queryDepStockWeightTotal(Map<String, Object> map);
+
+    /**
      * 查询部门库存树形父商品
      */
     List<GbDistributerFatherGoodsEntity> queryDepStockTreeFatherGoodsByParams(Map<String, Object> map);

@@ -2,43 +2,67 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.nongxinle.mapper.GbDistributerGoodsMapper">
 
+    <!-- disId + nxFatherId：农鑫父级维度查重；disId + dgFatherId：批发商分类 father 下商品列表（取消发布数兄弟等）；disId + supplierId：供应商关联商品 -->
     <select id="queryDisGoodsByParams" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
-        SELECT * FROM gb_distributer_goods 
-        WHERE gb_dg_distributer_id = #{disId} 
-        AND gb_dg_nx_father_id = #{nxFatherId}
-        LIMIT 1
-    </select>
-
-    <!-- 批发商商品快速搜索 -->
-    <select id="queryGbDisGoodsQuickSearchStr" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
         SELECT * FROM gb_distributer_goods
         <where>
             <if test="disId != null">
                 AND gb_dg_distributer_id = #{disId}
             </if>
+            <if test="nxFatherId != null">
+                AND gb_dg_nx_father_id = #{nxFatherId}
+            </if>
+            <if test="dgFatherId != null">
+                AND gb_dg_dfg_goods_father_id = #{dgFatherId}
+            </if>
+            <if test="supplierId != null">
+                AND gb_dg_gb_supplier_id = #{supplierId}
+            </if>
+        </where>
+        ORDER BY gb_distributer_goods_id
+    </select>
+
+    <!-- 批发商商品快速搜索（含全部门店聚合库存：剩余数量合计、剩余成本合计，与 disQueryDisGoodsWithOrderForAiTree 一致） -->
+    <select id="queryGbDisGoodsQuickSearchStr" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        SELECT gdg.*,
+        IFNULL(stockStats.goodsStockTotal, 0) AS goodsStockTotal,
+        IFNULL(stockStats.goodsStockWeightTotal, 0) AS goodsStockWeightTotal
+        FROM gb_distributer_goods AS gdg
+        LEFT JOIN (
+            SELECT gb_dgs_gb_dis_goods_id,
+                   SUM(gb_dgs_rest_subtotal) AS goodsStockTotal,
+                   SUM(gb_dgs_rest_weight) AS goodsStockWeightTotal
+            FROM gb_department_goods_stock
+            WHERE gb_dgs_rest_weight > 0
+            GROUP BY gb_dgs_gb_dis_goods_id
+        ) AS stockStats ON stockStats.gb_dgs_gb_dis_goods_id = gdg.gb_distributer_goods_id
+        <where>
+            <if test="disId != null">
+                AND gdg.gb_dg_distributer_id = #{disId}
+            </if>
 
             <if test="price != null">
-                AND gb_dg_control_price = #{price}
+                AND gdg.gb_dg_control_price = #{price}
             </if>
             <if test="fresh != null">
-                AND gb_dg_control_fresh = #{fresh}
+                AND gdg.gb_dg_control_fresh = #{fresh}
             </if>
             <if test="toDepId != null">
-                AND gb_dg_gb_department_id = #{toDepId}
+                AND gdg.gb_dg_gb_department_id = #{toDepId}
             </if>
             <if test="fatherId != null">
-                AND gb_dg_dfg_goods_father_id = #{fatherId}
+                AND gdg.gb_dg_dfg_goods_father_id = #{fatherId}
             </if>
             <if test="searchStr != null or searchPinyin != null">
                 AND (
-                    gb_dg_goods_name LIKE CONCAT('%', #{searchStr}, '%')
-                    OR gb_dg_goods_brand LIKE CONCAT('%', #{searchStr}, '%')
-                    OR gb_dg_goods_pinyin LIKE CONCAT('%', #{searchPinyin}, '%')
-                    OR gb_dg_goods_py LIKE CONCAT('%', #{searchPinyin}, '%')
+                    gdg.gb_dg_goods_name LIKE CONCAT('%', #{searchStr}, '%')
+                    OR gdg.gb_dg_goods_brand LIKE CONCAT('%', #{searchStr}, '%')
+                    OR gdg.gb_dg_goods_pinyin LIKE CONCAT('%', #{searchPinyin}, '%')
+                    OR gdg.gb_dg_goods_py LIKE CONCAT('%', #{searchPinyin}, '%')
                 )
             </if>
         </where>
-        ORDER BY gb_dg_goods_sort, gb_dg_goods_sons_sort
+        ORDER BY gdg.gb_dg_goods_sort, gdg.gb_dg_goods_sons_sort
     </select>
 
 </mapper>

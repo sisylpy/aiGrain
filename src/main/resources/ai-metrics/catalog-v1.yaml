@@ -1,0 +1,221 @@
+version: "1.0"
+
+# 指标目录 v1：scope_strategy / time_strategy 与 Java 侧 AiMetricCatalog + MetricDepartmentScopeResolver 对齐。
+# datasource 一期仅作文档与排障；执行仍走现有 GbAiChatServiceImpl 查询方法，逐步改为按 metric_id Dispatch。
+
+metrics:
+
+  - metric_id: procurement_buy_subtotal_mtd
+    name: 采购进货金额（本月入库完成）
+    description: |
+      一定时间范围内、按入库完成日统计的采购进货金额；口径为 gb_distributer_purchase_goods 入库完成列对应金额，
+      与库存出库成本（stock_reduce）不得混为同一指标。
+    category: 采购
+    unit: 元
+    value_type: number
+
+    dimensions:
+      - department
+      - store
+      - product
+
+    datasource:
+      provider: GbAiChatServiceImpl
+      method: queryPurchaseGoodsFactsForAi
+
+    fields:
+      amount: gb_DPG_buy_subtotal
+      date_field: gb_DPG_stock_finish_date
+
+    filters:
+      status: ">2"
+      exclude_purchase_type: "9"
+
+    scope_strategy:
+      department_scope: SELF_OR_CHILDREN
+      store_scope: CURRENT
+
+    time_strategy:
+      default: MTD
+      field: stock_finish_date
+
+    aggregation:
+      type: sum
+
+    display:
+      precision: 2
+      highlight: true
+
+  - metric_id: procurement_amount
+    name: 采购金额（整店包）
+    description: 统计对话所选门店/集团范围内全部相关部门的采购金额汇总，不按单部门子树收缩。
+    category: 采购
+    unit: 元
+    value_type: number
+
+    dimensions:
+      - store
+      - department
+      - product
+
+    datasource:
+      provider: GbAiChatServiceImpl
+      method: queryPurchaseGoodsFactsForAi
+
+    fields:
+      amount: gb_DPG_buy_subtotal
+
+    filters:
+      note: map_to_GbConstants_where_applicable
+
+    scope_strategy:
+      department_scope: ALL
+      store_scope: CURRENT
+
+    time_strategy:
+      default: MTD
+      field: stock_finish_date
+
+    aggregation:
+      type: sum
+
+    display:
+      precision: 2
+      highlight: true
+
+  - metric_id: inventory_rest_subtotal_snapshot
+    name: 在库批次剩余成本
+    description: gb_department_goods_stock.gb_dgs_rest_subtotal 汇总；与采购 subtotal 不得互换。
+    category: 库存
+    unit: 元
+    value_type: number
+
+    dimensions:
+      - department
+
+    datasource:
+      provider: GbAiChatServiceImpl
+      method: queryInventorySnapshotForAi
+
+    fields:
+      amount: gb_dgs_rest_subtotal
+
+    scope_strategy:
+      department_scope: ALL
+      store_scope: CURRENT
+
+    time_strategy:
+      default: MTD
+      field: snapshot_as_of_now
+
+    aggregation:
+      type: sum
+
+    display:
+      precision: 2
+      highlight: false
+
+  # 下列指标已入目录；执行仍走 Java 显式查询（参见 MetricDefinition 注释）。接到对话事实前需：实现查询 + 路由 suggestedMetricIds + 如需按日则扩展 MetricTimeWindows。
+  - metric_id: ingredient_usage_qty
+    name: 原料使用量（菜品消耗）
+    description: |
+      统计区间内、部门 scope 下原材料经销售/配方关联消耗的数量口径（与出库 type 拆分、单位以主档规格为准；非仅「袋」）。
+      与 gb_DPG 采购数量不得混为同一指标。
+    category: 使用
+    unit: 复合（见 gb_distributer_goods 计价/规格）
+    value_type: number
+
+    dimensions:
+      - store
+      - department
+      - product
+      - dish
+
+    datasource:
+      provider: usageProvider
+      method: queryIngredientUsage
+
+    fields:
+      quantity: used_qty
+
+    filters:
+      type: DISH_CONSUME
+
+    scope_strategy:
+      department_scope: SELF_OR_CHILDREN
+      store_scope: CURRENT
+
+    time_strategy:
+      # 产品若需自然日：将 default 改为 DAY 并实现 MetricTimeWindows 对 DAY 的解析；当前仅 MTD/RANGE 类行为与采购指标一致。
+      default: MTD
+      field: biz_date
+
+    aggregation:
+      type: sum
+
+    display:
+      precision: 2
+      highlight: true
+
+  # 在库数量快照；执行未接线。与 inventory_rest_subtotal_snapshot 配套（金额 vs 数量）。Java 侧已有 queryInventorySnapshotForAi 等，metric_id 未被 build() 引用前不影响现网。
+  - metric_id: current_stock_qty
+    name: 当前在库数量（快照）
+    description: |
+      查询时刻在库结余数量口径（通常来自 gb_department_goods_stock 等批次行汇总；单位随商品主档规格，非固定「袋」）。
+      与采购、出库扣减不得混指。
+    category: 库存
+    unit: 复合（见主档规格）
+    value_type: number
+
+    dimensions:
+      - store
+      - department
+      - product
+
+    datasource:
+      provider: stockProvider
+      method: queryCurrentStock
+
+    fields:
+      quantity: stock_qty
+
+    filters: {}
+
+    scope_strategy:
+      department_scope: ALL
+      store_scope: CURRENT
+
+    time_strategy:
+      # Java MetricTimeWindows 未识别 REALTIME；快照类与 inventory_rest_subtotal_snapshot 一致占位，事实查询以「当前」为准、不依赖 MTD 窗口。
+      default: MTD
+      field: snapshot_as_of_now
+
+    aggregation:
+      type: sum
+
+    display:
+      precision: 2
+      highlight: true
+
+  # 派生指标（规划）：formula 块当前不被 Java MetricDefinition 加载，仅作产品与后续引擎参考。
+  # 勿用 procurement_amount 作分母——该指标为「采购金额·元」，与 ingredient_usage_qty（数量）量纲不一致。
+  # 中文「使用率」易与数据词典 §4.2 配料行「利用率」utilizationRate（type1 生产÷理论用量）混淆，对用户宜称「耗用占采购量比」等。
+  - metric_id: usage_rate
+    name: 原料耗用占采购量比（规划）
+    description: |
+      规划口径：同品、同区间、同计量单位下，(原料消耗数量 ÷ 采购入库数量) × 100%。
+      分子见 ingredient_usage_qty；分母须为「采购数量」类基指标（如按 gb_DPG_buy_quantity 汇总，目录待建），严禁使用 procurement_amount。
+      与配料分析 utilizationRate 不是同一含义。
+    category: 分析
+    unit: "%"
+    value_type: ratio
+
+    formula:
+      numerator_metric_id: ingredient_usage_qty
+      denominator_metric_id: procurement_inbound_qty
+      # procurement_inbound_qty：规划占位 id，入库前需在目录中新增同名原子指标并实现查询。
+
+    display:
+      precision: 2
+      highlight: true
+

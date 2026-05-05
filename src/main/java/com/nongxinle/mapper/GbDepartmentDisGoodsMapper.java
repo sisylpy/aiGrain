@@ -61,9 +61,9 @@ public interface GbDepartmentDisGoodsMapper extends BaseMapper<GbDepartmentDisGo
     List<GbDepartmentDisGoodsEntity> disQueryDisGoodsWithOrderForAi(Map<String, Object> map);
 
     /**
-     * 按批发商分页查询商品（TreeSet版本）
+     * 按批发商分页查询商品（列表顺序与 ORDER BY 一致；勿用 TreeSet 接结果，否则会按商品 id 重排）
      */
-    java.util.TreeSet<com.nongxinle.entity.GbDistributerGoodsEntity> disQueryDisGoodsWithOrderForAiTree(Map<String, Object> map);
+    java.util.List<com.nongxinle.entity.GbDistributerGoodsEntity> disQueryDisGoodsWithOrderForAiTree(Map<String, Object> map);
 
     /**
      * 部门已关联批发商商品的快速检索（老项目 queryDepDisGoodsQuickSearchStrGb）

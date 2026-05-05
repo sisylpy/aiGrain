@@ -548,13 +548,20 @@ public class GbDepartmentGoodsStockLedgerServiceImpl implements GbDepartmentGood
         reduceEntity.setGbDgsrGbDepartmentId(stock.getGbDgsGbDepartmentId());
         reduceEntity.setGbDgsrGbDepartmentFatherId(stock.getGbDgsGbDepartmentFatherId());
         reduceEntity.setGbDgsrGbDisGoodsId(stock.getGbDgsGbDisGoodsId());
+        reduceEntity.setGbDgsrGbDisGoodsFatherId(stock.getGbDgsGbDisGoodsFatherId());
+        reduceEntity.setGbDgsrGbDisGoodsGrandId(stock.getGbDgsGbDisGoodsGrandId());
+        reduceEntity.setGbDgsrGbDisGoodsGreatId(stock.getGbDgsGbDisGoodsGreatId());
         reduceEntity.setGbDgsrGbDepDisGoodsId(stock.getGbDgsGbDepDisGoodsId());
         reduceEntity.setGbDgsrGbGoodsStockId(stock.getGbDepartmentGoodsStockId());
+        reduceEntity.setGbDgsrStatus(0);
         reduceEntity.setGbDgsrFullTime(fullTimeSeconds());
         reduceEntity.setGbDgsrDate(formatWhatDay(0));
         reduceEntity.setGbDgsrWeek(getWeekOfYear(0).toString());
         reduceEntity.setGbDgsrMonth(formatWhatMonth(0));
         reduceEntity.setGbDgsrUserId(stock.getGbDgsReduceWeightUserId());
+        reduceEntity.setGbDgsrStockNxSupplierId(stock.getGbDgsNxSupplierId());
+        reduceEntity.setGbDgsrGbPurGoodsId(stock.getGbDgsGbPurGoodsId());
+        reduceEntity.setGbDgsrStockPurUserId(stock.getGbDgsPurUserId());
 
         reduceEntity.setGbDgsrWeight(myChangeWeight.toString());
         reduceEntity.setGbDgsrSubtotal(myChangeSubtotal.toString());

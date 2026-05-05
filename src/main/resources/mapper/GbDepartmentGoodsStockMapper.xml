@@ -165,11 +165,114 @@
             <if test="stopDate != null">
                 AND gdgs.gb_dgs_date &lt;= #{stopDate}
             </if>
+            <if test="dateLt != null">
+                AND gdgs.gb_dgs_date &lt; #{dateLt}
+            </if>
             <if test="dayuStatus != null">
                 AND gdgs.gb_dgs_status &gt; #{dayuStatus}
             </if>
             <if test="purUserId != null">
                 AND gdgs.gb_dgs_pur_user_id = #{purUserId}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepGoodsSubtotal" resultType="java.lang.Double">
+        SELECT IFNULL(SUM(CAST(gdgs.gb_dgs_subtotal AS DECIMAL(18,4))), 0) FROM gb_department_goods_stock AS gdgs
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+        LEFT JOIN gb_department AS gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_id
+        <where>
+            <if test="depType != null">
+                AND gd.gb_department_type = #{depType}
+            </if>
+            <if test="disId != null">
+                AND gdgs.gb_dgs_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                AND gdg.gb_dg_dfg_goods_great_id = #{disGoodsGreatId}
+            </if>
+            <if test="depId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="purUserId != null">
+                AND gdgs.gb_dgs_pur_user_id = #{purUserId}
+            </if>
+            <if test="date != null">
+                AND gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="startDate != null">
+                AND gdgs.gb_dgs_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="dateLt != null">
+                AND gdgs.gb_dgs_date &lt; #{dateLt}
+            </if>
+            <if test="dayuStatus != null">
+                AND gdgs.gb_dgs_status &gt; #{dayuStatus}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDepStockWeightTotal" resultType="java.lang.Double">
+        SELECT IFNULL(SUM(CAST(gdgs.gb_dgs_weight AS DECIMAL(18,4))), 0) FROM gb_department_goods_stock AS gdgs
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
+        LEFT JOIN gb_department AS gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_id
+        <where>
+            <if test="depType != null">
+                AND gd.gb_department_type = #{depType}
+            </if>
+            <if test="disId != null">
+                AND gdgs.gb_dgs_gb_distributer_id = #{disId}
+            </if>
+            <if test="disGoodsId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="disGoodsFatherId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_father_id = #{disGoodsFatherId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                AND gdgs.gb_dgs_gb_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="disGoodsGreatId != null">
+                AND gdg.gb_dg_dfg_goods_great_id = #{disGoodsGreatId}
+            </if>
+            <if test="depId != null">
+                AND gdgs.gb_dgs_gb_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="purUserId != null">
+                AND gdgs.gb_dgs_pur_user_id = #{purUserId}
+            </if>
+            <if test="date != null">
+                AND gdgs.gb_dgs_date = #{date}
+            </if>
+            <if test="startDate != null">
+                AND gdgs.gb_dgs_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="dateLt != null">
+                AND gdgs.gb_dgs_date &lt; #{dateLt}
+            </if>
+            <if test="dayuStatus != null">
+                AND gdgs.gb_dgs_status &gt; #{dayuStatus}
             </if>
         </where>
     </select>
@@ -214,6 +317,9 @@
             </if>
             <if test="stopDate != null">
                 AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="dateLt != null">
+                AND gdgs.gb_dgs_date &lt; #{dateLt}
             </if>
             <if test="dayuStatus != null">
                 AND gdgs.gb_dgs_status &gt; #{dayuStatus}
@@ -273,6 +379,9 @@
             </if>
             <if test="stopDate != null">
                 AND gdgs.gb_dgs_date &lt;= #{stopDate}
+            </if>
+            <if test="dateLt != null">
+                AND gdgs.gb_dgs_date &lt; #{dateLt}
             </if>
             <if test="dayuStatus != null">
                 AND gdgs.gb_dgs_status &gt; #{dayuStatus}

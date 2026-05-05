@@ -20,6 +20,8 @@ public final class GbConstants {
         private DepartmentType() {
         }
 
+        /** 总部管理部门 */
+        public static final Integer GROUP_OFFICE = 0;
         /** 门店部门 */
         public static final Integer STORE = 1;
         /** 集采部门 */
@@ -57,6 +59,8 @@ public final class GbConstants {
         private DepartmentUserRole() {
         }
 
+        /** 集团管理端 */
+        public static final Integer GROUP_MANAGER_APP = 0;
         /** 门店采购端 */
         public static final Integer STORE_PURCHASER_APP = 1;
         /** 集采 / 采购端 */
@@ -290,7 +294,7 @@ public final class GbConstants {
 
         /** 生产成本（菜品成本分析里按菜分摊的出库均价、W_g 仅汇总此类型） */
         public static final Integer PRODUCTION = 1;
-        /** 损耗（废气等） */
+        /** 废弃 */
         public static final Integer WASTE = 2;
         /** 损失成本 */
         public static final Integer LOSS = 3;

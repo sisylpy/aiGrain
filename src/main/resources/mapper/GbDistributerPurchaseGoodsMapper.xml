@@ -91,6 +91,9 @@
             <if test="typeNotEqual != null">
                 AND gdpg.gb_DPG_purchase_type != #{typeNotEqual}
             </if>
+            <if test="purchaseType != null">
+                AND gdpg.gb_DPG_purchase_type = #{purchaseType}
+            </if>
             <if test="purDepIds != null and purDepIds.size() &gt; 0">
                 AND gdpg.gb_DPG_purchase_department_id IN
                 <foreach item="id" collection="purDepIds" open="(" separator="," close=")">
@@ -294,9 +297,22 @@
         LIMIT 1
     </select>
 
+    <!-- 部门供应商列表：附带接单用户微信头像、昵称 -->
+    <resultMap id="disPurGoodsSupplierWithJrdhUserMap" type="com.nongxinle.entity.NxJrdhSupplierEntity" autoMapping="true">
+        <association property="jrdhUserEntity" javaType="com.nongxinle.entity.NxJrdhUserEntity">
+            <result property="nxJrdhWxAvartraUrl" column="jrdh_user_wx_avartra_url"/>
+            <result property="nxJrdhWxNickName" column="jrdh_user_wx_nick_name"/>
+        </association>
+    </resultMap>
+
     <!-- 查询部门供应商列表 -->
-    <select id="queryDisPurGoodsSupplierList" resultType="com.nongxinle.entity.NxJrdhSupplierEntity">
-        SELECT DISTINCT njs.* FROM nx_jrdh_supplier AS njs
+    <select id="queryDisPurGoodsSupplierList" resultMap="disPurGoodsSupplierWithJrdhUserMap">
+        SELECT DISTINCT
+            njs.*,
+            njru.nx_jrdh_wx_avartra_url AS jrdh_user_wx_avartra_url,
+            njru.nx_jrdh_wx_nick_name AS jrdh_user_wx_nick_name
+        FROM nx_jrdh_supplier AS njs
+        LEFT JOIN nx_jrdh_user AS njru ON njs.nx_jrdhs_user_id = njru.nx_jrdh_user_id
         LEFT JOIN gb_distributer_purchase_goods AS gdpg ON njs.nx_jrdh_supplier_id = gdpg.gb_DPG_purchase_nx_supplier_id
         <where>
             <if test="gbDepId != null">
@@ -464,6 +480,20 @@
 
     <select id="queryPurchaseGoodsWeightTotal" resultType="java.lang.Double">
         SELECT IFNULL(SUM(CAST(gdpg.gb_DPG_buy_quantity AS DECIMAL(18,4))), 0)
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+        </where>
+    </select>
+
+    <!-- 与 queryGbPurchaseGoodsCount 同一条件：SUM(subtotal)/SUM(qty)，无单独查 subtotal 时用于日均价 -->
+    <select id="queryPurchaseGoodsWeightedAvgBuyPrice" resultType="java.lang.Double">
+        SELECT IFNULL(
+            SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(18, 4))) /
+            NULLIF(SUM(CAST(gdpg.gb_DPG_buy_quantity AS DECIMAL(18, 4))), 0),
+            0)
         FROM gb_distributer_purchase_goods AS gdpg
         LEFT JOIN gb_distributer_purchase_batch AS gdpb
         ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id

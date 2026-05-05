@@ -18,12 +18,14 @@ import com.nongxinle.dto.GbAiGoodsAddConfirmRequest;
 import com.nongxinle.entity.GbDepartmentDisGoodsEntity;
 import com.nongxinle.entity.GbDepartmentOrdersEntity;
 import com.nongxinle.entity.GbDistributerGoodsEntity;
+import com.nongxinle.entity.GbDistributerStandardEntity;
 import com.nongxinle.entity.NxGoodsEntity;
 import com.nongxinle.service.GbAiGoodsAddService;
 import com.nongxinle.service.GbAiGoodsAddSessionStore;
 import com.nongxinle.service.GbAiGoodsAddSessionStore.GoodsAddSessionSnapshot;
 import com.nongxinle.service.GbDepartmentDisGoodsService;
 import com.nongxinle.service.GbDistributerGoodsService;
+import com.nongxinle.service.GbDistributerStandardService;
 import com.nongxinle.service.NxGoodsService;
 import com.nongxinle.utils.R;
 
@@ -123,9 +125,16 @@ public class GbAiGoodsAddServiceImpl implements GbAiGoodsAddService {
     /** 同品类下新增 nx SKU（{@link #insertSiblingSkuUnderMatchedFather}）写入 {@code nx_goods_status} */
     private static final int NX_GOODS_STATUS_AI_EXPAND = -1;
     private static final String SESSION_CATALOG_MANUAL = "MANUAL";
+    /** {@code analyzeMode=DIRECT_TEMP}：名称+规格与已有批发商商品完全一致，未重复落库 */
+    private static final String FLOW_TEMP_DUPLICATE = "TEMP_DUPLICATE";
+    /**
+     * {@code analyzeMode=DIRECT_TEMP}：名称与已有商品相同、规格不同——建议走订货规格，不新建商品行
+     */
+    private static final String FLOW_TEMP_ADD_ORDER_STANDARD = "TEMP_ADD_ORDER_STANDARD";
 
     private final NxGoodsService nxGoodsService;
     private final GbDistributerGoodsService gbDistributerGoodsService;
+    private final GbDistributerStandardService gbDistributerStandardService;
     private final GbDepartmentDisGoodsService gbDepartmentDisGoodsService;
     private final GbAiGoodsAddSessionStore sessionStore;
     private final DeepSeekCompletionClient deepSeekCompletionClient;
@@ -282,7 +291,9 @@ public class GbAiGoodsAddServiceImpl implements GbAiGoodsAddService {
                     Map<Integer, String> idToNameSku = loadAncestorNames(skuCandidates);
                     Map<Integer, Map<String, Object>> candidateMaps = new LinkedHashMap<>();
                     for (NxGoodsEntity e : skuCandidates) {
-                        candidateMaps.put(e.getNxGoodsId(), toCandidateMap(e, idToNameSku));
+                        Map<String, Object> cand = toCandidateMap(e, idToNameSku);
+                        enrichCandidateWithDisImport(cand, e, disId);
+                        candidateMaps.put(e.getNxGoodsId(), cand);
                     }
 
                     String skillSku = loadSkillFile("ai-skill-goods-catalog-match.md");
@@ -453,9 +464,53 @@ public class GbAiGoodsAddServiceImpl implements GbAiGoodsAddService {
 
     /**
      * {@code analyzeMode=DIRECT_TEMP}：不调目录、不调 LLM；**当场落库临时商品**并返回 {@code SUCCESS}（与 **confirm** {@code TEMP} 成功体一致：{@code persistedGoods}、{@code gbDistributerGoods}、{@code gbDepartmentDisGoods}），无需再调 confirm。
+     * 若同一批发商下已存在**名称 + 规格**完全相同的商品，则**不落库**，返回 {@code flowState=TEMP_DUPLICATE} 及已有商品摘要。
+     * 若仅**名称相同**、主规格不同：若该规格已在同名商品的**订货规格**中存在则同 {@code TEMP_DUPLICATE}；否则返回 {@code TEMP_ADD_ORDER_STANDARD}，提示去维护订货规格。
      */
     private R analyzeDirectTempPersist(String sessionId, GbAiGoodsAddAnalyzeRequest req,
                                        String goodsName, String goodsSpec, String goodsFurtherDescription) {
+        GbDistributerGoodsEntity same = findExistingDistributerGoodsByNameAndSpec(
+                req.getDistributerId(), goodsName, goodsSpec);
+        if (same != null && same.getGbDistributerGoodsId() != null) {
+            GbDistributerGoodsEntity reloaded = gbDistributerGoodsService.getById(same.getGbDistributerGoodsId());
+            if (reloaded != null) {
+                same = reloaded;
+            }
+            GbDepartmentDisGoodsEntity depDup = ensureDepDisGoodsForDirectTemp(
+                    req, sessionId, goodsName, goodsSpec, goodsFurtherDescription, same, goodsSpec);
+            log.info("{} analyze direct_temp step=duplicate_hit gbDistributerGoodsId={} gbDepartmentDisGoodsId={}",
+                    L, same.getGbDistributerGoodsId(),
+                    depDup != null ? depDup.getGbDepartmentDisGoodsId() : null);
+            return directTempDuplicatePayload(sessionId, goodsName, goodsSpec, goodsFurtherDescription, same, depDup);
+        }
+
+        List<GbDistributerGoodsEntity> sameNameRows = listDisGoodsByGoodsName(req.getDistributerId(), goodsName);
+        if (!sameNameRows.isEmpty()) {
+            GbDistributerGoodsEntity stdDupRef = findSameNameGoodsHavingOrderStandard(sameNameRows, goodsSpec);
+            if (stdDupRef != null) {
+                GbDistributerGoodsEntity ref = gbDistributerGoodsService.getById(stdDupRef.getGbDistributerGoodsId());
+                if (ref == null) {
+                    ref = stdDupRef;
+                }
+                GbDepartmentDisGoodsEntity depDup = ensureDepDisGoodsForDirectTemp(
+                        req, sessionId, goodsName, goodsSpec, goodsFurtherDescription, ref, goodsSpec);
+                String msg = "同名商品下已包含订货规格「" + goodsSpec + "」，无需新增商品或重复添加该规格。";
+                log.info("{} analyze direct_temp step=same_name_order_std_dup gbDistributerGoodsId={}", L, ref.getGbDistributerGoodsId());
+                return directTempDuplicatePayload(sessionId, goodsName, goodsSpec, goodsFurtherDescription, ref, depDup, msg);
+            }
+            GbDistributerGoodsEntity firstNamed = sameNameRows.get(0);
+            GbDistributerGoodsEntity refGoods = gbDistributerGoodsService.getById(firstNamed.getGbDistributerGoodsId());
+            if (refGoods == null) {
+                refGoods = firstNamed;
+            }
+            GbDepartmentDisGoodsEntity depForRef = ensureDepDisGoodsForDirectTemp(
+                    req, sessionId, goodsName, goodsSpec, goodsFurtherDescription, refGoods, goodsSpec);
+            log.info("{} analyze direct_temp step=same_name_add_order_std hint gbDistributerGoodsId={} reqSpec={}",
+                    L, refGoods.getGbDistributerGoodsId(), logPreview(goodsSpec, 20));
+            return directTempAddOrderStandardPayload(sessionId, goodsName, goodsSpec, goodsFurtherDescription,
+                    refGoods, depForRef);
+        }
+
         GoodsAddSessionSnapshot snap = new GoodsAddSessionSnapshot(
                 sessionId, req.getDistributerId(), req.getDepartmentId(), req.getDepId(), req.getDepFatherId(),
                 goodsName, goodsSpec, goodsFurtherDescription,
@@ -500,6 +555,217 @@ public class GbAiGoodsAddServiceImpl implements GbAiGoodsAddService {
         return successPayload("已添加临时商品。", persisted, depDis, g);
     }
 
+    /** 本批发商下与「商品名称 + 标准规格」字面完全一致的行（含临时品与目录品），用于直连临时添加去重。 */
+    private GbDistributerGoodsEntity findExistingDistributerGoodsByNameAndSpec(int disId, String goodsName, String goodsSpec) {
+        LambdaQueryWrapper<GbDistributerGoodsEntity> w = new LambdaQueryWrapper<>();
+        w.eq(GbDistributerGoodsEntity::getGbDgDistributerId, disId)
+                .eq(GbDistributerGoodsEntity::getGbDgGoodsName, goodsName)
+                .eq(GbDistributerGoodsEntity::getGbDgGoodsStandardname, goodsSpec)
+                .last("LIMIT 1");
+        return gbDistributerGoodsService.getOne(w, false);
+    }
+
+    private GbDepartmentDisGoodsEntity findDepDisGoodsByDisGoodsAndDep(Integer gbDistributerGoodsId, Integer depId) {
+        if (gbDistributerGoodsId == null || depId == null) {
+            return null;
+        }
+        LambdaQueryWrapper<GbDepartmentDisGoodsEntity> w = new LambdaQueryWrapper<>();
+        w.eq(GbDepartmentDisGoodsEntity::getGbDdgDisGoodsId, gbDistributerGoodsId)
+                .eq(GbDepartmentDisGoodsEntity::getGbDdgDepartmentId, depId)
+                .last("LIMIT 1");
+        return gbDepartmentDisGoodsService.getOne(w, false);
+    }
+
+    /**
+     * 直连临时：若本部门尚无 {@code gb_department_dis_goods}，则与 {@link #persistTempGoodsFromSnap} 一致补建，便于与 SUCCESS 响应字段对齐。
+     * 部门订货口径见 {@code orderStandardForDep}（缺省用批发商商品主规格）。
+     */
+    private GbDepartmentDisGoodsEntity ensureDepDisGoodsForDirectTemp(
+            GbAiGoodsAddAnalyzeRequest req,
+            String sessionId,
+            String goodsName,
+            String goodsSpec,
+            String goodsFurtherDescription,
+            GbDistributerGoodsEntity gbDisGoods,
+            String orderStandardForDep) {
+        if (gbDisGoods == null || gbDisGoods.getGbDistributerGoodsId() == null || req.getDepId() == null) {
+            return null;
+        }
+        GbDepartmentDisGoodsEntity existing = findDepDisGoodsByDisGoodsAndDep(
+                gbDisGoods.getGbDistributerGoodsId(), req.getDepId());
+        if (existing != null) {
+            return existing;
+        }
+        GoodsAddSessionSnapshot snap = new GoodsAddSessionSnapshot(
+                sessionId, req.getDistributerId(), req.getDepartmentId(), req.getDepId(), req.getDepFatherId(),
+                goodsName, goodsSpec, goodsFurtherDescription,
+                List.of(), new LinkedHashMap<>(), null, List.of(), List.of(), null, System.currentTimeMillis());
+        String ord = StrUtil.blankToDefault(orderStandardForDep, gbDisGoods.getGbDgGoodsStandardname());
+        return tryCreateDepDisGoodsForJjLikeImport(snap, gbDisGoods, ord);
+    }
+
+    private List<GbDistributerGoodsEntity> listDisGoodsByGoodsName(int disId, String goodsName) {
+        LambdaQueryWrapper<GbDistributerGoodsEntity> w = new LambdaQueryWrapper<>();
+        w.eq(GbDistributerGoodsEntity::getGbDgDistributerId, disId)
+                .eq(GbDistributerGoodsEntity::getGbDgGoodsName, goodsName)
+                .orderByAsc(GbDistributerGoodsEntity::getGbDistributerGoodsId);
+        List<GbDistributerGoodsEntity> list = gbDistributerGoodsService.list(w);
+        return list != null ? list : List.of();
+    }
+
+    /**
+     * 在「同名」批发商商品行中，查找主规格或 {@code gb_distributer_standard} 订货规格与 {@code spec}（trim）字面一致的行。
+     * 用于：主商品行规格不同但订货表里已有该规格 → 视为重复，不再引导新增。
+     */
+    private GbDistributerGoodsEntity findSameNameGoodsHavingOrderStandard(
+            List<GbDistributerGoodsEntity> sameNameRows, String spec) {
+        String t = StrUtil.trimToEmpty(spec);
+        if (t.isEmpty()) {
+            return null;
+        }
+        for (GbDistributerGoodsEntity g : sameNameRows) {
+            if (g == null || g.getGbDistributerGoodsId() == null) {
+                continue;
+            }
+            if (t.equals(StrUtil.trimToEmpty(g.getGbDgGoodsStandardname()))) {
+                return g;
+            }
+            List<GbDistributerStandardEntity> stds = gbDistributerStandardService.queryDisStandardByDisGoodsIdGb(
+                    g.getGbDistributerGoodsId());
+            if (stds == null) {
+                continue;
+            }
+            for (GbDistributerStandardEntity s : stds) {
+                if (s != null && t.equals(StrUtil.trimToEmpty(s.getGbDsStandardName()))) {
+                    return g;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 主规格 + 已维护的订货规格名称列表（去重保序），供小程序展示。 */
+    private List<String> collectOrderStandardLabels(GbDistributerGoodsEntity g) {
+        LinkedHashSet<String> set = new LinkedHashSet<>();
+        if (g == null) {
+            return List.of();
+        }
+        String main = StrUtil.trimToEmpty(g.getGbDgGoodsStandardname());
+        if (StrUtil.isNotBlank(main)) {
+            set.add(main);
+        }
+        if (g.getGbDistributerGoodsId() == null) {
+            return new ArrayList<>(set);
+        }
+        List<GbDistributerStandardEntity> stds = gbDistributerStandardService.queryDisStandardByDisGoodsIdGb(
+                g.getGbDistributerGoodsId());
+        if (stds != null) {
+            for (GbDistributerStandardEntity s : stds) {
+                if (s != null && StrUtil.isNotBlank(s.getGbDsStandardName())) {
+                    set.add(s.getGbDsStandardName().trim());
+                }
+            }
+        }
+        return new ArrayList<>(set);
+    }
+
+    private R directTempAddOrderStandardPayload(String sessionId, String goodsName, String goodsSpec,
+                                                String goodsFurtherDescription,
+                                                GbDistributerGoodsEntity referenceGoods,
+                                                GbDepartmentDisGoodsEntity depDis) {
+        String mainStd = StrUtil.nullToEmpty(referenceGoods.getGbDgGoodsStandardname());
+        String msg = "已有同名批发商商品（当前主规格为「" + mainStd + "」）。您填写的新规格「" + goodsSpec
+                + "」请在商品详情中为该商品添加「订货规格」即可，无需再新增一条商品。本次未创建新商品。";
+        Map<String, Object> persisted = persistSummary(referenceGoods,
+                depDis != null ? depDis.getGbDepartmentDisGoodsId() : null);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("sessionId", sessionId);
+        data.put("flowState", FLOW_TEMP_ADD_ORDER_STANDARD);
+        data.put("assistantMessage", msg);
+        data.put("matchSummary", null);
+        data.put("candidates", null);
+        data.put("branchOptions", null);
+        data.put("tempPreview", buildTempPreview(goodsName, goodsSpec, goodsFurtherDescription));
+        data.put("gbDistributerGoods", toGbDistributerGoodsApiMap(referenceGoods));
+        data.put("gbDepartmentDisGoods", depDis != null ? toGbDepartmentDisGoodsApiMap(depDis) : null);
+        data.put("persistedGoods", persisted);
+        data.put("requestedOrderStandard", goodsSpec);
+        data.put("existingOrderStandards", collectOrderStandardLabels(referenceGoods));
+        data.put("analyzeMode", ANALYZE_MODE_DIRECT_TEMP);
+        data.put("nxCatalogConfirmIntents", null);
+        data.put("catalogLevel1Options", null);
+        data.put("analyzeModeHint", null);
+        data.put("catalogHitComposition", null);
+        data.put("disCatalogChoices", null);
+        R r = R.ok(msg);
+        r.put("flowState", FLOW_TEMP_ADD_ORDER_STANDARD);
+        r.put("data", data);
+        log.info("{} direct_temp_add_order_standard response gbDistributerGoodsId={}", L,
+                referenceGoods.getGbDistributerGoodsId());
+        return r;
+    }
+
+    /**
+     * 与 {@link #successPayload} 字段对齐，便于小程序统一解析；{@code flowState} 为 {@link #FLOW_TEMP_DUPLICATE}，**未写库**。
+     */
+    private R directTempDuplicatePayload(String sessionId, String goodsName, String goodsSpec,
+                                         String goodsFurtherDescription,
+                                         GbDistributerGoodsEntity existing,
+                                         GbDepartmentDisGoodsEntity depDis) {
+        return directTempDuplicatePayload(sessionId, goodsName, goodsSpec, goodsFurtherDescription,
+                existing, depDis, null);
+    }
+
+    /**
+     * @param assistantMessageOverride 非空时覆盖默认的「完全一致」提示（例如订货规格已存在）
+     */
+    private R directTempDuplicatePayload(String sessionId, String goodsName, String goodsSpec,
+                                         String goodsFurtherDescription,
+                                         GbDistributerGoodsEntity existing,
+                                         GbDepartmentDisGoodsEntity depDis,
+                                         String assistantMessageOverride) {
+        return directTempDuplicatePayload(sessionId, goodsName, goodsSpec, goodsFurtherDescription,
+                existing, depDis, assistantMessageOverride, null);
+    }
+
+    /**
+     * @param analyzeModeForData 非空时写入 {@code data.analyzeMode}（默认 {@link #ANALYZE_MODE_DIRECT_TEMP}）
+     */
+    private R directTempDuplicatePayload(String sessionId, String goodsName, String goodsSpec,
+                                         String goodsFurtherDescription,
+                                         GbDistributerGoodsEntity existing,
+                                         GbDepartmentDisGoodsEntity depDis,
+                                         String assistantMessageOverride,
+                                         String analyzeModeForData) {
+        String msg = StrUtil.isNotBlank(assistantMessageOverride)
+                ? assistantMessageOverride
+                : "您填写的商品名称与规格与已有商品完全一致，未重复添加。";
+        Map<String, Object> persisted = persistSummary(existing,
+                depDis != null ? depDis.getGbDepartmentDisGoodsId() : null);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("sessionId", sessionId);
+        data.put("flowState", FLOW_TEMP_DUPLICATE);
+        data.put("assistantMessage", msg);
+        data.put("matchSummary", null);
+        data.put("candidates", null);
+        data.put("branchOptions", null);
+        data.put("tempPreview", buildTempPreview(goodsName, goodsSpec, goodsFurtherDescription));
+        data.put("gbDistributerGoods", toGbDistributerGoodsApiMap(existing));
+        data.put("gbDepartmentDisGoods", depDis != null ? toGbDepartmentDisGoodsApiMap(depDis) : null);
+        data.put("persistedGoods", persisted);
+        data.put("analyzeMode", StrUtil.blankToDefault(analyzeModeForData, ANALYZE_MODE_DIRECT_TEMP));
+        data.put("nxCatalogConfirmIntents", null);
+        data.put("catalogLevel1Options", null);
+        data.put("analyzeModeHint", null);
+        data.put("catalogHitComposition", null);
+        data.put("disCatalogChoices", null);
+        R r = R.ok(msg);
+        r.put("flowState", FLOW_TEMP_DUPLICATE);
+        r.put("data", data);
+        log.info("{} direct_temp_duplicate response gbDistributerGoodsId={}", L, existing.getGbDistributerGoodsId());
+        return r;
+    }
+
     /**
      * 用户自选目录：一级（level=0）→ 二级（1）→ 三级品名父（2）→ 四级 SKU（3）；无 SKU 或与 AI {@code NO_MATCH} 时由前端引导至扩充目录。
      */
@@ -526,7 +792,9 @@ public class GbAiGoodsAddServiceImpl implements GbAiGoodsAddService {
             Map<Integer, String> idToNameSku = loadAncestorNames(skus);
             Map<Integer, Map<String, Object>> candidateMaps = new LinkedHashMap<>();
             for (NxGoodsEntity e : skus) {
-                candidateMaps.put(e.getNxGoodsId(), toCandidateMap(e, idToNameSku));
+                Map<String, Object> cand = toCandidateMap(e, idToNameSku);
+                enrichCandidateWithDisImport(cand, e, disId);
+                candidateMaps.put(e.getNxGoodsId(), cand);
             }
             List<Integer> allowed = new ArrayList<>(candidateMaps.keySet());
             Integer ggForSnap = father.getNxGoodsGreatGrandId();
@@ -1691,11 +1959,11 @@ public class GbAiGoodsAddServiceImpl implements GbAiGoodsAddService {
         List<Map<String, Object>> out = new ArrayList<>();
         Map<String, Object> a = new LinkedHashMap<>();
         a.put("intent", NX_INTENT_USE_MATCHED);
-        a.put("label", "使用目录匹配到的商品");
+        a.put("label", "选择该商品"); //使用目录匹配到的商品
         out.add(a);
         Map<String, Object> b = new LinkedHashMap<>();
         b.put("intent", NX_INTENT_ADD_SIBLING_SKU);
-        b.put("label", "保留我输入的名称和规格，在同品类下新增一条目录 SKU");
+        b.put("label", "在同品类下新增"); //保留我输入的名称和规格，在同品类下新增一条目录 SKU
         out.add(b);
         return out;
     }
@@ -1903,6 +2171,21 @@ public class GbAiGoodsAddServiceImpl implements GbAiGoodsAddService {
                         List.of(nx), goodsName, goodsSpec, goodsFurtherDescription, true, DIS_PREFETCH_HINT_EXACT_MATCH, null);
             }
         }
+        /* 临时品等：无农鑫 SKU 或 nx 非目录 SKU，仍为「名称+规格」完全命中批发商商品 —— 直接返回，不再查目录/LIKE */
+        if (gbHit != null) {
+            GbDistributerGoodsEntity reloaded = gbHit.getGbDistributerGoodsId() != null
+                    ? gbDistributerGoodsService.getById(gbHit.getGbDistributerGoodsId()) : null;
+            if (reloaded != null) {
+                gbHit = reloaded;
+            }
+            GbDepartmentDisGoodsEntity dep = ensureDepDisGoodsForDirectTemp(
+                    req, sessionId, nt, st, goodsFurtherDescription, gbHit, st);
+            log.info("{} analyze step=dis_exact_prefetch path=local_gb_name_spec_exact gbDistributerGoodsId={} nxGoodsId={}",
+                    L, gbHit.getGbDistributerGoodsId(), gbHit.getGbDgNxGoodsId());
+            return directTempDuplicatePayload(sessionId, nt, st, goodsFurtherDescription, gbHit, dep,
+                    "与您已有批发商商品名称、规格完全一致，已直接返回该商品，未继续检索目录。",
+                    ANALYZE_MODE_AI);
+        }
         NxGoodsEntity nxOnly = findNxSkuLevel3ExactByNameAndSpec(nt, st);
         if (nxOnly != null) {
             log.info("{} analyze step=dis_exact_prefetch path=nx_catalog nxGoodsId={}", L, nxOnly.getNxGoodsId());
@@ -1952,13 +2235,8 @@ public class GbAiGoodsAddServiceImpl implements GbAiGoodsAddService {
         Map<Integer, Map<String, Object>> sessionCandidateMaps = new LinkedHashMap<>();
         List<Map<String, Object>> choiceRows = new ArrayList<>();
         for (NxGoodsEntity e : ordered) {
-            GbDistributerGoodsEntity gb = resolvedGbOnSku(e, disId);
-            String importStatus = gb != null && gb.getGbDistributerGoodsId() != null ? DIS_IMPORT_ALREADY : DIS_IMPORT_NOT;
-            Integer gbId = gb != null ? gb.getGbDistributerGoodsId() : null;
             Map<String, Object> cand = toCandidateMap(e, idToName);
-            cand.put("disImportStatus", importStatus);
-            cand.put("gbDistributerGoodsId", gbId);
-            cand.put("useConfirmApi", DIS_IMPORT_NOT.equals(importStatus));
+            enrichCandidateWithDisImport(cand, e, disId);
             choiceRows.add(cand);
             whitelist.add(e.getNxGoodsId());
             sessionCandidateMaps.put(e.getNxGoodsId(), cand);
@@ -2027,13 +2305,13 @@ public class GbAiGoodsAddServiceImpl implements GbAiGoodsAddService {
         if (FLOW_DIS_CATALOG_GB_ONLY.equals(disPrefetchFlowState)) {
             Map<String, Object> one = new LinkedHashMap<>();
             one.put("intent", NX_INTENT_ADD_SIBLING_SKU);
-            one.put("label", "保留我输入的名称和规格，在同品类下新增一条目录 SKU");
+            one.put("label", "在同品类下新增"); //保留我输入的名称和规格，在同品类下新增一条目录 SKU
             return List.of(one);
         }
         if (FLOW_DIS_CATALOG_NX_ONLY.equals(disPrefetchFlowState)) {
             Map<String, Object> one = new LinkedHashMap<>();
             one.put("intent", NX_INTENT_USE_MATCHED);
-            one.put("label", "使用该目录规格并加入批发商商品");
+            one.put("label", "下载商品"); //使用该目录规格并加入批发商商品
             return List.of(one);
         }
         return nxCatalogConfirmIntentsPayload();
@@ -2053,6 +2331,18 @@ public class GbAiGoodsAddServiceImpl implements GbAiGoodsAddService {
             return e.getGbDistributerGoodsEntity();
         }
         return findExistingDistributerGoodsByNx(disId, e.getNxGoodsId());
+    }
+
+    /**
+     * 与预检索列表字段一致：标明该目录 SKU 是否已对应本批发商商品（未入库为 {@link #DIS_IMPORT_NOT}），供小程序「下载到本店」等 UI。
+     */
+    private void enrichCandidateWithDisImport(Map<String, Object> cand, NxGoodsEntity e, int disId) {
+        GbDistributerGoodsEntity gb = resolvedGbOnSku(e, disId);
+        String importStatus = gb != null && gb.getGbDistributerGoodsId() != null ? DIS_IMPORT_ALREADY : DIS_IMPORT_NOT;
+        Integer gbId = gb != null ? gb.getGbDistributerGoodsId() : null;
+        cand.put("disImportStatus", importStatus);
+        cand.put("gbDistributerGoodsId", gbId);
+        cand.put("useConfirmApi", DIS_IMPORT_NOT.equals(importStatus));
     }
 
     private static Map<String, Object> nxDepQuickSearchBase(int disId, int depId) {

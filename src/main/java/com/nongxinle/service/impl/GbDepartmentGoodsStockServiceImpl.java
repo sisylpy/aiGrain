@@ -56,6 +56,16 @@ public class GbDepartmentGoodsStockServiceImpl extends ServiceImpl<GbDepartmentG
     }
 
     @Override
+    public Double queryDepGoodsSubtotal(Map<String, Object> map) {
+        return gbDepartmentGoodsStockMapper.queryDepGoodsSubtotal(map);
+    }
+
+    @Override
+    public Double queryDepStockWeightTotal(Map<String, Object> map) {
+        return gbDepartmentGoodsStockMapper.queryDepStockWeightTotal(map);
+    }
+
+    @Override
     public List<GbDistributerFatherGoodsEntity> queryDepStockTreeFatherGoodsByParams(Map<String, Object> map) {
         return gbDepartmentGoodsStockMapper.queryDepStockTreeFatherGoodsByParams(map);
     }

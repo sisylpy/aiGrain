@@ -47,7 +47,9 @@ public final class SkillRouteFallback {
                     broad,
                     fromLlm.confidence(),
                     fromLlm.llmStructuredOk(),
-                    ChatRouteSource.RULE_FALLBACK
+                    ChatRouteSource.RULE_FALLBACK,
+                    fromLlm.suggestedMetricIds(),
+                    fromLlm.skillPhaseStatTime()
             );
         }
         return routed.withNormalizedCostFacet();
@@ -63,6 +65,14 @@ public final class SkillRouteFallback {
         }
         // 模型若吐出非法文件名（如 [].md），视为未选技能，走规则兜底
         return !t.contains("ai-skill-");
+    }
+
+    /**
+     * 首轮 LLM + 规则 + 编目合并后，仍无可执行的技能文件（none / 空 / 无合法 ai-skill-*.md）。
+     * 此时可由对话服务触发 DeepSeek 二次路由。
+     */
+    public static boolean isSkillSelectionUnresolved(String skillsCsv) {
+        return isNoneOrEmptySkills(skillsCsv);
     }
 
     /**
@@ -140,9 +150,36 @@ public final class SkillRouteFallback {
         boolean volCue = u.contains("波动") || u.contains("涨跌") || u.contains("浮动") || u.contains("变动")
                 || u.contains("价差") || u.contains("差价");
         boolean rangeCue = u.contains("最贵") || u.contains("最便宜") || (u.contains("最高") && u.contains("最低"));
+        boolean highLowRank = u.contains("最高") || u.contains("最低") || u.contains("最大") || u.contains("最小")
+                || u.contains("最贵") || u.contains("最便宜");
         return (priceCue && volCue)
                 || (priceCue && rangeCue && (u.contains("采购") || u.contains("进货") || u.contains("进价")))
+                || (priceCue && highLowRank
+                        && (u.contains("采购") || u.contains("进货") || u.contains("进价") || u.contains("供货")
+                        || u.contains("原料") || u.contains("配料")))
                 || (volCue && (u.contains("采购") || u.contains("进货")));
+    }
+
+    /**
+     * 是否附带「入库单价升序/降序摘录」：用于「单价最小/最大」等**绝对极值**问法（与单价**波动**块互补；波动块在无多笔价差时可能为空）。
+     */
+    public static boolean shouldAttachPurchaseUnitPriceExtremeFacts(String userMessage) {
+        if (StrUtil.isBlank(userMessage)) {
+            return false;
+        }
+        String u = userMessage.toLowerCase(Locale.ROOT);
+        if (u.contains("售价") || u.contains("定价") || u.contains("菜单价")) {
+            return false;
+        }
+        boolean priceCue = u.contains("单价") || u.contains("进价") || u.contains("进货价") || u.contains("采购价")
+                || u.contains("入库价");
+        boolean wantMin = u.contains("最小") || u.contains("最低") || u.contains("最便宜");
+        boolean wantMax = u.contains("最大") || u.contains("最高") || u.contains("最贵");
+        if (!wantMin && !wantMax) {
+            return false;
+        }
+        return priceCue && (u.contains("采购") || u.contains("进货") || u.contains("进价") || u.contains("供货")
+                || u.contains("原料") || u.contains("配料"));
     }
 
     /**
@@ -266,6 +303,26 @@ public final class SkillRouteFallback {
         return "none";
     }
 
+    /**
+     * 路由编目用：是否应按「单菜成本/配料/毛利诊断」追加 {@code ai-skill-dish-cost-diagnosis.md}。
+     */
+    public static boolean matchesDishCostDiagnosisIntent(String userMessage) {
+        if (StrUtil.isBlank(userMessage)) {
+            return false;
+        }
+        return isDishCostIntent(userMessage.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * 路由编目用：是否应按「采购/进货/供应商/进价结构」追加 {@code ai-skill-procurement-structure.md}。
+     */
+    public static boolean matchesProcurementStructureIntent(String userMessage) {
+        if (StrUtil.isBlank(userMessage)) {
+            return false;
+        }
+        return isProcurementIntent(userMessage.toLowerCase(Locale.ROOT));
+    }
+
     private static boolean isDishCostIntent(String u) {
         if (u == null) {
             return false;
@@ -290,6 +347,10 @@ public final class SkillRouteFallback {
                 || u.contains("进价") || u.contains("进货价") || u.contains("采购价")
                 || u.contains("入库价")
                 || (u.contains("单价") && u.contains("波动"))
+                || (u.contains("单价") && (u.contains("最高") || u.contains("最贵") || u.contains("最低") || u.contains("最便宜")
+                        || u.contains("最大") || u.contains("最小"))
+                        && (u.contains("采购") || u.contains("进货") || u.contains("进价") || u.contains("供货")
+                        || u.contains("原料") || u.contains("配料")))
                 || (u.contains("原料") && (u.contains("订货") || u.contains("供货商") || u.contains("供应商")))
                 || supplierOrderPurchaseCue(u)
                 || reorderHabitCue(u);

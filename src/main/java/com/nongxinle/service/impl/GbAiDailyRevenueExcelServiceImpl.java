@@ -9,16 +9,17 @@ import com.nongxinle.service.GbDepartmentService;
 import com.nongxinle.service.GbDepFoodService;
 import com.nongxinle.service.GbDistributerFoodService;
 import com.nongxinle.utils.GbDateTimeUtils;
-import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -88,40 +89,7 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
         }
 
         // 智能识别表头行数
-        int startRow = 0;
-        if (!rows.isEmpty()) {
-            // 检查第一行是否是元数据行（包含"表格"、"部门ID"、"日期"等）
-            if (rows.size() > 0 && rows.get(0).size() > 0) {
-                Object firstCell = rows.get(0).get(0);
-                // 如果第一行包含"表格"，第二行包含"部门ID"，第三行包含"日期"
-                // 那么需要跳过前3行
-                if (rows.size() >= 3 && 
-                    firstCell instanceof String && 
-                    ((String) firstCell).contains("表格")) {
-                    
-                    // 检查第二行是否包含"部门ID"
-                    if (rows.get(1).size() > 0 && 
-                        rows.get(1).get(0) instanceof String &&
-                        ((String) rows.get(1).get(0)).contains("部门ID")) {
-                        
-                        // 检查第三行是否包含"日期"
-                        if (rows.get(2).size() > 0 && 
-                            rows.get(2).get(0) instanceof String &&
-                            ((String) rows.get(2).get(0)).contains("日期")) {
-                            
-                            startRow = 3; // 跳过前3行元数据
-                            log.debug("excel smart template: skip 3 metadata rows");
-                        }
-                    }
-                }
-                // 如果第一行直接包含"日期"（旧格式），跳过1行
-                else if (firstCell instanceof String && 
-                         ((String) firstCell).toString().contains("日期")) {
-                    startRow = 1;
-                    log.debug("excel legacy template: skip header row");
-                }
-            }
-        }
+        int startRow = detectDailyRevenueDataStartRow(rows);
 
         for (int i = startRow; i < rows.size(); i++) {
             List<Object> row = rows.get(i);
@@ -260,11 +228,37 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
         return revenueList;
     }
 
+    private static int detectDailyRevenueDataStartRow(List<List<Object>> rows) {
+        int startRow = 0;
+        if (!rows.isEmpty() && rows.get(0).size() > 0) {
+            Object firstCell = rows.get(0).get(0);
+            if (rows.size() >= 3
+                    && firstCell instanceof String
+                    && ((String) firstCell).contains("表格")) {
+                if (rows.get(1).size() > 0
+                        && rows.get(1).get(0) instanceof String
+                        && ((String) rows.get(1).get(0)).contains("部门ID")) {
+                    if (rows.get(2).size() > 0
+                            && rows.get(2).get(0) instanceof String
+                            && ((String) rows.get(2).get(0)).contains("日期")) {
+                        startRow = 3;
+                        log.debug("excel smart template: skip 3 metadata rows");
+                    }
+                }
+            } else if (firstCell instanceof String
+                    && ((String) firstCell).contains("日期")) {
+                startRow = 1;
+                log.debug("excel legacy template: skip header row");
+            }
+        }
+        return startRow;
+    }
+
     @Override
     public void writeDailyRevenueSmartTemplate(HttpServletResponse response,
-            @Parameter(description = "开始日期，格式：yyyy-MM-dd") @RequestParam("startDate") String startDate,
-            @Parameter(description = "结束日期，格式：yyyy-MM-dd") @RequestParam("endDate") String endDate,
-            @Parameter(description = "部门ID") @RequestParam("departmentId") Integer departmentId) throws IOException {
+            String startDate,
+            String endDate,
+            Integer departmentId) throws IOException {
         
         try {
             log.debug("download-smart-template startDate={} endDate={} departmentId={}", startDate, endDate, departmentId);
@@ -416,9 +410,9 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
 
     @Override
     public void writeFoodSalesSmartTemplate(HttpServletResponse response,
-            @RequestParam("startDate") String startDate,
-            @RequestParam("endDate") String endDate,
-            @RequestParam("departmentId") Integer departmentId) throws IOException {
+            String startDate,
+            String endDate,
+            Integer departmentId) throws IOException {
 
         try {
             LocalDate start = GbDateTimeUtils.parseLocalDay(startDate);
@@ -543,16 +537,480 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
     }
 
     @Override
-    public List<FoodSalesExcelCell> parseFoodSalesExcel(MultipartFile file)
-            throws IOException {
-        cn.hutool.poi.excel.ExcelReader reader = cn.hutool.poi.excel.ExcelUtil.getReader(file.getInputStream());
+    public List<FoodSalesExcelCell> parseFoodSalesExcel(MultipartFile file) throws IOException {
+        byte[] bytes = file.getBytes();
+        int sheet = resolveFoodSalesDataSheetIndex(bytes);
+        return parseFoodSalesExcel(bytes, sheet);
+    }
+
+    @Override
+    public List<FoodSalesExcelCell> parseFoodSalesExcel(byte[] spreadsheetBytes, int sheetIndex) throws IOException {
+        cn.hutool.poi.excel.ExcelReader reader =
+                cn.hutool.poi.excel.ExcelUtil.getReader(new ByteArrayInputStream(spreadsheetBytes), sheetIndex);
         List<List<Object>> rows = reader.read();
+
+        log.info("parseFoodSalesExcel sheetIndex={} dataRowCount={}", sheetIndex, rows.size());
+        int previewRows = Math.min(rows.size(), 8);
+        for (int i = 0; i < previewRows; i++) {
+            log.info("  foodSheet row[{}]: {}", i, summarizeFoodSheetRowForLog(rows.get(i), 10));
+        }
 
         Integer pivotHeaderRow = findFoodSalesPivotHeaderRow(rows);
         if (pivotHeaderRow != null) {
+            log.info("parseFoodSalesExcel using pivot layout, headerRowIndex={}", pivotHeaderRow);
             return readFoodSalesExcelPivotLayout(rows, pivotHeaderRow);
         }
+        log.warn("parseFoodSalesExcel pivot header not matched (e.g. need 序号 column + 菜品 + date columns); trying legacy layout");
         return readFoodSalesExcelLegacyDateRows(rows);
+    }
+
+    @Override
+    public int[] resolveCombinedTemplateFoodAndRevenueSheetIndexes(byte[] spreadsheetBytes) throws IOException {
+        try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(spreadsheetBytes))) {
+            int sheetCount = wb.getNumberOfSheets();
+            int namedFood = -1;
+            int namedRevenue = -1;
+            for (int i = 0; i < sheetCount; i++) {
+                String n = wb.getSheetName(i);
+                if (GbAiDailyRevenueExcelService.COMBINED_SHEET_FOOD_NAME.equals(n)) {
+                    namedFood = i;
+                } else if (GbAiDailyRevenueExcelService.COMBINED_SHEET_REVENUE_NAME.equals(n)) {
+                    namedRevenue = i;
+                }
+            }
+            if (namedFood >= 0 && namedRevenue >= 0) {
+                log.info("resolveCombinedTemplate by sheet name food={} revenue={}", namedFood, namedRevenue);
+                logWorkbookSheetNames(wb);
+                return new int[] { namedFood, namedRevenue };
+            }
+
+            int food = namedFood;
+            int revenue = namedRevenue;
+            for (int i = 0; i < sheetCount; i++) {
+                String sheetName = wb.getSheetName(i);
+                List<List<Object>> rows = readSheetRowsForDetection(spreadsheetBytes, i);
+                if (isNumbersOrExportJunkSheet(sheetName, rows)) {
+                    log.info("resolveCombinedTemplate skip junk sheet index={} name=\"{}\"", i, sheetName);
+                    continue;
+                }
+                if (food < 0 && findFoodSalesPivotHeaderRow(rows) != null) {
+                    food = i;
+                    log.info("resolveCombinedTemplate detected FOOD sheet index={} name=\"{}\"", i, sheetName);
+                } else if (food < 0 && hasLegacyFoodSalesDateColumnLayout(rows)) {
+                    food = i;
+                    log.info("resolveCombinedTemplate detected FOOD (legacy 日期列) sheet index={} name=\"{}\"", i, sheetName);
+                } else if (revenue < 0 && looksLikeDailyRevenueSupplementSheet(rows)) {
+                    revenue = i;
+                    log.info("resolveCombinedTemplate detected REVENUE sheet index={} name=\"{}\"", i, sheetName);
+                }
+            }
+
+            if (food < 0) {
+                throw new IllegalArgumentException(
+                        "未识别菜品销售表：Numbers 导出常将「导出摘要」作为首表，真正数据在「工作表 1」等；请保留含「序号、部门、菜品、日期列」的表，或使用系统下载的合并模板。");
+            }
+            if (revenue < 0) {
+                throw new IllegalArgumentException(
+                        "未识别日营业额表：请确保另有工作表表头含「日期」及「堂食订单/顾客/外卖/平台抽成」等列（合并模板无堂食营业额列），或使用系统下载的合并模板。");
+            }
+            if (food == revenue) {
+                throw new IllegalArgumentException("菜品销售表与日营业额表不能是同一张工作表，请检查导出是否完整。");
+            }
+            log.info("resolveCombinedTemplate foodSheetIndex={} revenueSheetIndex={} totalSheets={}",
+                    food, revenue, sheetCount);
+            logWorkbookSheetNames(wb);
+            return new int[] { food, revenue };
+        }
+    }
+
+    @Override
+    public int resolveFoodSalesDataSheetIndex(byte[] spreadsheetBytes) throws IOException {
+        try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(spreadsheetBytes))) {
+            for (int i = 0; i < wb.getNumberOfSheets(); i++) {
+                String sheetName = wb.getSheetName(i);
+                List<List<Object>> rows = readSheetRowsForDetection(spreadsheetBytes, i);
+                if (isNumbersOrExportJunkSheet(sheetName, rows)) {
+                    log.info("resolveFoodSalesDataSheetIndex skip junk index={} name=\"{}\"", i, sheetName);
+                    continue;
+                }
+                if (findFoodSalesPivotHeaderRow(rows) != null) {
+                    log.info("resolveFoodSalesDataSheetIndex chose index={} name=\"{}\" (pivot)", i, sheetName);
+                    return i;
+                }
+                if (hasLegacyFoodSalesDateColumnLayout(rows)) {
+                    log.info("resolveFoodSalesDataSheetIndex chose index={} name=\"{}\" (legacy)", i, sheetName);
+                    return i;
+                }
+            }
+        }
+        throw new IllegalArgumentException(
+                "未找到菜品销售工作表：若使用 Numbers 导出，首表可能为「导出摘要」，请从含「序号、菜品…、日期列」的表上传，或使用「菜品日销售」单表模板。");
+    }
+
+    private void logWorkbookSheetNames(Workbook wb) {
+        for (int i = 0; i < wb.getNumberOfSheets(); i++) {
+            log.info("  workbook sheet[{}]: \"{}\"", i, wb.getSheetName(i));
+        }
+    }
+
+    private List<List<Object>> readSheetRowsForDetection(byte[] spreadsheetBytes, int sheetIndex) throws IOException {
+        return cn.hutool.poi.excel.ExcelUtil.getReader(new ByteArrayInputStream(spreadsheetBytes), sheetIndex).read();
+    }
+
+    private static boolean isNumbersOrExportJunkSheet(String sheetName, List<List<Object>> rows) {
+        if (sheetName != null) {
+            String sn = sheetName.trim();
+            if ("导出摘要".equals(sn) || sn.contains("导出摘要")) {
+                return true;
+            }
+            if ("Export Summary".equalsIgnoreCase(sn)) {
+                return true;
+            }
+        }
+        if (rows == null || rows.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < Math.min(rows.size(), 5); i++) {
+            List<Object> row = rows.get(i);
+            if (row == null) {
+                continue;
+            }
+            for (Object cell : row) {
+                if (cell == null) {
+                    continue;
+                }
+                String t = cell.toString();
+                if (t.contains("此文稿由 Numbers") || t.contains("Numbers 表格导出") || t.contains("Numbers 表格工作表名称")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasLegacyFoodSalesDateColumnLayout(List<List<Object>> rows) {
+        if (rows.size() >= 3
+                && rows.get(2).size() > 0
+                && rows.get(2).get(0) != null
+                && rows.get(2).get(0).toString().contains("日期")) {
+            return true;
+        }
+        return rows.size() >= 1
+                && rows.get(0).size() > 0
+                && rows.get(0).get(0) != null
+                && rows.get(0).get(0).toString().contains("日期");
+    }
+
+    private static boolean looksLikeDailyRevenueSupplementSheet(List<List<Object>> rows) {
+        if (findFoodSalesPivotHeaderRow(rows) != null) {
+            return false;
+        }
+        for (int r = 0; r < Math.min(rows.size(), 40); r++) {
+            List<Object> row = rows.get(r);
+            if (row == null || row.isEmpty() || row.get(0) == null) {
+                continue;
+            }
+            String c0 = row.get(0).toString().trim();
+            if (!"日期".equals(c0) && !"Date".equalsIgnoreCase(c0)) {
+                continue;
+            }
+            if (row.size() < 2) {
+                continue;
+            }
+            String c1 = row.get(1) == null ? "" : row.get(1).toString();
+            if (c1.contains("堂食订单") || c1.contains("堂食顾客") || c1.contains("堂食营业额")
+                    || c1.contains("外卖") || c1.contains("平台") || c1.contains("抽成")
+                    || c1.contains("备注")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public List<GbAiDailyRevenueEntity> parseCombinedTemplateRevenueSheet(
+            byte[] spreadsheetBytes, int sheetIndex, Long departmentId, Long distributerId) throws IOException {
+        List<GbAiDailyRevenueEntity> revenueList = new ArrayList<>();
+        Set<String> dateSet = new HashSet<>();
+
+        cn.hutool.poi.excel.ExcelReader reader =
+                cn.hutool.poi.excel.ExcelUtil.getReader(new ByteArrayInputStream(spreadsheetBytes), sheetIndex);
+        List<List<Object>> rows = reader.read();
+
+        int startRow = detectDailyRevenueDataStartRow(rows);
+        if (startRow > 0 && startRow - 1 < rows.size()) {
+            List<Object> header = rows.get(startRow - 1);
+            if (header.size() > 1 && header.get(1) != null && header.get(1).toString().contains("堂食营业额")) {
+                throw new IllegalArgumentException("合并模板「日营业额」页不应包含堂食营业额列；堂食金额由「菜品日销售」页汇总");
+            }
+        }
+
+        for (int i = startRow; i < rows.size(); i++) {
+            List<Object> row = rows.get(i);
+            if (row.isEmpty() || row.get(0) == null) {
+                continue;
+            }
+            Object dateCell = row.get(0);
+            Date recordDate = GbDateTimeUtils.parseExcelDateLikeCell(dateCell);
+            String dateStr = recordDate != null ? GbDateTimeUtils.formatDay(recordDate) : null;
+            if (recordDate == null || dateStr == null) {
+                continue;
+            }
+            String dateKey = departmentId + "-" + dateStr;
+            if (dateSet.contains(dateKey)) {
+                log.warn("skip duplicate excel date deptId={} date={}", departmentId, dateStr);
+                continue;
+            }
+            dateSet.add(dateKey);
+
+            GbAiDailyRevenueEntity entity = new GbAiDailyRevenueEntity();
+            entity.setGbAiDailyRevenueDepartmentId(departmentId);
+            entity.setGbAiDailyRevenueDistributerId(distributerId);
+            entity.setGbAiDailyRevenueRecordDate(recordDate);
+            // 无堂食营业额列：堂食金额由菜品导入逻辑写入
+
+            if (row.size() > 1 && row.get(1) != null) {
+                try {
+                    entity.setGbAiDailyRevenueDineInOrders(Integer.parseInt(row.get(1).toString()));
+                } catch (NumberFormatException e) {
+                    entity.setGbAiDailyRevenueDineInOrders(0);
+                }
+            } else {
+                entity.setGbAiDailyRevenueDineInOrders(0);
+            }
+
+            if (row.size() > 2 && row.get(2) != null) {
+                try {
+                    entity.setGbAiDailyRevenueDineInCustomers(Integer.parseInt(row.get(2).toString()));
+                } catch (NumberFormatException e) {
+                    entity.setGbAiDailyRevenueDineInCustomers(0);
+                }
+            } else {
+                entity.setGbAiDailyRevenueDineInCustomers(0);
+            }
+
+            if (row.size() > 3 && row.get(3) != null) {
+                try {
+                    entity.setGbAiDailyRevenueTakeoutRevenue(new BigDecimal(row.get(3).toString()));
+                } catch (NumberFormatException e) {
+                    entity.setGbAiDailyRevenueTakeoutRevenue(BigDecimal.ZERO);
+                }
+            } else {
+                entity.setGbAiDailyRevenueTakeoutRevenue(BigDecimal.ZERO);
+            }
+
+            if (row.size() > 4 && row.get(4) != null) {
+                try {
+                    entity.setGbAiDailyRevenueTakeoutOrders(Integer.parseInt(row.get(4).toString()));
+                } catch (NumberFormatException e) {
+                    entity.setGbAiDailyRevenueTakeoutOrders(0);
+                }
+            } else {
+                entity.setGbAiDailyRevenueTakeoutOrders(0);
+            }
+
+            if (row.size() > 5 && row.get(5) != null) {
+                try {
+                    entity.setGbAiDailyRevenuePlatformFee(new BigDecimal(row.get(5).toString()));
+                } catch (NumberFormatException e) {
+                    entity.setGbAiDailyRevenuePlatformFee(BigDecimal.ZERO);
+                }
+            } else {
+                entity.setGbAiDailyRevenuePlatformFee(BigDecimal.ZERO);
+            }
+
+            try {
+                entity.setGbAiDailyRevenueWeekday(GbDateTimeUtils.weekdayForAiDailyRevenue(recordDate));
+            } catch (Exception e) {
+                entity.setGbAiDailyRevenueWeekday(1);
+            }
+            entity.setGbAiDailyRevenueHoliday("");
+
+            if (row.size() > 6 && row.get(6) != null) {
+                entity.setGbAiDailyRevenueNotes(row.get(6).toString());
+            } else {
+                entity.setGbAiDailyRevenueNotes("");
+            }
+
+            Date currentTime = new Date();
+            entity.setGbAiDailyRevenueCreateTime(currentTime);
+            entity.setGbAiDailyRevenueUpdateTime(currentTime);
+
+            revenueList.add(entity);
+        }
+        return revenueList;
+    }
+
+    @Override
+    public void writeDailyRevenueFoodCombinedTemplate(HttpServletResponse response,
+            String startDate,
+            String endDate,
+            Integer departmentId) throws IOException {
+
+        try {
+            LocalDate start = GbDateTimeUtils.parseLocalDay(startDate);
+            LocalDate end = GbDateTimeUtils.parseLocalDay(endDate);
+            if (start.isAfter(end)) {
+                throw new IllegalArgumentException("开始日期不能晚于结束日期");
+            }
+            List<LocalDate> dayList = GbDateTimeUtils.inclusiveLocalDates(start, end);
+            long days = dayList.size();
+            if (days > 365) {
+                throw new IllegalArgumentException("日期范围不能超过365天");
+            }
+
+            GbDepartmentEntity department = departmentService.getById(departmentId);
+            if (department == null) {
+                throw new IllegalArgumentException("部门不存在，部门ID: " + departmentId);
+            }
+
+            Map<String, Object> depMap = new HashMap<>();
+            depMap.put("depFatherId", departmentId);
+            List<GbDepFoodEntity> depFoods = gbDepFoodService.queryDepAllFood(depMap);
+            attachDistributerFood(depFoods);
+            depFoods.sort(depFoodTemplateRowComparator());
+
+            cn.hutool.poi.excel.ExcelWriter writer = cn.hutool.poi.excel.ExcelUtil.getWriter(true);
+            writer.renameSheet(0, GbAiDailyRevenueExcelService.COMBINED_SHEET_FOOD_NAME);
+
+            List<Object> foodMeta = new ArrayList<>();
+            foodMeta.add("部门ID: " + departmentId);
+            foodMeta.add("部门名称: " + department.getGbDepartmentName());
+            foodMeta.add("日期范围: " + startDate + " 至 " + endDate);
+            foodMeta.add("总天数: " + days);
+            int dishRowCount = 0;
+            for (GbDepFoodEntity f : depFoods) {
+                if (includeDepFoodInSalesTemplate(f, department)) {
+                    dishRowCount++;
+                }
+            }
+            foodMeta.add("菜品行数(含id): " + dishRowCount);
+            foodMeta.add("");
+            foodMeta.add("");
+            foodMeta.add("");
+            foodMeta.add("");
+            writer.writeRow(foodMeta);
+            writer.writeRow(new ArrayList<>());
+
+            List<Object> foodDataHeaders = new ArrayList<>();
+            foodDataHeaders.add("序号");
+            foodDataHeaders.add("部门名称");
+            foodDataHeaders.add("菜品名称");
+            for (LocalDate d : dayList) {
+                foodDataHeaders.add(GbDateTimeUtils.formatDay(d));
+            }
+            writer.writeHeadRow(foodDataHeaders);
+
+            int skipped = 0;
+            int serial = 1;
+            for (GbDepFoodEntity f : depFoods) {
+                Integer foodId = f.getGbDfFoodId();
+                if (foodId == null) {
+                    skipped++;
+                    continue;
+                }
+                if (!includeDepFoodInSalesTemplate(f, department)) {
+                    skipped++;
+                    continue;
+                }
+                String name = distributerFoodDisplayName(f, foodId);
+                Integer depId = f.getGbDfDepId();
+                String depName = depDisplayName(depId);
+                List<Object> rowData = new ArrayList<>();
+                rowData.add(serial++);
+                rowData.add(depName + "（id:" + (depId == null ? "" : depId) + "）");
+                rowData.add(name + "（id:" + foodId + "）");
+                for (int i = 0; i < days; i++) {
+                    rowData.add("");
+                }
+                writer.writeRow(rowData);
+            }
+
+            writer.setSheet(GbAiDailyRevenueExcelService.COMBINED_SHEET_REVENUE_NAME);
+            List<Object> revInfoRow = new ArrayList<>();
+            revInfoRow.add("部门ID: " + departmentId);
+            revInfoRow.add("部门名称: " + department.getGbDepartmentName());
+            revInfoRow.add("日期范围: " + startDate + " 至 " + endDate);
+            revInfoRow.add("总天数: " + days);
+            revInfoRow.add("说明: 无堂食/当日营业额列，堂食金额由「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_FOOD_NAME + "」汇总");
+            revInfoRow.add("");
+            revInfoRow.add("");
+            revInfoRow.add("");
+            revInfoRow.add("");
+            writer.writeRow(revInfoRow);
+            writer.writeRow(new ArrayList<>());
+
+            String[] revHeaders = {
+                    "日期",
+                    "堂食订单数",
+                    "堂食顾客数",
+                    "外卖营业额",
+                    "外卖订单数",
+                    "平台抽成",
+                    "备注"
+            };
+            writer.writeHeadRow(Arrays.asList(revHeaders));
+
+            for (LocalDate d : dayList) {
+                List<Object> rowData = new ArrayList<>();
+                rowData.add(GbDateTimeUtils.formatDay(d));
+                for (int i = 0; i < 6; i++) {
+                    rowData.add("");
+                }
+                writer.writeRow(rowData);
+            }
+
+            writer.setSheet("使用说明");
+            writer.writeCellValue(0, 0, "合并模板说明（菜品 + 日营业额）");
+            writer.writeCellValue(1, 0, "一、「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_FOOD_NAME + "」与单独下载的菜品模板相同：第1列序号、第2列部门（含id）、第3列菜品（含id），第4列起为各日销量。");
+            writer.writeCellValue(2, 0, "二、「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_REVENUE_NAME
+                    + "」不含当日营业额/堂食营业额列；堂食金额由菜品销量×单价汇总后写入系统。");
+            writer.writeCellValue(3, 0, "三、上传接口：POST /ai/daily-revenue/upload-combined-excel ，参数 file、departmentId、distributerId");
+            writer.writeCellValue(4, 0, "四、先导入菜品销售并汇总堂食，再合并写入外卖、订单数、顾客数、平台抽成、备注等字段。");
+            if (skipped > 0) {
+                writer.writeCellValue(5, 0, "五、当前有 " + skipped + " 条门店菜品未出现在菜品表中（未配置 gb_df_food_id 或与部门批发商不一致）");
+            }
+
+            writer.setSheet(GbAiDailyRevenueExcelService.COMBINED_SHEET_FOOD_NAME);
+            for (int i = 0; i < foodDataHeaders.size(); i++) {
+                writer.autoSizeColumn(i);
+            }
+
+            writer.setSheet(GbAiDailyRevenueExcelService.COMBINED_SHEET_REVENUE_NAME);
+            for (int i = 0; i < revHeaders.length; i++) {
+                writer.autoSizeColumn(i);
+            }
+            Sheet revSheet = writer.getSheet();
+            if (revSheet != null && revSheet.getRow(2) != null) {
+                for (int i = 1; i <= 5; i++) {
+                    if (revSheet.getRow(2).getCell(i) != null) {
+                        revSheet.getRow(2).getCell(i).setCellValue(revHeaders[i] + " *");
+                    }
+                }
+            }
+
+            writer.setSheet(GbAiDailyRevenueExcelService.COMBINED_SHEET_FOOD_NAME);
+
+            String fileName = String.format("daily_revenue_food_combined_template_%s_%s.xlsx", startDate, endDate);
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"");
+            response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            writer.flush(response.getOutputStream(), true);
+            writer.close();
+        } catch (DateTimeParseException e) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            response.setContentType("text/plain; charset=utf-8");
+            response.getWriter().write("日期格式错误，请使用 yyyy-MM-dd 格式");
+        } catch (IllegalArgumentException e) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            response.setContentType("text/plain; charset=utf-8");
+            response.getWriter().write(e.getMessage());
+        } catch (Exception e) {
+            log.warn("download-combined-template failed", e);
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            response.setContentType("text/plain; charset=utf-8");
+            response.getWriter().write("生成合并模板失败: " + e.getMessage());
+        }
     }
 
     private List<FoodSalesExcelCell> readFoodSalesExcelPivotLayout(
@@ -560,9 +1018,21 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
         List<FoodSalesExcelCell> out = new ArrayList<>();
         List<Object> header = rows.get(headerRowIndex);
         int dataStartRow = headerRowIndex + 1;
-        boolean hasDepartmentCol = isDepartmentHeader(header, 1);
-        int foodCol = hasDepartmentCol ? 2 : 1;
-        int firstDateCol = hasDepartmentCol ? 3 : 2;
+
+        int firstDateCol = indexOfFirstDateColumnInRow(header, 1);
+        if (firstDateCol < 2) {
+            throw new IllegalArgumentException(
+                    "菜品表未找到日期列表头（需为 yyyy-MM-dd、斜杠日期、Excel 日期序列等；Numbers 导出后表头日期常为数字）");
+        }
+        int foodCol = firstDateCol - 1;
+        Object foodHeaderCell = header.size() > foodCol ? header.get(foodCol) : null;
+        if (foodHeaderCell == null || !foodHeaderCell.toString().contains("菜品")) {
+            throw new IllegalArgumentException("菜品表头列未识别：第 " + (foodCol + 1) + " 列应含「菜品」");
+        }
+        int depCol = foodCol - 1;
+        boolean hasDepartmentCol = depCol >= 1
+                && header.size() > depCol
+                && (isDepartmentHeader(header, depCol) || isBlankOrNonDateHeaderCell(header.get(depCol)));
 
         List<String> dateKeys = new ArrayList<>();
         for (int c = firstDateCol; c < header.size(); c++) {
@@ -587,8 +1057,8 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 continue;
             }
             Integer depId = null;
-            if (hasDepartmentCol) {
-                depId = parseDepartmentIdFromHeaderCell(row.size() > 1 ? row.get(1) : null);
+            if (hasDepartmentCol && depCol >= 0 && row.size() > depCol) {
+                depId = parseDepartmentIdFromHeaderCell(row.get(depCol));
             }
 
             for (int j = 0; j < dateKeys.size(); j++) {
@@ -601,17 +1071,14 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                     continue;
                 }
                 Object cell = row.get(col);
-                if (cell == null || cell.toString().trim().isEmpty()) {
+                BigDecimal q = parseExcelBigDecimalCell(cell);
+                if (q == null || q.compareTo(BigDecimal.ZERO) <= 0) {
                     continue;
                 }
                 try {
-                    BigDecimal q = new BigDecimal(cell.toString().trim());
-                    if (q.compareTo(BigDecimal.ZERO) <= 0) {
-                        continue;
-                    }
                     Date recordDate = GbDateTimeUtils.parseDay(dk);
                     out.add(new FoodSalesExcelCell(recordDate, depId, foodId, q));
-                } catch (NumberFormatException ignored) {
+                } catch (Exception ignored) {
                 }
             }
         }
@@ -663,53 +1130,106 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                     continue;
                 }
                 Object cell = row.get(c);
-                if (cell == null || cell.toString().trim().isEmpty()) {
+                BigDecimal q = parseExcelBigDecimalCell(cell);
+                if (q == null || q.compareTo(BigDecimal.ZERO) <= 0) {
                     continue;
                 }
-                try {
-                    BigDecimal q = new BigDecimal(cell.toString().trim());
-                    if (q.compareTo(BigDecimal.ZERO) <= 0) {
-                        continue;
-                    }
-                    out.add(new FoodSalesExcelCell(recordDate, null, fid, q));
-                } catch (NumberFormatException ignored) {
-                }
+                out.add(new FoodSalesExcelCell(recordDate, null, fid, q));
             }
         }
         return out;
     }
 
     private static Integer findFoodSalesPivotHeaderRow(List<List<Object>> rows) {
-        int maxScan = Math.min(rows.size(), 15);
+        int maxScan = Math.min(rows.size(), 20);
         for (int r = 0; r < maxScan; r++) {
             List<Object> row = rows.get(r);
             if (row == null || row.size() < 3) {
                 continue;
             }
             Object c0 = row.get(0);
-            Object c1 = row.get(1);
-            Object c2 = row.get(2);
-            Object c3 = row.size() > 3 ? row.get(3) : null;
-            if (c0 == null || c1 == null || c2 == null) {
+            if (c0 == null || !c0.toString().trim().contains("序号")) {
                 continue;
             }
-            String s0 = c0.toString().trim();
-            String s1 = c1.toString().trim();
-            if (!s0.contains("序号")) {
+            int firstDateCol = indexOfFirstDateColumnInRow(row, 1);
+            if (firstDateCol < 2) {
                 continue;
             }
-            boolean legacyPivot = s1.contains("菜品") && GbDateTimeUtils.normalizeExcelDayKey(c2) != null;
-            if (legacyPivot) {
-                return r;
+            int foodCol = firstDateCol - 1;
+            Object foodCell = row.get(foodCol);
+            if (foodCell == null || !foodCell.toString().contains("菜品")) {
+                continue;
             }
-            boolean newPivot = isDepartmentHeader(row, 1)
-                    && c2.toString().contains("菜品")
-                    && GbDateTimeUtils.normalizeExcelDayKey(c3) != null;
-            if (newPivot) {
-                return r;
-            }
+            return r;
         }
         return null;
+    }
+
+    private static int indexOfFirstDateColumnInRow(List<Object> row, int startCol) {
+        if (row == null) {
+            return -1;
+        }
+        for (int c = startCol; c < row.size(); c++) {
+            if (GbDateTimeUtils.normalizeExcelDayKey(row.get(c)) != null) {
+                return c;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isBlankOrNonDateHeaderCell(Object cell) {
+        if (cell == null) {
+            return true;
+        }
+        return cell.toString().trim().isEmpty();
+    }
+
+    private static String summarizeFoodSheetRowForLog(List<Object> row, int maxCells) {
+        if (row == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder();
+        int n = Math.min(row.size(), maxCells);
+        for (int i = 0; i < n; i++) {
+            if (i > 0) {
+                sb.append(" | ");
+            }
+            Object c = row.get(i);
+            if (c == null) {
+                sb.append("∅");
+            } else {
+                String s = c.toString();
+                if (s.length() > 32) {
+                    s = s.substring(0, 29) + "...";
+                }
+                sb.append(s.replace('\n', ' '));
+            }
+        }
+        if (row.size() > maxCells) {
+            sb.append(" | ...(").append(row.size() - maxCells).append(" more)");
+        }
+        return sb.toString();
+    }
+
+    private static BigDecimal parseExcelBigDecimalCell(Object cell) {
+        if (cell == null) {
+            return null;
+        }
+        if (cell instanceof BigDecimal) {
+            return (BigDecimal) cell;
+        }
+        if (cell instanceof Number) {
+            return BigDecimal.valueOf(((Number) cell).doubleValue());
+        }
+        String s = cell.toString().trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(s);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static boolean isDepartmentHeader(List<Object> row, int idx) {

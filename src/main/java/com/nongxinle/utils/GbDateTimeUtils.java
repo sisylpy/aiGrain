@@ -1,7 +1,7 @@
 package com.nongxinle.utils;
 
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -10,6 +10,8 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+
+import org.apache.poi.ss.usermodel.DateUtil;
 
 /**
  * 日营业额 / 报表等场景共用的日期时间工具（线程安全，默认中国时区）。
@@ -39,6 +41,17 @@ public final class GbDateTimeUtils {
 
     private static final String[] CHINESE_WEEKDAY_SHORT =
             {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
+
+    /** Numbers / Excel 另存后常见的斜杠日期表头，补充 {@link #DAY_FORMATTER}。 */
+    private static final DateTimeFormatter[] EXCEL_DATE_STRING_FORMATTERS = new DateTimeFormatter[] {
+            DateTimeFormatter.ofPattern("yyyy/M/d").withLocale(CHINA_LOCALE),
+            DateTimeFormatter.ofPattern("yyyy/M/dd").withLocale(CHINA_LOCALE),
+            DateTimeFormatter.ofPattern("yyyy/MM/dd").withLocale(CHINA_LOCALE),
+            DateTimeFormatter.ofPattern("M/d/yyyy").withLocale(Locale.US),
+            DateTimeFormatter.ofPattern("MM/dd/yyyy").withLocale(Locale.US),
+            DateTimeFormatter.ofPattern("d/M/yyyy").withLocale(Locale.UK),
+            DateTimeFormatter.ofPattern("dd/MM/yyyy").withLocale(Locale.UK),
+    };
 
     public static String formatDay(LocalDate day) {
         if (day == null) {
@@ -121,12 +134,25 @@ public final class GbDateTimeUtils {
         try {
             return parseDay(text);
         } catch (DateTimeParseException e) {
-            return null;
+            return parseDayFromExcelStyleStrings(text.trim());
         }
     }
 
+    private static Date parseDayFromExcelStyleStrings(String t) {
+        for (DateTimeFormatter f : EXCEL_DATE_STRING_FORMATTERS) {
+            try {
+                LocalDate ld = LocalDate.parse(t, f);
+                return toDateStartOfDay(ld);
+            } catch (DateTimeParseException ignored) {
+            }
+        }
+        return null;
+    }
+
     /**
-     * Excel 单元格：{@link Date} 或字符串 → 当日 00:00（中国时区）的 {@link Date}；无法识别返回 {@code null}。
+     * Excel 单元格：{@link Date}、数值型 Excel 日期序列、{@link LocalDate}、常见字符串格式等；
+     * 对齐到当日 00:00（中国时区）；无法识别返回 {@code null}。
+     * <p>兼容 Mac Numbers 导出后再用 Excel 打开常见的表头日期数字、斜杠日期字符串等。</p>
      */
     public static Date parseExcelDateLikeCell(Object cell) {
         if (cell == null) {
@@ -135,11 +161,25 @@ public final class GbDateTimeUtils {
         if (cell instanceof Date) {
             return toDateStartOfDay(toLocalDate((Date) cell));
         }
+        if (cell instanceof LocalDate) {
+            return toDateStartOfDay((LocalDate) cell);
+        }
+        if (cell instanceof LocalDateTime) {
+            return toDateStartOfDay(((LocalDateTime) cell).toLocalDate());
+        }
+        if (cell instanceof Number) {
+            double n = ((Number) cell).doubleValue();
+            if (DateUtil.isValidExcelDate(n)) {
+                Date jd = DateUtil.getJavaDate(n, false);
+                return toDateStartOfDay(toLocalDate(jd));
+            }
+        }
         String s = cell.toString().trim();
         if (s.isEmpty()) {
             return null;
         }
-        return parseDayLenient(s);
+        Date parsed = parseDayLenient(s);
+        return parsed;
     }
 
     /**

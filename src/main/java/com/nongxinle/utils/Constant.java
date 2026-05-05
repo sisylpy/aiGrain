@@ -1,26 +1,17 @@
 package com.nongxinle.utils;
 
 /**
- * 系统常量配置
+ * 业务常量。
+ * <p>图片磁盘根路径仅由配置 {@code app.files.images-root} + {@link UploadFile} 管理；
+ * 子目录名请以 {@link ImagePaths} / {@link #FOOD_IMAGE_DIR} 等系列为准。</p>
  */
-public class Constant {
+public final class Constant {
 
-    /**
-     * 图片存储根目录
-     * 本地开发路径
-     */
-    public static final String EXTERNAL_IMAGE_DIR = "/Users/lpy/Documents/javaWeb/kuangjia/aigrain/images/";
+    private Constant() {}
 
-    /**
-     * 生产环境路径（服务器）
-     */
-    // public static final String EXTERNAL_IMAGE_DIR = "/opt/tomcat/latest/app-data/images/";
-
-    /**
-     * 图片子目录
-     */
-    public static final String FOOD_IMAGE_DIR = "foodImage/";
-    public static final String GOODS_IMAGE_DIR = "goodsImage/";
-    public static final String USER_IMAGE_DIR = "userImage/";
-    public static final String UPLOAD_IMAGE_DIR = "uploadImage/";
+    /** 库字段习惯带尾斜杠的写法，等价于 {@link ImagePaths#FOOD} {@code /} */
+    public static final String FOOD_IMAGE_DIR = ImagePaths.FOOD + "/";
+    public static final String GOODS_IMAGE_DIR = ImagePaths.GOODS + "/";
+    public static final String USER_IMAGE_DIR = ImagePaths.USER + "/";
+    public static final String UPLOAD_IMAGE_DIR = ImagePaths.UPLOAD + "/";
 }

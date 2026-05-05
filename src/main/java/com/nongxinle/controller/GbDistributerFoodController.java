@@ -12,6 +12,7 @@ import com.nongxinle.service.GbDepFoodService;
 import com.nongxinle.service.GbDepartmentService;
 import com.nongxinle.service.GbDistributerFoodGoodsService;
 import com.nongxinle.utils.GbConstants;
+import com.nongxinle.utils.ImagePaths;
 import com.nongxinle.utils.UploadFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -170,10 +171,17 @@ public class GbDistributerFoodController {
 				if (oldPath != null && !oldPath.trim().isEmpty()) {
 					UploadFile.deleteFile(oldPath);
 				}
-				String newUploadName = "foodImage";
+				String newUploadName = ImagePaths.FOOD;
 				String headByString = com.nongxinle.utils.PinYin4jUtils.hanziToPinyin(foodName);
+				logger.info("updateFoodWithFile foodId={} save pinyinKey={} multipart name={} size={}",
+						id, headByString, file.getOriginalFilename(), file.getSize());
 				String filePath = UploadFile.uploadFileName(newUploadName, file, headByString);
+				logger.info("updateFoodWithFile foodId={} image saved relativePath={} absolutePath={}",
+						id, filePath, UploadFile.toAbsolutePath(filePath));
 				foodEntity.setGbDfFoodImg(filePath);
+			} else {
+				logger.info("updateFoodWithFile foodId={} no multipart file (null or empty); DB image path unchanged",
+						id);
 			}
 
 			foodEntity.setGbDfFoodMethod(method);
@@ -216,11 +224,11 @@ public class GbDistributerFoodController {
 
 			String filePath = null;
 			if (file != null && !file.isEmpty()) {
-				String newUploadName = "foodImage";
+				String newUploadName = ImagePaths.FOOD;
 				String headByString = com.nongxinle.utils.PinYin4jUtils.hanziToPinyin(foodName);
 				logger.info("开始上传图片，pinyin={}", headByString);
 				filePath = UploadFile.uploadFileName(newUploadName, file, headByString);
-				logger.info("图片上传成功，路径={}", filePath);
+				logger.info("图片上传成功 relativePath={} absolutePath={}", filePath, UploadFile.toAbsolutePath(filePath));
 			}
 
 			GbDistributerFoodEntity foodEntity = new GbDistributerFoodEntity();
@@ -353,6 +361,20 @@ public class GbDistributerFoodController {
 		map.put("fatherId", 0);
 		logger.info("========== query params: {} ==========", map);
 		List<GbDistributerFoodEntity> supplierEntities = gbDistributerFoodService.queryFoodByParams(map);
+		for (GbDistributerFoodEntity father : supplierEntities) {
+			Map<String, Object> childMap = new HashMap<>();
+			childMap.put("disId", disId);
+			childMap.put("fatherId", father.getGbDistributerFoodId());
+			List<GbDistributerFoodEntity> children = gbDistributerFoodService.queryFoodByParams(childMap);
+			children.sort(Comparator.comparing(e -> {
+				Integer s = e.getGbDfStatus();
+				if (s != null && s.equals(GbConstants.DistributerFoodStatus.DISABLED_WITH_DEP_FOOD_SALES)) {
+					return 1;
+				}
+				return 0;
+			}));
+			father.setFoodEntityList(children);
+		}
 		logger.info("========== query result size: {} ==========", supplierEntities.size());
 		return R.ok().put("data", supplierEntities);
 	}

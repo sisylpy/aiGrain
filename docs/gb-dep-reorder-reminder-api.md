@@ -81,17 +81,17 @@
 
 ### 4.3 库存 reduce 推算（与订货窗口日期一致）
 
-数据来源：`gb_department_goods_stock_reduce`，与接口 **`windowDays`** 决定的 **`startDate`～`stopDate`**（含首尾）一致。类型与 `GbConstants.StockReduceType` 对齐：**生产 1、损耗 2、损失 3**。
+数据来源：`gb_department_goods_stock_reduce`，与接口 **`windowDays`** 决定的 **`startDate`～`stopDate`**（含首尾）一致。类型与 `GbConstants.StockReduceType` 对齐：**生产 1、废弃(WASTE) 2、损失成本(LOSS) 3、退货 4**。
 
 | 字段 | 说明 |
 |------|------|
 | `aiReduceProductionDailyAvg` | 窗口内 **type=1（生产）** 出库重量合计 ÷ **窗口天数**（首尾含当日），日均 |
-| `aiReduceLossWasteDailyAvg` | 窗口内 **type=2（损耗）+ type=3（损失）** 出库重量合计 ÷ 窗口天数，日均 |
+| `aiReduceLossWasteDailyAvg` | 窗口内 **type=2（废弃）+ type=3（损失成本）** 出库重量合计 ÷ 窗口天数，日均 |
 | `aiRecommendCoverDaysUsed` | 下面两个「缺口」所用的覆盖天数，当前固定为 **`"3"`**（与习惯间隔无关，仅作理性补货参考） |
 | `aiRecommendGapWeightProductionOnly` | **主线**：`(生产日均 × 覆盖天数) − 当前库存`，不足则为 **0**；库存口径与 `gbDdgStockTotalWeight`（批次汇总）一致 |
-| `aiRecommendGapWeightWithLossWaste` | **补充**：`(生产日均 + 损耗损失日均) × 覆盖天数 − 当前库存`，不足则为 **0**；用于「若把损耗与废弃算进消耗」时的备货参考 |
+| `aiRecommendGapWeightWithLossWaste` | **补充**：`(生产日均 + 废弃与损失日均) × 覆盖天数 − 当前库存`，不足则为 **0**；用于「若把废弃与损失算进消耗」时的备货参考 |
 | `aiEstimateDepleteDateProductionOnly` | 假定按 **生产日均** 匀速消耗当前库存，线性推算的耗尽日 `yyyy-MM-dd`（速率过小则无值） |
-| `aiEstimateDepleteDateWithLossWaste` | 假定按 **生产+损耗+损失** 合计日均匀速消耗，耗尽日（通常 **不晚于** 仅生产口径，便于提前备货） |
+| `aiEstimateDepleteDateWithLossWaste` | 假定按 **生产+废弃+损失** 合计日均匀速消耗，耗尽日（通常 **不晚于** 仅生产口径，便于提前备货） |
 
 ### 4.4 兼容展示（可为占位）
 

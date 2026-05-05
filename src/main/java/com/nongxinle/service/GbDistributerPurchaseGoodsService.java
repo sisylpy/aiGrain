@@ -51,6 +51,9 @@ public interface GbDistributerPurchaseGoodsService extends IService<GbDistribute
      */
     Double queryPurchaseGoodsWeightTotal(Map<String, Object> map);
 
+    /** 同上条件，加权平均采购单价 ∑小计÷∑数量；无采购或重量为 0 则为 0。 */
+    Double queryPurchaseGoodsWeightedAvgBuyPrice(Map<String, Object> map);
+
     String queryPurGoodsMaxPrice(Map<String, Object> map);
 
     String queryPurGoodsMinPrice(Map<String, Object> map);

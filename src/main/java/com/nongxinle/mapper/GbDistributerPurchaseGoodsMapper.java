@@ -33,6 +33,9 @@ public interface GbDistributerPurchaseGoodsMapper extends BaseMapper<GbDistribut
      */
     Double queryPurchaseGoodsWeightTotal(Map<String, Object> map);
 
+    /** 加权平均单价：∑{@code gb_DPG_buy_subtotal} / ∑{@code gb_DPG_buy_quantity}，条件同 {@link #queryGbPurchaseGoodsCount} */
+    Double queryPurchaseGoodsWeightedAvgBuyPrice(Map<String, Object> map);
+
     String queryPurGoodsMaxPrice(Map<String, Object> map);
 
     String queryPurGoodsMinPrice(Map<String, Object> map);

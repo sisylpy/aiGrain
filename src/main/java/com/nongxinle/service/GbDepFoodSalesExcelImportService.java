@@ -1,5 +1,6 @@
 package com.nongxinle.service;
 
+import com.nongxinle.dto.GbDepFoodDailySalesSubmitRequest;
 import com.nongxinle.entity.GbDepartmentEntity;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -23,9 +24,30 @@ public interface GbDepFoodSalesExcelImportService {
             List<Map.Entry<Date, Map<Integer, BigDecimal>>> cellQuantities);
 
     /**
+     * API 提交某日各菜品销量 + 日营业额指标（堂食金额仍由菜品小计汇总写入）。
+     */
+    Map<String, Object> submitDailyFoodSalesAndRevenue(GbDepFoodDailySalesSubmitRequest request);
+
+    /**
+     * 查询某日（默认中国时区当天）菜品销售行 + 同日 {@code gb_ai_daily_revenue} 非堂食等字段，
+     * 返回体可直接作为 {@link #submitDailyFoodSalesAndRevenue} / {@link #updateDailyFoodSalesAndRevenue} 编辑回传的参考结构。
+     */
+    Map<String, Object> getDailyFoodSalesAndRevenue(Integer depFatherId, Integer distributerId, String recordDate);
+
+    /** 覆盖/更新某日销售与营业额指标：与 {@link #submitDailyFoodSalesAndRevenue} 同一套写入逻辑。 */
+    Map<String, Object> updateDailyFoodSalesAndRevenue(GbDepFoodDailySalesSubmitRequest request);
+
+    /**
      * 从上传的 Excel 完整处理：校验文件、部门、解析表格并调用 {@link #importFoodSales}。
      * 返回 Map 含 {@code rows} 及 importFoodSales 的统计字段。
      */
     Map<String, Object> importFoodSalesFromExcelMultipart(MultipartFile file, Integer departmentId, Integer distributerId)
+            throws IOException;
+
+    /**
+     * 同上，从指定 Sheet 读取菜品销售（合并模板用）；{@code allowEmptyFoodSheet} 为 true 且该 Sheet 无有效销量时不抛错。
+     */
+    Map<String, Object> importFoodSalesFromExcelMultipart(MultipartFile file, Integer departmentId, Integer distributerId,
+            int sheetIndex, boolean allowEmptyFoodSheet)
             throws IOException;
 }

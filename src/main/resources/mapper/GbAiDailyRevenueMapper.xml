@@ -60,7 +60,13 @@
 			COALESCE(SUM(gb_ai_daily_revenue_takeout_revenue - gb_ai_daily_revenue_platform_fee), 0) as total_takeout_net,
 			COALESCE(AVG(gb_ai_daily_revenue_takeout_revenue - gb_ai_daily_revenue_platform_fee), 0) as avg_takeout_net
 		FROM gb_ai_daily_revenue
-		WHERE gb_ai_daily_revenue_department_id = #{departmentId}
+		WHERE gb_ai_daily_revenue_department_id = #{params.departmentId}
+		<if test="params.startDate != null and params.startDate != ''">
+			AND gb_ai_daily_revenue_record_date &gt;= #{params.startDate}
+		</if>
+		<if test="params.endDate != null and params.endDate != ''">
+			AND gb_ai_daily_revenue_record_date &lt;= #{params.endDate}
+		</if>
 	</select>
 
 </mapper>

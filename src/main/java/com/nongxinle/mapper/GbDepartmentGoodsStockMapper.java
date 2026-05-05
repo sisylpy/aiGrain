@@ -43,6 +43,16 @@ public interface GbDepartmentGoodsStockMapper extends BaseMapper<GbDepartmentGoo
     Double queryDepGoodsRestWeightTotal(Map<String, Object> map);
 
     /**
+     * 与 {@link #queryGoodsStockCount} / {@link #queryDepGoodsRestTotal} 条件一致，汇总入库批次成本 {@code gb_dgs_subtotal}
+     */
+    Double queryDepGoodsSubtotal(Map<String, Object> map);
+
+    /**
+     * 与上述条件一致，汇总入库批次数量 {@code gb_dgs_weight}
+     */
+    Double queryDepStockWeightTotal(Map<String, Object> map);
+
+    /**
      * 查询部门库存树形父商品
      */
     List<GbDistributerFatherGoodsEntity> queryDepStockTreeFatherGoodsByParams(Map<String, Object> map);

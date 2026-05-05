@@ -113,6 +113,99 @@
         </where>
     </select>
 
+    <!-- 时间范围内某分销商商品已有订单的到货日期（与 queryGbDepartmentOrderAmount 条件对齐，不含单日 arriveDate） -->
+    <select id="queryDisGoodsDistinctArriveDates" resultType="java.lang.String">
+        SELECT DISTINCT dor.gb_DO_arrive_date
+        FROM gb_department_orders AS dor
+        <where>
+            <if test="nxGreatId != null">
+                and dor.gb_DO_nx_goods_great_id = #{nxGreatId}
+            </if>
+            <if test="disId != null">
+                and dor.gb_DO_distributer_id = #{disId}
+            </if>
+            <if test="nxDisId != null">
+                and dor.gb_DO_nx_distributer_id = #{nxDisId}
+            </if>
+            <if test="equalBuyStatus != null">
+                and dor.gb_DO_buy_status = #{equalBuyStatus}
+            </if>
+            <if test="notOutOrder != null">
+                and dor.gb_DO_purchase_goods_id != -1
+            </if>
+            <if test="startDate != null">
+                and dor.gb_DO_arrive_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and dor.gb_DO_arrive_date &lt;= #{stopDate}
+            </if>
+            <if test="billId != null">
+                and dor.gb_DO_bill_id = #{billId}
+            </if>
+            <if test="disGoodsGrandId != null">
+                and dor.gb_DO_dis_goods_grand_id = #{disGoodsGrandId}
+            </if>
+            <if test="fathersFatherId != null">
+                and dor.gb_DO_dis_goods_father_id = #{fathersFatherId}
+            </if>
+            <if test="toDepId != null">
+                and dor.gb_DO_to_department_id = #{toDepId}
+            </if>
+            <if test="disGoodsId != null">
+                and dor.gb_DO_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="purGoodsId != null">
+                and dor.gb_DO_purchase_goods_id = #{purGoodsId}
+            </if>
+            <if test="nxFatherGoodsId != null">
+                and dor.gb_DO_nx_goods_father_id = #{nxFatherGoodsId}
+            </if>
+            <if test="depId != null">
+                and dor.gb_DO_department_id = #{depId}
+            </if>
+            <if test="depFatherId != null">
+                and dor.gb_DO_department_father_id = #{depFatherId}
+            </if>
+            <if test="status != null">
+                and dor.gb_DO_status &lt; #{status}
+            </if>
+            <if test="dayuStatus != null">
+                and dor.gb_DO_status &gt; #{dayuStatus}
+            </if>
+            <if test="equalStatus != null">
+                and dor.gb_DO_status = #{equalStatus}
+            </if>
+            <if test="weightId != null">
+                and dor.gb_DO_weight_total_id = #{weightId}
+            </if>
+            <if test="buyStatus != null">
+                and dor.gb_DO_buy_status &lt; #{buyStatus}
+            </if>
+            <if test="orderType != null">
+                and dor.gb_DO_order_type = #{orderType}
+            </if>
+            <if test="notEqualOrderType != null">
+                and dor.gb_DO_order_type != #{notEqualOrderType}
+            </if>
+            <if test="dayuBuyStatus != null">
+                and dor.gb_DO_buy_status &gt; #{dayuBuyStatus}
+            </if>
+            <if test="subtotal != null">
+                and dor.gb_DO_subtotal &gt; #{subtotal}
+            </if>
+            <if test="hasWeight != null and hasWeight == 1">
+                and dor.gb_DO_weight is not null
+            </if>
+            <if test="depFatherIds != null">
+                and dor.gb_DO_department_father_id in
+                <foreach item="id" collection="depFatherIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
+        </where>
+        ORDER BY dor.gb_DO_arrive_date ASC
+    </select>
+
     <!-- 获取部门父级AI申请订单 -->
     <select id="queryApplyAiFatherOrders" resultMap="gbDepartmentOrdersMap">
         SELECT
@@ -541,6 +634,9 @@
             <if test="depGoodsId != null">
                 and dor.gb_DO_dep_dis_goods_id = #{depGoodsId}
             </if>
+            <if test="arriveDate != null">
+                and dor.gb_DO_arrive_date = #{arriveDate}
+            </if>
             <if test="startDate != null">
                 and dor.gb_DO_arrive_date &gt;= #{startDate}
             </if>
@@ -575,6 +671,24 @@
         <where>
             <if test="purGoodsId != null">
                 and gb_DO_purchase_goods_id = #{purGoodsId}
+            </if>
+            <if test="disGoodsId != null">
+                and gb_DO_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="equalStatus != null">
+                and gb_DO_status = #{equalStatus}
+            </if>
+            <if test="arriveDate != null">
+                and gb_DO_arrive_date = #{arriveDate}
+            </if>
+            <if test="startDate != null">
+                and gb_DO_arrive_date &gt;= #{startDate}
+            </if>
+            <if test="stopDate != null">
+                and gb_DO_arrive_date &lt;= #{stopDate}
+            </if>
+            <if test="depId != null">
+                and gb_DO_department_id = #{depId}
             </if>
             <if test="subtotal != null">
                 and gb_DO_subtotal &gt; #{subtotal}
