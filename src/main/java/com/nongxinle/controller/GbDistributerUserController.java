@@ -167,7 +167,7 @@ public class GbDistributerUserController {
                 // 查询完整批发商信息（含所有部门列表）
                 GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerWithAllDepartments(departmentUserEntity.getGbDuDistributerId());
                 // 查询部门信息
-                GbDepartmentEntity gbDepartmentEntity = gbDepartmentService.queryDepInfoGb(departmentUserEntity.getGbDuDepartmentId());
+                GbDepartmentEntity gbDepartmentEntity = gbDepartmentService.getById(departmentUserEntity.getGbDuDepartmentId());
 
                 Map<String, Object> data = new HashMap<>();
                 data.put("depUserInfo", departmentUserEntity);

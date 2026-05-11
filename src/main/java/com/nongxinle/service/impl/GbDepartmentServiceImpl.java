@@ -18,10 +18,7 @@ import static com.nongxinle.utils.PinYin4jUtils.getHeadStringByString;
 @Service
 public class GbDepartmentServiceImpl extends ServiceImpl<GbDepartmentMapper, GbDepartmentEntity> implements GbDepartmentService {
 
-    @Override
-    public GbDepartmentEntity queryDepInfoGb(Integer depId) {
-        return baseMapper.selectById(depId);
-    }
+
 
     @Override
     public GbDepartmentEntity saveNewDepartmentGb(GbDepartmentEntity department) {
@@ -72,6 +69,12 @@ public class GbDepartmentServiceImpl extends ServiceImpl<GbDepartmentMapper, GbD
     @Override
     public List<GbDepartmentEntity> queryGroupDepsByDisId(Map<String, Object> map) {
         return baseMapper.queryGroupDepsByDisId(map);
+    }
+
+    @Override
+    public GbDepartmentEntity queryDepInfo(Map<String, Object> mapDep) {
+
+        return baseMapper.queryDepInfo(mapDep);
     }
 
 }

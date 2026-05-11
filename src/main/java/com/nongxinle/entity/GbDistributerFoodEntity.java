@@ -59,6 +59,13 @@ public class GbDistributerFoodEntity implements Serializable {
     @TableField(exist = false)
     @JSONField(serialize = false)
     private GbDepFoodEntity gbDepFoodEntity;
+
+    /**
+     * 挂接该总部菜品在各部门的部门菜；可与接口一并返回（子项通常不带嵌套的 {@link GbDepFoodEntity#getGbDistributerFoodEntity()}）。
+     */
+    @TableField(exist = false)
+    private List<GbDepFoodEntity> gbDepFoodEntities;
+
     @TableField(exist = false)
     private GbDistributerFoodGoodsEntity rawFoodGoods;
 }

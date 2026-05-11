@@ -323,6 +323,26 @@ public final class SkillRouteFallback {
         return isProcurementIntent(userMessage.toLowerCase(Locale.ROOT));
     }
 
+    /**
+     * 集团/多店经营诊断：门店排行、区间净营收与粗略毛利率同比等事实块。
+     */
+    public static boolean shouldAttachGroupChainDiagnosticsFacts(String userMessage) {
+        if (StrUtil.isBlank(userMessage)) {
+            return false;
+        }
+        String u = userMessage.toLowerCase(Locale.ROOT);
+        if (u.contains("集团") || u.contains("连锁") || u.contains("全部门店") || u.contains("多店")) {
+            return true;
+        }
+        if (u.contains("top") || u.contains("排名") || u.contains("排行")) {
+            return true;
+        }
+        if (u.contains("同比") || u.contains("去年同期") || u.contains("去年同月")) {
+            return true;
+        }
+        return (u.contains("毛利率") || u.contains("毛利")) && (u.contains("整体") || u.contains("全部"));
+    }
+
     private static boolean isDishCostIntent(String u) {
         if (u == null) {
             return false;

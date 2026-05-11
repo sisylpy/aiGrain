@@ -30,6 +30,10 @@ public final class SkillRouteCatalog {
 
     private static List<SkillEnrichmentRule> buildRules() {
         List<SkillEnrichmentRule> r = new ArrayList<>();
+        r.add(new SkillEnrichmentRule(5, "group_chain_diagnostics",
+                SkillRouteFallback::shouldAttachGroupChainDiagnosticsFacts,
+                List.of(), null,
+                List.of("group_retail_net_revenue_rank", "group_retail_margin_yoy")));
         // 采购单价/进价波动或极值排行：必须进采购结构 skill，才能稳定消费 procurement-structure 提示与事实块组织方式
         r.add(new SkillEnrichmentRule(10, "procurement_unit_price_volatility",
                 SkillRouteFallback::shouldAttachPurchasePriceVolatilityFacts,

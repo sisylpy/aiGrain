@@ -94,7 +94,8 @@ public interface GbAiDailyRevenueExcelService {
     List<FoodSalesExcelCell> parseFoodSalesExcel(MultipartFile file) throws IOException;
 
     /**
-     * 解析合并模板中的「日营业额」Sheet：列为 日期、堂食订单数、堂食顾客数、外卖营业额、外卖订单数、平台抽成、备注（无堂食营业额）。
+     * 解析合并模板中的「日营业额」Sheet：列为 日期、（可选）部门名称、堂食订单数、堂食顾客数、外卖营业额、外卖订单数、平台抽成、备注（无堂食营业额）。
+     * 有部门列时与菜品表一致为第2列「名称（id:xx）」；上传时行内部门须隶属于参数 {@code departmentId} 父部门。
      */
     List<GbAiDailyRevenueEntity> parseCombinedTemplateRevenueSheet(
             byte[] spreadsheetBytes, int sheetIndex, Long departmentId, Long distributerId) throws IOException;

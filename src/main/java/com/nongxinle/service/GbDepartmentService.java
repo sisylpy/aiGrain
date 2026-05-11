@@ -11,7 +11,6 @@ import java.util.Map;
  */
 public interface GbDepartmentService extends IService<GbDepartmentEntity> {
 
-    GbDepartmentEntity queryDepInfoGb(Integer depId);
 
     GbDepartmentEntity saveNewDepartmentGb(GbDepartmentEntity department);
 
@@ -29,4 +28,5 @@ public interface GbDepartmentService extends IService<GbDepartmentEntity> {
      */
     List<GbDepartmentEntity> queryGroupDepsByDisId(Map<String, Object> map);
 
+    GbDepartmentEntity queryDepInfo(Map<String, Object> mapDep);
 }

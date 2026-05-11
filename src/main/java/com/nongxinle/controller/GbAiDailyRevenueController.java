@@ -104,6 +104,7 @@ public class GbAiDailyRevenueController {
     @PostMapping("/update")
     @Operation(summary = "更新日营业额", description = "更新日营业额记录")
     public R update(@RequestBody GbAiDailyRevenueEntity dailyRevenue) {
+        dailyRevenueService.backfillParentDepartmentIdIfMissing(dailyRevenue);
         dailyRevenueService.fillUpdateWeekday(dailyRevenue);
         dailyRevenueService.updateById(dailyRevenue);
         return R.ok();
@@ -219,7 +220,7 @@ public class GbAiDailyRevenueController {
      */
     @PostMapping("/upload-food-sales-excel")
     @Operation(summary = "Excel上传菜品日销售",
-            description = "支持「序号|部门名称|菜品名称|各日期列」模板（兼容旧版）；按部门列子部门id+菜品id匹配 gb_dep_food；子部门+菜品+日期 已存在则更新销量并替换原料展开，否则插入。导入完成后按父部门+自然日汇总菜品销售小计，写入 gb_ai_daily_revenue 的堂食营业额（已有记录则仅覆盖堂食字段）。返回 inserted/updated、dailyRevenueDaysSynced 等")
+            description = "支持「序号|部门名称|菜品名称|各日期列」模板（兼容旧版）；按部门列子部门id+菜品id匹配 gb_dep_food；子部门+菜品+日期 已存在则更新销量并替换原料展开，否则插入。导入完成后按各子部门+自然日汇总菜品小计写入 gb_ai_daily_revenue 堂食营业额（有子部门时不写父部门汇总行；无子部门时写父部门）；返回 inserted/updated、dailyRevenueDaysSynced 等")
     public R uploadFoodSalesExcel(
             @RequestParam("file") MultipartFile file,
             @RequestParam("departmentId") Integer departmentId,

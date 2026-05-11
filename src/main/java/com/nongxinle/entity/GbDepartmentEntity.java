@@ -57,7 +57,7 @@ public class GbDepartmentEntity implements Serializable {
     private String gbDepartmentFilePath;
 
     /**
-     * 是客户吗
+     * 1:是父级门店 0:是子级门店
      */
     private Integer gbDepartmentIsGroupDep;
 

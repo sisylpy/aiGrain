@@ -27,6 +27,7 @@ import java.time.format.DateTimeParseException;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
@@ -90,6 +91,7 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
 
         // 智能识别表头行数
         int startRow = detectDailyRevenueDataStartRow(rows);
+        boolean deptCol = dailyRevenueHeaderHasDepartmentColumn(rows, startRow);
 
         for (int i = startRow; i < rows.size(); i++) {
             List<Object> row = rows.get(i);
@@ -106,11 +108,20 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             if (recordDate == null || dateStr == null) {
                 continue;
             }
+
+            Long rowDeptId = departmentId;
+            if (deptCol && row.size() > 1 && row.get(1) != null) {
+                Integer parsedDep = parseDepartmentIdFromHeaderCell(row.get(1));
+                if (parsedDep != null) {
+                    rowDeptId = parsedDep.longValue();
+                }
+            }
+            assertDepartmentInUploadScope(rowDeptId, departmentId);
             
-            // 检查重复日期
-            String dateKey = departmentId + "-" + dateStr;
+            // 检查重复：同一部门 + 同一自然日
+            String dateKey = rowDeptId + "-" + dateStr;
             if (dateSet.contains(dateKey)) {
-                log.warn("skip duplicate excel date deptId={} date={}", departmentId, dateStr);
+                log.warn("skip duplicate excel date deptId={} date={}", rowDeptId, dateStr);
                 continue;
             }
             dateSet.add(dateKey);
@@ -118,32 +129,33 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             GbAiDailyRevenueEntity entity = new GbAiDailyRevenueEntity();
             
             // 设置部门ID和分配者ID
-            entity.setGbAiDailyRevenueDepartmentId(departmentId);
+            entity.setGbAiDailyRevenueDepartmentId(rowDeptId);
             entity.setGbAiDailyRevenueDistributerId(distributerId);
             // 设置记录日期
             entity.setGbAiDailyRevenueRecordDate(recordDate);
             
             if (log.isDebugEnabled()) {
-                log.debug("excel entity deptId={} date={} dayKey={}", departmentId, recordDate, dateStr);
+                log.debug("excel entity deptId={} date={} dayKey={}", rowDeptId, recordDate, dateStr);
             }
 
-            // 解析堂食营业额（第2列）
-            if (row.size() > 1 && row.get(1) != null) {
+            int base = deptCol ? 2 : 1;
+
+            // 解析堂食营业额
+            if (row.size() > base && row.get(base) != null) {
                 try {
-                    BigDecimal dineInRevenue = new BigDecimal(row.get(1).toString());
+                    BigDecimal dineInRevenue = new BigDecimal(row.get(base).toString());
                     entity.setGbAiDailyRevenueDineInRevenue(dineInRevenue);
                 } catch (NumberFormatException e) {
-                    // 如果转换失败，设置为0
                     entity.setGbAiDailyRevenueDineInRevenue(BigDecimal.ZERO);
                 }
             } else {
                 entity.setGbAiDailyRevenueDineInRevenue(BigDecimal.ZERO);
             }
             
-            // 解析堂食订单数（第3列）
-            if (row.size() > 2 && row.get(2) != null) {
+            // 解析堂食订单数
+            if (row.size() > base + 1 && row.get(base + 1) != null) {
                 try {
-                    Integer dineInOrders = Integer.parseInt(row.get(2).toString());
+                    Integer dineInOrders = Integer.parseInt(row.get(base + 1).toString());
                     entity.setGbAiDailyRevenueDineInOrders(dineInOrders);
                 } catch (NumberFormatException e) {
                     entity.setGbAiDailyRevenueDineInOrders(0);
@@ -152,10 +164,10 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 entity.setGbAiDailyRevenueDineInOrders(0);
             }
             
-            // 解析堂食顾客数（第4列）
-            if (row.size() > 3 && row.get(3) != null) {
+            // 解析堂食顾客数
+            if (row.size() > base + 2 && row.get(base + 2) != null) {
                 try {
-                    Integer dineInCustomers = Integer.parseInt(row.get(3).toString());
+                    Integer dineInCustomers = Integer.parseInt(row.get(base + 2).toString());
                     entity.setGbAiDailyRevenueDineInCustomers(dineInCustomers);
                 } catch (NumberFormatException e) {
                     entity.setGbAiDailyRevenueDineInCustomers(0);
@@ -164,10 +176,10 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 entity.setGbAiDailyRevenueDineInCustomers(0);
             }
             
-            // 解析外卖营业额（第5列）
-            if (row.size() > 4 && row.get(4) != null) {
+            // 解析外卖营业额
+            if (row.size() > base + 3 && row.get(base + 3) != null) {
                 try {
-                    BigDecimal takeoutRevenue = new BigDecimal(row.get(4).toString());
+                    BigDecimal takeoutRevenue = new BigDecimal(row.get(base + 3).toString());
                     entity.setGbAiDailyRevenueTakeoutRevenue(takeoutRevenue);
                 } catch (NumberFormatException e) {
                     entity.setGbAiDailyRevenueTakeoutRevenue(BigDecimal.ZERO);
@@ -176,10 +188,10 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 entity.setGbAiDailyRevenueTakeoutRevenue(BigDecimal.ZERO);
             }
             
-            // 解析外卖订单数（第6列）
-            if (row.size() > 5 && row.get(5) != null) {
+            // 解析外卖订单数
+            if (row.size() > base + 4 && row.get(base + 4) != null) {
                 try {
-                    Integer takeoutOrders = Integer.parseInt(row.get(5).toString());
+                    Integer takeoutOrders = Integer.parseInt(row.get(base + 4).toString());
                     entity.setGbAiDailyRevenueTakeoutOrders(takeoutOrders);
                 } catch (NumberFormatException e) {
                     entity.setGbAiDailyRevenueTakeoutOrders(0);
@@ -188,10 +200,10 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 entity.setGbAiDailyRevenueTakeoutOrders(0);
             }
             
-            // 解析平台抽成（第7列）
-            if (row.size() > 6 && row.get(6) != null) {
+            // 解析平台抽成
+            if (row.size() > base + 5 && row.get(base + 5) != null) {
                 try {
-                    BigDecimal platformFee = new BigDecimal(row.get(6).toString());
+                    BigDecimal platformFee = new BigDecimal(row.get(base + 5).toString());
                     entity.setGbAiDailyRevenuePlatformFee(platformFee);
                 } catch (NumberFormatException e) {
                     entity.setGbAiDailyRevenuePlatformFee(BigDecimal.ZERO);
@@ -210,9 +222,9 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             // 节假日设为空字符串（从模板中去掉了，由后台自动计算或后续补充）
             entity.setGbAiDailyRevenueHoliday("");
             
-            // 解析备注（第8列，因为去掉了星期几和节假日列）
-            if (row.size() > 7 && row.get(7) != null) {
-                entity.setGbAiDailyRevenueNotes(row.get(7).toString());
+            // 解析备注
+            if (row.size() > base + 6 && row.get(base + 6) != null) {
+                entity.setGbAiDailyRevenueNotes(row.get(base + 6).toString());
             } else {
                 entity.setGbAiDailyRevenueNotes("");
             }
@@ -302,29 +314,35 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             
             // 数据表头（去掉星期几和节假日，由后台自动计算）
             String[] dataHeaders = {
-                "日期", 
-                "堂食营业额", 
-                "堂食订单数", 
-                "堂食顾客数", 
-                "外卖营业额", 
-                "外卖订单数", 
-                "平台抽成", 
+                "日期",
+                "部门名称",
+                "堂食营业额",
+                "堂食订单数",
+                "堂食顾客数",
+                "外卖营业额",
+                "外卖订单数",
+                "平台抽成",
                 "备注"
             };
             writer.writeHeadRow(Arrays.asList(dataHeaders));
 
-            // 4. 生成日期序列并填充模板
+            // 4. 生成日期序列并填充模板（每个子部门一行/日；无子部门时为父部门一行）
+            List<GbDepartmentEntity> revDeps = departmentsForRevenueTemplateRows(departmentId);
             for (LocalDate d : dayList) {
-                List<Object> rowData = new ArrayList<>();
-                rowData.add(GbDateTimeUtils.formatDay(d));
-                rowData.add(""); // 堂食营业额
-                rowData.add(""); // 堂食订单数
-                rowData.add(""); // 堂食顾客数
-                rowData.add(""); // 外卖营业额
-                rowData.add(""); // 外卖订单数
-                rowData.add(""); // 平台抽成
-                rowData.add(""); // 备注
-                writer.writeRow(rowData);
+                for (GbDepartmentEntity dep : revDeps) {
+                    List<Object> rowData = new ArrayList<>();
+                    rowData.add(GbDateTimeUtils.formatDay(d));
+                    Integer did = dep.getGbDepartmentId();
+                    rowData.add(depDisplayName(did) + "（id:" + (did == null ? "" : did) + "）");
+                    rowData.add(""); // 堂食营业额
+                    rowData.add(""); // 堂食订单数
+                    rowData.add(""); // 堂食顾客数
+                    rowData.add(""); // 外卖营业额
+                    rowData.add(""); // 外卖订单数
+                    rowData.add(""); // 平台抽成
+                    rowData.add(""); // 备注
+                    writer.writeRow(rowData);
+                }
             }
             
             // 5. 添加使用说明
@@ -332,22 +350,22 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             writer.writeCellValue(0, 0, "智能模板使用说明");
             writer.writeCellValue(1, 0, "模板特性：");
             writer.writeCellValue(2, 0, "1. 自动生成指定日期范围的所有日期");
-            writer.writeCellValue(3, 0, "2. 自动填充部门信息");
+            writer.writeCellValue(3, 0, "2. 有子部门时每个日期下按子部门分行，无子部门时为父部门一行");
             writer.writeCellValue(4, 0, "3. 数值字段留空，等待用户填写");
             writer.writeCellValue(5, 0, "4. 星期几和节假日由系统自动计算，无需填写");
             writer.writeCellValue(6, 0, "");
             writer.writeCellValue(7, 0, "填写指南：");
-            writer.writeCellValue(8, 0, "1. 只需填写数值字段（堂食营业额、订单数、顾客数、外卖营业额、订单数、平台抽成）");
-            writer.writeCellValue(9, 0, "2. 金额字段：支持小数，单位：元");
-            writer.writeCellValue(10, 0, "3. 数量字段：整数");
-            writer.writeCellValue(11, 0, "4. 备注：可选，其他说明信息");
-            writer.writeCellValue(12, 0, "5. 星期几和节假日由系统自动计算，无需填写");
+            writer.writeCellValue(8, 0, "1. 第2列为部门名称（含子部门 id），与菜品模板一致；同一日期下每个子部门一行");
+            writer.writeCellValue(9, 0, "2. 数值字段：堂食营业额、订单数、顾客数、外卖营业额、外卖订单数、平台抽成");
+            writer.writeCellValue(10, 0, "3. 金额字段：支持小数，单位：元");
+            writer.writeCellValue(11, 0, "4. 数量字段：整数");
+            writer.writeCellValue(12, 0, "5. 备注：可选；星期与节假日由系统自动计算");
             writer.writeCellValue(13, 0, "");
             writer.writeCellValue(14, 0, "上传说明：");
             writer.writeCellValue(15, 0, "1. 填写完成后保存文件");
             writer.writeCellValue(16, 0, "2. 使用上传接口：/ai/daily-revenue/upload-excel");
-            writer.writeCellValue(17, 0, "3. 上传时需提供相同的部门ID");
-            writer.writeCellValue(18, 0, "4. 系统会自动匹配日期和部门信息");
+            writer.writeCellValue(17, 0, "3. 上传时需提供父部门 ID（与下载模板一致）");
+            writer.writeCellValue(18, 0, "4. 系统按 部门 id + 日期 写入；子部门须隶属于该父部门");
             
             // 6. 设置数据格式
             writer.setSheet(0); // 回到数据表
@@ -357,8 +375,8 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 writer.autoSizeColumn(i);
             }
             
-            // 标记必填字段
-            for (int i = 1; i <= 6; i++) { // 第2-7列为数值字段，需要填写
+            // 标记必填字段：第3–8列为数值字段（索引 2–7）
+            for (int i = 2; i <= 7; i++) {
                 Sheet sheet = writer.getSheet();
                 if (sheet != null && sheet.getRow(2) != null) {
                     sheet.getRow(2).getCell(i).setCellValue(dataHeaders[i] + " *");
@@ -718,6 +736,16 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 continue;
             }
             String c1 = row.get(1) == null ? "" : row.get(1).toString();
+            if (c1.contains("部门")) {
+                if (row.size() > 2) {
+                    String c2 = row.get(2) == null ? "" : row.get(2).toString();
+                    if (c2.contains("堂食订单") || c2.contains("堂食顾客") || c2.contains("外卖")
+                            || c2.contains("平台") || c2.contains("抽成") || c2.contains("备注")) {
+                        return true;
+                    }
+                }
+                continue;
+            }
             if (c1.contains("堂食订单") || c1.contains("堂食顾客") || c1.contains("堂食营业额")
                     || c1.contains("外卖") || c1.contains("平台") || c1.contains("抽成")
                     || c1.contains("备注")) {
@@ -738,9 +766,12 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
         List<List<Object>> rows = reader.read();
 
         int startRow = detectDailyRevenueDataStartRow(rows);
+        boolean deptCol = dailyRevenueHeaderHasDepartmentColumn(rows, startRow);
         if (startRow > 0 && startRow - 1 < rows.size()) {
             List<Object> header = rows.get(startRow - 1);
-            if (header.size() > 1 && header.get(1) != null && header.get(1).toString().contains("堂食营业额")) {
+            int supplementBase = deptCol ? 2 : 1;
+            if (header.size() > supplementBase && header.get(supplementBase) != null
+                    && header.get(supplementBase).toString().contains("堂食营业额")) {
                 throw new IllegalArgumentException("合并模板「日营业额」页不应包含堂食营业额列；堂食金额由「菜品日销售」页汇总");
             }
         }
@@ -756,22 +787,34 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             if (recordDate == null || dateStr == null) {
                 continue;
             }
-            String dateKey = departmentId + "-" + dateStr;
+
+            Long rowDeptId = departmentId;
+            if (deptCol && row.size() > 1 && row.get(1) != null) {
+                Integer parsedDep = parseDepartmentIdFromHeaderCell(row.get(1));
+                if (parsedDep != null) {
+                    rowDeptId = parsedDep.longValue();
+                }
+            }
+            assertDepartmentInUploadScope(rowDeptId, departmentId);
+
+            String dateKey = rowDeptId + "-" + dateStr;
             if (dateSet.contains(dateKey)) {
-                log.warn("skip duplicate excel date deptId={} date={}", departmentId, dateStr);
+                log.warn("skip duplicate excel date deptId={} date={}", rowDeptId, dateStr);
                 continue;
             }
             dateSet.add(dateKey);
 
             GbAiDailyRevenueEntity entity = new GbAiDailyRevenueEntity();
-            entity.setGbAiDailyRevenueDepartmentId(departmentId);
+            entity.setGbAiDailyRevenueDepartmentId(rowDeptId);
             entity.setGbAiDailyRevenueDistributerId(distributerId);
             entity.setGbAiDailyRevenueRecordDate(recordDate);
             // 无堂食营业额列：堂食金额由菜品导入逻辑写入
 
-            if (row.size() > 1 && row.get(1) != null) {
+            int base = deptCol ? 2 : 1;
+
+            if (row.size() > base && row.get(base) != null) {
                 try {
-                    entity.setGbAiDailyRevenueDineInOrders(Integer.parseInt(row.get(1).toString()));
+                    entity.setGbAiDailyRevenueDineInOrders(Integer.parseInt(row.get(base).toString()));
                 } catch (NumberFormatException e) {
                     entity.setGbAiDailyRevenueDineInOrders(0);
                 }
@@ -779,9 +822,9 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 entity.setGbAiDailyRevenueDineInOrders(0);
             }
 
-            if (row.size() > 2 && row.get(2) != null) {
+            if (row.size() > base + 1 && row.get(base + 1) != null) {
                 try {
-                    entity.setGbAiDailyRevenueDineInCustomers(Integer.parseInt(row.get(2).toString()));
+                    entity.setGbAiDailyRevenueDineInCustomers(Integer.parseInt(row.get(base + 1).toString()));
                 } catch (NumberFormatException e) {
                     entity.setGbAiDailyRevenueDineInCustomers(0);
                 }
@@ -789,9 +832,9 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 entity.setGbAiDailyRevenueDineInCustomers(0);
             }
 
-            if (row.size() > 3 && row.get(3) != null) {
+            if (row.size() > base + 2 && row.get(base + 2) != null) {
                 try {
-                    entity.setGbAiDailyRevenueTakeoutRevenue(new BigDecimal(row.get(3).toString()));
+                    entity.setGbAiDailyRevenueTakeoutRevenue(new BigDecimal(row.get(base + 2).toString()));
                 } catch (NumberFormatException e) {
                     entity.setGbAiDailyRevenueTakeoutRevenue(BigDecimal.ZERO);
                 }
@@ -799,9 +842,9 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 entity.setGbAiDailyRevenueTakeoutRevenue(BigDecimal.ZERO);
             }
 
-            if (row.size() > 4 && row.get(4) != null) {
+            if (row.size() > base + 3 && row.get(base + 3) != null) {
                 try {
-                    entity.setGbAiDailyRevenueTakeoutOrders(Integer.parseInt(row.get(4).toString()));
+                    entity.setGbAiDailyRevenueTakeoutOrders(Integer.parseInt(row.get(base + 3).toString()));
                 } catch (NumberFormatException e) {
                     entity.setGbAiDailyRevenueTakeoutOrders(0);
                 }
@@ -809,9 +852,9 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 entity.setGbAiDailyRevenueTakeoutOrders(0);
             }
 
-            if (row.size() > 5 && row.get(5) != null) {
+            if (row.size() > base + 4 && row.get(base + 4) != null) {
                 try {
-                    entity.setGbAiDailyRevenuePlatformFee(new BigDecimal(row.get(5).toString()));
+                    entity.setGbAiDailyRevenuePlatformFee(new BigDecimal(row.get(base + 4).toString()));
                 } catch (NumberFormatException e) {
                     entity.setGbAiDailyRevenuePlatformFee(BigDecimal.ZERO);
                 }
@@ -826,8 +869,8 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             }
             entity.setGbAiDailyRevenueHoliday("");
 
-            if (row.size() > 6 && row.get(6) != null) {
-                entity.setGbAiDailyRevenueNotes(row.get(6).toString());
+            if (row.size() > base + 5 && row.get(base + 5) != null) {
+                entity.setGbAiDailyRevenueNotes(row.get(base + 5).toString());
             } else {
                 entity.setGbAiDailyRevenueNotes("");
             }
@@ -940,8 +983,10 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             writer.writeRow(revInfoRow);
             writer.writeRow(new ArrayList<>());
 
+            List<GbDepartmentEntity> revDeps = departmentsForRevenueTemplateRows(departmentId);
             String[] revHeaders = {
                     "日期",
+                    "部门名称",
                     "堂食订单数",
                     "堂食顾客数",
                     "外卖营业额",
@@ -952,21 +997,25 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             writer.writeHeadRow(Arrays.asList(revHeaders));
 
             for (LocalDate d : dayList) {
-                List<Object> rowData = new ArrayList<>();
-                rowData.add(GbDateTimeUtils.formatDay(d));
-                for (int i = 0; i < 6; i++) {
-                    rowData.add("");
+                for (GbDepartmentEntity dep : revDeps) {
+                    List<Object> rowData = new ArrayList<>();
+                    rowData.add(GbDateTimeUtils.formatDay(d));
+                    Integer did = dep.getGbDepartmentId();
+                    rowData.add(depDisplayName(did) + "（id:" + (did == null ? "" : did) + "）");
+                    for (int i = 0; i < 6; i++) {
+                        rowData.add("");
+                    }
+                    writer.writeRow(rowData);
                 }
-                writer.writeRow(rowData);
             }
 
             writer.setSheet("使用说明");
             writer.writeCellValue(0, 0, "合并模板说明（菜品 + 日营业额）");
             writer.writeCellValue(1, 0, "一、「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_FOOD_NAME + "」与单独下载的菜品模板相同：第1列序号、第2列部门（含id）、第3列菜品（含id），第4列起为各日销量。");
             writer.writeCellValue(2, 0, "二、「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_REVENUE_NAME
-                    + "」不含当日营业额/堂食营业额列；堂食金额由菜品销量×单价汇总后写入系统。");
-            writer.writeCellValue(3, 0, "三、上传接口：POST /ai/daily-revenue/upload-combined-excel ，参数 file、departmentId、distributerId");
-            writer.writeCellValue(4, 0, "四、先导入菜品销售并汇总堂食，再合并写入外卖、订单数、顾客数、平台抽成、备注等字段。");
+                    + "」第2列为部门名称（含 id），与菜品表一致；每个日期下按子部门分行；不含堂食营业额列，堂食金额由菜品销量×单价汇总。");
+            writer.writeCellValue(3, 0, "三、上传接口：POST /ai/daily-revenue/upload-combined-excel ，参数 file、departmentId（父部门）、distributerId");
+            writer.writeCellValue(4, 0, "四、先导入菜品销售并汇总堂食，再按子部门合并写入订单数、顾客数、外卖、平台抽成、备注等。");
             if (skipped > 0) {
                 writer.writeCellValue(5, 0, "五、当前有 " + skipped + " 条门店菜品未出现在菜品表中（未配置 gb_df_food_id 或与部门批发商不一致）");
             }
@@ -982,7 +1031,8 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             }
             Sheet revSheet = writer.getSheet();
             if (revSheet != null && revSheet.getRow(2) != null) {
-                for (int i = 1; i <= 5; i++) {
+                // 第3–7列为需填数值：堂食订单数…平台抽成
+                for (int i = 2; i <= 6; i++) {
                     if (revSheet.getRow(2).getCell(i) != null) {
                         revSheet.getRow(2).getCell(i).setCellValue(revHeaders[i] + " *");
                     }
@@ -1305,6 +1355,66 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             return f.getGbDfFoodName().trim();
         }
         return "菜品" + distributerFoodId;
+    }
+
+    /**
+     * 日营业额模板/上传：表头行第2列是否为「部门名称」列（与菜品销售模板一致）。
+     */
+    private static boolean dailyRevenueHeaderHasDepartmentColumn(List<List<Object>> rows, int dataStartRow) {
+        int headerIdx = dataStartRow > 0 ? dataStartRow - 1 : 0;
+        if (headerIdx < 0 || headerIdx >= rows.size()) {
+            return false;
+        }
+        return isDepartmentHeader(rows.get(headerIdx), 1);
+    }
+
+    private void assertDepartmentInUploadScope(Long rowDepartmentId, Long uploadParentDepartmentId) {
+        if (rowDepartmentId == null || uploadParentDepartmentId == null) {
+            throw new IllegalArgumentException("部门信息无效（上传父部门或 Excel 行部门为空）");
+        }
+        List<Long> scope = departmentScopeIdsForUpload(uploadParentDepartmentId);
+        if (!scope.contains(rowDepartmentId)) {
+            throw new IllegalArgumentException(
+                    "Excel 中的部门 id " + rowDepartmentId + " 不在当前上传父部门（id=" + uploadParentDepartmentId + "）范围内");
+        }
+    }
+
+    private List<Long> departmentScopeIdsForUpload(Long parentId) {
+        List<Long> ids = new ArrayList<>();
+        if (parentId == null) {
+            return ids;
+        }
+        ids.add(parentId);
+        List<GbDepartmentEntity> subs = departmentService.querySubDepartments(parentId.intValue());
+        if (subs != null) {
+            for (GbDepartmentEntity s : subs) {
+                if (s.getGbDepartmentId() != null) {
+                    ids.add(s.getGbDepartmentId().longValue());
+                }
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * 智能模板日营业额区：有子部门时每个子部门一行/日；无子部门时为父部门一行/日。
+     */
+    private List<GbDepartmentEntity> departmentsForRevenueTemplateRows(Integer departmentId) {
+        if (departmentId == null) {
+            return Collections.emptyList();
+        }
+        List<GbDepartmentEntity> subs = departmentService.querySubDepartments(departmentId);
+        List<GbDepartmentEntity> out = new ArrayList<>();
+        if (subs != null && !subs.isEmpty()) {
+            subs.sort(Comparator.comparing(GbDepartmentEntity::getGbDepartmentId, Comparator.nullsLast(Integer::compareTo)));
+            out.addAll(subs);
+        } else {
+            GbDepartmentEntity parent = departmentService.getById(departmentId);
+            if (parent != null) {
+                out.add(parent);
+            }
+        }
+        return out;
     }
 
     private String depDisplayName(Integer depId) {

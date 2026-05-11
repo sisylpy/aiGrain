@@ -34,6 +34,11 @@ public final class GbConstants {
         public static final Integer DELIVERY_SUPPLIER = 5;
         /** 加盟店部门 */
         public static final Integer FRANCHISE = 11;
+        /**
+         * 片区 / 区域管理单元（组织树上的区域根节点；非门店）。
+         * 集团采购/区域采购、集团库房/区域库房建议仍用 {@link #GROUP_PURCHASE}、{@link #WAREHOUSE}，通过父部门区分层级。
+         */
+        public static final Integer REGION = 12;
     }
 
     // -------------------------------------------------------------------------
@@ -85,6 +90,12 @@ public final class GbConstants {
         public static final Integer WAREHOUSE_PURCHASER = 31;
         /** 中央厨房采购员 */
         public static final Integer CENTRAL_KITCHEN_PURCHASER = 41;
+        /** 片区 / 区域管理端（与后台用户 admin 取值对齐后再写入业务库） */
+        public static final Integer REGION_MANAGER_APP = 51;
+        /** 区域采购端 */
+        public static final Integer REGION_PURCHASER_APP = 52;
+        /** 区域库房端 */
+        public static final Integer REGION_WAREHOUSE_APP = 53;
     }
 
     // -------------------------------------------------------------------------
@@ -294,9 +305,13 @@ public final class GbConstants {
 
         /** 生产成本（菜品成本分析里按菜分摊的出库均价、W_g 仅汇总此类型） */
         public static final Integer PRODUCTION = 1;
-        /** 废弃 */
+        /**
+         * 废弃（gb_dgsr_type=2）：过保鲜期、过期、变质等报废出库；勿泛称为「损耗」。
+         */
         public static final Integer WASTE = 2;
-        /** 损失成本 */
+        /**
+         * 损耗（gb_dgsr_type=3）：丢失、破损、自然损耗、盘亏等；口语「报损」多指本类，勿与 type=2 混称。
+         */
         public static final Integer LOSS = 3;
         /** 退货 */
         public static final Integer RETURN = 4;

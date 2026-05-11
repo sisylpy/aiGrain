@@ -19,7 +19,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.HashMap;
@@ -127,6 +126,7 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
 
     }
 
+
     private void attachGoodsStockReduces(List<GbDepartmentGoodsStockEntity> stocks) {
         if (stocks.isEmpty()) {
             return;
@@ -159,13 +159,13 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
     }
 
     @Override
-    public Map<String, Object> queryMendianStockTypePeriod(Integer disId, Integer whichDay, String searchDepIds, String searchDepId, Integer type) {
-        log.debug("queryMendianStockTypePeriod disId={} whichDay={} searchDepIds={} searchDepId={} type={}",
-                disId, whichDay, searchDepIds, searchDepId, type);
+    public Map<String, Object> queryMendianStockTypePeriod(Integer disId, Integer whichDay, Integer depFatherId, String searchSubDepIds) {
+        log.debug("queryMendianStockTypePeriod disId={} whichDay={} depFatherId={} searchSubDepIds={}",
+                disId, whichDay, depFatherId, searchSubDepIds);
 
         Map<String, Object> mapResult = new HashMap<>();
-        List<String> idsGb = parseDepIds(searchDepIds);
-        Map<String, Object> baseParams = buildBaseParams(disId, searchDepId, searchDepIds, idsGb);
+        Map<String, Object> baseParams = buildMendianBaseParams(disId, depFatherId, searchSubDepIds);
+        int type = 0;
 
         Integer totalCount = gbDepGoodsStockService.queryGoodsStockCount(baseParams);
 
@@ -189,31 +189,43 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
     }
 
     @Override
-    public Map<String, Object> queryDayStockByGreatId(Integer disId, String searchDepId, Integer depId, String greatId, Integer which, Integer type) {
-        return buildDayStockByGreatId(greatId, which, type, disId, searchDepId, depId);
+    public Map<String, Object> queryDayStockByGreatId(
+            Integer disId, Integer depFatherId, String searchSubDepIds, String greatId, Integer which, Integer type) {
+        return buildDayStockByGreatId(greatId, which, type, disId, depFatherId, searchSubDepIds);
     }
 
-    private List<String> parseDepIds(String searchDepIds) {
-        if (searchDepIds == null || "-1".equals(searchDepIds)) {
+    private List<String> parseCommaSeparatedIds(String raw) {
+        if (raw == null || raw.isEmpty() || "-1".equals(raw)) {
             return new ArrayList<>();
         }
-        return Arrays.asList(searchDepIds.split(","));
+        List<String> out = new ArrayList<>();
+        for (String part : raw.split(",")) {
+            if (part == null) {
+                continue;
+            }
+            String t = part.trim();
+            if (!t.isEmpty()) {
+                out.add(t);
+            }
+        }
+        return out;
     }
 
-    private Map<String, Object> buildBaseParams(Integer disId, String searchDepId, String searchDepIds, List<String> idsGb) {
+    private Map<String, Object> buildMendianBaseParams(Integer disId, Integer depFatherId, String searchSubDepIds) {
         Map<String, Object> params = new HashMap<>();
         params.put("disId", disId);
         params.put("dayuStatus", -1);
         params.put("restWeight", 0);
-
-        if (searchDepId != null && !"-1".equals(searchDepId)) {
-            params.put("depFatherId", searchDepId);
-        } else if (searchDepIds != null && !"-1".equals(searchDepIds)) {
-            params.put("depFatherIds", idsGb);
+        List<String> subIds = parseCommaSeparatedIds(searchSubDepIds);
+        if (!subIds.isEmpty()) {
+            params.put("depFatherIds", subIds);
+        } else {
+            params.put("depFatherId", depFatherId);
         }
-
         return params;
     }
+
+
 
     private String getTotalDateString(Integer type) {
         int t = type == null ? 0 : type;
@@ -588,7 +600,7 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
      * 按大类 + 时间维度组装「商品列表 + 批次简化行 + 损耗统计」。
      */
     private Map<String, Object> buildDayStockByGreatId(String greatId, Integer which, Integer type,
-                                                        Integer disId, String searchDepId, Integer depId) {
+                                                        Integer disId, Integer depFatherId, String searchSubDepIds) {
         List<GbDistributerGoodsEntity> stockGoodsList = new ArrayList<>();
         Map<String, Object> result = new HashMap<>();
         double total = 0.0;
@@ -600,10 +612,11 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
         if (!greatIdEffective && disId != null) {
             map.put("disId", disId);
         }
-        if (depId != null) {
-            map.put("depId", depId);
-        } else if (searchDepId != null && !"-1".equals(searchDepId) && !searchDepId.isEmpty()) {
-            map.put("depFatherId", searchDepId);
+        List<String> subIds = parseCommaSeparatedIds(searchSubDepIds);
+        if (!subIds.isEmpty()) {
+            map.put("depFatherIds", subIds);
+        } else {
+            map.put("depFatherId", depFatherId);
         }
 
         int t = type == null ? 0 : type;

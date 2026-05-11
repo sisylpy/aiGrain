@@ -75,6 +75,12 @@ public interface GbDepartmentGoodsStockReduceService extends IService<GbDepartme
     Map<String, Object> queryReduceAllTypesTotal(Map<String, Object> map);
 
     /**
+     * 多门店零售父部门汇总：与 Mapper {@code queryReduceAllTypesTotalForRetailDepartmentFathers} 一致，
+     * {@code params.departmentFatherIds} + {@code params.disId} + 日期区间。
+     */
+    Map<String, Object> queryReduceAllTypesTotalForRetailDepartmentFathers(Map<String, Object> map);
+
+    /**
      * 同 {@link #queryReduceAllTypesTotal}，仅计入「该日已有日营业额」的核销日期。
      */
     Map<String, Object> queryReduceAllTypesTotalOnDailyRevenueDays(Map<String, Object> map);

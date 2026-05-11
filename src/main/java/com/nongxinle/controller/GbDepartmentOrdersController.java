@@ -323,7 +323,7 @@ public class GbDepartmentOrdersController {
 
                 List<GbDepartmentOrdersEntity> depOrders = gbDepartmentOrdersService.queryDisOrdersListByParams(map1);
                 mapDep.put("depOrders", depOrders);
-                mapDep.put("depInfo", gbDepartmentService.queryDepInfoGb(dep.getGbDepartmentId()));
+                mapDep.put("depInfo", gbDepartmentService.getById(dep.getGbDepartmentId()));
                 System.out.println("depGetApplyAiByTime - depId: " + dep.getGbDepartmentId() +
                         ", orders size: " + depOrders.size());
 
@@ -341,7 +341,7 @@ public class GbDepartmentOrdersController {
             List<GbDepartmentOrdersEntity> ordersEntities = gbDepartmentOrdersService.queryDisOrdersListByParams(map);
 
             mapR.put("arr", ordersEntities);
-            mapR.put("depInfo", gbDepartmentService.queryDepInfoGb(depFatherId));
+            mapR.put("depInfo", gbDepartmentService.getById(depFatherId));
             return R.ok().put("data", mapR);
         }
     }

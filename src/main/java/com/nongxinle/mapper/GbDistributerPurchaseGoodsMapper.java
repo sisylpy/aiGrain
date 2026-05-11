@@ -1,6 +1,9 @@
 package com.nongxinle.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.nongxinle.dto.DepartmentPurchaseAggRow;
+import com.nongxinle.dto.PurchaseMethodLegacyAggRow;
+import com.nongxinle.dto.PurchaseTypeAggRow;
 import com.nongxinle.entity.GbDepartmentUserEntity;
 import com.nongxinle.entity.GbDistributerGoodsEntity;
 import com.nongxinle.entity.GbDistributerPurchaseGoodsEntity;
@@ -27,6 +30,32 @@ public interface GbDistributerPurchaseGoodsMapper extends BaseMapper<GbDistribut
     Double queryPurchaseGoodsSubTotal(Map<String, Object> map);
 
     Integer queryGbPurchaseGoodsCount(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件（含 batch join），汇总 {@code gb_DPG_buy_subtotal}。
+     */
+    Double queryGbPurchaseGoodsBuySubtotalSum(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件，{@code gb_DPG_purchase_type} 分组统计行数与金额。
+     */
+    List<PurchaseTypeAggRow> queryGbPurchaseGoodsAggByPurchaseType(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件；采购方式按旧版「供货属性摘要」（{@code GbAiChatServiceImpl#appendPurchaseSupplyMixSummary}）：
+     * type=5；type=1 且 nx 正整数归入供货商侧；type=1 且 nx 空/-1 为自采；其余为其它。
+     */
+    List<PurchaseMethodLegacyAggRow> queryGbPurchaseGoodsAggByLegacyPurchaseMethod(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件；按商品名称+标准名合并集团内多 {@code dis_goods_id} 后按采购频次 Top。
+     */
+    List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopTimesMerged(Map<String, Object> map);
+
+    /**
+     * 同上合并规则，按采购金额 Top。
+     */
+    List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopSubtotalMerged(Map<String, Object> map);
 
     /**
      * 与 {@link #queryGbPurchaseGoodsCount} 条件一致，汇总采购重量（{@code gb_DPG_buy_quantity}）。
@@ -80,5 +109,16 @@ public interface GbDistributerPurchaseGoodsMapper extends BaseMapper<GbDistribut
      * 与 {@link #queryGbPurchaseGoodsCount} 条件一致，按 {@code gb_DPG_dis_goods_id} 汇总入库采购数量。
      */
     List<Map<String, Object>> queryPurchaseBuyQtyAggByDisGoods(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 条件一致，按入库采购部门聚合 {@code gb_DPG_buy_subtotal}。
+     * 须与同类查询一致：单 {@link Map} 参数且<strong>不要</strong>加 {@code @Param("map")}，否则动态 SQL 无法解析 {@code disId} / {@code purDepId} 等键。
+     */
+    List<DepartmentPurchaseAggRow> sumPurchaseSubtotalGroupedByPurDepartmentId(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 条件一致，按供货商汇总采购入库金额 Top10。
+     */
+    List<Map<String, Object>> queryGbPurchaseSupplierSpendTop(Map<String, Object> map);
 
 }

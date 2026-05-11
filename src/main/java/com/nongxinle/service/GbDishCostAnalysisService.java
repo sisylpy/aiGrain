@@ -1,6 +1,7 @@
 package com.nongxinle.service;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -13,17 +14,25 @@ public interface GbDishCostAnalysisService {
     /**
      * @param reportKind {@code salesDish}（默认）| {@code outboundQty}
      */
+    default Map<String, Object> buildReport(String startDate, String stopDate, Integer disId, String searchDepId,
+            Integer depFatherId, String reportKind) {
+        return buildReport(startDate, stopDate, disId, searchDepId, depFatherId, reportKind, null);
+    }
+
+    /**
+     * @param scopeDepartmentIdsAllowFilter 非空时将与解析出的菜品销售子部门 scope 求交（如区域权限 {@code AiQueryScope#resolvedDepartmentIds}）。
+     */
     Map<String, Object> buildReport(String startDate, String stopDate, Integer disId, String searchDepId,
-            Integer depFatherId, String reportKind);
+            Integer depFatherId, String reportKind, Collection<Integer> scopeDepartmentIdsAllowFilter);
 
     /**
      * 配料分析：销售汇总、按菜按配方( q×u )实收口径，type2/3 在扣减无菜品关联时按「本行 type1 占全店 type1」同比分摊到本菜本料。
      *
-     * @param endDate 同 {@link #buildReport} 的 {@code stopDate}
+     * @param stopDate 区间结束日，同 {@link #buildReport} 的 {@code stopDate}
      * @param sortBy  {@code sales|salesAmount|销量} 实收销售额；{@code diff|diffCostPerPortion|成本差异} 每份成本差异绝对值；{@code actualCost|actualCostPerPortion} 每道菜<strong>单份</strong>实际成本（type1+2+3，{@code actualCostPerPortion}）；空则同 sales
      * @param sortOrder {@code desc|asc|降序|升序}，默认 {@code desc}
      */
-    Map<String, Object> buildIngredientAnalysisReport(String startDate, String endDate, Integer disId, String searchDepId,
+    Map<String, Object> buildIngredientAnalysisReport(String startDate, String stopDate, Integer disId, String searchDepId,
             Integer depFatherId, String sortBy, String sortOrder);
 
     /**
@@ -36,42 +45,60 @@ public interface GbDishCostAnalysisService {
      * @param page 页码，从 1 起；仅当 {@code pageSize} 有效时参与分页
      * @param pageSize 每页条数，{@code null} 或 ≤0 表示不分页（返回全部匹配行，兼容旧调用）
      */
-    Map<String, Object> buildOutboundIngredientAnalysisReport(String startDate, String endDate, Integer disId, String searchDepId,
+    Map<String, Object> buildOutboundIngredientAnalysisReport(String startDate, String stopDate, Integer disId, String searchDepId,
             Integer depFatherId, String sortBy, String sortOrder, String goodsNameSearch, Integer page, Integer pageSize);
 
     /**
      * 按 {@code /ingredientAnalysis} 同一口径生成各菜的 {@code ingredientRows}（Map 列表），供部门菜品列表等复用。
      * <p>会将 {@code foodIds} 并入分摊用的全表菜品集合，使本期内无销量但需展示的菜仍参与 {@code sumNeed} 等汇总。</p>
-     *
-     * @param depFatherId 与 {@link #buildIngredientAnalysisReport} 一致；{@code searchDepId} 在此固定为 null，由父部门解析门店范围
+     * <p>门店范围由 {@code depFatherId} 解析下属门店（与配料分析不传 {@code searchDepId} 时一致）。若需单子部门请用 {@link #buildIngredientRowsForFoodIds(String, String, Integer, Integer, String, Set)}。</p>
      */
-    Map<Integer, List<Map<String, Object>>> buildIngredientRowsForFoodIds(String startDate, String endDate, Integer disId,
+    Map<Integer, List<Map<String, Object>>> buildIngredientRowsForFoodIds(String startDate, String stopDate, Integer disId,
             Integer depFatherId, Set<Integer> foodIds);
 
     /**
+     * 同上，{@code searchDepId} 非空时限定单个子部门的销量与出库分摊口径。
+     */
+    Map<Integer, List<Map<String, Object>>> buildIngredientRowsForFoodIds(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, String searchDepId, Set<Integer> foodIds);
+
+    /**
      * 单菜配料看板：配料明细（在 {@code /ingredientAnalysis} 同行口径上扩展用量偏差、成本占比、建议等）、成本结构占比、按月的成本趋势点与综合建议文案。
-     * <p>{@code trendGranularity} 当前仅支持 {@code month}；趋势区间缺省时为 {@code endDate} 往前至多 6 个自然月（与主区间求交）。</p>
+     * <p>{@code trendGranularity} 当前仅支持 {@code month}；趋势区间缺省时为 {@code stopDate} 往前至多 6 个自然月（与主区间求交）。</p>
      *
      * @param trendStartDate 趋势起点（含），可空
-     * @param trendEndDate   趋势终点（含），可空则取主区间 {@code endDate}
+     * @param trendEndDate   趋势终点（含），可空则取主区间 {@code stopDate}
      * @param primaryDisGoodsId 趋势曲线聚焦的原料；可空则取主区间内「单份实际成本」最高的配料
      */
-    Map<String, Object> buildDishIngredientDashboard(String startDate, String endDate, Integer disId, Integer depFatherId,
+    Map<String, Object> buildDishIngredientDashboard(String startDate, String stopDate, Integer disId, Integer depFatherId,
             Integer foodId, String trendStartDate, String trendEndDate, String trendGranularity, Integer primaryDisGoodsId);
 
     /**
      * 各菜在区间内、部门 scope 下 type1+2+3 摊销后的**单份实际成本**（元/份），与 {@code buildIngredientAnalysisDishRow} 中 {@code actualCostPerPortion} 同口径。
      * <p>供部门菜品 {@code gbDfBusinessInsight} 等列表展示，与 {@code grossMarginRateOnListPrice}（仅 type1）区分。</p>
      */
-    Map<Integer, BigDecimal> getDishActualCostPerPortion123ByFoodIds(String startDate, String endDate, Integer disId,
-            Integer depFatherId, Set<Integer> foodIds);
+    default Map<Integer, BigDecimal> getDishActualCostPerPortion123ByFoodIds(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, Set<Integer> foodIds) {
+        return getDishActualCostPerPortion123ByFoodIds(startDate, stopDate, disId, depFatherId, null, foodIds, null);
+    }
+
+    /**
+     * 同 {@link #getDishActualCostPerPortion123ByFoodIds}，可限定 {@code searchDepId} 单个子部门。
+     */
+    default Map<Integer, BigDecimal> getDishActualCostPerPortion123ByFoodIds(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, String searchDepId, Set<Integer> foodIds) {
+        return getDishActualCostPerPortion123ByFoodIds(startDate, stopDate, disId, depFatherId, searchDepId, foodIds, null);
+    }
+
+    Map<Integer, BigDecimal> getDishActualCostPerPortion123ByFoodIds(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, String searchDepId, Set<Integer> foodIds, Collection<Integer> scopeDepartmentIdsAllowFilter);
 
     /**
      * 与 {@code /gbDishCostAnalysis/dishIngredientDashboard} 的 {@code dish}、{@code /ingredientAnalysis} 按菜行一致：
      * 各菜 {@code theoryCostPerPortion}、{@code actualCostPerPortion}（type1+2+3 摊销）、{@code diffCostPerPortion}、{@code salesPortions}（字符串）。
      * <p>注意：与 {@link #buildReport} {@code salesDishRows} 的 {@code theoryCostAmount}/{@code actualCostAmount} 不同——后者整菜「实际」侧仅按生产出库 type1 重量分摊计价，未并入 type2/3 分摊金额。</p>
      */
-    Map<Integer, Map<String, String>> getDishPerPortionCosts123ByFoodIds(String startDate, String endDate, Integer disId,
+    Map<Integer, Map<String, String>> getDishPerPortionCosts123ByFoodIds(String startDate, String stopDate, Integer disId,
             Integer depFatherId, Set<Integer> foodIds);
 
     /**

@@ -21,13 +21,14 @@ public interface GbDepartmentGoodsStockQueryService {
     /**
      * 门店库存按时间段分类统计（订货端看板）。
      */
-    Map<String, Object> queryMendianStockTypePeriod(Integer disId, Integer whichDay, String searchDepIds, String searchDepId, Integer type);
+    Map<String, Object> queryMendianStockTypePeriod(Integer disId, Integer whichDay, Integer depFatherId, String searchSubDepIds);
 
     /**
      * 按大类 ID 查询某日（段）商品库存明细（含商品列表与简化批次行）。
-     * <p>有有效 {@code greatId} 时不使用 {@code disId}；部门筛选见 {@code depId} / {@code searchDepId}。</p>
+     * <p>有有效 {@code greatId} 时不使用 {@code disId}；部门筛选见必填 {@code depFatherId} 与可选 {@code searchSubDepIds}。</p>
      */
-    Map<String, Object> queryDayStockByGreatId(Integer disId, String searchDepId, Integer depId, String greatId, Integer which, Integer type);
+    Map<String, Object> queryDayStockByGreatId(
+            Integer disId, Integer depFatherId, String searchSubDepIds, String greatId, Integer which, Integer type);
 
     /**
      * 部门商品关联库存批次 + 每批次下全部库存减少（reduce）记录。
@@ -36,4 +37,5 @@ public interface GbDepartmentGoodsStockQueryService {
     List<GbDepartmentGoodsStockEntity> queryDepGoodsBusiness(Integer depGoodsId, String startDate, String stopDate);
 
     List<GbDepartmentGoodsStockEntity> queryDisGoodsBusiness(Integer disGoodsId, String startDate, String stopDate);
+
 }

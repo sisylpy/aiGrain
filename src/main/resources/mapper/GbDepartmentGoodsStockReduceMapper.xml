@@ -359,6 +359,65 @@
         </where>
     </select>
 
+    <select id="queryReduceAllTypesTotalForRetailDepartmentFathers" resultType="java.util.Map">
+        select
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 1), 0) as produceTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 1), 0) as wasteTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 1), 0) as lossTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 1), 0) as returnTotal
+        from gb_department_goods_stock_reduce r
+        inner join gb_department gd on gd.gb_department_id = r.gb_dgsr_gb_department_father_id
+        left join gb_distributer_goods gdd on gdd.gb_distributer_goods_id = r.gb_dgsr_gb_dis_goods_id
+        <where>
+            gd.gb_department_type in (1, 11)
+            <if test="params.departmentFatherIds != null and params.departmentFatherIds.size() &gt; 0">
+                and r.gb_dgsr_gb_department_father_id in
+                <foreach collection="params.departmentFatherIds" item="fid" open="(" separator="," close=")">
+                    #{fid}
+                </foreach>
+            </if>
+            <if test="params.disId != null">
+                and r.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.startDate != null">
+                and r.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and r.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                and (
+                    r.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+        </where>
+    </select>
+
+    <!-- 按父级门店拆分出库成本（集团门店毛利表用） -->
+    <select id="queryReduceAllTypesTotalGroupedByDepartmentFather" resultType="java.util.Map">
+        select
+            r.gb_dgsr_gb_department_father_id as departmentFatherId,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 1), 0) as produceTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 1), 0) as wasteTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 1), 0) as lossTotal,
+            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 1), 0) as returnTotal
+        from gb_department_goods_stock_reduce r
+        <where>
+            r.gb_dgsr_gb_department_father_id in
+            <foreach collection="params.departmentFatherIds" item="fid" open="(" separator="," close=")">
+                #{fid}
+            </foreach>
+            <if test="params.startDate != null">
+                and r.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and r.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+        </where>
+        group by r.gb_dgsr_gb_department_father_id
+    </select>
+
     <!--
         与 queryReduceAllTypesTotal 过滤条件一致，且仅汇总「该日已存在日营业额记录」的核销行：
         r.gb_dgsr_date 与 gb_ai_daily_revenue 同部门、同自然日（按 record_date 格式化为 yyyy-MM-dd）。
@@ -376,8 +435,14 @@
             <if test="params.matchDailyRevenueDepartmentId != null">
                 and exists (
                     select 1 from gb_ai_daily_revenue dr
-                    where dr.gb_ai_daily_revenue_department_id = #{params.matchDailyRevenueDepartmentId}
-                    and r.gb_dgsr_date = DATE_FORMAT(dr.gb_ai_daily_revenue_record_date, '%Y-%m-%d')
+                    where r.gb_dgsr_date = DATE_FORMAT(dr.gb_ai_daily_revenue_record_date, '%Y-%m-%d')
+                    and (
+                        dr.gb_ai_daily_revenue_department_id = #{params.matchDailyRevenueDepartmentId}
+                        or dr.gb_ai_daily_revenue_department_id in (
+                            select gb_department_id from gb_department
+                            where gb_department_father_id = #{params.matchDailyRevenueDepartmentId}
+                        )
+                    )
                 )
             </if>
             <if test="params.departmentFatherId != null">
@@ -614,6 +679,15 @@
         </if>
         <if test="params.disId != null">
             AND gsr.gb_dgsr_gb_distributer_id = #{params.disId}
+        </if>
+        <if test="params.departmentFatherId != null">
+            AND gsr.gb_dgsr_gb_department_father_id = #{params.departmentFatherId}
+        </if>
+        <if test="params.departmentFatherIds != null and params.departmentFatherIds.size() &gt; 0">
+            AND gsr.gb_dgsr_gb_department_father_id in
+            <foreach collection="params.departmentFatherIds" item="fid" open="(" separator="," close=")">
+                #{fid}
+            </foreach>
         </if>
         GROUP BY gsr.gb_dgsr_gb_dis_goods_id, dg.gb_dg_goods_name
         <choose>

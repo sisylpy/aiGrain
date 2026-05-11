@@ -371,6 +371,9 @@
                     <if test="map.purUserId != null">
                         and gb_DPB_pur_user_id = #{map.purUserId}
                     </if>
+                    <if test="map.purDepId != null">
+                        and gb_DPB_pur_department_id = #{purDepId}
+                    </if>
                 </where>
                 order by gb_distributer_purchase_batch_id DESC
     </select>

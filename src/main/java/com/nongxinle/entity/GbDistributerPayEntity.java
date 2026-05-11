@@ -1,6 +1,7 @@
 package com.nongxinle.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -29,4 +30,12 @@ public class GbDistributerPayEntity implements Serializable {
     private Date gbGdpFromTime;
     private Date gbGdpStopTime;
     private Integer gbGdpType;
+    private String gbGdpTradeNo;
+    private String gbGdpImgUrl;
+    private String gbGdpSellDetail;
+
+    @TableField(exist = false)
+    private String payUserOpenId;
+    @TableField(exist = false)
+    private String perPrice;
 }

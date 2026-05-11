@@ -1,11 +1,13 @@
 package com.nongxinle.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.nongxinle.constants.AiInsightDishProfitScope;
 import com.nongxinle.entity.GbDepartmentEntity;
 import com.nongxinle.entity.GbDepFoodEntity;
 import com.nongxinle.entity.GbDepFoodSalesEntity;
 import com.nongxinle.entity.GbDistributerFoodEntity;
 import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
+import com.nongxinle.mapper.GbDepartmentMapper;
 import com.nongxinle.service.GbDepFoodBusinessInsightService;
 import com.nongxinle.service.GbDistributerFoodService;
 import com.nongxinle.service.GbDepFoodSalesService;
@@ -22,13 +24,16 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import static com.nongxinle.utils.GbTypeUtils.getGbDepartmentTypeMendian;
@@ -46,14 +51,29 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
     private final GbDepFoodService gbDepFoodService;
     private final GbDepFoodSalesService gbDepFoodSalesService;
     private final GbDepartmentService gbDepartmentService;
+    private final GbDepartmentMapper gbDepartmentMapper;
     private final GbDishCostAnalysisService gbDishCostAnalysisService;
     private final GbDepartmentGoodsStockReduceService gbDepartmentGoodsStockReduceService;
     private final GbDistributerFoodService gbDistributerFoodService;
 
     @Override
-    public Map<String, Object> buildInsight(Integer disId, Integer depFatherId, String startDate, String stopDate) {
+    public Map<String, Object> buildInsight(Integer disId, Integer depFatherId, String startDate, String stopDate, Integer subDepId,
+            Collection<Integer> scopeDepartmentIdsAllowFilter) {
         if (disId == null || depFatherId == null) {
             throw new IllegalArgumentException("disId、depFatherId 不能为空");
+        }
+        boolean groupWideAgg = AiInsightDishProfitScope.isGroupWideMendianAggregateUnderDis(depFatherId);
+        if (subDepId != null) {
+            if (groupWideAgg) {
+                throw new IllegalArgumentException("集团多维菜品聚合模式下不可指定 subDepId");
+            }
+            GbDepartmentEntity sub = gbDepartmentService.getById(subDepId);
+            if (sub == null) {
+                throw new IllegalArgumentException("子部门不存在: " + subDepId);
+            }
+            if (!Objects.equals(sub.getGbDepartmentFatherId(), depFatherId)) {
+                throw new IllegalArgumentException("subDepId 与 depFatherId 不是父子关系");
+            }
         }
         if (startDate == null || startDate.trim().isEmpty() || stopDate == null || stopDate.trim().isEmpty()) {
             throw new IllegalArgumentException("startDate、stopDate 不能为空");
@@ -61,9 +81,11 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         String sd = startDate.trim();
         String ed = stopDate.trim();
 
-        List<Integer> scopeDepIds = resolveScopeDepIds(disId, null, depFatherId);
+        String searchDepStr = subDepId == null ? null : String.valueOf(subDepId);
+        List<Integer> scopeDepIds = resolveScopeDepIds(disId, searchDepStr, depFatherId, scopeDepartmentIdsAllowFilter);
 
-        Map<String, Object> dishReport = gbDishCostAnalysisService.buildReport(sd, ed, disId, null, depFatherId, REPORT_SALES_DISH);
+        Map<String, Object> dishReport = gbDishCostAnalysisService.buildReport(sd, ed, disId, searchDepStr, depFatherId,
+                REPORT_SALES_DISH, scopeDepartmentIdsAllowFilter);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> salesDishRows = (List<Map<String, Object>>) dishReport.get("salesDishRows");
         Map<Integer, Map<String, Object>> costRowByFoodId = new HashMap<>();
@@ -79,9 +101,17 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         WeekdaySalesAgg salesAgg = loadQtyByFoodAndWeekday(disId, scopeDepIds, sd, ed);
 
         Map<String, Object> depMap = new HashMap<>();
-        depMap.put("disId", disId);
-        depMap.put("depFatherId", depFatherId);
-        List<GbDepFoodEntity> foods = gbDepFoodService.queryDepAllFood(depMap);
+        List<GbDepFoodEntity> foods;
+        if (subDepId != null) {
+            depMap.put("depId", subDepId);
+            foods = gbDepFoodService.queryDepAllFood(depMap);
+        } else if (groupWideAgg) {
+            List<Integer> menuRoots = resolveStoreRootsForGroupWideMenu(disId, scopeDepartmentIdsAllowFilter);
+            foods = mergeDepFoodAcrossMendianParents(disId, menuRoots);
+        } else {
+            depMap.put("depFatherId", depFatherId);
+            foods = gbDepFoodService.queryDepAllFood(depMap);
+        }
         if (foods == null) {
             foods = Collections.emptyList();
         }
@@ -128,19 +158,28 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         }
         Map<Integer, BigDecimal> actPp123ByFoodId = Collections.emptyMap();
         if (!insightFoodIds.isEmpty()) {
-            actPp123ByFoodId = gbDishCostAnalysisService.getDishActualCostPerPortion123ByFoodIds(sd, ed, disId, depFatherId,
-                    insightFoodIds);
+            actPp123ByFoodId = gbDishCostAnalysisService.getDishActualCostPerPortion123ByFoodIds(
+                    sd, ed, disId, depFatherId, searchDepStr, insightFoodIds, scopeDepartmentIdsAllowFilter);
         }
 
         List<Map<String, Object>> dishes = new ArrayList<>();
         for (GbDepFoodEntity f : foods) {
             Integer foodId = f.getGbDfFoodId();
+            GbDistributerFoodEntity disRowForName = foodId == null ? null : disFoodById.get(foodId);
             Map<String, Object> line = new LinkedHashMap<>();
             line.put("gbDepFoodId", f.getGbDepFoodId());
             line.put("gbDfDepId", f.getGbDfDepId());
             line.put("foodId", foodId);
             String name = f.getGbDfFoodName();
-            line.put("foodName", name != null ? name : "");
+            if (name == null || name.trim().isEmpty()) {
+                if (disRowForName != null && disRowForName.getGbDfFoodName() != null
+                        && !disRowForName.getGbDfFoodName().trim().isEmpty()) {
+                    name = disRowForName.getGbDfFoodName().trim();
+                } else {
+                    name = "";
+                }
+            }
+            line.put("foodName", name);
             line.put("listPrice", f.getGbDfFoodPrice() != null ? f.getGbDfFoodPrice() : "");
 
             Map<Integer, BigDecimal> byWd = foodId == null ? Collections.emptyMap()
@@ -213,7 +252,7 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
             // 与 scopeOutbound 一致：区间 (2+3)/(1+2+3) 损耗率，与「单菜 grossMarginRateOnListPrice（仅 type1 成本）」并列展示
             line.put("wasteLossRatioInOutbound123", wasteLossRatioStringFromScope(scopeOutboundForInterval));
 
-            GbDistributerFoodEntity disRow = foodId == null ? null : disFoodById.get(foodId);
+            GbDistributerFoodEntity disRow = disRowForName;
             GbDistributerFoodEntity directParent = null;
             if (disRow != null) {
                 Integer pid = disRow.getGbDfFoodFatherId();
@@ -234,18 +273,23 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         out.put("stopDate", ed);
         out.put("disId", disId);
         out.put("depFatherId", depFatherId);
+        if (subDepId != null) {
+            out.put("subDepId", subDepId);
+        }
         out.put("scopeDepIds", scopeDepIds);
         out.put("weekdayLegend", weekdayLegendZh());
         out.put("scopeOutboundSubtotals", dishReport.get("scopeOutboundSubtotals"));
         out.put("bossColumnHintsZh", dishReport.get("bossColumnHintsZh"));
         out.put("dishes", dishes);
+        out.put("dishProfitStoreCoverage", computeDishProfitStoreCoverage(disId, sd, ed, scopeDepIds));
+        out.put("businessInsightSummary", summarizeBusinessInsightFromDishInsightRows(dishes, out));
         return out;
     }
 
     @Override
     public Map<String, Object> attachToFoodRows(List<GbDepFoodEntity> foods, Integer disId, Integer depFatherId,
-            String startDate, String stopDate) {
-        Map<String, Object> insight = buildInsight(disId, depFatherId, startDate, stopDate);
+            String startDate, String stopDate, Integer subDepId) {
+        Map<String, Object> insight = buildInsight(disId, depFatherId, startDate, stopDate, subDepId);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> dishes = (List<Map<String, Object>>) insight.get("dishes");
         Map<Integer, Map<String, Object>> byFoodId = new HashMap<>();
@@ -315,19 +359,17 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
     }
 
     /**
-     * 顶部汇总：对当前列表每条 {@code gbDfBusinessInsight} 的标价收入、实际/理论成本求和，再算仅 type1 的 blended 毛利率；
-     * 另汇总 {@code actualCostTotalAmount123}（type1+2+3 整菜区间实际成本）及「标价收入 vs 本区间 1+2+3 出库总成本」的综合毛利率。出库维度损耗率与 {@code scopeOutboundSubtotals} 一致。
+     * 顶部汇总：对菜品 insight 行的标价收入、实际/理论成本求和，再算 blended / 理论 / 综合毛利率（与 attachToFoodRows 同源口径）。
      */
-    private static Map<String, Object> summarizeBusinessInsightFromFoodRows(List<GbDepFoodEntity> foods,
-            Map<String, Object> insight) {
+    private static Map<String, Object> summarizeBusinessInsightFromDishInsightRows(
+            List<Map<String, Object>> dishRows, Map<String, Object> insight) {
         BigDecimal totalRev = BigDecimal.ZERO;
         BigDecimal totalActual = BigDecimal.ZERO;
         BigDecimal totalTheory = BigDecimal.ZERO;
         BigDecimal totalActual123 = BigDecimal.ZERO;
         int rowCount = 0;
-        if (foods != null) {
-            for (GbDepFoodEntity f : foods) {
-                Map<String, Object> ins = f.getGbDfBusinessInsight();
+        if (dishRows != null) {
+            for (Map<String, Object> ins : dishRows) {
                 if (ins == null) {
                     continue;
                 }
@@ -382,6 +424,22 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
             m.put("wasteLossAmountType23", sc.get("wasteLossAmountType23"));
         }
         return m;
+    }
+
+    /**
+     * 顶部汇总：对当前列表每条 {@code gbDfBusinessInsight} 的标价收入、实际/理论成本求和（与 {@link #summarizeBusinessInsightFromDishInsightRows} 一致）。
+     */
+    private static Map<String, Object> summarizeBusinessInsightFromFoodRows(List<GbDepFoodEntity> foods,
+            Map<String, Object> insight) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (foods != null) {
+            for (GbDepFoodEntity f : foods) {
+                if (f != null && f.getGbDfBusinessInsight() != null) {
+                    rows.add(f.getGbDfBusinessInsight());
+                }
+            }
+        }
+        return summarizeBusinessInsightFromDishInsightRows(rows, insight);
     }
 
     private static String plainMoneySummary(BigDecimal v) {
@@ -482,9 +540,32 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         return agg;
     }
 
-    private List<Integer> resolveScopeDepIds(Integer disId, String searchDepId, Integer depFatherId) {
+    private Map<Integer, Integer> loadDepFatherById(int disId) {
+        LambdaQueryWrapper<GbDepartmentEntity> w = new LambdaQueryWrapper<GbDepartmentEntity>()
+                .eq(GbDepartmentEntity::getGbDepartmentDisId, disId)
+                .select(GbDepartmentEntity::getGbDepartmentId, GbDepartmentEntity::getGbDepartmentFatherId);
+        List<GbDepartmentEntity> rows = gbDepartmentService.list(w);
+        if (rows == null || rows.isEmpty()) {
+            return Map.of();
+        }
+        Map<Integer, Integer> m = new HashMap<>(Math.max(16, rows.size() * 2));
+        for (GbDepartmentEntity e : rows) {
+            if (e.getGbDepartmentId() != null) {
+                m.put(e.getGbDepartmentId(), e.getGbDepartmentFatherId());
+            }
+        }
+        return m;
+    }
+
+    /**
+     * 与 {@link com.nongxinle.service.impl.GbDishCostAnalysisServiceImpl} 同源，
+     * sentinel {@link AiInsightDishProfitScope} 表示不按单父门店过滤子公司部门。
+     */
+    private List<Integer> resolveScopeDepIds(Integer disId, String searchDepId, Integer depFatherId,
+            Collection<Integer> scopeDepartmentIdsAllowFilter) {
         if (searchDepId != null && !"-1".equals(searchDepId)) {
-            return Collections.singletonList(Integer.valueOf(searchDepId));
+            return applyScopeDepartmentAllowFilter(Collections.singletonList(Integer.valueOf(searchDepId)),
+                    scopeDepartmentIdsAllowFilter);
         }
         Map<String, Object> q = new HashMap<>();
         q.put("disId", disId);
@@ -503,13 +584,261 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
                 if (sub.getGbDepartmentId() == null) {
                     continue;
                 }
-                if (depFatherId != null && !depFatherId.equals(sub.getGbDepartmentFatherId())) {
+                if (!AiInsightDishProfitScope.isGroupWideMendianAggregateUnderDis(depFatherId)
+                        && depFatherId != null
+                        && !depFatherId.equals(sub.getGbDepartmentFatherId())) {
                     continue;
                 }
                 uniq.put(sub.getGbDepartmentId(), Boolean.TRUE);
             }
         }
-        return new ArrayList<>(uniq.keySet());
+        // 单店口径：门店根部门的 father 通常不是本店 id（多为 0/分销商），不会出现在「子部门 father==depFatherId」集合内；
+        // 若 allow 已含门店根且销量/流水挂在根部门上，需显式纳入 scopeDepIds，否则集团广角有数、单店无行。
+        if (!AiInsightDishProfitScope.isGroupWideMendianAggregateUnderDis(depFatherId)
+                && depFatherId != null
+                && scopeDepartmentIdsAllowFilter != null) {
+            for (Integer allowed : scopeDepartmentIdsAllowFilter) {
+                if (allowed != null && allowed.equals(depFatherId)) {
+                    uniq.put(depFatherId, Boolean.TRUE);
+                    break;
+                }
+            }
+        }
+        return applyScopeDepartmentAllowFilter(new ArrayList<>(uniq.keySet()), scopeDepartmentIdsAllowFilter);
+    }
+
+    private static List<Integer> applyScopeDepartmentAllowFilter(List<Integer> scopeDeptIds,
+            Collection<Integer> allowFilter) {
+        if (scopeDeptIds == null || scopeDeptIds.isEmpty()) {
+            return scopeDeptIds == null ? Collections.emptyList() : scopeDeptIds;
+        }
+        if (allowFilter == null || allowFilter.isEmpty()) {
+            return scopeDeptIds;
+        }
+        Set<Integer> allow = new HashSet<>();
+        for (Integer id : allowFilter) {
+            if (id != null) {
+                allow.add(id);
+            }
+        }
+        if (allow.isEmpty()) {
+            return scopeDeptIds;
+        }
+        List<Integer> out = new ArrayList<>();
+        for (Integer id : scopeDeptIds) {
+            if (id != null && allow.contains(id)) {
+                out.add(id);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 集团菜品透视：菜谱合并仅包含「允许范围」内的门店根；允许列表可为门店根或含子部门的展开列表（向上归到
+     * {@code gb_department_father_id=0} 的门店）。未传或无法解析时退回分销户下全部门店根。
+     */
+    private List<Integer> resolveStoreRootsForGroupWideMenu(Integer disId,
+            Collection<Integer> scopeDepartmentIdsAllowFilter) {
+        if (disId == null) {
+            return Collections.emptyList();
+        }
+        if (scopeDepartmentIdsAllowFilter == null || scopeDepartmentIdsAllowFilter.isEmpty()) {
+            List<Integer> all = gbDepartmentMapper.selectStoreDepartmentIdsUnderDistributer(disId);
+            return all == null ? Collections.emptyList() : all;
+        }
+        Map<Integer, Integer> fatherById = loadDepFatherById(disId);
+        LinkedHashSet<Integer> roots = new LinkedHashSet<>();
+        for (Integer id : scopeDepartmentIdsAllowFilter) {
+            if (id == null || id <= 0) {
+                continue;
+            }
+            Integer root = walkToMendianRootDeptId(id, fatherById);
+            if (root != null) {
+                roots.add(root);
+            }
+        }
+        if (roots.isEmpty()) {
+            List<Integer> all = gbDepartmentMapper.selectStoreDepartmentIdsUnderDistributer(disId);
+            return all == null ? Collections.emptyList() : all;
+        }
+        return new ArrayList<>(roots);
+    }
+
+    /**
+     * 按门店根列表合并 {@code gb_dep_food}，按 {@code gb_df_food_id} 去重；同名优先保留菜名非空的一行。
+     */
+    private List<GbDepFoodEntity> mergeDepFoodAcrossMendianParents(int disId, List<Integer> storeRootIds) {
+        List<Integer> roots = storeRootIds;
+        if (roots == null || roots.isEmpty()) {
+            roots = gbDepartmentMapper.selectStoreDepartmentIdsUnderDistributer(disId);
+        }
+        if (roots == null || roots.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashMap<Integer, GbDepFoodEntity> byFoodId = new LinkedHashMap<>();
+        for (Integer storeRootId : roots) {
+            if (storeRootId == null) {
+                continue;
+            }
+            Map<String, Object> depMap = new HashMap<>(2);
+            depMap.put("depFatherId", storeRootId);
+            List<GbDepFoodEntity> part = gbDepFoodService.queryDepAllFood(depMap);
+            if (part == null) {
+                continue;
+            }
+            for (GbDepFoodEntity row : part) {
+                Integer fid = row == null ? null : row.getGbDfFoodId();
+                if (fid == null) {
+                    continue;
+                }
+                GbDepFoodEntity existing = byFoodId.get(fid);
+                if (existing == null) {
+                    byFoodId.put(fid, row);
+                } else if (isGbDepFoodNameBlank(existing) && !isGbDepFoodNameBlank(row)) {
+                    byFoodId.put(fid, row);
+                }
+            }
+        }
+        return new ArrayList<>(byFoodId.values());
+    }
+
+    private static boolean isGbDepFoodNameBlank(GbDepFoodEntity e) {
+        if (e == null) {
+            return true;
+        }
+        String n = e.getGbDfFoodName();
+        return n == null || n.trim().isEmpty();
+    }
+
+    private static Integer walkToMendianRootDeptId(Integer depId, Map<Integer, Integer> fatherById) {
+        if (depId == null) {
+            return null;
+        }
+        Integer cur = depId;
+        for (int guard = 0; guard < 48 && cur != null; guard++) {
+            Integer p = fatherById.get(cur);
+            if (p == null || p == 0) {
+                return cur;
+            }
+            cur = p;
+        }
+        return cur;
+    }
+
+    private Map<Integer, String> loadDepartmentNames(Collection<Integer> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashSet<Integer> uniq = new LinkedHashSet<>();
+        for (Integer id : ids) {
+            if (id != null) {
+                uniq.add(id);
+            }
+        }
+        if (uniq.isEmpty()) {
+            return Map.of();
+        }
+        Map<Integer, String> out = new HashMap<>();
+        List<GbDepartmentEntity> rows = gbDepartmentService.listByIds(uniq);
+        if (rows == null) {
+            return out;
+        }
+        for (GbDepartmentEntity e : rows) {
+            if (e == null || e.getGbDepartmentId() == null) {
+                continue;
+            }
+            out.put(e.getGbDepartmentId(), e.getGbDepartmentName() != null ? e.getGbDepartmentName().trim() : "");
+        }
+        return out;
+    }
+
+    /** 口径：{@code visibleStoreCount} / 菜品销售归属门店 vs 区间内无销量的可见门店（仅名称，不脱敏 dept id）。 */
+    private Map<String, Object> computeDishProfitStoreCoverage(Integer disId, String sd, String ed,
+            List<Integer> scopeSubDepIds) {
+        LinkedHashMap<String, Object> cov = new LinkedHashMap<>();
+        if (disId == null || sd == null || ed == null || scopeSubDepIds == null || scopeSubDepIds.isEmpty()) {
+            cov.put("visibleStoreCount", 0);
+            cov.put("dataAvailableStoreCount", 0);
+            cov.put("dataMissingStoreCount", 0);
+            cov.put("coveredStores", Collections.emptyList());
+            cov.put("dataMissingStores", Collections.emptyList());
+            cov.put("dishSalesRowCount", 0);
+            cov.put("dishSalesDepartmentIds", Collections.emptyList());
+            return cov;
+        }
+        Map<Integer, Integer> fatherById = loadDepFatherById(disId);
+        Set<Integer> visibleRoots = new LinkedHashSet<>();
+        for (Integer sub : scopeSubDepIds) {
+            Integer r = walkToMendianRootDeptId(sub, fatherById);
+            if (r != null) {
+                visibleRoots.add(r);
+            }
+        }
+
+        LambdaQueryWrapper<GbDepFoodSalesEntity> w = new LambdaQueryWrapper<GbDepFoodSalesEntity>()
+                .eq(GbDepFoodSalesEntity::getGbDfsDistributerId, disId)
+                .ge(GbDepFoodSalesEntity::getGbDfsFullDate, sd)
+                .le(GbDepFoodSalesEntity::getGbDfsFullDate, ed)
+                .in(GbDepFoodSalesEntity::getGbDfsDepId, scopeSubDepIds);
+        List<GbDepFoodSalesEntity> salesRows = gbDepFoodSalesService.list(w);
+        int dishSalesRowCount = salesRows == null ? 0 : salesRows.size();
+
+        Set<Integer> deptIdsSeenInSales = new LinkedHashSet<>();
+        if (salesRows != null) {
+            for (GbDepFoodSalesEntity row : salesRows) {
+                if (row != null && row.getGbDfsDepId() != null) {
+                    deptIdsSeenInSales.add(row.getGbDfsDepId());
+                }
+            }
+        }
+        Set<Integer> rootsWithSales = new LinkedHashSet<>();
+        for (Integer d : deptIdsSeenInSales) {
+            Integer root = walkToMendianRootDeptId(d, fatherById);
+            if (root != null) {
+                rootsWithSales.add(root);
+            }
+        }
+
+        Set<Integer> namesToLoad = new HashSet<>(visibleRoots);
+        namesToLoad.addAll(rootsWithSales);
+        Map<Integer, String> namesById = loadDepartmentNames(namesToLoad);
+
+        List<Map<String, Object>> covered = new ArrayList<>();
+        List<Integer> coveredSorted = new ArrayList<>(rootsWithSales);
+        Collections.sort(coveredSorted);
+        for (Integer id : coveredSorted) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("storeDepartmentId", id.longValue());
+            row.put("storeName", namesById.getOrDefault(id, ""));
+            covered.add(row);
+        }
+        List<Map<String, Object>> missing = new ArrayList<>();
+        List<Integer> missSorted = new ArrayList<>();
+        for (Integer id : visibleRoots) {
+            if (!rootsWithSales.contains(id)) {
+                missSorted.add(id);
+            }
+        }
+        Collections.sort(missSorted);
+        for (Integer id : missSorted) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("storeDepartmentId", id.longValue());
+            row.put("storeName", namesById.getOrDefault(id, ""));
+            row.put("reason", "区间内暂无菜品销售明细记入");
+            missing.add(row);
+        }
+
+        List<Integer> salesDeptSorted = new ArrayList<>(deptIdsSeenInSales);
+        Collections.sort(salesDeptSorted);
+
+        cov.put("visibleStoreCount", visibleRoots.size());
+        cov.put("dataAvailableStoreCount", rootsWithSales.size());
+        cov.put("dataMissingStoreCount", Math.max(0, visibleRoots.size() - rootsWithSales.size()));
+        cov.put("coveredStores", covered);
+        cov.put("dataMissingStores", missing);
+        cov.put("dishSalesRowCount", dishSalesRowCount);
+        cov.put("dishSalesDepartmentIds", salesDeptSorted);
+        return cov;
     }
 
     private static BigDecimal parseAmountSafe(String raw) {
@@ -531,10 +860,11 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         return w == null ? "0.00" : w.toString();
     }
 
-    private static Map<String, Object> buildReduceParamsForInsight(Integer disId, Integer depFatherId,
+    private static Map<String, Object> buildReduceParamsForInsight(Integer disId, Integer depFatherId, Integer subDepId,
             String startDate, String stopDate) {
+        String searchDepStr = subDepId == null ? null : String.valueOf(subDepId);
         Map<String, Object> map = GbDepartmentGoodsStockReduceSupport.buildReduceCostQueryMap(
-                startDate, stopDate, disId, null, null);
+                startDate, stopDate, disId, null, searchDepStr);
         if (depFatherId != null) {
             map.put("depFatherId", depFatherId);
         }
@@ -543,11 +873,11 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
 
     @Override
     public void enrichFoodGoodsOutboundStats(List<GbDistributerFoodGoodsEntity> recipeLines, Integer disId,
-            Integer depFatherId, String startDate, String stopDate) {
+            Integer depFatherId, Integer subDepId, String startDate, String stopDate) {
         if (recipeLines == null || recipeLines.isEmpty() || disId == null) {
             return;
         }
-        Map<String, Object> reduceParams = buildReduceParamsForInsight(disId, depFatherId, startDate, stopDate);
+        Map<String, Object> reduceParams = buildReduceParamsForInsight(disId, depFatherId, subDepId, startDate, stopDate);
         List<Map<String, Object>> prod = gbDepartmentGoodsStockReduceService.queryProductionReduceAggByDisGoods(reduceParams);
         List<Map<String, Object>> all = gbDepartmentGoodsStockReduceService.queryProduceLossWasteReduceAggByDisGoods(reduceParams);
         Map<Integer, BigDecimal> w1 = new HashMap<>();

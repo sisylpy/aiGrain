@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -47,19 +48,21 @@ public class GbDishCostAnalysisController {
     }
 
     /**
-     * 配料分析：销售汇总、配方理论用量、type1+2+3 分摊与利用率分档；与 {@code /report} 同一筛选参数；日期结束优先 {@code endDate}，未传时与 {@code stopDate} 同义。
+     * 配料分析：销售汇总、配方理论用量、type1+2+3 分摊与利用率分档；与 {@code /report} 同一筛选参数（含 {@code stopDate} 为区间结束日）。
+     * <p>可选 {@code subDepId}：子部门 ID；不传则在 {@code depFatherId}（可空表示不限制父部门）下汇总下属门店口径，见服务层 {@code resolveScopeDepIds}。</p>
      *
      * @param sortBy 菜品行排序：{@code sales|salesAmount|销量} 实收销售额；{@code diff|diffCostPerPortion|成本差异} 每份成本差异绝对值；{@code actualCost|actualCostPerPortion|单份实际成本} 每道菜<strong>单份</strong>实际成本（type1+2+3，见 {@code actualCostPerPortion}），非区间内销售额合计成本
      * @param sortOrder {@code desc|降序}（默认）、{@code asc|升序}
      */
     @RequestMapping(value = "/ingredientAnalysis", method = RequestMethod.POST)
     @ResponseBody
-    public R ingredientAnalysis(String startDate, String stopDate, String endDate, Integer disId, String searchDepId,
+    public R ingredientAnalysis(String startDate, String stopDate, Integer disId,
+            @RequestParam(value = "subDepId", required = false) Integer subDepId,
             Integer depFatherId, String sortBy, String sortOrder) {
-        String end = endDate != null && !endDate.isEmpty() ? endDate : stopDate;
+        String scopeDepStr = subDepId != null ? String.valueOf(subDepId) : null;
         try {
             Map<String, Object> data = gbDishCostAnalysisService.buildIngredientAnalysisReport(
-                    startDate, end, disId, searchDepId, depFatherId, sortBy, sortOrder);
+                    startDate, stopDate, disId, scopeDepStr, depFatherId, sortBy, sortOrder);
             return R.ok().put("data", data);
         } catch (IllegalArgumentException e) {
             return R.error(-1, e.getMessage());
@@ -67,7 +70,8 @@ public class GbDishCostAnalysisController {
     }
 
     /**
-     * 按分销商商品（配料）维度的出库分析；区间与 {@code /ingredientAnalysis} 同；日期结束优先 {@code endDate}。
+     * 按分销商商品（配料）维度的出库分析；区间与 {@code /ingredientAnalysis} 同（{@code stopDate} 为区间结束日）。
+     * <p>可选 {@code subDepId}：子部门 ID；不传则在 {@code depFatherId} 下汇总下属门店口径。</p>
      *
      * @param sortBy {@code outbound|outboundAmount|出库金额} 按本商品 1+2+3 出库**金额**（默认键）；
      *                {@code util|utilization|利用率} 按本料行**利用率**，无理论量的排后；
@@ -79,12 +83,13 @@ public class GbDishCostAnalysisController {
      */
     @RequestMapping(value = "/outboundIngredientAnalysis", method = RequestMethod.POST)
     @ResponseBody
-    public R outboundIngredientAnalysis(String startDate, String stopDate, String endDate, Integer disId, String searchDepId,
+    public R outboundIngredientAnalysis(String startDate, String stopDate, Integer disId,
+            @RequestParam(value = "subDepId", required = false) Integer subDepId,
             Integer depFatherId, String sortBy, String sortOrder, String goodsNameSearch, Integer page, Integer pageSize) {
-        String end = endDate != null && !endDate.isEmpty() ? endDate : stopDate;
+        String scopeDepStr = subDepId != null ? String.valueOf(subDepId) : null;
         try {
             Map<String, Object> data = gbDishCostAnalysisService.buildOutboundIngredientAnalysisReport(
-                    startDate, end, disId, searchDepId, depFatherId, sortBy, sortOrder, goodsNameSearch, page, pageSize);
+                    startDate, stopDate, disId, scopeDepStr, depFatherId, sortBy, sortOrder, goodsNameSearch, page, pageSize);
             return R.ok().put("data", data);
         } catch (IllegalArgumentException e) {
             return R.error(-1, e.getMessage());
@@ -94,18 +99,18 @@ public class GbDishCostAnalysisController {
     /**
      * 单菜配料看板（独立页）：主区间内的配料明细（在 {@code /ingredientAnalysis} 同行基础上扩展偏差、占比、建议等）、成本结构占比、按月成本趋势与综合建议。
      *
-     * @param trendStartDate 趋势起点，可空则取 {@code endDate} 往前 5 个自然月与主区间求交
-     * @param trendEndDate   趋势终点，可空则同主区间 {@code endDate}
+     * @param trendStartDate 趋势起点，可空则取 {@code stopDate} 往前 5 个自然月与主区间求交
+     * @param trendEndDate   趋势终点，可空则同主区间 {@code stopDate}
      * @param trendGranularity 仅支持 {@code month}
      * @param primaryDisGoodsId 趋势聚焦的原料 id，可空则取主区间内单份实际成本最高的配料
      */
     @RequestMapping(value = "/dishIngredientDashboard", method = RequestMethod.POST)
     @ResponseBody
-    public R dishIngredientDashboard(String startDate, String endDate, Integer disId, Integer depFatherId, Integer foodId,
+    public R dishIngredientDashboard(String startDate, String stopDate, Integer disId, Integer depFatherId, Integer foodId,
             String trendStartDate, String trendEndDate, String trendGranularity, Integer primaryDisGoodsId) {
         try {
             Map<String, Object> data = gbDishCostAnalysisService.buildDishIngredientDashboard(
-                    startDate, endDate, disId, depFatherId, foodId, trendStartDate, trendEndDate, trendGranularity, primaryDisGoodsId);
+                    startDate, stopDate, disId, depFatherId, foodId, trendStartDate, trendEndDate, trendGranularity, primaryDisGoodsId);
             return R.ok().put("data", data);
         } catch (IllegalArgumentException e) {
             return R.error(-1, e.getMessage());

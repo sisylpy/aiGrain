@@ -72,8 +72,11 @@ public class GbDistributerPurchaseGoodsDetailListServiceImpl implements GbDistri
                 if (cnt > 0) {
                     Double subTotal = gbDpgService.queryPurchaseGoodsSubTotal(mapDay);
                     mapEvery.put("purSubtotal", String.format("%.1f", subTotal));
+                    Double unitPrice = gbDpgService.queryPurchaseGoodsWeightedAvgBuyPrice(mapDay);
+                    mapEvery.put("purUnitPrice", String.format("%.1f", unitPrice != null ? unitPrice : 0D));
                 } else {
                     mapEvery.put("purSubtotal", 0);
+                    mapEvery.put("purUnitPrice", String.format("%.1f", 0D));
                 }
                 purchaseDayValue.add(mapEvery);
             }

@@ -56,7 +56,7 @@ public class GbDepartmentGoodsStockReduceEntity implements Serializable {
 	// loss_weight、loss_subtotal、return_weight、return_subtotal、produce_weight、produce_subtotal
 	// 
 	// 现已统一使用 gb_dgsr_weight 和 gb_dgsr_subtotal 字段
-	// 通过 gb_dgsr_type 字段区分类型：1=生产，2=损耗，3=损失，4=退货
+	// 通过 gb_dgsr_type 区分：1=生产耗用；2=废弃；3=损耗（口语常称报损）；4=退货（与 {@link com.nongxinle.utils.GbConstants.StockReduceType} 一致）
 	// 
 	// 这一变化简化了表结构，提高代码可维护性，避免字段重复冗余
 	// 在业务逻辑中通过type参数区分不同业务场景的重量和金额计算

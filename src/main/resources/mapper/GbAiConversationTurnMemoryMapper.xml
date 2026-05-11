@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nongxinle.mapper.GbAiConversationTurnMemoryMapper">
+
+    <select id="selectLatestByConversationAndUser" resultType="com.nongxinle.entity.GbAiConversationTurnMemoryEntity">
+        SELECT *
+        FROM gb_ai_conversation_turn_memory
+        WHERE gb_ai_conversation_id = #{conversationId}
+          AND gb_ai_ctm_user_id = #{userId}
+        ORDER BY gb_ai_ctm_id DESC
+        LIMIT 1
+    </select>
+</mapper>

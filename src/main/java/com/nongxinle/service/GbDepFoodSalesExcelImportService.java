@@ -25,6 +25,7 @@ public interface GbDepFoodSalesExcelImportService {
 
     /**
      * API 提交某日各菜品销量 + 日营业额指标（堂食金额仍由菜品小计汇总写入）。
+     * <p>提交前会删除本请求范围内、当日的整菜与配料销量再以本次 {@code lines} 重建；无有效行则清空该范围内当日菜品销量（末次写入为准）。</p>
      */
     Map<String, Object> submitDailyFoodSalesAndRevenue(GbDepFoodDailySalesSubmitRequest request);
 
@@ -32,7 +33,8 @@ public interface GbDepFoodSalesExcelImportService {
      * 查询某日（默认中国时区当天）菜品销售行 + 同日 {@code gb_ai_daily_revenue} 非堂食等字段，
      * 返回体可直接作为 {@link #submitDailyFoodSalesAndRevenue} / {@link #updateDailyFoodSalesAndRevenue} 编辑回传的参考结构。
      */
-    Map<String, Object> getDailyFoodSalesAndRevenue(Integer depFatherId, Integer distributerId, String recordDate);
+    Map<String, Object> getDailyFoodSalesAndRevenue(Integer depFatherId, Integer distributerId, String recordDate,
+            Integer subDepId);
 
     /** 覆盖/更新某日销售与营业额指标：与 {@link #submitDailyFoodSalesAndRevenue} 同一套写入逻辑。 */
     Map<String, Object> updateDailyFoodSalesAndRevenue(GbDepFoodDailySalesSubmitRequest request);

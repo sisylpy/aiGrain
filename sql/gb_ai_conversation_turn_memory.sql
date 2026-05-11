@@ -1,0 +1,28 @@
+-- Harness：会话内短期 TurnMemory（每完成一轮 Run 追加一行；追问加载最新一行）
+CREATE TABLE IF NOT EXISTS gb_ai_conversation_turn_memory (
+    gb_ai_ctm_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    gb_ai_conversation_id BIGINT NOT NULL COMMENT 'gb_ai_conversation.gb_ai_conversation_id',
+    gb_ai_ctm_user_id BIGINT NOT NULL COMMENT '安全边界：与 gb_ai_conversation_user_id 对齐',
+    gb_ai_ctm_run_id BIGINT NOT NULL COMMENT '完成的 Run Id',
+    gb_ai_ctm_intent_code VARCHAR(128) DEFAULT NULL,
+    gb_ai_ctm_path_code VARCHAR(128) DEFAULT NULL,
+    gb_ai_ctm_structured_intent_detail TEXT,
+    gb_ai_ctm_purchase_source_type VARCHAR(128) DEFAULT NULL,
+    gb_ai_ctm_start_date VARCHAR(32) DEFAULT NULL,
+    gb_ai_ctm_end_date VARCHAR(32) DEFAULT NULL,
+    gb_ai_ctm_time_label VARCHAR(255) DEFAULT NULL,
+    gb_ai_ctm_scope_type VARCHAR(64) DEFAULT NULL,
+    gb_ai_ctm_visible_store_ids TEXT COMMENT 'JSON 数组整数，如 [1,2,3]',
+    gb_ai_ctm_focused_store_id BIGINT DEFAULT NULL,
+    gb_ai_ctm_focused_store_name VARCHAR(512) DEFAULT NULL,
+    gb_ai_ctm_mentioned_store VARCHAR(512) DEFAULT NULL COMMENT '上轮焦点/点名门店简述',
+    gb_ai_ctm_focus_type VARCHAR(64) DEFAULT NULL,
+    gb_ai_ctm_focus_name VARCHAR(512) DEFAULT NULL,
+    gb_ai_ctm_effective_scope_source VARCHAR(128) DEFAULT NULL,
+    gb_ai_ctm_effective_question TEXT,
+    gb_ai_ctm_answer_summary TEXT,
+    gb_ai_ctm_tool_summary VARCHAR(2000) DEFAULT NULL COMMENT '本轮工具链简述，供诊断',
+    gb_ai_ctm_create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (gb_ai_ctm_id),
+    KEY idx_gb_ai_ctm_conv_user (gb_ai_conversation_id, gb_ai_ctm_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI Run 会话轮次记忆';

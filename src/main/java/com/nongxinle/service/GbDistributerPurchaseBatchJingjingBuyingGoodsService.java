@@ -8,4 +8,6 @@ import java.util.Map;
 public interface GbDistributerPurchaseBatchJingjingBuyingGoodsService {
 
     Map<String, Object> buildBuyingGoodsGb(Integer disId);
+
+    Map<String, Object> buildStoreBuyingGoods(Integer purFatherId);
 }

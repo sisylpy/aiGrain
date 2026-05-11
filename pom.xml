@@ -103,6 +103,13 @@
             <version>5.8.25</version>
         </dependency>
 
+        <!-- 微信 V2 支付（统一下单 / MD5 签名，com.github.wxpay.sdk） -->
+        <dependency>
+            <groupId>com.github.wxpay</groupId>
+            <artifactId>wxpay-sdk</artifactId>
+            <version>0.0.3</version>
+        </dependency>
+
         <!-- Apache POI（Excel处理） -->
         <dependency>
             <groupId>org.apache.poi</groupId>

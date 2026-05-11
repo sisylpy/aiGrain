@@ -1458,7 +1458,7 @@ public class GbReportController {
     private HSSFWorkbook toCreatDepCostForm(GbReportEntity reportEntity) {
         System.out.println("cres");
         HSSFWorkbook wb = new HSSFWorkbook();
-        GbDepartmentEntity departmentEntity = gbDepartmentService.queryDepInfoGb(Integer.valueOf(reportEntity.getGbRepIds()));
+        GbDepartmentEntity departmentEntity = gbDepartmentService.getById(Integer.valueOf(reportEntity.getGbRepIds()));
         Map<String, Object> map = new HashMap<>();
         map.put("startDate", reportEntity.getGbRepStartDate());
         map.put("stopDate", reportEntity.getGbRepStopDate());
@@ -1512,7 +1512,7 @@ public class GbReportController {
 
     private HSSFWorkbook toCreatSubDepStockNowForm(GbReportEntity reportEntity) {
         HSSFWorkbook wb = new HSSFWorkbook();
-        GbDepartmentEntity departmentEntity = gbDepartmentService.queryDepInfoGb(Integer.valueOf(reportEntity.getGbRepIds()));
+        GbDepartmentEntity departmentEntity = gbDepartmentService.getById(Integer.valueOf(reportEntity.getGbRepIds()));
         Map<String, Object> map = new HashMap<>();
         map.put("startDate", reportEntity.getGbRepStartDate());
         map.put("stopDate", reportEntity.getGbRepStopDate());
@@ -1857,7 +1857,7 @@ public class GbReportController {
                             goodsRow.createCell(2).setCellValue(ckGoodsEntity.getGbDgGoodsStandardname());
                             goodsRow.createCell(3).setCellValue(ckGoodsEntity.getGbDgGoodsBrand());
                             goodsRow.createCell(4).setCellValue(ckGoodsEntity.getGbDgGoodsDetail());
-                            GbDepartmentEntity departmentEntity = gbDepartmentService.queryDepInfoGb(Integer.valueOf(reportEntity.getGbRepIds()));
+                            GbDepartmentEntity departmentEntity = gbDepartmentService.getById(Integer.valueOf(reportEntity.getGbRepIds()));
 
                             //5 totalWeight
                             Map<String, Object> disGoodsMap = new HashMap<>();

@@ -1,6 +1,20 @@
 package com.nongxinle.utils;
 
-public class MyAPPIDConfig {
+import com.github.wxpay.sdk.WXPayConfig;
+
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+
+/**
+ * 特鲜送采购等业务使用的微信支付 V2 配置（统一下单 JSAPI）。
+ * 注意：Maven 上的 wxpay-sdk 0.0.3 中 {@link WXPayConfig} 为接口，不含 IWXPayDomain。
+ */
+public class MyAPPIDConfig implements WXPayConfig {
+
+    @Override
+    public String getAppID() {
+        return getTexiansongCaigouAppId();
+    }
 
     public String getTexiansongCaigouAppId() {
         return "wx58ba279bc3d04c4a";
@@ -10,19 +24,28 @@ public class MyAPPIDConfig {
         return "07bcf1a46323e6c05fcf4404ddd0582f";
     }
 
-    public String getTexiansongAppID() {
-        return "wx87baf9dcf935518a";
+    @Override
+    public String getMchID() {
+        return "1594384761";
     }
 
-    public String getTexiansongScreat() {
-        return "a7e380c56222dfbd5377aeea6bb1eba2";
+    @Override
+    public String getKey() {
+        return "sisy112578sisy112578sisy112578cf";
     }
 
-    public String getJinriDinghuoAppId() {
-        return "wx1ea78d3f33234284";
+    @Override
+    public InputStream getCertStream() {
+        return new ByteArrayInputStream(new byte[0]);
     }
 
-    public String getJinriDinghuoScreat() {
-        return "9b6bdf783dd366597a4c52484fe1b577";
+    @Override
+    public int getHttpConnectTimeoutMs() {
+        return 6_000;
+    }
+
+    @Override
+    public int getHttpReadTimeoutMs() {
+        return 8_000;
     }
 }

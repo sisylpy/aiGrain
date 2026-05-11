@@ -197,6 +197,57 @@ metrics:
       precision: 2
       highlight: true
 
+  - metric_id: group_retail_net_revenue_rank
+    name: 集团门店净营收排行（直营+加盟）
+    description: |
+      在 AI 会话解析范围内，筛选 gb_department_type 为门店(1)/加盟(11)，按 gb_ai_daily_revenue 汇总净营收（堂食+外卖−平台抽成）排序；
+      事实由 GbAiChatServiceImpl.queryGroupChainRetailDiagnosticsFacts 注入。
+    category: 经营诊断
+    unit: 元
+    value_type: number
+    dimensions:
+      - store
+      - group
+    datasource:
+      provider: GbAiChatServiceImpl
+      method: queryGroupChainRetailDiagnosticsFacts
+    scope_strategy:
+      department_scope: ALL
+      store_scope: CURRENT
+    time_strategy:
+      default: MTD
+      field: record_date
+    aggregation:
+      type: sum
+    display:
+      precision: 2
+      highlight: true
+
+  - metric_id: group_retail_margin_yoy
+    name: 集团门店估算毛利率及同比
+    description: |
+      净营收减 gb_department_goods_stock_reduce 四类型金额之和，与去年同期对比；非财务报表口径。
+    category: 经营诊断
+    unit: "%"
+    value_type: ratio
+    dimensions:
+      - store
+      - group
+    datasource:
+      provider: GbAiChatServiceImpl
+      method: queryGroupChainRetailDiagnosticsFacts
+    scope_strategy:
+      department_scope: ALL
+      store_scope: CURRENT
+    time_strategy:
+      default: MTD
+      field: record_date
+    aggregation:
+      type: sum
+    display:
+      precision: 2
+      highlight: true
+
   # 派生指标（规划）：formula 块当前不被 Java MetricDefinition 加载，仅作产品与后续引擎参考。
   # 勿用 procurement_amount 作分母——该指标为「采购金额·元」，与 ingredient_usage_qty（数量）量纲不一致。
   # 中文「使用率」易与数据词典 §4.2 配料行「利用率」utilizationRate（type1 生产÷理论用量）混淆，对用户宜称「耗用占采购量比」等。

@@ -24,9 +24,13 @@ public class GbAiDailyRevenueEntity implements Serializable {
 	@TableId(type = IdType.AUTO)
 	private Long gbAiDailyRevenueId;
 	/**
-	 *  部门ID
+	 *  子部门 ID（门店/子组织等业务侧记录的部门，对应 {@code gb_ai_daily_revenue_department_id}）
 	 */
 	private Long gbAiDailyRevenueDepartmentId;
+	/**
+	 *  父级部门 ID（冗余存储，便于按集团/片区汇总；可与 {@link com.nongxinle.entity.GbDepartmentEntity#getGbDepartmentFatherId()} 对齐）
+	 */
+	private Long gbAiDailyRevenueParentDepartmentId;
 	/**
 	 *  分配者ID
 	 */

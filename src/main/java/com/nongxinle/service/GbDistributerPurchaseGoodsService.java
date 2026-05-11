@@ -7,6 +7,9 @@ import com.nongxinle.entity.GbDistributerFatherGoodsEntity;
 import com.nongxinle.entity.GbDistributerGoodsEntity;
 import com.nongxinle.entity.GbDistributerPurchaseGoodsEntity;
 import com.nongxinle.entity.NxJrdhSupplierEntity;
+import com.nongxinle.dto.DepartmentPurchaseAggRow;
+import com.nongxinle.dto.PurchaseMethodLegacyAggRow;
+import com.nongxinle.dto.PurchaseTypeAggRow;
 
 import java.util.List;
 import java.util.Map;
@@ -45,6 +48,31 @@ public interface GbDistributerPurchaseGoodsService extends IService<GbDistribute
     Double queryPurchaseGoodsSubTotal(Map<String, Object> map);
 
     Integer queryGbPurchaseGoodsCount(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同筛选（含 batch join），汇总 {@code gb_DPG_buy_subtotal}。
+     */
+    Double queryGbPurchaseGoodsBuySubtotalSum(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件，按 {@code gb_DPG_purchase_type} 分行数与金额。
+     */
+    List<PurchaseTypeAggRow> queryGbPurchaseGoodsAggByPurchaseType(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件；按旧版供货属性口径聚合（type=5；type=1 按 nx 拆桶后再对用户合并为供货商/自采）。
+     */
+    List<PurchaseMethodLegacyAggRow> queryGbPurchaseGoodsAggByLegacyPurchaseMethod(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件；按商品名+标准名合并后采购频次 Top。
+     */
+    List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopTimesMerged(Map<String, Object> map);
+
+    /**
+     * 同上合并规则，采购金额 Top。
+     */
+    List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopSubtotalMerged(Map<String, Object> map);
 
     /**
      * 与 {@link #queryGbPurchaseGoodsCount} 条件一致，汇总 {@code gb_DPG_buy_quantity}。
@@ -120,5 +148,15 @@ public interface GbDistributerPurchaseGoodsService extends IService<GbDistribute
      * 与 {@link #queryGbPurchaseGoodsCount(Map)} 条件一致，按 {@code gb_DPG_dis_goods_id} 汇总采购入库数量。
      */
     List<Map<String, Object>> queryPurchaseBuyQtyAggByDisGoods(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount(Map)} 同一筛选与 join，按入库采购部门汇总金额。
+     */
+    List<DepartmentPurchaseAggRow> sumPurchaseSubtotalGroupedByPurDepartmentId(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 条件一致，按供货商汇总采购金额 Top10。
+     */
+    List<Map<String, Object>> queryGbPurchaseSupplierSpendTop(Map<String, Object> map);
 
 }

@@ -49,7 +49,9 @@ public class GbDepFoodController {
 	private GbDepFoodSalesExcelImportService gbDepFoodSalesExcelImportService;
 
 	/**
-	 * 提交某日菜品销量（份数）及日营业额指标：写 {@code gb_dep_food_sales} / 原料展开，并按菜品小计更新 {@code gb_ai_daily_revenue} 堂食与其它字段。
+	 * 提交某日菜品销量（份数）及日营业额指标：先删掉本请求范围内当日的 {@code gb_dep_food_sales} / {@code gb_dep_food_goods_sales}，再以本次为准重建；
+	 * 堂食金额由菜品小计写回 {@code gb_ai_daily_revenue}，并合并订单数/外卖等非堂食字段。
+	 * 按子部门落库：行内 {@link GbDepFoodDailySalesSubmitRequest.Line#getDepId()} 与子部门菜品一致；或可传请求体 {@code subDepId}（兼容旧名 {@code subDepid}），行未带 {@code depId} 时默认写入该子部门。
 	 */
 	@RequestMapping(value = "/submitDailyFoodSalesAndRevenue", method = RequestMethod.POST)
 	@ResponseBody
@@ -68,6 +70,7 @@ public class GbDepFoodController {
 	/**
 	 * 获取某日菜品销售 + 同日营业额表单字段；{@code recordDate} 不传则为中国时区当天（“今日”）。
 	 * 请求体为 JSON（与微信小程序等客户端一致）；{@code data.submitShape} 与 {@link GbDepFoodDailySalesSubmitRequest} 一致。
+	 * 可选 {@code subDepId}：只返回该子部门销量行（与按子部门维护页面一致）。
 	 */
 	@RequestMapping(value = "/getDailyFoodSalesAndRevenue", method = RequestMethod.POST)
 	@ResponseBody
@@ -77,7 +80,7 @@ public class GbDepFoodController {
 				return R.error(-1, "请求体不能为空");
 			}
 			Map<String, Object> data = gbDepFoodSalesExcelImportService.getDailyFoodSalesAndRevenue(
-					body.getDepFatherId(), body.getDistributerId(), body.getRecordDate());
+					body.getDepFatherId(), body.getDistributerId(), body.getRecordDate(), body.getSubDepId());
 			return R.ok().put("data", data);
 		} catch (IllegalArgumentException e) {
 			return R.error(-1, e.getMessage());
@@ -87,7 +90,7 @@ public class GbDepFoodController {
 		}
 	}
 
-	/** 更新某日菜品销售与营业额指标；请求体与 {@code /submitDailyFoodSalesAndRevenue} 相同（upsert 覆盖）。 */
+	/** 提交前先删掉本接口范围内当日已有整菜/配料销量，再以本次为准重建；{@link #submitDailyFoodSalesAndRevenue}。 */
 	@RequestMapping(value = "/updateDailyFoodSalesAndRevenue", method = RequestMethod.POST)
 	@ResponseBody
 	public R updateDailyFoodSalesAndRevenue(@RequestBody GbDepFoodDailySalesSubmitRequest body) {
@@ -104,6 +107,7 @@ public class GbDepFoodController {
 
 	/**
 	 * 部门菜品列表：配方、主档商品、可选日期内销量。
+	 * <p>可选请求参数 {@code subDepId}：非空时只查该子部门 {@code gb_dep_food}，且经营洞察、{@code gbDfSalesAmount}、{@code ingredientAnalysisRows}、配方出库统计均与该子部门的销量及出库分摊口径对齐（仍须传入正确的 {@code depFatherId} 以校验隶属关系）</p>
 	 * <p>当 {@code startDate}、{@code stopDate}、{@code disId}、{@code depFatherId} 齐全时：在每条 {@code GbDepFoodEntity} 上填充 {@code gbDfBusinessInsight}
 	 *（周销量 0=周日、标价收入、type=1 实际/理论成本、{@code grossMarginRateOnListPrice} = (标价收入−type1 实际成本)÷标价收入；
 	 * {@code actualCostPerPortion123}、{@code actualCostTotalAmount123}（单份 type1+2+3 实际成本×本行实销份数，与配料分析整菜金额口径一致）、{@code blendedGrossMarginRateOnListPrice} = 部门标价下（标价−type1+2+3 单份实际成本）÷标价，与配料分析整菜 {@code actualCostPerPortion} 同口径；与 {@code wasteLossRatioInOutbound123} 区间损耗率并列），
@@ -114,16 +118,23 @@ public class GbDepFoodController {
 	 * 再批量生成与 {@code /gbDishCostAnalysis/ingredientAnalysis} 中 {@code salesDishRows[].ingredientRows} 同结构的 {@code ingredientAnalysisRows}；
 	 * ①加载批发商主档与<strong>有效配方行</strong>（同配料分析：{@code gb_dfg_status≠0}）；②③④ 收集 {@code gbDfgDisGoodsId}、批量主档、挂回配方行；最后按 {@code sortBy}/{@code sortOrder} 排序（仅四参齐全时），默认 {@code gbDfSalesAmount} 降序。未传齐四参时不填 {@code ingredientAnalysisRows}、配方仍全量（与旧版一致）。</p>
 	 *
+	 * @param subDepId（可选）仅该子部门的菜品与聚合口径。
 	 * @param sortBy 仅四参齐全时生效：{@code gbDfSalesAmount|sales|salesAmount|销量|份数} 销售份数；{@code blendedGrossMarginRateOnListPrice|margin|毛利率} 综合毛利率（%）；{@code actualProfit|profit|实际利润} {@code listPriceRevenue − actualCostTotalAmount123}。空则同 {@code gbDfSalesAmount}。
 	 * @param sortOrder {@code desc|降序}（默认）、{@code asc|升序}。
 	 */
-	@RequestMapping(value = "/depGetAllFood", method = RequestMethod.POST)
+	@RequestMapping(value = "/depGeFoodBusiness", method = RequestMethod.POST)
 	@ResponseBody
-	public R depGetAllFood(Integer disId, Integer depFatherId, String startDate, String stopDate, String sortBy,
+	public R depGeFoodBusiness(Integer disId, Integer depFatherId,
+			@RequestParam(value = "subDepId", required = false) Integer subDepId,
+			String startDate, String stopDate, String sortBy,
 			String sortOrder) {
 		Map<String, Object> map = new HashMap<>();
-		map.put("disId", disId);
-		map.put("depFatherId", depFatherId);
+		if (subDepId != null) {
+			map.put("depId", subDepId);
+		} else {
+			map.put("depFatherId", depFatherId);
+		}
+		System.out.println("mapmapmapapmap" + map);
 		List<GbDepFoodEntity> foodEntities = gbDepFoodService.queryDepAllFood(map);
 
 		boolean hasDateRange = startDate != null && !startDate.trim().isEmpty()
@@ -135,7 +146,7 @@ public class GbDepFoodController {
 		if (useBusinessInsight) {
 			try {
 				businessExtras = gbDepFoodBusinessInsightService.attachToFoodRows(
-						foodEntities, disId, depFatherId, startDate.trim(), stopDate.trim());
+						foodEntities, disId, depFatherId, startDate.trim(), stopDate.trim(), subDepId);
 			} catch (IllegalArgumentException e) {
 				return R.error(-1, e.getMessage());
 			}
@@ -157,8 +168,9 @@ public class GbDepFoodController {
 			}
 			if (!disFoodIds.isEmpty()) {
 				try {
+					String searchDepId = subDepId == null ? null : String.valueOf(subDepId);
 					ingredientRowsByFoodId = gbDishCostAnalysisService.buildIngredientRowsForFoodIds(
-							startDate.trim(), stopDate.trim(), disId, depFatherId, disFoodIds);
+							startDate.trim(), stopDate.trim(), disId, depFatherId, searchDepId, disFoodIds);
 				} catch (IllegalArgumentException e) {
 					return R.error(-1, e.getMessage());
 				}
@@ -244,7 +256,7 @@ public class GbDepFoodController {
 				if (recipe == null || recipe.isEmpty()) {
 					continue;
 				}
-				gbDepFoodBusinessInsightService.enrichFoodGoodsOutboundStats(recipe, disId, depFatherId, startDate.trim(), stopDate.trim());
+				gbDepFoodBusinessInsightService.enrichFoodGoodsOutboundStats(recipe, disId, depFatherId, subDepId, startDate.trim(), stopDate.trim());
 			}
 		}
 		if (log.isInfoEnabled()) {
@@ -402,5 +414,49 @@ public class GbDepFoodController {
 		gbDepFoodService.delete(depFood.getGbDepFoodId());
 		return R.ok();
 	}
+
+
+	/**
+	 * 查询门店菜品（{@code gb_dep_food}）。{@code depFatherId} 必填；{@code subDepId} 可选，传则只查该子部门，不传则该父部门下全部子部门菜品。
+	 */
+	@RequestMapping(value = "/depGetDepFoodList", method = RequestMethod.GET)
+	@ResponseBody
+	public R depGetDepFoodList(@RequestParam Integer depFatherId,
+			@RequestParam(value = "subDepId", required = false) Integer subDepId) {
+		Map<String, Object> map = new HashMap<>();
+		map.put("depFatherId", depFatherId);
+		if (subDepId != null) {
+			map.put("depId", subDepId);
+		}
+		List<GbDepFoodEntity> list = gbDepFoodService.queryDepAllFood(map);
+		Set<Integer> foodIds = new HashSet<>();
+		for (GbDepFoodEntity f : list) {
+			if (f.getGbDfFoodId() != null) {
+				foodIds.add(f.getGbDfFoodId());
+			}
+		}
+		Map<Integer, GbDistributerFoodEntity> disFoodById = new HashMap<>();
+		if (!foodIds.isEmpty()) {
+			for (GbDistributerFoodEntity e : gbDistributerFoodService.queryByIds(new ArrayList<>(foodIds))) {
+				if (e != null && e.getGbDistributerFoodId() != null) {
+					disFoodById.put(e.getGbDistributerFoodId(), e);
+				}
+			}
+		}
+		for (GbDepFoodEntity food : list) {
+			Integer foodId = food.getGbDfFoodId();
+			if (foodId == null) {
+				continue;
+			}
+			GbDistributerFoodEntity disFood = disFoodById.get(foodId);
+			if (disFood != null && disFood.getGbDfFoodName() != null && !disFood.getGbDfFoodName().trim().isEmpty()) {
+				food.setGbDfFoodName(disFood.getGbDfFoodName().trim());
+			}
+		}
+		return R.ok().put("data", list);
+	}
+
+
+
 
 }

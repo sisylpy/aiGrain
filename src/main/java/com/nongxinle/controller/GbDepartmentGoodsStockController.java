@@ -121,32 +121,37 @@ public class GbDepartmentGoodsStockController {
     public R getMendianStockTypePeriod(
             @RequestParam Integer disId,
             @RequestParam Integer whichDay,
-            @RequestParam(required = false) String searchDepIds,
-            @RequestParam(required = false) String searchDepId,
-            @RequestParam(required = false, defaultValue = "0") Integer type) {
-        Map<String, Object> mapResult = gbDepartmentGoodsStockQueryService.queryMendianStockTypePeriod(disId, whichDay, searchDepIds, searchDepId, type);
+            @RequestParam Integer depFatherId,
+            @RequestParam(required = false) String searchSubDepIds) {
+        Map<String, Object> mapResult =
+                gbDepartmentGoodsStockQueryService.queryMendianStockTypePeriod(disId, whichDay, depFatherId, searchSubDepIds);
         return R.ok().put("data", mapResult);
     }
+
+
+
 
     /**
      * 根据大类ID查询商品库存按时间段分类统计。
      * <p>有有效 {@code greatId} 时按大类即可定位商品，不必再传 {@code disId}（与批发商 id 等价，可不参与筛选）。</p>
-     * <p>部门范围：优先传 {@code depId}（部门 id，对应库存表部门主键）；也可传 {@code searchDepId}（部门父级 id，写入 {@code depFatherId}）。</p>
+     * <p>部门范围：必传 {@code depFatherId}；可选 {@code searchSubDepIds}（逗号分隔，多选时按库存表 {@code gb_dgs_gb_department_father_id} IN 筛选）。</p>
      */
     @RequestMapping(value = "/disGetDayStockByGreatId", method = RequestMethod.POST)
     @ResponseBody
     public R disGetDayStockByGreatId(
             @RequestParam(required = false) Integer disId,
-            @RequestParam(required = false) String searchDepId,
-            @RequestParam(required = false) Integer depId,
+            @RequestParam Integer depFatherId,
+            @RequestParam(required = false) String searchSubDepIds,
             @RequestParam String greatId,
             @RequestParam Integer whichDay,
             @RequestParam(required = false, defaultValue = "0") Integer type) {
         Map<String, Object> map = new HashMap<>();
         if (whichDay == 99 || whichDay == 0) {
-            map.put("oneDay", gbDepartmentGoodsStockQueryService.queryDayStockByGreatId(disId, searchDepId, depId, greatId, whichDay, type));
+            map.put("oneDay", gbDepartmentGoodsStockQueryService.queryDayStockByGreatId(
+                    disId, depFatherId, searchSubDepIds, greatId, whichDay, type));
         } else {
-            map.put("oneDay", gbDepartmentGoodsStockQueryService.queryDayStockByGreatId(disId, searchDepId, depId, greatId, -whichDay, type));
+            map.put("oneDay", gbDepartmentGoodsStockQueryService.queryDayStockByGreatId(
+                    disId, depFatherId, searchSubDepIds, greatId, -whichDay, type));
         }
         return R.ok().put("data", map);
     }

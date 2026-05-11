@@ -175,4 +175,96 @@
         order by  d.gb_department_id, subsd.gb_department_id
     </select>
 
+    <select id="countDepartmentTypesByIds" resultType="com.nongxinle.dto.DepartmentTypeCountRow">
+        SELECT gb_department_type AS deptType, COUNT(*) AS cnt
+        FROM gb_department
+        WHERE gb_department_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        GROUP BY gb_department_type
+    </select>
+
+    <!-- 父级门店：father_id=0 且 is_group_dep=1（集团「按店」口径） -->
+    <select id="selectRetailParentStoreDepartmentIdsInList" resultType="java.lang.Integer">
+        SELECT gb_department_id
+        FROM gb_department
+        WHERE gb_department_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND gb_department_father_id = 0
+        AND gb_department_is_group_dep = 1
+        ORDER BY gb_department_id
+    </select>
+
+    <!-- 分销户下门店根：father_id=0（领域口径，不要求 is_group_dep） -->
+    <select id="selectStoreDepartmentIdsUnderDistributer" resultType="java.lang.Integer">
+        SELECT gb_department_id
+        FROM gb_department
+        WHERE gb_department_dis_id = #{disId}
+          AND gb_department_father_id = 0
+        ORDER BY gb_department_id
+    </select>
+
+    <select id="selectDepartmentIdsFatherIdZeroInList" resultType="java.lang.Integer">
+        SELECT gb_department_id
+        FROM gb_department
+        WHERE gb_department_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND gb_department_father_id = 0
+        ORDER BY gb_department_id
+    </select>
+
+    <select id="queryDepInfo" resultMap="depInfo">
+        select *,
+        subsd.gb_department_id 'subs_gb_department_id',
+        subsd.gb_department_name 'subs_gb_department_name',
+        subsd.gb_department_show_weeks 'subs_gb_department_show_weeks',
+        subsd.gb_department_father_id 'subs_gb_department_father_id',
+        subsd.gb_department_is_group_dep 'subs_gb_department_is_group_dep',
+        subsd.gb_department_dis_id 'subs_gb_department_dis_id',
+        subsd.gb_department_sub_amount 'subs_gb_department_sub_amount',
+
+        userDep.gb_department_id 'userDep_gb_department_id',
+        userDep.gb_department_name 'userDep_gb_department_name',
+        userDep.gb_department_show_weeks 'userDep_gb_department_show_weeks',
+        userDep.gb_department_father_id 'userDep_gb_department_father_id',
+        userDep.gb_department_is_group_dep 'userDep_gb_department_is_group_dep',
+        userDep.gb_department_dis_id 'userDep_gb_department_dis_id',
+        userDep.gb_department_sub_amount 'userDep_gb_department_sub_amount',
+
+        subu.gb_department_user_id  'subu_gb_department_user_id',
+        subu.gb_DU_department_id 'subu_gb_DU_department_id',
+        subu.gb_DU_wx_nick_name 'subu_gb_DU_wx_nick_name',
+        subu.gb_DU_wx_avartra_url 'subu_gb_DU_wx_avartra_url',
+        subu.gb_DU_department_father_id  'subu_gb_DU_department_father_id',
+        subu.gb_DU_admin  'subu_gb_DU_admin'
+
+        from gb_department as d
+        left join gb_department as subsd on subsd.gb_department_father_id = d.gb_department_id
+        left join gb_department_user as gdu on gdu.gb_DU_department_id = d.gb_department_id
+        and gdu.gb_DU_wx_open_id != -1
+        left join gb_department as userDep on userDep.gb_department_id = gdu.gb_DU_department_id
+        left join gb_department_user as subu on subu.gb_DU_department_id = subsd.gb_department_id
+        and subu.gb_DU_wx_open_id != -1
+        <where>
+            <if test="depType != null">
+                and d.gb_department_type = #{depType}
+            </if>
+            <if test="disId != null">
+                and d.gb_department_dis_id = #{disId}
+            </if>
+            <if test="depFatherId != null">
+                and d.gb_department_id = #{depFatherId}
+            </if>
+
+        </where>
+        and d.gb_department_is_group_dep = 1
+        order by  d.gb_department_id, subsd.gb_department_id
+
+    </select>
+
 </mapper>

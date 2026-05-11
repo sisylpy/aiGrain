@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.nongxinle.mapper.GbDistributerPayListMapper">
+
+    <select id="queryDisPayListCount" resultType="int">
+        SELECT COUNT(1)
+        FROM gb_distributer_pay_list
+        <where>
+            <if test="disId != null">
+                AND gb_ndpl_gb_dis_id = #{disId}
+            </if>
+            <if test="date != null and date != ''">
+                AND gb_ndpl_pay_date = #{date}
+            </if>
+            <if test="type != null">
+                AND gb_ndpl_type = #{type}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryDisRecordSecondsTotal" resultType="int">
+        SELECT IFNULL(SUM(CAST(gb_ndpl_pay_subtotal AS UNSIGNED)), 0)
+        FROM gb_distributer_pay_list
+        <where>
+            <if test="disId != null">
+                AND gb_ndpl_gb_dis_id = #{disId}
+            </if>
+            <if test="date != null and date != ''">
+                AND gb_ndpl_pay_date = #{date}
+            </if>
+            <if test="type != null">
+                AND gb_ndpl_type = #{type}
+            </if>
+        </where>
+    </select>
+
+    <select id="queryPayListListByParams" resultType="com.nongxinle.entity.GbDistributerPayListEntity">
+        SELECT *
+        FROM gb_distributer_pay_list
+        <where>
+            <if test="disId != null">
+                AND gb_ndpl_gb_dis_id = #{disId}
+            </if>
+            <if test="type != null">
+                AND gb_ndpl_type = #{type}
+            </if>
+        </where>
+        ORDER BY gb_distributer_pay_list_id DESC
+        <if test="offset != null and limit != null">
+            LIMIT #{offset}, #{limit}
+        </if>
+    </select>
+
+</mapper>

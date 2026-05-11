@@ -3,6 +3,9 @@ package com.nongxinle.service.impl;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.nongxinle.entity.GbDepartmentDisGoodsEntity;
 import com.nongxinle.entity.GbDepartmentGoodsStockEntity;
+import com.nongxinle.dto.DepartmentPurchaseAggRow;
+import com.nongxinle.dto.PurchaseMethodLegacyAggRow;
+import com.nongxinle.dto.PurchaseTypeAggRow;
 import com.nongxinle.entity.GbDepartmentOrdersEntity;
 import com.nongxinle.entity.GbDepartmentUserEntity;
 import com.nongxinle.entity.GbDistributerGoodsEntity;
@@ -206,6 +209,33 @@ public class GbDistributerPurchaseGoodsServiceImpl extends ServiceImpl<GbDistrib
     }
 
     @Override
+    public Double queryGbPurchaseGoodsBuySubtotalSum(Map<String, Object> map) {
+        return baseMapper.queryGbPurchaseGoodsBuySubtotalSum(map);
+    }
+
+    @Override
+    public List<PurchaseTypeAggRow> queryGbPurchaseGoodsAggByPurchaseType(Map<String, Object> map) {
+        List<PurchaseTypeAggRow> list = baseMapper.queryGbPurchaseGoodsAggByPurchaseType(map);
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
+    public List<PurchaseMethodLegacyAggRow> queryGbPurchaseGoodsAggByLegacyPurchaseMethod(Map<String, Object> map) {
+        List<PurchaseMethodLegacyAggRow> list = baseMapper.queryGbPurchaseGoodsAggByLegacyPurchaseMethod(map);
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
+    public List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopTimesMerged(Map<String, Object> map) {
+        return baseMapper.queryGbPurchaseGoodsTopTimesMerged(map);
+    }
+
+    @Override
+    public List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopSubtotalMerged(Map<String, Object> map) {
+        return baseMapper.queryGbPurchaseGoodsTopSubtotalMerged(map);
+    }
+
+    @Override
     public Double queryPurchaseGoodsWeightTotal(Map<String, Object> map) {
         return baseMapper.queryPurchaseGoodsWeightTotal(map);
     }
@@ -340,6 +370,18 @@ public class GbDistributerPurchaseGoodsServiceImpl extends ServiceImpl<GbDistrib
     @Override
     public List<Map<String, Object>> queryPurchaseBuyQtyAggByDisGoods(Map<String, Object> map) {
         List<Map<String, Object>> list = baseMapper.queryPurchaseBuyQtyAggByDisGoods(map);
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
+    public List<DepartmentPurchaseAggRow> sumPurchaseSubtotalGroupedByPurDepartmentId(Map<String, Object> map) {
+        List<DepartmentPurchaseAggRow> list = baseMapper.sumPurchaseSubtotalGroupedByPurDepartmentId(map);
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
+    public List<Map<String, Object>> queryGbPurchaseSupplierSpendTop(Map<String, Object> map) {
+        List<Map<String, Object>> list = baseMapper.queryGbPurchaseSupplierSpendTop(map);
         return list != null ? list : Collections.emptyList();
     }
 

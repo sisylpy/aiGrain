@@ -10,6 +10,10 @@ import java.io.Serializable;
 import java.util.Date;
 
 
+/**
+ * AI 会话主表。多智能体 Run（{@code /ai/runs}）与普通聊天共用本表：
+ * {@code gb_ai_conversation_user_id} 与请求 {@code userId} 对齐后即可作为 {@code conversationId} 的安全边界。
+ */
 @Data
 @TableName("gb_ai_conversation")
 @EqualsAndHashCode(callSuper = false)

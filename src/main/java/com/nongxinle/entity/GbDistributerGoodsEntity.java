@@ -265,6 +265,10 @@ public class GbDistributerGoodsEntity implements Serializable, Comparable {
     @TableField(exist = false)
     private String goodsReturnPercent = "0";
 
+    /** Mapper {@code queryStockSubtotalTopTimes}：未限定 type 时汇总的出库 subtotal（元）。 */
+    @TableField(exist = false)
+    private BigDecimal goodsSubtotalTotal = BigDecimal.ZERO;
+
     @TableField(exist = false)
     private Double goodsEveryWasteTotal = 0.0;
     @TableField(exist = false)

@@ -153,6 +153,12 @@
             <if test="depFatherId != null">
                 AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
             </if>
+            <if test="depFatherIds != null and depFatherIds.size() &gt; 0">
+                AND gdgs.gb_dgs_gb_department_father_id IN
+                <foreach item="id" collection="depFatherIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
             <if test="purUserId != null">
                 AND gdgs.gb_dgs_pur_user_id = #{purUserId}
             </if>
@@ -305,6 +311,12 @@
             </if>
             <if test="depFatherId != null">
                 AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="depFatherIds != null and depFatherIds.size() &gt; 0">
+                AND gdgs.gb_dgs_gb_department_father_id IN
+                <foreach item="id" collection="depFatherIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
             </if>
             <if test="purUserId != null">
                 AND gdgs.gb_dgs_pur_user_id = #{purUserId}
@@ -586,6 +598,12 @@
             <if test="depFatherId != null">
                 AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
             </if>
+            <if test="depFatherIds != null and depFatherIds.size() &gt; 0">
+                AND gdgs.gb_dgs_gb_department_father_id IN
+                <foreach item="id" collection="depFatherIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
         </where>
         <if test="orderByGoodsStockTotal != null">
             ORDER BY CAST(goodsStockTotal AS DECIMAL(10,2)) DESC, dg.gb_distributer_goods_id DESC
@@ -634,6 +652,12 @@
             <if test="depFatherId != null">
                 AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
             </if>
+            <if test="depFatherIds != null and depFatherIds.size() &gt; 0">
+                AND gdgs.gb_dgs_gb_department_father_id IN
+                <foreach item="id" collection="depFatherIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
         </where>
     </select>
 
@@ -676,6 +700,12 @@
             <if test="depFatherId != null">
                 AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
             </if>
+            <if test="depFatherIds != null and depFatherIds.size() &gt; 0">
+                AND gdgs.gb_dgs_gb_department_father_id IN
+                <foreach item="id" collection="depFatherIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
         </where>
     </select>
 
@@ -712,6 +742,12 @@
             </if>
             <if test="depFatherId != null">
                 AND gdgs.gb_dgs_gb_department_father_id = #{depFatherId}
+            </if>
+            <if test="depFatherIds != null and depFatherIds.size() &gt; 0">
+                AND gdgs.gb_dgs_gb_department_father_id IN
+                <foreach item="id" collection="depFatherIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
             </if>
             <if test="disGoodsId != null">
                 AND gdgs.gb_dgs_gb_dis_goods_id = #{disGoodsId}

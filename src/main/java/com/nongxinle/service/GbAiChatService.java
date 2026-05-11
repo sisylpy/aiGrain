@@ -29,6 +29,18 @@ public interface GbAiChatService {
                                                    Long userId, Integer type);
 
     /**
+     * 多智能体 Run 首轮：无条件插入新会话（不复用「未结束旧主题」），字段规则与 {@link #getOrCreateConversation} 新建分支一致。
+     */
+    GbAiConversationEntity createNewConversationForAgentRun(Long departmentId, Long distributerId,
+                                                           AiConversationScopeMode scopeMode,
+                                                           Long userId, Integer type);
+
+    /**
+     * 校验会话存在且属于指定部门用户（{@code gb_ai_conversation_user_id}），否则抛出 {@link IllegalArgumentException}。
+     */
+    GbAiConversationEntity requireConversationOwnedByUser(Long conversationId, Long userId);
+
+    /**
      * 发送消息（非流式，用于测试）
      * @param conversationId 对话ID
      * @param userId 部门用户ID

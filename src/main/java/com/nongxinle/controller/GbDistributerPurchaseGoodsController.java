@@ -24,6 +24,7 @@ import static com.nongxinle.utils.GbTypeUtils.*;
 public class GbDistributerPurchaseGoodsController {
 
     private final GbDistributerPurchaseGoodsService gbDpgService;
+    private final GbDepartmentService gbDepartmentService;
     private final GbDepartmentOrdersService gbDepartmentOrdersService;
     private final GbDistributerService gbDistributerService;
     private final GbDepartmentGoodsStockService gbDepartmentGoodsStockService;
@@ -131,6 +132,54 @@ public class GbDistributerPurchaseGoodsController {
         map3.put("wxAmount", purCountOne);
         // 查询完整批发商信息（含所有部门列表）
         map3.put("disInfo", gbDistributerService.queryDistributerWithAllDepartments(disId));
+
+        return R.ok().put("data", map3);
+    }
+
+    /**
+     * DISTRIBUTE
+     * 批发商获取进货商品列表
+     *
+     * @param purDepId 采购部门 id
+     * @return 进货商品列表
+     */
+    @RequestMapping(value = "/getStorePurchaseGoodsGbWithTabCount/{purDepId}")
+    @ResponseBody
+    public R getStorePurchaseGoodsGbWithTabCount(@PathVariable Integer purDepId) {
+
+        Map<String, Object> map4 = new HashMap<>();
+        map4.put("purDepId", purDepId);
+        map4.put("orderStatus", 3);
+        map4.put("orderEqualBuyStatus", 0);
+        map4.put("supplierBuy", -1);
+        map4.put("purType", 0);
+        log.info("map4444444whyyyy111" + map4);
+        List<GbDistributerPurchaseGoodsEntity> purchaseToday = gbDpgService.querySimplePurGoods(map4);
+        if (purchaseToday != null && !purchaseToday.isEmpty()) {
+            log.info("kanaknGbgoods" + purchaseToday.get(0).getGbDistributerGoodsEntity());
+        }
+        Map<String, Object> map1 = new HashMap<>();
+        map1.put("purDepId", purDepId);
+        map1.put("status", 3);
+        map1.put("equalBuyStatus", 0);
+        map1.put("notEqualOrderType", 9);
+        log.debug("mapp111aaaaaaa" + map1);
+
+        int purCount = gbDepartmentOrdersService.queryGbDepartmentOrderAmount(map1);
+
+        map1.put("equalBuyStatus", null);
+        map1.put("dayuBuyStatus", 0);
+        map1.put("dayuStatus", -2);
+        log.info("mapp111oneoeneoene11111" + map1);
+        int purCountOne = gbDepartmentOrdersService.queryGbDepartmentOrderAmount(map1);
+
+        Map<String, Object> map3 = new HashMap<>();
+        map3.put("arr", purchaseToday);
+        map3.put("orderAmount", purCount);
+        map3.put("wxAmount", purCountOne);
+        // 查询完整批发商信息（含所有部门列表）
+        GbDepartmentEntity byId = gbDepartmentService.getById(purDepId);
+        map3.put("disInfo", gbDistributerService.queryDistributerWithAllDepartments(byId.getGbDepartmentDisId()));
 
         return R.ok().put("data", map3);
     }

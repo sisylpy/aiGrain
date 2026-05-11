@@ -6,6 +6,7 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.nongxinle.entity.GbAiConversationEntity;
+import com.nongxinle.dto.AiStoreNetRevenueAggRow;
 import com.nongxinle.entity.GbAiMessageEntity;
 import com.nongxinle.entity.GbAiRestaurantProfileEntity;
 import com.nongxinle.entity.GbAiDailyRevenueEntity;
@@ -60,6 +61,7 @@ import com.nongxinle.utils.GrossMarginStandardDisplay;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -128,14 +130,22 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     @Value("${ai.deepseek.temperature}")
     private double temperature;
 
-    @Value("${ai.deepseek.timeout-seconds}")
+    @Value("${ai.deepseek.timeout-seconds:120}")
     private int timeoutSeconds;
 
-    private final OkHttpClient httpClient = new OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build();
+    /** DeepSeek HTTP 客户端；readTimeout 与 {@link #timeoutSeconds} 对齐（配置为 0 或缺失时使用 120s）。 */
+    private OkHttpClient deepSeekHttpClient;
+
+    @PostConstruct
+    public void initDeepSeekHttpClient() {
+        int readSec = timeoutSeconds > 0 ? timeoutSeconds : 120;
+        this.deepSeekHttpClient = new OkHttpClient.Builder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(readSec, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+                .build();
+        log.info("[AI-CHAT][DeepSeek] okhttp readTimeout={}s connect=30s write=30s", readSec);
+    }
 
     // ========== 常量 ==========
 
@@ -256,6 +266,65 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         return conv;
     }
 
+    @Override
+    public GbAiConversationEntity createNewConversationForAgentRun(Long departmentId, Long distributerId,
+                                                                   AiConversationScopeMode scopeMode,
+                                                                   Long userId, Integer type) {
+        AiConversationScopeMode mode = scopeMode != null ? scopeMode : AiConversationScopeMode.STORE;
+        log.info("[AgentRun] createNewConversation mode={} departmentId={} distributerId={} userId={} type={}",
+                mode, departmentId, distributerId, userId, type);
+
+        Long effDistributerId = distributerId;
+        if (mode == AiConversationScopeMode.GROUP) {
+            if (effDistributerId == null) {
+                throw new IllegalArgumentException("集团模式必须提供 distributerId(disId)");
+            }
+        } else {
+            if (departmentId == null) {
+                throw new IllegalArgumentException("单店模式必须提供 departmentId(门店父部门)");
+            }
+            if (effDistributerId == null) {
+                GbDepartmentEntity d = departmentMapper.selectById(departmentId.intValue());
+                if (d != null && d.getGbDepartmentDisId() != null) {
+                    effDistributerId = d.getGbDepartmentDisId().longValue();
+                }
+            }
+        }
+
+        GbAiConversationEntity conv = new GbAiConversationEntity();
+        conv.setGbAiConversationScopeMode(mode.getCode());
+        conv.setGbAiConversationDepartmentId(mode == AiConversationScopeMode.STORE ? departmentId : null);
+        conv.setGbAiConversationDistributerId(effDistributerId);
+        conv.setGbAiConversationUserId(userId);
+        conv.setGbAiConversationStatus(0);
+        conv.setGbAiConversationTitle("新对话");
+        conv.setGbAiConversationCreateTime(new Date());
+        conv.setGbAiConversationUpdateTime(new Date());
+        conv.setGbAiConversationType(type != null ? type : 0);
+
+        conversationMapper.insert(conv);
+        log.info("[AgentRun] 创建新对话成功 - conversationId={} mode={}", conv.getGbAiConversationId(), mode);
+        return conv;
+    }
+
+    @Override
+    public GbAiConversationEntity requireConversationOwnedByUser(Long conversationId, Long userId) {
+        if (conversationId == null) {
+            throw new IllegalArgumentException("conversationId required");
+        }
+        if (userId == null) {
+            throw new IllegalArgumentException("userId required");
+        }
+        GbAiConversationEntity conv = conversationMapper.selectById(conversationId);
+        if (conv == null) {
+            throw new IllegalArgumentException("conversation not found: " + conversationId);
+        }
+        if (!Objects.equals(conv.getGbAiConversationUserId(), userId)) {
+            throw new IllegalArgumentException("conversation does not belong to current user");
+        }
+        return conv;
+    }
+
     /**
      * 部门用户 ID（gb_department_user）：请求体可省略 userId（旧客户端/测试）；此时用会话上的
      * {@code gb_ai_conversation_user_id}，以便按登录用户收窄可见部门，并让采购等指标锚点生效。
@@ -265,6 +334,25 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             return requestUserId;
         }
         return conv != null ? conv.getGbAiConversationUserId() : null;
+    }
+
+    /**
+     * 集团会话：仅在用户收窄后的部门集合与解析前完全一致时，标记日营业额可走 disId 宽查；
+     * 区域/店长等收窄子集仍为 false，避免越权聚合整批发商。
+     */
+    private AiQueryScope applyGroupRevenueWideQueryIfEligible(AiQueryScope resolvedBeforeNarrow,
+                                                              AiQueryScope afterNarrow) {
+        if (afterNarrow.getMode() != AiConversationScopeMode.GROUP || afterNarrow.getDisIdForPurchaseQueries() <= 0) {
+            return afterNarrow;
+        }
+        List<Integer> before = resolvedBeforeNarrow.getResolvedDepartmentIds();
+        List<Integer> after = afterNarrow.getResolvedDepartmentIds();
+        if (before == null || before.isEmpty()) {
+            return afterNarrow.toBuilder().groupRevenueUseDistributerWideQuery(false).build();
+        }
+        boolean fullTenant = before.size() == after.size()
+                && new HashSet<>(before).equals(new HashSet<>(after));
+        return afterNarrow.toBuilder().groupRevenueUseDistributerWideQuery(fullTenant).build();
     }
 
     @Override
@@ -287,11 +375,12 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             }
 
             Map<Integer, List<Integer>> deptSubtreeCache = new HashMap<>();
-            AiQueryScope scope = aiScopeResolver.resolve(conv, deptSubtreeCache);
-            scope = aiQueryScopeAccess.narrowForDepartmentUser(scope, effectiveUserId, deptSubtreeCache);
-            Long departmentId = scope.profileAnchorDepartmentId();
+            AiQueryScope resolvedScope = aiScopeResolver.resolve(conv, deptSubtreeCache);
+            AiQueryScope scope = aiQueryScopeAccess.narrowForDepartmentUser(resolvedScope, effectiveUserId, deptSubtreeCache);
+            scope = applyGroupRevenueWideQueryIfEligible(resolvedScope, scope);
+            Long departmentId = scope.memoryAnchorDepartmentId();
             Integer conversationType = conv.getGbAiConversationType();
-            log.info("[AI-CHAT][service] step=load_conversation conversationId={} convDepartmentId={} profileAnchorDepartmentId={} conversationType={}",
+            log.info("[AI-CHAT][service] step=load_conversation conversationId={} convDepartmentId={} memoryAnchorDepartmentId={} conversationType={}",
                     conversationId, conv.getGbAiConversationDepartmentId(), departmentId, conversationType);
 
             // 2. 保存用户消息
@@ -376,11 +465,12 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             }
 
             Map<Integer, List<Integer>> deptSubtreeCache = new HashMap<>();
-            AiQueryScope scope = aiScopeResolver.resolve(conv, deptSubtreeCache);
-            scope = aiQueryScopeAccess.narrowForDepartmentUser(scope, effectiveUserId, deptSubtreeCache);
-            Long departmentId = scope.profileAnchorDepartmentId();
+            AiQueryScope resolvedScope = aiScopeResolver.resolve(conv, deptSubtreeCache);
+            AiQueryScope scope = aiQueryScopeAccess.narrowForDepartmentUser(resolvedScope, effectiveUserId, deptSubtreeCache);
+            scope = applyGroupRevenueWideQueryIfEligible(resolvedScope, scope);
+            Long departmentId = scope.memoryAnchorDepartmentId();
             Integer conversationType = conv.getGbAiConversationType();
-            log.info("[AI-CHAT][service] trace=sse step=load_conversation conversationId={} convDepartmentId={} profileAnchorDepartmentId={}",
+            log.info("[AI-CHAT][service] trace=sse step=load_conversation conversationId={} convDepartmentId={} memoryAnchorDepartmentId={}",
                     conversationId, conv.getGbAiConversationDepartmentId(), departmentId);
 
             saveMessage(conversationId, effectiveUserId, conversationType, "user", userMessage);
@@ -466,7 +556,12 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             return 1;
         }
 
-        Long memoryDeptId = aiScopeResolver.resolve(conv).profileAnchorDepartmentId();
+        Map<Integer, List<Integer>> endConvCache = new HashMap<>();
+        AiQueryScope endResolved = aiScopeResolver.resolve(conv, endConvCache);
+        AiQueryScope endScope = aiQueryScopeAccess.narrowForDepartmentUser(endResolved,
+                conv.getGbAiConversationUserId(), endConvCache);
+        endScope = applyGroupRevenueWideQueryIfEligible(endResolved, endScope);
+        Long memoryDeptId = endScope.memoryAnchorDepartmentId();
 
         // 1. 规则记忆：标记消息已处理
         memoryService.extractMemories(conversationId,
@@ -668,6 +763,29 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     }
 
     /**
+     * 集团会话：餐厅画像优先按批发商 {@code gb_ai_restaurant_profile_distributer_id}（与集团 dis 一致）加载；
+     * 无集团级画像行时再按用户挂靠部门加载。单店会话仍只按部门加载。
+     */
+    private GbAiRestaurantProfileEntity loadRestaurantProfileForChat(AiQueryScope scope, Long memoryAnchorDepartmentId) {
+        if (scope != null && scope.getMode() == AiConversationScopeMode.GROUP && scope.getDisIdForPurchaseQueries() > 0) {
+            long disPk = scope.getDisIdForPurchaseQueries();
+            GbAiRestaurantProfileEntity byDis = restaurantProfileMapper.selectByDistributerId(disPk);
+            if (byDis != null) {
+                log.info("[AI-CHAT][profile] GROUP loaded by distributerId={}", disPk);
+                return byDis;
+            }
+            log.info("[AI-CHAT][profile] GROUP no profile for distributerId={}, fallback departmentAnchor={}",
+                    disPk, memoryAnchorDepartmentId);
+        }
+        if (memoryAnchorDepartmentId == null) {
+            return null;
+        }
+        return restaurantProfileMapper.selectOne(
+                new LambdaQueryWrapper<GbAiRestaurantProfileEntity>()
+                        .eq(GbAiRestaurantProfileEntity::getGbAiRestaurantProfileDepartmentId, memoryAnchorDepartmentId));
+    }
+
+    /**
      * 流式：不调用 DeepSeek，把固定成本门禁说明一次发给前端并落库。
      */
     private void completeSseWithDirectAssistantReply(SseEmitter emitter, String reply,
@@ -677,7 +795,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             if (StrUtil.isNotEmpty(reply)) {
                 String cleaned = SkillHandoffParser.stripAllSkillHandoffFences(reply);
                 String visible = stripAssistantUserVisibleTail(cleaned);
-                extractUserDataFromReply(cleaned, scope.profileAnchorDepartmentId());
+                extractUserDataFromReply(cleaned, scope.memoryAnchorDepartmentId());
                 emitter.send(SseEmitter.event().name("message").data(visible));
                 saveMessage(conversationId, userId, conv.getGbAiConversationType(), "assistant", visible);
                 conv.setGbAiConversationUpdateTime(new Date());
@@ -688,7 +806,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             }
             emitter.send(SseEmitter.event().name("done").data("[DONE]"));
             emitter.complete();
-            memoryService.extractMemories(conversationId, scope.profileAnchorDepartmentId(), userId,
+            memoryService.extractMemories(conversationId, scope.memoryAnchorDepartmentId(), userId,
                     conv.getGbAiConversationType());
             log.info("[AI-CHAT][timing] conversationId={} phase=sse_fixed_cost_gate_total_ms={}",
                     conversationId, timingMs(gateStart));
@@ -710,7 +828,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         long buildTotalStart = System.nanoTime();
         List<Map<String, String>> messages = new ArrayList<>();
 
-        Long departmentId = scope.profileAnchorDepartmentId();
+        Long departmentId = scope.memoryAnchorDepartmentId();
         Integer conversationType = conv.getGbAiConversationType();
 
         // 1. 加载所有 Skills 摘要（用于Skill选择）
@@ -782,20 +900,16 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 rawSkillSelection != null ? rawSkillSelection.length() : 0);
         log.debug("Skill选择原始响应全文: {}", rawSkillSelection);
 
-        // 2b/3a. 餐厅画像只查一次：成本门禁与下方事实段落共用
+        // 2b/3a. 餐厅画像只查一次：成本门禁与下方事实段落共用（集团：先按 disId 日主档）
         String skillsLower = selectedSkills != null ? selectedSkills.toLowerCase(Locale.ROOT) : "";
         GbAiRestaurantProfileEntity restaurantProfile = null;
         phaseStart = System.nanoTime();
-        if (departmentId != null) {
-            restaurantProfile = restaurantProfileMapper.selectOne(
-                    new LambdaQueryWrapper<GbAiRestaurantProfileEntity>()
-                            .eq(GbAiRestaurantProfileEntity::getGbAiRestaurantProfileDepartmentId, departmentId));
-        }
+        restaurantProfile = loadRestaurantProfileForChat(scope, departmentId);
         log.info("[AI-CHAT][timing] conversationId={} phase=build_restaurant_profile_db_ms={}",
                 convId, timingMs(phaseStart));
         if (skillsLower.contains("cost")) {
             if (!hasAllBasicFixedCosts(restaurantProfile)) {
-                log.info("[AI-CHAT][build] step=fixed_cost_gate_short_circuit conversationId={} profileAnchorDepartmentId={}",
+                log.info("[AI-CHAT][build] step=fixed_cost_gate_short_circuit conversationId={} memoryAnchorDepartmentId={}",
                         convId, departmentId);
                 log.info("[AI-CHAT][timing] conversationId={} phase=build_chat_payload_total_ms={} (short_circuit=fixed_cost_gate)",
                         convId, timingMs(buildTotalStart));
@@ -1417,6 +1531,12 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         }
 
         if (!AiUserQueryTimeWindowResolver.mayContainUnparsedTimeIntent(trimmed)) {
+            // 规则已解析出明确窗口（如"上个月"），则使用规则结果，不回退本月
+            if (rulePinned.isPresent()) {
+                log.info("[AI-CHAT][build] step=time_window_rule_pinned_no_llm conversationId={} start={} end={}",
+                        conversationId, rulePinned.get().startInclusive(), rulePinned.get().endInclusive());
+                return StatWindowResolution.ok(rulePinned.get());
+            }
             return StatWindowResolution.ok(AiUserQueryTimeWindowResolver.defaultMonthToDate(now));
         }
 
@@ -1553,12 +1673,14 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         String costFacet = selection.costFacet();
         List<String> suggestedMetricIds = selection.suggestedMetricIds();
 
-        Long departmentId = scope.profileAnchorDepartmentId();
+        Long departmentId = scope.memoryAnchorDepartmentId();
         String skillsLower = selectedSkills != null ? selectedSkills.toLowerCase() : "";
         StringBuilder sb = new StringBuilder();
         sb.append(scope.toMarkdownFactHeader());
 
+
         log.info("根据Skill类型智能查询数据: {} suggestedMetricIds={}", selectedSkills, suggestedMetricIds);
+        log.info("scope.toMarkdownFactHeader: {} ", scope.toMarkdownFactHeader());
 
         // 餐厅画像数据 - 所有Skill都需要这个基础数据（主路径已由 buildChatPayload 预查）
         sb.append("【餐厅基本信息】\n");
@@ -1596,6 +1718,17 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         log.info("AI 注入数据统计区间: {} 至 {} — {}", monthStart, monthEnd, statWindow.resolutionNote());
         sb.append("- **本段数据统计区间**：").append(monthStart).append(" 至 ").append(monthEnd)
                 .append("（").append(statWindow.resolutionNote()).append("）\n\n");
+
+        // 集团模式：默认就注入按门店拆分的经营诊断数据，让 AI 能回答门店维度的问题
+        boolean groupMode = scope.getMode() == AiConversationScopeMode.GROUP;
+        boolean wantGroupDiag = groupMode
+                || SkillRouteFallback.shouldAttachGroupChainDiagnosticsFacts(userMessage)
+                || (suggestedMetricIds != null && suggestedMetricIds.stream()
+                .filter(Objects::nonNull)
+                .anyMatch(id -> id.startsWith("group_")));
+        if (wantGroupDiag) {
+            sb.append(queryGroupChainRetailDiagnosticsFacts(scope, monthStart, monthEnd));
+        }
 
         // 检查成本分析所需的3个基本固定成本数据是否完整
         boolean hasRent = rentMonthly != null;
@@ -1692,6 +1825,249 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     }
 
     /**
+     * 集团侧「门店」列表：仅 {@code gb_department_father_id=0} 且 {@code gb_department_is_group_dep=1} 的父级门店；
+     * 范围内若无此类节点则返回空列表（不做 type 1/11 推测）。
+     */
+    private record RetailDepartmentResolve(List<Integer> ids) {
+    }
+
+    private RetailDepartmentResolve resolveRetailStoreDepartmentIdsForGroupAnalyticsDetailed(List<Integer> scopeIds) {
+        if (scopeIds == null || scopeIds.isEmpty()) {
+            return new RetailDepartmentResolve(List.of());
+        }
+        List<Integer> parents = departmentMapper.selectRetailParentStoreDepartmentIdsInList(scopeIds);
+        return new RetailDepartmentResolve(parents == null ? List.of() : parents);
+    }
+
+    private Map<Integer, Integer> buildDepartmentFatherMapForDistributer(int disId) {
+        if (disId <= 0) {
+            return Map.of();
+        }
+        List<GbDepartmentEntity> rows = departmentMapper.selectList(
+                new LambdaQueryWrapper<GbDepartmentEntity>()
+                        .eq(GbDepartmentEntity::getGbDepartmentDisId, disId)
+                        .select(GbDepartmentEntity::getGbDepartmentId, GbDepartmentEntity::getGbDepartmentFatherId));
+        Map<Integer, Integer> m = new HashMap<>(Math.max(16, rows.size() * 2));
+        for (GbDepartmentEntity e : rows) {
+            if (e.getGbDepartmentId() != null) {
+                m.put(e.getGbDepartmentId(), e.getGbDepartmentFatherId());
+            }
+        }
+        return m;
+    }
+
+    /**
+     * 日营收 {@code gb_ai_daily_revenue_department_id} 多在**子部门**；查询父级门店时要把其下子树部门 id 一并纳入 IN 条件。
+     */
+    private int resolveDistributerIdForDepartmentExpansion(int disIdHint, List<Integer> anyDeptIds) {
+        if (disIdHint > 0) {
+            return disIdHint;
+        }
+        if (anyDeptIds == null || anyDeptIds.isEmpty()) {
+            return 0;
+        }
+        GbDepartmentEntity e = departmentMapper.selectById(anyDeptIds.get(0));
+        return e != null && e.getGbDepartmentDisId() != null ? e.getGbDepartmentDisId() : 0;
+    }
+
+    private List<Integer> expandDepartmentSubtreeIdsForRevenue(int distributerId, Collection<Integer> roots) {
+        if (roots == null || roots.isEmpty()) {
+            return List.of();
+        }
+        if (distributerId <= 0) {
+            return roots.stream().filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        }
+        List<GbDepartmentEntity> rows = departmentMapper.selectList(
+                new LambdaQueryWrapper<GbDepartmentEntity>()
+                        .eq(GbDepartmentEntity::getGbDepartmentDisId, distributerId)
+                        .select(GbDepartmentEntity::getGbDepartmentId, GbDepartmentEntity::getGbDepartmentFatherId));
+        Map<Integer, List<Integer>> children = new HashMap<>(Math.max(16, rows.size() * 2));
+        for (GbDepartmentEntity e : rows) {
+            if (e.getGbDepartmentId() == null) {
+                continue;
+            }
+            Integer fa = e.getGbDepartmentFatherId();
+            if (fa != null) {
+                children.computeIfAbsent(fa, k -> new ArrayList<>()).add(e.getGbDepartmentId());
+            }
+        }
+        Set<Integer> out = new LinkedHashSet<>();
+        ArrayDeque<Integer> dq = new ArrayDeque<>();
+        for (Integer r : roots) {
+            if (r != null) {
+                dq.add(r);
+            }
+        }
+        while (!dq.isEmpty()) {
+            Integer id = dq.poll();
+            if (!out.add(id)) {
+                continue;
+            }
+            List<Integer> ch = children.get(id);
+            if (ch != null) {
+                for (Integer c : ch) {
+                    dq.add(c);
+                }
+            }
+        }
+        return new ArrayList<>(out);
+    }
+
+    private Map<Integer, String> loadDepartmentNamesByIds(Collection<Integer> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        List<GbDepartmentEntity> rows = departmentMapper.selectList(
+                new LambdaQueryWrapper<GbDepartmentEntity>()
+                        .in(GbDepartmentEntity::getGbDepartmentId, ids)
+                        .select(GbDepartmentEntity::getGbDepartmentId, GbDepartmentEntity::getGbDepartmentName));
+        Map<Integer, String> m = new HashMap<>(Math.max(16, rows.size() * 2));
+        for (GbDepartmentEntity e : rows) {
+            if (e.getGbDepartmentId() != null) {
+                m.put(e.getGbDepartmentId(), e.getGbDepartmentName());
+            }
+        }
+        return m;
+    }
+
+    /**
+     * 将「记账部门」净营收累加到其归属的父级门店（在 {@code retailParentIds} 中沿 father 链向上查找）。
+     */
+    private Map<Integer, BigDecimal> rollupNetRevenueToRetailParents(List<AiStoreNetRevenueAggRow> recordingRows,
+            Collection<Integer> retailParentIds, Map<Integer, Integer> fatherByDeptId, boolean initAllParentsWithZero) {
+        Set<Integer> retailSet = new HashSet<>();
+        if (retailParentIds != null) {
+            retailSet.addAll(retailParentIds);
+        }
+        Map<Integer, BigDecimal> byParent = new LinkedHashMap<>();
+        if (initAllParentsWithZero && retailParentIds != null) {
+            for (Integer pid : retailParentIds) {
+                if (pid != null) {
+                    byParent.put(pid, BigDecimal.ZERO);
+                }
+            }
+        }
+        if (recordingRows == null) {
+            return byParent;
+        }
+        for (AiStoreNetRevenueAggRow row : recordingRows) {
+            if (row.getDepartmentId() == null || row.getNetRevenue() == null) {
+                continue;
+            }
+            Integer parent = walkDepartmentIdToRetailParent(row.getDepartmentId(), retailSet, fatherByDeptId);
+            if (parent == null) {
+                continue;
+            }
+            byParent.merge(parent, row.getNetRevenue(), BigDecimal::add);
+        }
+        return byParent;
+    }
+
+    private List<AiStoreNetRevenueAggRow> listNetRevenueByRetailParentsRanked(int disId, List<Integer> retailParentIds,
+            LocalDate start, LocalDate end, String orderDirection, int limit) {
+        if (retailParentIds == null || retailParentIds.isEmpty() || limit <= 0) {
+            return List.of();
+        }
+        int dis = resolveDistributerIdForDepartmentExpansion(disId, retailParentIds);
+        List<Integer> expanded = expandDepartmentSubtreeIdsForRevenue(dis, retailParentIds);
+        if (expanded.isEmpty()) {
+            return List.of();
+        }
+        List<AiStoreNetRevenueAggRow> recRows = dailyRevenueMapper.listNetRevenueGroupedByRecordingDepartmentIds(
+                expanded, start, end);
+        Map<Integer, Integer> fathers = buildDepartmentFatherMapForDistributer(dis);
+        boolean initZeros = true;
+        Map<Integer, BigDecimal> byParent = rollupNetRevenueToRetailParents(recRows, retailParentIds, fathers, initZeros);
+        List<Map.Entry<Integer, BigDecimal>> sorted = new ArrayList<>(byParent.entrySet());
+        Comparator<Map.Entry<Integer, BigDecimal>> cmp = Map.Entry.comparingByValue();
+        if (!"ASC".equalsIgnoreCase(orderDirection)) {
+            cmp = cmp.reversed();
+        }
+        sorted.sort(cmp);
+        Map<Integer, String> names = loadDepartmentNamesByIds(retailParentIds);
+        List<AiStoreNetRevenueAggRow> out = new ArrayList<>(Math.min(limit, sorted.size()));
+        for (int i = 0; i < sorted.size() && out.size() < limit; i++) {
+            Map.Entry<Integer, BigDecimal> e = sorted.get(i);
+            AiStoreNetRevenueAggRow r = new AiStoreNetRevenueAggRow();
+            r.setDepartmentId(e.getKey());
+            r.setDepartmentName(names.getOrDefault(e.getKey(), ""));
+            r.setNetRevenue(e.getValue());
+            out.add(r);
+        }
+        return out;
+    }
+
+    /**
+     * 与 {@link #listNetRevenueByRetailParentsRanked} 逻辑一致，但返回 Map[部门ID → 净营收]，供门店毛利表使用。
+     */
+    private Map<Integer, BigDecimal> listNetRevenueByRetailParentsAsMap(int disId, List<Integer> retailParentIds,
+                                                                         LocalDate start, LocalDate end) {
+        if (retailParentIds == null || retailParentIds.isEmpty()) {
+            return Map.of();
+        }
+        int dis = resolveDistributerIdForDepartmentExpansion(disId, retailParentIds);
+        List<Integer> expanded = expandDepartmentSubtreeIdsForRevenue(dis, retailParentIds);
+        if (expanded.isEmpty()) {
+            Map<Integer, BigDecimal> zeros = new HashMap<>();
+            for (Integer id : retailParentIds) {
+                zeros.put(id, BigDecimal.ZERO);
+            }
+            return zeros;
+        }
+        List<AiStoreNetRevenueAggRow> recRows = dailyRevenueMapper.listNetRevenueGroupedByRecordingDepartmentIds(
+                expanded, start, end);
+        Map<Integer, Integer> fathers = buildDepartmentFatherMapForDistributer(dis);
+        return rollupNetRevenueToRetailParents(recRows, retailParentIds, fathers, true);
+    }
+
+    private static Integer walkDepartmentIdToRetailParent(Integer depId, Set<Integer> retailParents,
+                                                          Map<Integer, Integer> fatherByDeptId) {
+        if (depId == null) {
+            return null;
+        }
+        Integer cur = depId;
+        for (int i = 0; i < 48; i++) {
+            if (retailParents.contains(cur)) {
+                return cur;
+            }
+            Integer fa = fatherByDeptId.get(cur);
+            if (fa == null || Objects.equals(fa, cur) || Objects.equals(fa, 0)) {
+                return null;
+            }
+            cur = fa;
+        }
+        return null;
+    }
+
+    private static boolean inventoryPerStoreBreakoutIntent(String userMessage) {
+        if (StrUtil.isBlank(userMessage)) {
+            return false;
+        }
+        String u = userMessage;
+        return u.contains("每个店") || u.contains("各家店") || u.contains("各店") || u.contains("每家店")
+                || u.contains("分门店") || u.contains("按门店") || u.contains("各门店") || u.contains("门店分别")
+                || u.contains("店分别") || u.contains("所有店") || u.contains("全部门店") || u.contains("多店")
+                || u.contains("各分店") || u.contains("分店")
+                || u.contains("哪个部门") || u.contains("各部门") || u.contains("每个部门")
+                || u.contains("部门分别") || u.contains("按部门") || u.contains("分部门")
+                || u.contains("多部门") || u.contains("各部门");
+    }
+
+    /** 判断用户是否意图按「子部门」维度查看库存（而非门店维度）。 */
+    private static boolean inventoryPerDepartmentIntent(String userMessage) {
+        if (StrUtil.isBlank(userMessage)) {
+            return false;
+        }
+        String u = userMessage;
+        return u.contains("哪个部门") || u.contains("各部门") || u.contains("每个部门")
+                || u.contains("部门分别") || u.contains("按部门") || u.contains("分部门")
+                || u.contains("多部门") || u.contains("各部门")
+                || u.contains("哪个部门") || u.contains("后厨") || u.contains("前台")
+                || u.contains("凉菜") || u.contains("热菜")
+                || u.contains("哪个子部门") || u.contains("子部门");
+    }
+
+    /**
      * 当前部门在库批次汇总（仅作事实注入）。仅包含 {@code gb_dgs_rest_weight > 0} 的批次；「在库最久」类问法按批次日升序摘录。
      */
     private String queryInventorySnapshotForAi(Long departmentId, String userMessage) {
@@ -1715,13 +2091,30 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         if (ids == null || ids.isEmpty()) {
             return "【当前库存快照】\n- 展开部门列表为空，未查询。\n\n";
         }
+        RetailDepartmentResolve retailResolve = resolveRetailStoreDepartmentIdsForGroupAnalyticsDetailed(ids);
+        List<Integer> retailParents = retailResolve.ids();
+        Map<Integer, Integer> fatherByDeptId = buildDepartmentFatherMapForDistributer(scope.getDisIdForPurchaseQueries());
         List<GbDepartmentGoodsStockEntity> allRows = departmentGoodsStockMapper.selectList(
                 new LambdaQueryWrapper<GbDepartmentGoodsStockEntity>()
                         .and(w -> w.in(GbDepartmentGoodsStockEntity::getGbDgsGbDepartmentFatherId, ids)
                                 .or()
                                 .in(GbDepartmentGoodsStockEntity::getGbDgsGbDepartmentId, ids)));
         String scopeBullet = "- 查询范围：gb_dgs_gb_department_father_id ∈ 或 gb_dgs_gb_department_id ∈ AI 展开部门节点（共 "
-                + ids.size() + " 个 ID）";
+                + ids.size() + " 个 ID）\n"
+                + "- **门店口径**：父级门店（gb_department_father_id=0 且 gb_department_is_group_dep=1），共 "
+                + retailParents.size() + " 家；若为 0 家则表示当前展开范围内未命中父级门店节点。\n";
+        boolean multiRetail = retailParents.size() > 1;
+        boolean wantPerStore = multiRetail || inventoryPerStoreBreakoutIntent(userMessage);
+        // 新增：当 scope 包含子部门（非门店级）且用户意图为部门维度时，按子部门直接分组
+        boolean hasChildDepartments = ids.stream().anyMatch(id -> !retailParents.contains(id));
+        boolean wantPerDepartment = hasChildDepartments && inventoryPerDepartmentIntent(userMessage);
+        if (wantPerDepartment) {
+            return buildInventorySnapshotMarkdownWithDepartmentBreakout(allRows, scopeBullet, userMessage, ids, scope);
+        }
+        if (wantPerStore && !retailParents.isEmpty()) {
+            return buildInventorySnapshotMarkdownWithRetailBreakout(allRows, scopeBullet, userMessage, retailParents,
+                    fatherByDeptId, scope);
+        }
         return buildInventorySnapshotMarkdown(allRows, scopeBullet, userMessage);
     }
 
@@ -1760,6 +2153,18 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         }
         sb.append("- 剩余成本合计(仅重量>0批次): ¥").append(totalRest.setScale(2, RoundingMode.HALF_UP)).append("\n");
 
+        appendInventoryBatchExcerpt(sb, rows, userMessage);
+        sb.append("- 回答「库存还有多少钱/剩多少」时，**只能**引用本块「剩余成本合计」与「剩余重量>0 批次数」；不得用营业额、库存减少流水条数或其它段落臆造库存总额。\n");
+        boolean oldestFirst = inventoryOldestBatchIntent(userMessage);
+        if (oldestFirst) {
+            sb.append("- 回答「库存时间最长/库龄最长/在库最久」时：以本块**批次日最早**且**剩余重量>0**的批次为准；同一商品多批次会多行列出。\n");
+        }
+        sb.append("\n");
+        return sb.toString();
+    }
+
+    private void appendInventoryBatchExcerpt(StringBuilder sb, List<GbDepartmentGoodsStockEntity> rows,
+                                             String userMessage) {
         List<GbDepartmentGoodsStockEntity> sorted = new ArrayList<>(rows);
         boolean oldestFirst = inventoryOldestBatchIntent(userMessage);
         if (oldestFirst) {
@@ -1794,10 +2199,191 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                         .append("\n");
             }
         }
-        sb.append("- 回答「库存还有多少钱/剩多少」时，**只能**引用本块「剩余成本合计」与「剩余重量>0 批次数」；不得用营业额、库存减少流水条数或其它段落臆造库存总额。\n");
-        if (oldestFirst) {
-            sb.append("- 回答「库存时间最长/库龄最长/在库最久」时：以本块**批次日最早**且**剩余重量>0**的批次为准；同一商品多批次会多行列出。\n");
+    }
+
+    private static BigDecimal sumRestSubtotalForStockRows(List<GbDepartmentGoodsStockEntity> lst) {
+        BigDecimal s = BigDecimal.ZERO;
+        if (lst == null) {
+            return s;
         }
+        for (GbDepartmentGoodsStockEntity row : lst) {
+            String rest = row.getGbDgsRestSubtotal();
+            if (StrUtil.isEmpty(rest)) {
+                continue;
+            }
+            try {
+                s = s.add(new BigDecimal(rest.trim()));
+            } catch (Exception ignored) {
+            }
+        }
+        return s;
+    }
+
+    private Map<Integer, String> loadDepartmentNamesByIds(List<Integer> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        List<GbDepartmentEntity> rows = departmentMapper.selectList(
+                new LambdaQueryWrapper<GbDepartmentEntity>()
+                        .in(GbDepartmentEntity::getGbDepartmentId, ids)
+                        .select(GbDepartmentEntity::getGbDepartmentId, GbDepartmentEntity::getGbDepartmentName));
+        Map<Integer, String> m = new HashMap<>();
+        for (GbDepartmentEntity e : rows) {
+            if (e.getGbDepartmentId() != null) {
+                m.put(e.getGbDepartmentId(), StrUtil.blankToDefault(e.getGbDepartmentName(), "?"));
+            }
+        }
+        return m;
+    }
+
+    /**
+     * 按子部门（gb_dgs_gb_department_id）直接分组展示库存。
+     * 适用于用户问「哪个部门库存多」「各部门库存情况」等场景，
+     * 当 scope 展开结果中包含 is_group_dep=0 的子部门时走此路径。
+     */
+    private String buildInventorySnapshotMarkdownWithDepartmentBreakout(List<GbDepartmentGoodsStockEntity> allRows,
+            String scopeBullet, String userMessage, List<Integer> scopeDeptIds, AiQueryScope scope) {
+        // 过滤 rest_weight > 0
+        List<GbDepartmentGoodsStockEntity> pos = new ArrayList<>();
+        for (GbDepartmentGoodsStockEntity row : allRows) {
+            if (isPositiveRestWeight(row)) {
+                pos.add(row);
+            }
+        }
+
+        // 按 gb_dgs_gb_department_id 分组
+        Map<Integer, List<GbDepartmentGoodsStockEntity>> byDept = new LinkedHashMap<>();
+        Set<Integer> deptIdsInData = new HashSet<>();
+        for (GbDepartmentGoodsStockEntity row : pos) {
+            Integer did = row.getGbDgsGbDepartmentId();
+            if (did != null && did > 0) {
+                byDept.computeIfAbsent(did, k -> new ArrayList<>()).add(row);
+                deptIdsInData.add(did);
+            } else {
+                // 没有 department_id 的行归入「未归属部门」
+                byDept.computeIfAbsent(0, k -> new ArrayList<>()).add(row);
+            }
+        }
+
+        // 加载部门名称（只查实际有数据的 + scope 中的）
+        Set<Integer> nameLookupIds = new HashSet<>(deptIdsInData);
+        nameLookupIds.addAll(scopeDeptIds);
+        Map<Integer, String> depNames = loadDepartmentNamesByIds(new ArrayList<>(nameLookupIds));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("【当前库存快照】\n");
+        sb.append("- 口径：**仅统计 gb_dgs_rest_weight > 0 的批次**（仍有剩余实物重量；重量为 0 或未回填则视为无库存，不参与排行与金额汇总）。\n");
+        sb.append("- 剩余成本：gb_dgs_rest_subtotal；与「本月入库/出库条数」无直接换算关系。\n");
+        sb.append("- **批次供货属性**：字段 **gb_dgs_nx_supplier_id**：**-1**=自采；**正整数**=供货商配送。\n");
+        sb.append("- **按子部门拆分**：每批库存按 `gb_dgs_gb_department_id` 直接归属到具体子部门。\n");
+        sb.append(scopeBullet).append("\n");
+        sb.append("- 部门条件命中的库存行数(含剩余重量≤0): ").append(allRows.size()).append("\n");
+        sb.append("- 剩余重量>0 的批次数: ").append(pos.size()).append("\n");
+
+        BigDecimal grandTotal = BigDecimal.ZERO;
+        sb.append("- **按子部门汇总**（剩余 weight&gt;0；批次数 / 剩余成本合计）：\n");
+
+        // 按 scope 中部门的顺序排列，保证输出稳定
+        List<Integer> orderedDeptIds = new ArrayList<>();
+        for (Integer sid : scopeDeptIds) {
+            if (byDept.containsKey(sid)) {
+                orderedDeptIds.add(sid);
+            }
+        }
+        // 补充数据中有但 scope 列表中没有的
+        for (Integer did : byDept.keySet()) {
+            if (!orderedDeptIds.contains(did)) {
+                orderedDeptIds.add(did);
+            }
+        }
+
+        for (Integer did : orderedDeptIds) {
+            List<GbDepartmentGoodsStockEntity> lst = byDept.getOrDefault(did, List.of());
+            BigDecimal sub = sumRestSubtotalForStockRows(lst);
+            grandTotal = grandTotal.add(sub);
+            String nm = did == 0 ? "未归属部门" : depNames.getOrDefault(did, "部门(id=" + did + ")");
+            sb.append("  - ").append(nm).append(" (department_id=").append(did).append(") 批次数 ")
+                    .append(lst.size()).append("，剩余成本合计 ¥")
+                    .append(sub.setScale(2, RoundingMode.HALF_UP)).append("\n");
+        }
+        sb.append("- **全部门（本查询条件）剩余成本合计**: ¥").append(grandTotal.setScale(2, RoundingMode.HALF_UP))
+                .append("\n");
+
+        appendInventoryBatchExcerpt(sb, pos, userMessage);
+        sb.append("- 回答「每个部门剩多少 / 哪个部门库存多」时：**逐条引用**上文「按子部门汇总」；不得改写为「只有门店总数」。\n");
+        sb.append("\n");
+        return sb.toString();
+    }
+
+    private String buildInventorySnapshotMarkdownWithRetailBreakout(List<GbDepartmentGoodsStockEntity> allRows,
+            String scopeBullet, String userMessage, List<Integer> retailParents,
+            Map<Integer, Integer> fatherByDeptId, AiQueryScope scope) {
+        Set<Integer> retailSet = new HashSet<>(retailParents);
+        Map<Integer, String> depNames = loadDepartmentNamesByIds(retailParents);
+        List<Integer> orderedRetail = new ArrayList<>(retailParents);
+        orderedRetail.sort(Comparator.comparing(id -> depNames.getOrDefault(id, String.valueOf(id))));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("【当前库存快照】\n");
+        sb.append("- 口径：**仅统计 gb_dgs_rest_weight > 0 的批次**（仍有剩余实物重量；重量为 0 或未回填则视为无库存，不参与排行与金额汇总）。\n");
+        sb.append("- 剩余成本：gb_dgs_rest_subtotal；与「本月入库/出库条数」无直接换算关系。\n");
+        sb.append("- **批次供货属性**：字段 **gb_dgs_nx_supplier_id**：**-1**=自采；**正整数**=供货商配送。\n");
+        sb.append("- **按门店拆分**：门店行 = **父级门店**（`gb_department_is_group_dep=1`）；每批库存按 `gb_dgs_gb_department_id` / `gb_dgs_gb_department_father_id` 沿部门父链归属到上述门店。\n");
+        sb.append(scopeBullet).append("\n");
+        if (scope.getDisIdForPurchaseQueries() <= 0) {
+            sb.append("- 提示：当前 **采购 disId=0**，若无法沿父链归类，更多批次会落入「未归入上列门店」。\n");
+        }
+        sb.append("- 部门条件命中的库存行数(含剩余重量≤0): ").append(allRows.size()).append("\n");
+
+        List<GbDepartmentGoodsStockEntity> pos = new ArrayList<>();
+        for (GbDepartmentGoodsStockEntity row : allRows) {
+            if (isPositiveRestWeight(row)) {
+                pos.add(row);
+            }
+        }
+        sb.append("- 剩余重量>0 的批次数: ").append(pos.size()).append("\n");
+
+        Map<Integer, List<GbDepartmentGoodsStockEntity>> byRetail = new LinkedHashMap<>();
+        for (Integer rid : orderedRetail) {
+            byRetail.put(rid, new ArrayList<>());
+        }
+        List<GbDepartmentGoodsStockEntity> unassigned = new ArrayList<>();
+        for (GbDepartmentGoodsStockEntity row : pos) {
+            Integer sid = walkDepartmentIdToRetailParent(row.getGbDgsGbDepartmentId(), retailSet, fatherByDeptId);
+            if (sid == null) {
+                sid = walkDepartmentIdToRetailParent(row.getGbDgsGbDepartmentFatherId(), retailSet, fatherByDeptId);
+            }
+            if (sid == null) {
+                unassigned.add(row);
+            } else {
+                byRetail.computeIfAbsent(sid, k -> new ArrayList<>()).add(row);
+            }
+        }
+
+        BigDecimal grandTotal = BigDecimal.ZERO;
+        sb.append("- **按父级门店汇总**（剩余重量>0；批次数 / 剩余成本合计）：\n");
+        for (Integer rid : orderedRetail) {
+            List<GbDepartmentGoodsStockEntity> lst = byRetail.getOrDefault(rid, List.of());
+            BigDecimal sub = sumRestSubtotalForStockRows(lst);
+            grandTotal = grandTotal.add(sub);
+            String nm = depNames.getOrDefault(rid, "门店");
+            sb.append("  - ").append(nm).append(" (父级门店 id=").append(rid).append(") 批次数 ")
+                    .append(lst.size()).append("，剩余成本合计 ¥")
+                    .append(sub.setScale(2, RoundingMode.HALF_UP)).append("\n");
+        }
+        BigDecimal unSub = sumRestSubtotalForStockRows(unassigned);
+        grandTotal = grandTotal.add(unSub);
+        if (!unassigned.isEmpty()) {
+            sb.append("  - **未归入上列父级门店**：批次数 ").append(unassigned.size())
+                    .append("，剩余成本合计 ¥").append(unSub.setScale(2, RoundingMode.HALF_UP))
+                    .append("（多为非门店部门、或部门父链未与批发商部门表对齐）\n");
+        }
+        sb.append("- **全集团（本查询条件）剩余成本合计**: ¥").append(grandTotal.setScale(2, RoundingMode.HALF_UP))
+                .append("\n");
+
+        appendInventoryBatchExcerpt(sb, pos, userMessage);
+        sb.append("- 回答「每个店剩多少」时：**逐条引用**上文「按父级门店汇总」；不得改写为「只有集团总数」。\n");
+        sb.append("- 回答「库存还有多少钱」时可引用全集团合计；与按店行之和应一致。\n");
         sb.append("\n");
         return sb.toString();
     }
@@ -2024,7 +2610,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         if (SkillRouteFallback.shouldAttachReorderHabitFacts(userMessage)) {
             Long habitAnchor = scope.getDepartmentFatherId() != null
                     ? scope.getDepartmentFatherId()
-                    : scope.profileAnchorDepartmentId();
+                    : scope.memoryAnchorDepartmentId();
             int dep = departmentIdAsIntOrSentinel(habitAnchor);
             if (dep != Integer.MIN_VALUE) {
                 sb.append(gbDepartmentReorderReminderService.buildAiReorderHabitFactsMarkdown(dep, null, null, 25));
@@ -2165,6 +2751,43 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             }
         }
         sb.append("- 本月采购金额合计(gb_DPG_buy_subtotal): ¥").append(monthTotal.setScale(2, RoundingMode.HALF_UP)).append("\n");
+
+        // 集团模式：按门店拆分采购金额
+        if (scope.getMode() == AiConversationScopeMode.GROUP && !rows.isEmpty()) {
+            List<Integer> retailParents = resolveRetailStoreDepartmentIdsForGroupAnalyticsDetailed(
+                    scope.getResolvedDepartmentIds()).ids();
+            if (!retailParents.isEmpty()) {
+                Map<Integer, Integer> fatherByDept = buildDepartmentFatherMapForDistributer(disId);
+                Set<Integer> retailSet = new HashSet<>(retailParents);
+                Map<Integer, BigDecimal> purchaseByStore = new HashMap<>();
+                for (Integer rp : retailParents) {
+                    purchaseByStore.put(rp, BigDecimal.ZERO);
+                }
+                for (GbDistributerPurchaseGoodsEntity r : rows) {
+                    Integer depId = r.getGbDpgPurchaseDepartmentId();
+                    if (depId == null) continue;
+                    Integer retailParent = walkDepartmentIdToRetailParent(depId, retailSet, fatherByDept);
+                    if (retailParent != null) {
+                        String sub = r.getGbDpgBuySubtotal();
+                        if (StrUtil.isNotBlank(sub)) {
+                            try {
+                                purchaseByStore.merge(retailParent, new BigDecimal(sub.trim()), BigDecimal::add);
+                            } catch (Exception ignored) {
+                            }
+                        }
+                    }
+                }
+                Map<Integer, String> names = loadDepartmentNamesByIds(retailParents);
+                List<Integer> sortedStores = new ArrayList<>(retailParents);
+                sortedStores.sort(Comparator.comparing(id -> names.getOrDefault(id, String.valueOf(id))));
+                sb.append("- **按门店拆分采购金额**：\n");
+                for (Integer sid : sortedStores) {
+                    BigDecimal amt = purchaseByStore.getOrDefault(sid, BigDecimal.ZERO);
+                    sb.append("  - ").append(names.getOrDefault(sid, "门店" + sid))
+                            .append("：¥").append(amt.setScale(2, RoundingMode.HALF_UP)).append("\n");
+                }
+            }
+        }
 
         List<Map.Entry<Integer, BigDecimal>> top = byGoods.entrySet().stream()
                 .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
@@ -2372,7 +2995,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         sb.append("- **范围**：本月 **向配送商/供货商订货**的入库商品行（系统字段 `gb_DPG_purchase_type=5`）。**对老板口语回复**：只说「配送商/供货商订货」，**勿**复述 `type=5`、`gb_DPG_*` 等内部代码。\n");
         sb.append("- **供货字段**：入库行 **gb_DPG_purchase_nx_supplier_id** 与同批次 **gb_dgs_nx_supplier_id** 对齐：正整数=供货商 ID；-1 表示自采（本块一般为供货商）。\n");
         if (scope.getMode() == AiConversationScopeMode.GROUP) {
-            sb.append("- **统计范围（集团）**：全批发商 `gb_DPG_distributer_id`，不按采购部门收窄。\n");
+            sb.append("- **统计范围（集团）**：同批发商下，`gb_DPG_purchase_department_id` ∈ AI 展开部门节点。\n");
         } else {
             sb.append("- **统计范围（单店）**：同批发商下，且 `gb_DPG_purchase_department_id` ∈ 门店展开部门。\n");
         }
@@ -2396,7 +3019,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 .isNotNull(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate)
                 .ge(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d0)
                 .le(GbDistributerPurchaseGoodsEntity::getGbDpgStockFinishDate, d1);
-        if (scope.getMode() == AiConversationScopeMode.STORE && !scope.getResolvedDepartmentIds().isEmpty()) {
+        if (!scope.getResolvedDepartmentIds().isEmpty()) {
             qw.in(GbDistributerPurchaseGoodsEntity::getGbDpgPurchaseDepartmentId, scope.getResolvedDepartmentIds());
         }
         List<GbDistributerPurchaseGoodsEntity> rows = distributerPurchaseGoodsMapper.selectList(qw);
@@ -2404,6 +3027,43 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         log.info("[AI-SUPPLIER-ORDER] scopeMode={} disId={} type=5 rows={}", scope.getMode(), disId, rows.size());
         sb.append("- 批发商 ID: ").append(disId).append("\n");
         sb.append("- 匹配配送商/供货商订货入库行数: ").append(rows.size()).append("\n");
+
+        // 集团模式：按门店拆分供货商订货采购金额
+        if (scope.getMode() == AiConversationScopeMode.GROUP && !rows.isEmpty()) {
+            Map<Integer, BigDecimal> orderByStore = new HashMap<>();
+            List<Integer> retailParents = resolveRetailStoreDepartmentIdsForGroupAnalyticsDetailed(
+                    scope.getResolvedDepartmentIds()).ids();
+            if (!retailParents.isEmpty()) {
+                Map<Integer, Integer> fatherByDept = buildDepartmentFatherMapForDistributer(disId);
+                Set<Integer> retailSet = new HashSet<>(retailParents);
+                for (Integer rp : retailParents) {
+                    orderByStore.put(rp, BigDecimal.ZERO);
+                }
+                for (GbDistributerPurchaseGoodsEntity r : rows) {
+                    Integer depId = r.getGbDpgPurchaseDepartmentId();
+                    if (depId == null) continue;
+                    Integer retailParent = walkDepartmentIdToRetailParent(depId, retailSet, fatherByDept);
+                    if (retailParent != null) {
+                        String sub = r.getGbDpgBuySubtotal();
+                        if (StrUtil.isNotBlank(sub)) {
+                            try {
+                                orderByStore.merge(retailParent, new BigDecimal(sub.trim()), BigDecimal::add);
+                            } catch (Exception ignored) {
+                            }
+                        }
+                    }
+                }
+                Map<Integer, String> names = loadDepartmentNamesByIds(retailParents);
+                List<Integer> sortedStores = new ArrayList<>(retailParents);
+                sortedStores.sort(Comparator.comparing(id -> names.getOrDefault(id, String.valueOf(id))));
+                sb.append("- **按门店拆分供货商订货金额**：\n");
+                for (Integer sid : sortedStores) {
+                    BigDecimal amt = orderByStore.getOrDefault(sid, BigDecimal.ZERO);
+                    sb.append("  - ").append(names.getOrDefault(sid, "门店" + sid))
+                            .append("：¥").append(amt.setScale(2, RoundingMode.HALF_UP)).append("\n");
+                }
+            }
+        }
 
         Map<Integer, BigDecimal> byGoodsSubtotal = new HashMap<>();
         Map<Integer, BigDecimal> maxUnitPriceByGoods = new HashMap<>();
@@ -2603,7 +3263,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 return b.vol().spread().compareTo(a.vol().spread());
             });
 
-            logDeptScopedPurchaseVolatilityDiag(scope.profileAnchorDepartmentId(), disId, rootDep, d0, d1);
+            logDeptScopedPurchaseVolatilityDiag(scope.memoryAnchorDepartmentId(), disId, rootDep, d0, d1);
 
             sb.append("- 批发商 ID: ").append(disId).append("\n");
             sb.append("- **核验规则**：逐行读取 **gb_DPG_buy_price**；至少两种不同入库单价才上榜。排名按核验后的相对波动降序。\n");
@@ -3006,6 +3666,44 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             }
         }
         sb.append("- 本月自采金额合计(gb_DPG_buy_subtotal): ¥").append(total.setScale(2, RoundingMode.HALF_UP)).append("\n");
+
+        // 集团模式：按门店拆分自采金额
+        if (scope.getMode() == AiConversationScopeMode.GROUP && !rows.isEmpty()) {
+            List<Integer> retailParents = resolveRetailStoreDepartmentIdsForGroupAnalyticsDetailed(
+                    scope.getResolvedDepartmentIds()).ids();
+            if (!retailParents.isEmpty()) {
+                Map<Integer, Integer> fatherByDept = buildDepartmentFatherMapForDistributer(disId);
+                Set<Integer> retailSet = new HashSet<>(retailParents);
+                Map<Integer, BigDecimal> selfPurchaseByStore = new HashMap<>();
+                for (Integer rp : retailParents) {
+                    selfPurchaseByStore.put(rp, BigDecimal.ZERO);
+                }
+                for (GbDistributerPurchaseGoodsEntity r : rows) {
+                    Integer depId = r.getGbDpgPurchaseDepartmentId();
+                    if (depId == null) continue;
+                    Integer retailParent = walkDepartmentIdToRetailParent(depId, retailSet, fatherByDept);
+                    if (retailParent != null) {
+                        String sub = r.getGbDpgBuySubtotal();
+                        if (StrUtil.isNotBlank(sub)) {
+                            try {
+                                selfPurchaseByStore.merge(retailParent, new BigDecimal(sub.trim()), BigDecimal::add);
+                            } catch (Exception ignored) {
+                            }
+                        }
+                    }
+                }
+                Map<Integer, String> names = loadDepartmentNamesByIds(retailParents);
+                List<Integer> sortedStores = new ArrayList<>(retailParents);
+                sortedStores.sort(Comparator.comparing(id -> names.getOrDefault(id, String.valueOf(id))));
+                sb.append("- **按门店拆分自采金额**：\n");
+                for (Integer sid : sortedStores) {
+                    BigDecimal amt = selfPurchaseByStore.getOrDefault(sid, BigDecimal.ZERO);
+                    sb.append("  - ").append(names.getOrDefault(sid, "门店" + sid))
+                            .append("：¥").append(amt.setScale(2, RoundingMode.HALF_UP)).append("\n");
+                }
+            }
+        }
+
         List<Map.Entry<Integer, BigDecimal>> top = byGoods.entrySet().stream()
                 .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
                 .limit(5)
@@ -3107,6 +3805,45 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         sb.append("- 未结退货批次数: ").append(returnRows.size()).append("，小计: ¥")
                 .append(unPayReturn.setScale(2, RoundingMode.HALF_UP)).append("\n");
         sb.append("- **净未结账款（应付供货商）**: ¥").append(net).append("\n");
+
+        // 集团模式：按门店拆分未结账款
+        if (scope.getMode() == AiConversationScopeMode.GROUP && !depIds.isEmpty()) {
+            List<Integer> retailParents = resolveRetailStoreDepartmentIdsForGroupAnalyticsDetailed(
+                    scope.getResolvedDepartmentIds()).ids();
+            if (!retailParents.isEmpty()) {
+                Map<Integer, Integer> fatherByDept = buildDepartmentFatherMapForDistributer(disId);
+                Set<Integer> retailSet = new HashSet<>(retailParents);
+                Map<Integer, BigDecimal> unsettledByStore = new HashMap<>();
+                for (Integer rp : retailParents) {
+                    unsettledByStore.put(rp, BigDecimal.ZERO);
+                }
+                for (GbDistributerPurchaseBatchEntity b : normalRows) {
+                    Integer depId = b.getGbDpbPurDepartmentId();
+                    if (depId == null) continue;
+                    Integer retailParent = walkDepartmentIdToRetailParent(depId, retailSet, fatherByDept);
+                    if (retailParent != null) {
+                        unsettledByStore.merge(retailParent, parseMoneyField(b.getGbDpbSubtotal()), BigDecimal::add);
+                    }
+                }
+                for (GbDistributerPurchaseBatchEntity b : returnRows) {
+                    Integer depId = b.getGbDpbPurDepartmentId();
+                    if (depId == null) continue;
+                    Integer retailParent = walkDepartmentIdToRetailParent(depId, retailSet, fatherByDept);
+                    if (retailParent != null) {
+                        unsettledByStore.merge(retailParent, parseMoneyField(b.getGbDpbSubtotal()), (old, v) -> old.subtract(v));
+                    }
+                }
+                Map<Integer, String> names = loadDepartmentNamesByIds(retailParents);
+                List<Integer> sortedStores = new ArrayList<>(retailParents);
+                sortedStores.sort(Comparator.comparing(id -> names.getOrDefault(id, String.valueOf(id))));
+                sb.append("- **按门店拆分净未结账款**：\n");
+                for (Integer sid : sortedStores) {
+                    BigDecimal amt = unsettledByStore.getOrDefault(sid, BigDecimal.ZERO);
+                    sb.append("  - ").append(names.getOrDefault(sid, "门店" + sid))
+                            .append("：¥").append(amt.setScale(2, RoundingMode.HALF_UP)).append("\n");
+                }
+            }
+        }
 
         Map<Integer, BigDecimal> netBySupplier = new HashMap<>();
         for (GbDistributerPurchaseBatchEntity b : normalRows) {
@@ -3499,6 +4236,246 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                 .collect(Collectors.joining(", "));
     }
 
+    private static BigDecimal bigDecimalFromAggMap(Map<String, Object> row, String key) {
+        if (row == null) {
+            return BigDecimal.ZERO;
+        }
+        Object o = row.get(key);
+        if (o == null) {
+            return BigDecimal.ZERO;
+        }
+        if (o instanceof BigDecimal) {
+            return (BigDecimal) o;
+        }
+        if (o instanceof Number) {
+            return BigDecimal.valueOf(((Number) o).doubleValue());
+        }
+        try {
+            return new BigDecimal(o.toString().trim());
+        } catch (Exception e) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private static long longFromAggMap(Map<String, Object> row, String key) {
+        if (row == null) {
+            return 0L;
+        }
+        Object o = row.get(key);
+        if (o == null) {
+            return 0L;
+        }
+        if (o instanceof Number) {
+            return ((Number) o).longValue();
+        }
+        try {
+            return Long.parseLong(o.toString().trim());
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    private static LocalDate localDateFromAggMap(Map<String, Object> row, String key) {
+        if (row == null) {
+            return null;
+        }
+        Object o = row.get(key);
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof LocalDate) {
+            return (LocalDate) o;
+        }
+        if (o instanceof java.sql.Date) {
+            return ((java.sql.Date) o).toLocalDate();
+        }
+        if (o instanceof Date) {
+            return ((Date) o).toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+        }
+        try {
+            return LocalDate.parse(o.toString().trim().substring(0, Math.min(10, o.toString().trim().length())));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 集团/多部门：单条 SQL 聚合营业额，避免 {@code selectList(IN 全集团部门)} 拖死线程。
+     * 日营收多记在子部门：先将范围节点按批发商组织架构**展开为子树**再聚合。
+     */
+    private String queryRevenueDataMultiDepartmentAggregated(List<Integer> deptIds, LocalDate monthStart,
+                                                            LocalDate monthEnd, List<Long> qidsEcho, int disIdHint) {
+        int disId = resolveDistributerIdForDepartmentExpansion(disIdHint, deptIds);
+        List<Integer> revenueDeptIds = expandDepartmentSubtreeIdsForRevenue(disId, deptIds);
+        if (revenueDeptIds.isEmpty()) {
+            return "【营业额数据（所选区间）】(" + monthStart + " 至 " + monthEnd + ")\n"
+                    + "- 查询范围：部门展开后为空，未查询。\n\n";
+        }
+        Map<String, Object> agg = dailyRevenueMapper.selectRevenueWindowAggregateForDepartmentIds(
+                revenueDeptIds, monthStart, monthEnd);
+        long rowCount = longFromAggMap(agg, "revenueRowCount");
+        log.info("营收查询(多部门聚合): scopeNodes={} revenueDeptNodes={} revenueRows={} distinctDates={}",
+                deptIds.size(), revenueDeptIds.size(), rowCount, longFromAggMap(agg, "distinctRecordDates"));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("【营业额数据（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        sb.append("- 查询范围：范围节点 ID ").append(qidsEcho).append("（").append(deptIds.size())
+                .append(" 个）→ 日营收子树展开后 gb_ai_daily_revenue_department_id IN 共 ")
+                .append(revenueDeptIds.size()).append(" 个部门；已 SQL 聚合，未拉取逐行明细；")
+                .append("**日营收行多数挂在子部门**）。\n");
+        if (rowCount <= 0) {
+            sb.append("- 该区间内暂无 gb_ai_daily_revenue 营业额明细\n\n");
+            return sb.toString();
+        }
+        BigDecimal totalDineIn = bigDecimalFromAggMap(agg, "totalDineIn");
+        BigDecimal totalTakeout = bigDecimalFromAggMap(agg, "totalTakeout");
+        BigDecimal totalPlatformFee = bigDecimalFromAggMap(agg, "totalPlatformFee");
+        BigDecimal totalRevenue = totalDineIn.add(totalTakeout).subtract(totalPlatformFee);
+        long spanDays = inclusiveDaySpan(monthStart, monthEnd);
+        long distinctDays = longFromAggMap(agg, "distinctRecordDates");
+        double denom = distinctDays > 0 ? distinctDays : rowCount;
+        double avgDaily = totalRevenue.doubleValue() / denom;
+        sb.append("- 区间内日历天数（首尾包含）: ").append(spanDays).append(" 天\n");
+        sb.append("- 表中有营收记录的**不同日期**数: ").append(distinctDays).append(" 天（明细行数 ")
+                .append(rowCount).append("；多部门同日可能多行）\n");
+        LocalDate minD = localDateFromAggMap(agg, "minRecordDate");
+        LocalDate maxD = localDateFromAggMap(agg, "maxRecordDate");
+        if (minD != null && maxD != null) {
+            sb.append("- 有营业额记录的日期范围: ").append(minD).append(" ～ ").append(maxD)
+                    .append("（完整日内枚举略，防集团数据量过大）\n");
+        }
+        LocalDate today = LocalDate.now();
+        if (monthStart.equals(today.withDayOfMonth(1)) && monthEnd.equals(today)) {
+            sb.append("- 说明：区间为当前自然月截至今日（本月日历已过 ").append(today.getDayOfMonth()).append(" 天）\n");
+        }
+        sb.append("- 堂食营收: ¥").append(totalDineIn).append(", 外卖营收: ¥").append(totalTakeout).append("\n");
+        sb.append("- 平台抽成: ¥").append(totalPlatformFee).append(", 区间总营收: ¥").append(totalRevenue).append("\n");
+        sb.append("- 日均营收（按有记录的不同日期数）: ¥").append(String.format("%.2f", avgDaily)).append("\n\n");
+        return sb.toString();
+    }
+
+    private String queryRevenueDataBriefMultiDepartmentAggregated(List<Integer> deptIds, LocalDate monthStart,
+                                                                 LocalDate monthEnd, List<Long> qidsEcho, int disIdHint) {
+        int disId = resolveDistributerIdForDepartmentExpansion(disIdHint, deptIds);
+        List<Integer> revenueDeptIds = expandDepartmentSubtreeIdsForRevenue(disId, deptIds);
+        if (revenueDeptIds.isEmpty()) {
+            return "【营收概况（所选区间）】(" + monthStart + " 至 " + monthEnd + ")\n"
+                    + "- 查询范围：部门展开后为空。\n\n";
+        }
+        Map<String, Object> agg = dailyRevenueMapper.selectRevenueWindowAggregateForDepartmentIds(
+                revenueDeptIds, monthStart, monthEnd);
+        long rowCount = longFromAggMap(agg, "revenueRowCount");
+        StringBuilder sb = new StringBuilder();
+        sb.append("【营收概况（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        sb.append("- 查询范围：节点 ").append(qidsEcho).append(" → 日营收纳管子树共 ")
+                .append(revenueDeptIds.size()).append(" 个部门（SQL 聚合；子部门记账）\n");
+        if (rowCount <= 0) {
+            sb.append("- 该区间内暂无营业额明细\n\n");
+            return sb.toString();
+        }
+        BigDecimal totalDineIn = bigDecimalFromAggMap(agg, "totalDineIn");
+        BigDecimal totalTakeout = bigDecimalFromAggMap(agg, "totalTakeout");
+        BigDecimal totalPlatformFee = bigDecimalFromAggMap(agg, "totalPlatformFee");
+        BigDecimal totalRevenue = totalDineIn.add(totalTakeout).subtract(totalPlatformFee);
+        long spanDays = inclusiveDaySpan(monthStart, monthEnd);
+        long distinctDays = longFromAggMap(agg, "distinctRecordDates");
+        double denom = distinctDays > 0 ? distinctDays : rowCount;
+        double avgDaily = totalRevenue.doubleValue() / denom;
+        LocalDate minD = localDateFromAggMap(agg, "minRecordDate");
+        LocalDate maxD = localDateFromAggMap(agg, "maxRecordDate");
+        sb.append("- 区间内日历天数（首尾包含）: ").append(spanDays).append(" 天；有营收记录的**不同日期**: ")
+                .append(distinctDays).append(" 天（行数 ").append(rowCount).append("）\n");
+        if (minD != null && maxD != null) {
+            sb.append("- 日期范围: ").append(minD).append(" ～ ").append(maxD).append("\n");
+        }
+        sb.append("- 区间总营收: ¥").append(totalRevenue).append(", 日均（按不同日期）: ¥")
+                .append(String.format("%.2f", avgDaily)).append("\n\n");
+        return sb.toString();
+    }
+
+    /**
+     * 集团整户日营收：直接按分销商 ID 聚合，避免部门列表与子树重复展开。
+     */
+    private String queryRevenueDataGroupDistributerWide(AiQueryScope scope, LocalDate monthStart,
+                                                        LocalDate monthEnd) {
+        int disId = scope.getDisIdForPurchaseQueries();
+        Map<String, Object> agg = dailyRevenueMapper.selectRevenueWindowAggregateForDistributerId(
+                disId, monthStart, monthEnd);
+        long rowCount = longFromAggMap(agg, "revenueRowCount");
+        log.info("营收查询(集团DIS聚合): disId={} revenueRows={} distinctDates={}",
+                disId, rowCount, longFromAggMap(agg, "distinctRecordDates"));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("【营业额数据（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        sb.append("- 查询范围：**集团会话整户** — 按 **gb_ai_daily_revenue_distributer_id=").append(disId)
+                .append("** SQL 聚合（不按部门清单 IN / 不按组织子树扩展；用户可见范围未被收窄为集团子集时生效）。\n");
+        if (rowCount <= 0) {
+            sb.append("- 该区间内暂无 gb_ai_daily_revenue 营业额明细\n\n");
+            return sb.toString();
+        }
+        BigDecimal totalDineIn = bigDecimalFromAggMap(agg, "totalDineIn");
+        BigDecimal totalTakeout = bigDecimalFromAggMap(agg, "totalTakeout");
+        BigDecimal totalPlatformFee = bigDecimalFromAggMap(agg, "totalPlatformFee");
+        BigDecimal totalRevenue = totalDineIn.add(totalTakeout).subtract(totalPlatformFee);
+        long spanDays = inclusiveDaySpan(monthStart, monthEnd);
+        long distinctDays = longFromAggMap(agg, "distinctRecordDates");
+        double denom = distinctDays > 0 ? distinctDays : rowCount;
+        double avgDaily = totalRevenue.doubleValue() / denom;
+        sb.append("- 区间内日历天数（首尾包含）: ").append(spanDays).append(" 天\n");
+        sb.append("- 表中有营收记录的**不同日期**数: ").append(distinctDays).append(" 天（明细行数 ")
+                .append(rowCount).append("；多日多行时已在此聚合）\n");
+        LocalDate minD = localDateFromAggMap(agg, "minRecordDate");
+        LocalDate maxD = localDateFromAggMap(agg, "maxRecordDate");
+        if (minD != null && maxD != null) {
+            sb.append("- 有营业额记录的日期范围: ").append(minD).append(" ～ ").append(maxD)
+                    .append("（完整日内枚举略，防集团数据量过大）\n");
+        }
+        LocalDate today = LocalDate.now();
+        if (monthStart.equals(today.withDayOfMonth(1)) && monthEnd.equals(today)) {
+            sb.append("- 说明：区间为当前自然月截至今日（本月日历已过 ").append(today.getDayOfMonth()).append(" 天）\n");
+        }
+        sb.append("- 堂食营收: ¥").append(totalDineIn).append(", 外卖营收: ¥").append(totalTakeout).append("\n");
+        sb.append("- 平台抽成: ¥").append(totalPlatformFee).append(", 区间总营收: ¥").append(totalRevenue).append("\n");
+        sb.append("- 日均营收（按有记录的不同日期数）: ¥").append(String.format("%.2f", avgDaily)).append("\n\n");
+        return sb.toString();
+    }
+
+    /**
+     * 集团整户简要日营收。
+     */
+    private String queryRevenueDataBriefGroupDistributerWide(AiQueryScope scope, LocalDate monthStart,
+                                                             LocalDate monthEnd) {
+        int disId = scope.getDisIdForPurchaseQueries();
+        Map<String, Object> agg = dailyRevenueMapper.selectRevenueWindowAggregateForDistributerId(
+                disId, monthStart, monthEnd);
+        long rowCount = longFromAggMap(agg, "revenueRowCount");
+        StringBuilder sb = new StringBuilder();
+        sb.append("【营收概况（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
+        sb.append("- 查询范围：**集团会话整户** — disId=").append(disId).append("（按日营收分销商列聚合）。\n");
+        if (rowCount <= 0) {
+            sb.append("- 该区间内暂无营业额明细\n\n");
+            return sb.toString();
+        }
+        BigDecimal totalDineIn = bigDecimalFromAggMap(agg, "totalDineIn");
+        BigDecimal totalTakeout = bigDecimalFromAggMap(agg, "totalTakeout");
+        BigDecimal totalPlatformFee = bigDecimalFromAggMap(agg, "totalPlatformFee");
+        BigDecimal totalRevenue = totalDineIn.add(totalTakeout).subtract(totalPlatformFee);
+        long spanDays = inclusiveDaySpan(monthStart, monthEnd);
+        long distinctDays = longFromAggMap(agg, "distinctRecordDates");
+        double denom = distinctDays > 0 ? distinctDays : rowCount;
+        double avgDaily = totalRevenue.doubleValue() / denom;
+        LocalDate minD = localDateFromAggMap(agg, "minRecordDate");
+        LocalDate maxD = localDateFromAggMap(agg, "maxRecordDate");
+        sb.append("- 区间内日历天数（首尾包含）: ").append(spanDays).append(" 天；有营收记录的**不同日期**: ")
+                .append(distinctDays).append(" 天（行数 ").append(rowCount).append("）\n");
+        if (minD != null && maxD != null) {
+            sb.append("- 日期范围: ").append(minD).append(" ～ ").append(maxD).append("\n");
+        }
+        sb.append("- 区间总营收: ¥").append(totalRevenue).append(", 日均（按不同日期）: ¥")
+                .append(String.format("%.2f", avgDaily)).append("\n\n");
+        return sb.toString();
+    }
+
     /**
      * 查询营收数据
      */
@@ -3506,9 +4483,27 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         StringBuilder sb = new StringBuilder();
         sb.append("【营业额数据（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
 
+        int anchorDep = departmentIdAsIntOrSentinel(departmentId);
+        if (anchorDep == Integer.MIN_VALUE) {
+            sb.append("- 部门 ID 无效，未查询。\n\n");
+            return sb.toString();
+        }
+        int disId = resolveDistributerIdForDepartmentExpansion(0, List.of(anchorDep));
+        List<Integer> revenueDeptIds = expandDepartmentSubtreeIdsForRevenue(disId, List.of(anchorDep));
+        if (revenueDeptIds.isEmpty()) {
+            sb.append("- 部门子树展开为空，未查询。\n\n");
+            return sb.toString();
+        }
+        boolean subtreeNote = revenueDeptIds.size() > 1
+                || !revenueDeptIds.get(0).equals(anchorDep);
+        if (subtreeNote) {
+            sb.append("- **日营收口径**：`gb_ai_daily_revenue_department_id` 多在子部门；已按锚点部门 **")
+                    .append(anchorDep).append("** 展开子树共 ").append(revenueDeptIds.size())
+                    .append(" 个部门汇总。\n");
+        }
         List<GbAiDailyRevenueEntity> revenues = dailyRevenueMapper.selectList(
                 new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
-                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, departmentId)
+                        .in(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, revenueDeptIds)
                         .between(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, monthStart, monthEnd)
                         .orderByAsc(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate)
         );
@@ -3554,9 +4549,27 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         StringBuilder sb = new StringBuilder();
         sb.append("【营收概况（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
 
+        int anchorDep = departmentIdAsIntOrSentinel(departmentId);
+        if (anchorDep == Integer.MIN_VALUE) {
+            sb.append("- 部门 ID 无效，未查询。\n\n");
+            return sb.toString();
+        }
+        int disId = resolveDistributerIdForDepartmentExpansion(0, List.of(anchorDep));
+        List<Integer> revenueDeptIds = expandDepartmentSubtreeIdsForRevenue(disId, List.of(anchorDep));
+        if (revenueDeptIds.isEmpty()) {
+            sb.append("- 部门子树展开为空。\n\n");
+            return sb.toString();
+        }
+        boolean subtreeNote = revenueDeptIds.size() > 1
+                || !revenueDeptIds.get(0).equals(anchorDep);
+        if (subtreeNote) {
+            sb.append("- 日营收按子部门记账；已自锚点 **").append(anchorDep).append("** 展开 ")
+                    .append(revenueDeptIds.size()).append(" 个部门汇总。\n");
+        }
+
         List<GbAiDailyRevenueEntity> revenues = dailyRevenueMapper.selectList(
                 new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
-                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, departmentId)
+                        .in(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, revenueDeptIds)
                         .between(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, monthStart, monthEnd)
                         .orderByAsc(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate)
         );
@@ -3586,98 +4599,231 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         return sb.toString();
     }
 
+    private String queryGroupChainRetailDiagnosticsFacts(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
+        RetailDepartmentResolve rr = resolveRetailStoreDepartmentIdsForGroupAnalyticsDetailed(scope.getResolvedDepartmentIds());
+        List<Integer> retailIds = rr.ids();
+        if (retailIds.isEmpty()) {
+            return "【集团/门店经营诊断】\n- 当前统计范围内未命中任何「父级门店」节点（要求 gb_department_father_id=0 且 gb_department_is_group_dep=1）。请将会话锚点设为包含该类节点的部门子树。\n\n";
+        }
+        final String orderDesc = "DESC";
+        final String orderAsc = "ASC";
+        int topN = Math.min(5, retailIds.size());
+        int botN = Math.min(3, retailIds.size());
+        StringBuilder sb = new StringBuilder();
+        sb.append("【集团/门店经营诊断（门店=直营+加盟；毛利=净营收−出库四类型之和，**经营估算**）】\n");
+        sb.append("- 统计区间：").append(monthStart).append(" 至 ").append(monthEnd).append("\n");
+        sb.append("- 门店口径：父级门店（gb_department_father_id=0 且 gb_department_is_group_dep=1）").append("\n");
+        sb.append("- 纳入门店部门数：").append(retailIds.size()).append("\n");
+        if (scope.isGroupRevenueUseDistributerWideQuery() && scope.getDisIdForPurchaseQueries() > 0) {
+            sb.append("- **净营收聚合**：集团整户按 **`gb_ai_daily_revenue_distributer_id`** 汇总（以下为总盘；排行仍按门店子树）。\n");
+        } else {
+            sb.append("- **净营收聚合**：日营收挂在子部门时已按各父级门店 **子树** 汇总（与 Top/末位排行一致）。\n");
+        }
+
+        int disForRev = scope.getDisIdForPurchaseQueries();
+        BigDecimal rev;
+        if (scope.isGroupRevenueUseDistributerWideQuery() && disForRev > 0) {
+            rev = dailyRevenueMapper.sumNetRevenueForDistributerId(disForRev, monthStart, monthEnd);
+            if (rev == null) {
+                rev = BigDecimal.ZERO;
+            }
+        } else {
+            List<Integer> revenueDeptScope = expandDepartmentSubtreeIdsForRevenue(
+                    resolveDistributerIdForDepartmentExpansion(disForRev, retailIds), retailIds);
+            rev = revenueDeptScope.isEmpty()
+                    ? BigDecimal.ZERO
+                    : dailyRevenueMapper.sumNetRevenueForDepartmentIds(revenueDeptScope, monthStart, monthEnd);
+            if (rev == null) {
+                rev = BigDecimal.ZERO;
+            }
+        }
+        Map<String, Object> costParams = new HashMap<>(8);
+        costParams.put("departmentFatherIds", retailIds);
+        if (scope.getDisIdForPurchaseQueries() > 0) {
+            costParams.put("disId", scope.getDisIdForPurchaseQueries());
+        }
+        costParams.put("startDate", monthStart.toString());
+        costParams.put("stopDate", monthEnd.toString());
+        Map<String, Object> costRow = stockReduceMapper.queryReduceAllTypesTotalForRetailDepartmentFathers(costParams);
+        double costSum = sumReduceTypeTotalsFromMap(costRow);
+        sb.append("- 区间净营收（堂食+外卖−平台抽成）：¥").append(rev).append("\n");
+        sb.append("- 区间出库成本小计（produce+waste+loss+return）：¥").append(String.format("%.2f", costSum)).append("\n");
+        if (rev.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal marginPct = rev.subtract(BigDecimal.valueOf(costSum))
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(rev, 2, RoundingMode.HALF_UP);
+            sb.append("- **估算毛利率**：").append(marginPct).append("%（非财务报表；未含总部费用/未入账项）\n");
+        } else {
+            sb.append("- **估算毛利率**：分母无净营收，略。\n");
+        }
+
+        // 按门店拆分毛利表
+        sb.append("\n**各门店毛利明细（净营收−出库成本）**：\n");
+        Map<Integer, BigDecimal> storeRevenue = listNetRevenueByRetailParentsAsMap(
+                disForRev, retailIds, monthStart, monthEnd);
+        Map<Integer, String> storeNames = loadDepartmentNamesByIds(retailIds);
+        double perStoreCostTotal = 0;
+        Map<String, Object> perStoreCostParams = new HashMap<>(4);
+        perStoreCostParams.put("departmentFatherIds", retailIds);
+        perStoreCostParams.put("startDate", monthStart.toString());
+        perStoreCostParams.put("stopDate", monthEnd.toString());
+        List<Map<String, Object>> perStoreCostRows = stockReduceMapper
+                .queryReduceAllTypesTotalGroupedByDepartmentFather(perStoreCostParams);
+        Map<Integer, Double> storeCostSum = new HashMap<>();
+        if (perStoreCostRows != null) {
+            for (Map<String, Object> cRow : perStoreCostRows) {
+                Object fidObj = cRow.get("departmentFatherId");
+                if (fidObj == null) continue;
+                int fid = ((Number) fidObj).intValue();
+                double c = nzNumberFromMap(cRow.get("produceTotal"))
+                        + nzNumberFromMap(cRow.get("wasteTotal"))
+                        + nzNumberFromMap(cRow.get("lossTotal"))
+                        + nzNumberFromMap(cRow.get("returnTotal"));
+                storeCostSum.put(fid, c);
+                perStoreCostTotal += c;
+            }
+        }
+        for (Integer sid : retailIds) {
+            BigDecimal sRev = storeRevenue.getOrDefault(sid, BigDecimal.ZERO);
+            double sCost = storeCostSum.getOrDefault(sid, 0d);
+            BigDecimal sMargin = sRev.subtract(BigDecimal.valueOf(sCost));
+            String name = storeNames.getOrDefault(sid, "门店" + sid);
+            if (storeCostSum.containsKey(sid) || sRev.compareTo(BigDecimal.ZERO) > 0) {
+                sb.append("  - ").append(name).append("：净营收 ¥").append(sRev)
+                        .append("，出库成本 ¥").append(String.format("%.2f", sCost))
+                        .append("，毛利 ¥").append(sMargin);
+                if (sRev.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal sMarginPct = sMargin.multiply(BigDecimal.valueOf(100))
+                            .divide(sRev, 2, RoundingMode.HALF_UP);
+                    sb.append("（毛利率 ").append(sMarginPct).append("%）");
+                }
+                sb.append("\n");
+            } else {
+                sb.append("  - ").append(name).append("：净营收 ¥0，出库成本 ¥0（暂无数据）\n");
+            }
+        }
+
+        LocalDate yStart = monthStart.minusYears(1);
+        LocalDate yEnd = monthEnd.minusYears(1);
+        sb.append("\n**同比区间**：").append(yStart).append(" 至 ").append(yEnd).append("\n");
+        BigDecimal revY;
+        if (scope.isGroupRevenueUseDistributerWideQuery() && disForRev > 0) {
+            revY = dailyRevenueMapper.sumNetRevenueForDistributerId(disForRev, yStart, yEnd);
+            if (revY == null) {
+                revY = BigDecimal.ZERO;
+            }
+        } else {
+            List<Integer> revenueDeptScopeYoY = expandDepartmentSubtreeIdsForRevenue(
+                    resolveDistributerIdForDepartmentExpansion(disForRev, retailIds), retailIds);
+            revY = revenueDeptScopeYoY.isEmpty()
+                    ? BigDecimal.ZERO
+                    : dailyRevenueMapper.sumNetRevenueForDepartmentIds(revenueDeptScopeYoY, yStart, yEnd);
+            if (revY == null) {
+                revY = BigDecimal.ZERO;
+            }
+        }
+        costParams.put("startDate", yStart.toString());
+        costParams.put("stopDate", yEnd.toString());
+        Map<String, Object> costRowY = stockReduceMapper.queryReduceAllTypesTotalForRetailDepartmentFathers(costParams);
+        double costYsum = sumReduceTypeTotalsFromMap(costRowY);
+        sb.append("- 去年同期净营收：¥").append(revY).append("\n");
+        sb.append("- 去年同期出库成本小计：¥").append(String.format("%.2f", costYsum)).append("\n");
+        if (revY.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal marginY = revY.subtract(BigDecimal.valueOf(costYsum))
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(revY, 2, RoundingMode.HALF_UP);
+            sb.append("- 去年同期估算毛利率：").append(marginY).append("%\n");
+        }
+        if (rev.compareTo(BigDecimal.ZERO) > 0 && revY.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal delta = rev.subtract(revY).multiply(BigDecimal.valueOf(100))
+                    .divide(revY, 2, RoundingMode.HALF_UP);
+            sb.append("- 净营收同比变动：**").append(delta).append("%**\n");
+        }
+
+        List<AiStoreNetRevenueAggRow> top = listNetRevenueByRetailParentsRanked(
+                disForRev, retailIds, monthStart, monthEnd, orderDesc, topN);
+        sb.append("\n**净营收 Top ").append(topN).append(" 门店**（同区间）\n");
+        if (top == null || top.isEmpty()) {
+            sb.append("- （无）\n");
+        } else {
+            int rank = 1;
+            for (AiStoreNetRevenueAggRow row : top) {
+                sb.append("  ").append(rank++).append(". ").append(row.getDepartmentName())
+                        .append(" (id=").append(row.getDepartmentId()).append(") 净营收 ¥")
+                        .append(row.getNetRevenue() != null ? row.getNetRevenue() : BigDecimal.ZERO).append("\n");
+            }
+        }
+        List<AiStoreNetRevenueAggRow> bottom = listNetRevenueByRetailParentsRanked(
+                disForRev, retailIds, monthStart, monthEnd, orderAsc, botN);
+        sb.append("\n**净营收末 ").append(botN).append(" 门店（低营收需结合成本与固定费排查）**\n");
+        if (bottom == null || bottom.isEmpty()) {
+            sb.append("- （无）\n");
+        } else {
+            int rank = 1;
+            for (AiStoreNetRevenueAggRow row : bottom) {
+                sb.append("  ").append(rank++).append(". ").append(row.getDepartmentName())
+                        .append(" (id=").append(row.getDepartmentId()).append(") 净营收 ¥")
+                        .append(row.getNetRevenue() != null ? row.getNetRevenue() : BigDecimal.ZERO).append("\n");
+            }
+        }
+        sb.append("\n");
+        return sb.toString();
+    }
+
+    private static double sumReduceTypeTotalsFromMap(Map<String, Object> row) {
+        if (row == null) {
+            return 0d;
+        }
+        return nzNumberFromMap(row.get("produceTotal"))
+                + nzNumberFromMap(row.get("wasteTotal"))
+                + nzNumberFromMap(row.get("lossTotal"))
+                + nzNumberFromMap(row.get("returnTotal"));
+    }
+
+    private static double nzNumberFromMap(Object o) {
+        if (o == null) {
+            return 0d;
+        }
+        if (o instanceof Number) {
+            return ((Number) o).doubleValue();
+        }
+        try {
+            return Double.parseDouble(o.toString());
+        } catch (NumberFormatException e) {
+            return 0d;
+        }
+    }
+
     private String queryRevenueData(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
+        if (scope.isGroupRevenueUseDistributerWideQuery() && scope.getDisIdForPurchaseQueries() > 0) {
+            return queryRevenueDataGroupDistributerWide(scope, monthStart, monthEnd);
+        }
         List<Long> qids = scope.resolvedDepartmentIdsAsLong();
         if (qids.isEmpty()) {
-            return queryRevenueData(scope.profileAnchorDepartmentId(), monthStart, monthEnd);
+            return queryRevenueData(scope.memoryAnchorDepartmentId(), monthStart, monthEnd);
         }
         if (qids.size() == 1) {
             return queryRevenueData(qids.get(0), monthStart, monthEnd);
         }
-        StringBuilder sb = new StringBuilder();
-        sb.append("【营业额数据（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
-        sb.append("- 查询范围：gb_ai_daily_revenue 部门 ID in ").append(qids).append("\n");
-        List<GbAiDailyRevenueEntity> revenues = dailyRevenueMapper.selectList(
-                new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
-                        .in(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, qids)
-                        .between(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, monthStart, monthEnd)
-                        .orderByAsc(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate));
-        log.info("营收查询(多部门): deptIds={} rows={}", qids.size(), revenues.size());
-        if (!revenues.isEmpty()) {
-            BigDecimal totalDineIn = BigDecimal.ZERO, totalTakeout = BigDecimal.ZERO, totalPlatformFee = BigDecimal.ZERO;
-            for (GbAiDailyRevenueEntity r : revenues) {
-                if (r.getGbAiDailyRevenueDineInRevenue() != null) {
-                    totalDineIn = totalDineIn.add(r.getGbAiDailyRevenueDineInRevenue());
-                }
-                if (r.getGbAiDailyRevenueTakeoutRevenue() != null) {
-                    totalTakeout = totalTakeout.add(r.getGbAiDailyRevenueTakeoutRevenue());
-                }
-                if (r.getGbAiDailyRevenuePlatformFee() != null) {
-                    totalPlatformFee = totalPlatformFee.add(r.getGbAiDailyRevenuePlatformFee());
-                }
-            }
-            BigDecimal totalRevenue = totalDineIn.add(totalTakeout).subtract(totalPlatformFee);
-            long spanDays = inclusiveDaySpan(monthStart, monthEnd);
-            long distinctDays = distinctRevenueRecordDays(revenues);
-            double denom = distinctDays > 0 ? distinctDays : revenues.size();
-            double avgDaily = totalRevenue.doubleValue() / denom;
-            sb.append("- 区间内日历天数（首尾包含）: ").append(spanDays).append(" 天\n");
-            sb.append("- 表中有营收记录的**不同日期**数: ").append(distinctDays).append(" 天（明细行数 ").append(revenues.size()).append("；多部门同日可能多行）\n");
-            sb.append("- 有营业额记录的日期: ").append(distinctRevenueDatesSortedCsv(revenues)).append("\n");
-            LocalDate today = LocalDate.now();
-            if (monthStart.equals(today.withDayOfMonth(1)) && monthEnd.equals(today)) {
-                sb.append("- 说明：区间为当前自然月截至今日（本月日历已过 ").append(today.getDayOfMonth()).append(" 天）\n");
-            }
-            sb.append("- 堂食营收: ¥").append(totalDineIn).append(", 外卖营收: ¥").append(totalTakeout).append("\n");
-            sb.append("- 平台抽成: ¥").append(totalPlatformFee).append(", 区间总营收: ¥").append(totalRevenue).append("\n");
-            sb.append("- 日均营收（按有记录的不同日期数）: ¥").append(String.format("%.2f", avgDaily)).append("\n\n");
-        } else {
-            sb.append("- 该区间内暂无 gb_ai_daily_revenue 营业额明细\n\n");
-        }
-        return sb.toString();
+        List<Integer> deptIds = scope.getResolvedDepartmentIds();
+        return queryRevenueDataMultiDepartmentAggregated(deptIds, monthStart, monthEnd, qids,
+                scope.getDisIdForPurchaseQueries());
     }
 
     private String queryRevenueDataBrief(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
+        if (scope.isGroupRevenueUseDistributerWideQuery() && scope.getDisIdForPurchaseQueries() > 0) {
+            return queryRevenueDataBriefGroupDistributerWide(scope, monthStart, monthEnd);
+        }
         List<Long> qids = scope.resolvedDepartmentIdsAsLong();
         if (qids.isEmpty()) {
-            return queryRevenueDataBrief(scope.profileAnchorDepartmentId(), monthStart, monthEnd);
+            return queryRevenueDataBrief(scope.memoryAnchorDepartmentId(), monthStart, monthEnd);
         }
         if (qids.size() == 1) {
             return queryRevenueDataBrief(qids.get(0), monthStart, monthEnd);
         }
-        StringBuilder sb = new StringBuilder();
-        sb.append("【营收概况（所选区间）】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
-        sb.append("- 查询范围：部门 ID in ").append(qids).append("\n");
-        List<GbAiDailyRevenueEntity> revenues = dailyRevenueMapper.selectList(
-                new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
-                        .in(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, qids)
-                        .between(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, monthStart, monthEnd)
-                        .orderByAsc(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate));
-        if (!revenues.isEmpty()) {
-            BigDecimal totalDineIn = BigDecimal.ZERO, totalTakeout = BigDecimal.ZERO, totalPlatformFee = BigDecimal.ZERO;
-            for (GbAiDailyRevenueEntity r : revenues) {
-                if (r.getGbAiDailyRevenueDineInRevenue() != null) {
-                    totalDineIn = totalDineIn.add(r.getGbAiDailyRevenueDineInRevenue());
-                }
-                if (r.getGbAiDailyRevenueTakeoutRevenue() != null) {
-                    totalTakeout = totalTakeout.add(r.getGbAiDailyRevenueTakeoutRevenue());
-                }
-                if (r.getGbAiDailyRevenuePlatformFee() != null) {
-                    totalPlatformFee = totalPlatformFee.add(r.getGbAiDailyRevenuePlatformFee());
-                }
-            }
-            BigDecimal totalRevenue = totalDineIn.add(totalTakeout).subtract(totalPlatformFee);
-            long spanDays = inclusiveDaySpan(monthStart, monthEnd);
-            long distinctDays = distinctRevenueRecordDays(revenues);
-            double denom = distinctDays > 0 ? distinctDays : revenues.size();
-            double avgDaily = totalRevenue.doubleValue() / denom;
-            sb.append("- 区间内日历天数（首尾包含）: ").append(spanDays).append(" 天；有营收记录的**不同日期**: ").append(distinctDays).append(" 天（行数 ").append(revenues.size()).append("）\n");
-            sb.append("- 有记录的日期: ").append(distinctRevenueDatesSortedCsv(revenues)).append("\n");
-            sb.append("- 区间总营收: ¥").append(totalRevenue).append(", 日均（按不同日期）: ¥").append(String.format("%.2f", avgDaily)).append("\n\n");
-        } else {
-            sb.append("- 该区间内暂无营业额明细\n\n");
-        }
-        return sb.toString();
+        List<Integer> deptIds = scope.getResolvedDepartmentIds();
+        return queryRevenueDataBriefMultiDepartmentAggregated(deptIds, monthStart, monthEnd, qids,
+                scope.getDisIdForPurchaseQueries());
     }
 
     /**
@@ -3723,12 +4869,6 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         return buildDishSalesFactsWithRecital(scope, monthStart, monthEnd).markdown();
     }
 
-    /**
-     * 单部门父 ID（兼容旧调用链）。
-     */
-    private String queryDishSalesFacts(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
-        return buildDishSalesFactsWithRecital(departmentId, monthStart, monthEnd).markdown();
-    }
 
     /**
      * 与 {@link com.nongxinle.service.impl.GbDepFoodBusinessInsightServiceImpl#buildInsight} 中每行
@@ -4065,7 +5205,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     private DishSalesBuilt buildDishSalesFactsWithRecital(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
         List<Integer> ids = scope.getResolvedDepartmentIds();
         if (ids.isEmpty()) {
-            return buildDishSalesFactsWithRecital(scope.profileAnchorDepartmentId(), monthStart, monthEnd);
+            return buildDishSalesFactsWithRecital(scope.memoryAnchorDepartmentId(), monthStart, monthEnd);
         }
         StringBuilder sb = new StringBuilder();
         sb.append("【菜品销量聚合】(").append(monthStart).append(" 至 ").append(monthEnd).append(")\n");
@@ -4114,6 +5254,10 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                     .append(e.getValue().stripTrailingZeros().toPlainString()).append(" 份\n");
             n++;
         }
+
+        // 按门店（GROUP）或子部门（STORE）拆分销量
+        appendDishSalesBreakout(sb, rows, scope);
+
         Map.Entry<Integer, BigDecimal> top = sorted.get(0);
         String topName = resolveFoodNameForAi(top.getKey());
         String topQty = top.getValue().stripTrailingZeros().toPlainString();
@@ -4126,6 +5270,62 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         }
         DishSalesRecital recital = new DishSalesRecital(rows.size(), topName, topQty, secondName, secondQty);
         return new DishSalesBuilt(sb.toString(), Optional.of(recital));
+    }
+
+    /**
+     * 按门店（GROUP）或子部门（STORE）拆分菜品销量总份数。
+     */
+    private void appendDishSalesBreakout(StringBuilder sb, List<GbDepFoodSalesEntity> rows, AiQueryScope scope) {
+        if (rows == null || rows.isEmpty()) return;
+        if (scope.getMode() == AiConversationScopeMode.GROUP) {
+            List<Integer> retailParents = resolveRetailStoreDepartmentIdsForGroupAnalyticsDetailed(
+                    scope.getResolvedDepartmentIds()).ids();
+            if (retailParents.size() <= 1) return;
+            Map<Integer, Integer> fatherByDept = buildDepartmentFatherMapForDistributer(scope.getDisIdForPurchaseQueries());
+            Set<Integer> retailSet = new HashSet<>(retailParents);
+            Map<Integer, BigDecimal> qtyByStore = new HashMap<>();
+            for (Integer rp : retailParents) qtyByStore.put(rp, BigDecimal.ZERO);
+            for (GbDepFoodSalesEntity r : rows) {
+                Integer depId = r.getGbDfsDepId() != null ? r.getGbDfsDepId() : r.getGbDfsDepFatherId();
+                if (depId == null || r.getGbDfsAmount() == null) continue;
+                Integer retailParent = walkDepartmentIdToRetailParent(depId, retailSet, fatherByDept);
+                if (retailParent != null) {
+                    try { qtyByStore.merge(retailParent, new BigDecimal(r.getGbDfsAmount().trim()), BigDecimal::add);
+                    } catch (Exception ignored) {}
+                }
+            }
+            Map<Integer, String> names = loadDepartmentNamesByIds(retailParents);
+            List<Integer> sorted = new ArrayList<>(retailParents);
+            sorted.sort(Comparator.comparing(id -> names.getOrDefault(id, String.valueOf(id))));
+            sb.append("- **按门店拆分总销量**：\n");
+            for (Integer sid : sorted) {
+                sb.append("  - ").append(names.getOrDefault(sid, "门店" + sid))
+                        .append("：共 ").append(qtyByStore.getOrDefault(sid, BigDecimal.ZERO)
+                                .stripTrailingZeros().toPlainString()).append(" 份\n");
+            }
+        } else if (scope.getMode() == AiConversationScopeMode.STORE) {
+            Long storeId = scope.getDepartmentFatherId();
+            List<Integer> subDeptIds = scope.getResolvedDepartmentIds().stream()
+                    .filter(id -> storeId == null || !id.equals(storeId.intValue()))
+                    .sorted()
+                    .collect(Collectors.toList());
+            if (subDeptIds.size() <= 1) return;
+            Map<Integer, BigDecimal> qtyByDept = new HashMap<>();
+            for (Integer did : subDeptIds) qtyByDept.put(did, BigDecimal.ZERO);
+            for (GbDepFoodSalesEntity r : rows) {
+                Integer depId = r.getGbDfsDepId() != null ? r.getGbDfsDepId() : r.getGbDfsDepFatherId();
+                if (depId == null || !subDeptIds.contains(depId) || r.getGbDfsAmount() == null) continue;
+                try { qtyByDept.merge(depId, new BigDecimal(r.getGbDfsAmount().trim()), BigDecimal::add);
+                } catch (Exception ignored) {}
+            }
+            Map<Integer, String> names = loadDepartmentNamesByIds(subDeptIds);
+            sb.append("- **按子部门拆分总销量**：\n");
+            for (Integer did : subDeptIds) {
+                sb.append("  - ").append(names.getOrDefault(did, "部门" + did))
+                        .append("：共 ").append(qtyByDept.getOrDefault(did, BigDecimal.ZERO)
+                                .stripTrailingZeros().toPlainString()).append(" 份\n");
+            }
+        }
     }
 
     private DishSalesBuilt buildDishSalesFactsWithRecital(Long departmentId, LocalDate monthStart, LocalDate monthEnd) {
@@ -4224,20 +5424,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         return sb.toString();
     }
 
-    /**
-     * 加载所有 Skill 文件内容
-     */
-    private String loadAllSkills() {
-        StringBuilder sb = new StringBuilder();
-        for (String filename : SKILL_FILES) {
-            String content = loadSkillFile(filename);
-            if (StrUtil.isNotEmpty(content)) {
-                sb.append("【").append(filename).append("】\n");
-                sb.append(content).append("\n\n");
-            }
-        }
-        return sb.toString();
-    }
+
 
     /**
      * 加载选中的 Skill 文件内容
@@ -4479,7 +5666,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
             return firstVisible;
         }
         String cleaned2 = SkillHandoffParser.stripAllSkillHandoffFences(raw2);
-        extractUserDataFromReply(cleaned2, scope.profileAnchorDepartmentId());
+        extractUserDataFromReply(cleaned2, scope.memoryAnchorDepartmentId());
         String visible2 = stripAssistantUserVisibleTail(cleaned2);
         return enforceDishSalesHandoffVisible(visible2, ho.get().toSkill(), factPayload.dishRecital());
     }
@@ -4491,7 +5678,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
         LocalDate now = LocalDate.now();
         LocalDate monthStart = now.withDayOfMonth(1);
         LocalDate monthEnd = now;
-        Long anchor = scope.profileAnchorDepartmentId();
+        Long anchor = scope.memoryAnchorDepartmentId();
         List<String> hoMetricIds = skillSelection != null ? skillSelection.suggestedMetricIds() : List.of();
         return switch (ho.toSkill()) {
             case "cost" -> new HandoffFactPayload(buildHandoffCostFacts(scope, monthStart, monthEnd), Optional.empty());
@@ -4559,13 +5746,8 @@ public class GbAiChatServiceImpl implements GbAiChatService {
     }
 
     private String buildHandoffCostFacts(AiQueryScope scope, LocalDate monthStart, LocalDate monthEnd) {
-        Long anchor = scope.profileAnchorDepartmentId();
-        GbAiRestaurantProfileEntity profile = null;
-        if (anchor != null) {
-            profile = restaurantProfileMapper.selectOne(
-                    new LambdaQueryWrapper<GbAiRestaurantProfileEntity>()
-                            .eq(GbAiRestaurantProfileEntity::getGbAiRestaurantProfileDepartmentId, anchor));
-        }
+        Long anchor = scope.memoryAnchorDepartmentId();
+        GbAiRestaurantProfileEntity profile = loadRestaurantProfileForChat(scope, anchor);
         if (!hasAllBasicFixedCosts(profile)) {
             return "【移交补充】门店档案中月租金/月工资/月其它固定成本未齐备，无法拉取完整成本与库存对照流水；请提示用户补齐三项后再做细拆。\n";
         }
@@ -4756,7 +5938,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
 
             log.info("[AI-CHAT][DeepSeek] phase={} postUrl={}", phase, baseUrl + "/chat/completions");
 
-            try (Response response = httpClient.newCall(request).execute()) {
+            try (Response response = deepSeekHttpClient.newCall(request).execute()) {
                 log.info("[AI-CHAT][DeepSeek] phase={} httpStatus={}", phase, response.code());
 
                 if (!response.isSuccessful()) {
@@ -4825,7 +6007,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                         .build();
 
                 long tStream = System.nanoTime();
-                try (Response response = httpClient.newCall(request).execute()) {
+                try (Response response = deepSeekHttpClient.newCall(request).execute()) {
                     log.info("[AI-CHAT][DeepSeek] trace=sse phase=sse-main-reply conversationId={} httpStatus={}",
                             conversationId, response.code());
                     if (!response.isSuccessful()) {
@@ -4886,7 +6068,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                     logDeepSeekResponsePayload("sse-main-reply", replyRaw);
 
                     String forProfile = SkillHandoffParser.stripAllSkillHandoffFences(replyRaw);
-                    extractUserDataFromReply(forProfile, scope.profileAnchorDepartmentId());
+                    extractUserDataFromReply(forProfile, scope.memoryAnchorDepartmentId());
                     long tHandoff = System.nanoTime();
                     String replyVisible = assistantUserVisibleAfterOptionalHandoff(replyRaw, userMessage, scope,
                             skillSelection, userId);
@@ -4927,7 +6109,7 @@ public class GbAiChatServiceImpl implements GbAiChatService {
                         conversationMapper.updateById(conv);
                     }
 
-                    memoryService.extractMemories(conversationId, scope.profileAnchorDepartmentId(), userId,
+                    memoryService.extractMemories(conversationId, scope.memoryAnchorDepartmentId(), userId,
                             conv.getGbAiConversationType());
 
                     log.info("[AI-CHAT][timing] conversationId={} phase=sse_persist_assistant_and_memory_ms={}",

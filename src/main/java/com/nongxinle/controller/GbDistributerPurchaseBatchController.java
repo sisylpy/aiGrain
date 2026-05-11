@@ -181,6 +181,14 @@ public class GbDistributerPurchaseBatchController {
     }
 
 
+    @RequestMapping(value = "/storeGetBuyingGoodsGb/{purDepId}")
+    @ResponseBody
+    public R storeGetBuyingGoodsGb(@PathVariable Integer purDepId) {
+        Map<String, Object> map3 = gbDistributerPurchaseBatchJingjingBuyingGoodsService.buildStoreBuyingGoods(purDepId);
+        return R.ok().put("data", map3);
+    }
+
+
     /**
      * 批发商获取进货商品列表
      *

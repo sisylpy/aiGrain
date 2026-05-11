@@ -227,6 +227,9 @@
             <if test="disId != null">
                 and gdpg.gb_DPG_distributer_id = #{disId}
             </if>
+            <if test="purDepId != null">
+                and gdpg.gb_DPG_purchase_department_id = #{purDepId}
+            </if>
             <if test="disGoodsId != null">
                 AND gdpg.gb_DPG_dis_goods_id = #{disGoodsId}
             </if>
@@ -392,6 +395,12 @@
             <if test="purDepId != null">
                 and gdpg.gb_DPG_purchase_department_id = #{purDepId}
             </if>
+            <if test="purDepIds != null and purDepIds.size() &gt; 0">
+                and gdpg.gb_DPG_purchase_department_id IN
+                <foreach item="id" collection="purDepIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
             <if test="purUserId != null">
                 and gdpg.gb_DPG_pur_user_id = #{purUserId}
             </if>
@@ -448,6 +457,28 @@
         <result property="gbDuWxNickName" column="gb_du_wx_nick_name"/>
     </resultMap>
 
+    <!--
+      采购概览「自采 / 供货商采购」聚焦：与 queryGbPurchaseGoodsAggByLegacyPurchaseMethod 桶口径一致。
+      legacyPurchaseMethodFocus=self_strict → type=1 且 nx 为 null 或 -1；
+      supplier_channel → type=5 或 (type=1 且 nx 为正)。
+    -->
+    <sql id="purGoodsWhereLegacyPurchaseMethodFocus">
+        <if test="legacyPurchaseMethodFocus != null and legacyPurchaseMethodFocus == 'self_strict'">
+            AND IFNULL(gdpg.gb_DPG_purchase_type, 0) = 1
+            AND (gdpg.gb_DPG_purchase_nx_supplier_id IS NULL OR gdpg.gb_DPG_purchase_nx_supplier_id = -1)
+        </if>
+        <if test="legacyPurchaseMethodFocus != null and legacyPurchaseMethodFocus == 'supplier_channel'">
+            AND (
+                IFNULL(gdpg.gb_DPG_purchase_type, 0) = 5
+                OR (
+                    IFNULL(gdpg.gb_DPG_purchase_type, 0) = 1
+                    AND gdpg.gb_DPG_purchase_nx_supplier_id IS NOT NULL
+                    AND gdpg.gb_DPG_purchase_nx_supplier_id != -1
+                )
+            )
+        </if>
+    </sql>
+
     <!-- 与 queryGbPurchaseGoodsCount 完全一致的条件（含 join batch），供采购分析/重量/单价统计复用 -->
     <sql id="purGoodsWhereJoinBatchAsGbCount">
             <if test="disId != null">
@@ -466,6 +497,7 @@
             <include refid="purGoodsWhereGbDisGoodsHierarchy"/>
             <include refid="purGoodsWhereGbStockFinishDateFlexible"/>
             <include refid="purGoodsWhereGbPurchaseCountJoinTail"/>
+            <include refid="purGoodsWhereLegacyPurchaseMethodFocus"/>
     </sql>
 
     <select id="queryGbPurchaseGoodsCount" resultType="java.lang.Integer">
@@ -476,6 +508,127 @@
         <where>
             <include refid="purGoodsWhereJoinBatchAsGbCount"/>
         </where>
+    </select>
+
+    <select id="queryGbPurchaseGoodsBuySubtotalSum" resultType="java.lang.Double">
+        SELECT IFNULL(SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))), 0)
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+        </where>
+    </select>
+
+    <select id="queryGbPurchaseGoodsAggByPurchaseType" resultType="com.nongxinle.dto.PurchaseTypeAggRow">
+        SELECT IFNULL(gdpg.gb_DPG_purchase_type, 0) AS purchaseType,
+               CAST(COUNT(*) AS SIGNED) AS lineCount,
+               COALESCE(SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))), 0) AS lineSubtotal
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+        </where>
+        GROUP BY IFNULL(gdpg.gb_DPG_purchase_type, 0)
+    </select>
+
+    <select id="queryGbPurchaseGoodsAggByLegacyPurchaseMethod" resultType="com.nongxinle.dto.PurchaseMethodLegacyAggRow">
+        SELECT CASE
+                   WHEN IFNULL(gdpg.gb_DPG_purchase_type, 0) = 5 THEN 'supplier_channel'
+                   WHEN IFNULL(gdpg.gb_DPG_purchase_type, 0) = 1
+                       AND gdpg.gb_DPG_purchase_nx_supplier_id IS NOT NULL
+                       AND gdpg.gb_DPG_purchase_nx_supplier_id != -1 THEN 'supplier_channel'
+                   WHEN IFNULL(gdpg.gb_DPG_purchase_type, 0) = 1 THEN 'self_strict'
+                   ELSE 'other'
+                   END                                  AS methodBucket,
+               CAST(COUNT(*) AS SIGNED)               AS lineCount,
+               COALESCE(SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))), 0) AS lineSubtotal
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+        </where>
+        GROUP BY CASE
+                     WHEN IFNULL(gdpg.gb_DPG_purchase_type, 0) = 5 THEN 'supplier_channel'
+                     WHEN IFNULL(gdpg.gb_DPG_purchase_type, 0) = 1
+                         AND gdpg.gb_DPG_purchase_nx_supplier_id IS NOT NULL
+                         AND gdpg.gb_DPG_purchase_nx_supplier_id != -1 THEN 'supplier_channel'
+                     WHEN IFNULL(gdpg.gb_DPG_purchase_type, 0) = 1 THEN 'self_strict'
+                     ELSE 'other'
+                     END
+    </select>
+
+    <!-- 内层仅 SELECT/GROUP BY 相同表达式，外层 CASE 生成展示名，兼容 sql_mode=ONLY_FULL_GROUP_BY -->
+    <select id="queryGbPurchaseGoodsTopTimesMerged" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        SELECT CASE
+                   WHEN agg.name_key &lt;&gt; '' THEN agg.name_key
+                   WHEN agg.std_key &lt;&gt; '' THEN agg.std_key
+                   ELSE '（未命名商品）'
+                   END              AS gb_dg_goods_name,
+               agg.times AS gb_dg_quantity_days
+        FROM (
+                 SELECT TRIM(IFNULL(dg.gb_dg_goods_name, ''))         AS name_key,
+                        TRIM(IFNULL(dg.gb_dg_goods_standardname, '')) AS std_key,
+                        CAST(COUNT(*) AS SIGNED)                      AS times
+                 FROM gb_distributer_purchase_goods AS gdpg
+                          INNER JOIN gb_distributer_goods AS dg
+                                     ON dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
+                          LEFT JOIN gb_distributer_purchase_batch AS gdpb
+                                    ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+                 <where>
+                     gdpg.gb_DPG_buy_subtotal &gt; 0
+                     <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+                 </where>
+                 GROUP BY TRIM(IFNULL(dg.gb_dg_goods_name, '')),
+                          TRIM(IFNULL(dg.gb_dg_goods_standardname, ''))
+             ) agg
+        ORDER BY agg.times DESC,
+                 gb_dg_goods_name ASC
+        LIMIT 10
+    </select>
+
+    <select id="queryGbPurchaseGoodsTopSubtotalMerged" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        SELECT CASE
+                   WHEN agg.name_key &lt;&gt; '' THEN agg.name_key
+                   WHEN agg.std_key &lt;&gt; '' THEN agg.std_key
+                   ELSE '（未命名商品）'
+                   END AS gb_dg_goods_name,
+               CAST(ROUND(agg.total_subtotal, 1) AS CHAR) AS goodsPurTotalSubtotal
+        FROM (
+                 SELECT TRIM(IFNULL(dg.gb_dg_goods_name, ''))         AS name_key,
+                        TRIM(IFNULL(dg.gb_dg_goods_standardname, '')) AS std_key,
+                        SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))) AS total_subtotal
+                 FROM gb_distributer_purchase_goods AS gdpg
+                          INNER JOIN gb_distributer_goods AS dg
+                                     ON dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
+                          LEFT JOIN gb_distributer_purchase_batch AS gdpb
+                                    ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+                 <where>
+                     gdpg.gb_DPG_buy_subtotal &gt; 0
+                     <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+                 </where>
+                 GROUP BY TRIM(IFNULL(dg.gb_dg_goods_name, '')),
+                          TRIM(IFNULL(dg.gb_dg_goods_standardname, ''))
+             ) agg
+        ORDER BY agg.total_subtotal DESC,
+                 gb_dg_goods_name ASC
+        LIMIT 10
+    </select>
+
+    <!-- 与 queryGbPurchaseGoodsCount 同一筛选；按入库采购门店/部门分列汇总金额 -->
+    <select id="sumPurchaseSubtotalGroupedByPurDepartmentId" resultType="com.nongxinle.dto.DepartmentPurchaseAggRow">
+        SELECT gdpg.gb_DPG_purchase_department_id AS departmentId,
+            COALESCE(SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))), 0) AS purchaseSubtotal
+        FROM gb_distributer_purchase_goods AS gdpg
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+        <where>
+            gdpg.gb_DPG_purchase_department_id IS NOT NULL
+            <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+        </where>
+        GROUP BY gdpg.gb_DPG_purchase_department_id
     </select>
 
     <select id="queryPurchaseGoodsWeightTotal" resultType="java.lang.Double">
@@ -785,6 +938,15 @@
                    AND gb_DPG_distributer_id = #{disId}
                    AND gb_DPG_status &gt; 2
                    AND gb_DPG_buy_subtotal &gt; 0
+                   <if test="purDepId != null">
+                   AND gb_DPG_purchase_department_id = #{purDepId}
+                   </if>
+                   <if test="purDepIds != null and purDepIds.size() &gt; 0">
+                   AND gb_DPG_purchase_department_id IN
+                   <foreach item="id" collection="purDepIds" open="(" separator="," close=")">
+                       #{id}
+                   </foreach>
+                   </if>
                    <if test="typeNotEqual != null">
                    AND gb_DPG_purchase_type != #{typeNotEqual}
                    </if>
@@ -811,6 +973,15 @@
                    AND gb_DPG_distributer_id = #{disId}
                    AND gb_DPG_status &gt; 2
                    AND gb_DPG_buy_subtotal &gt; 0
+                   <if test="purDepId != null">
+                   AND gb_DPG_purchase_department_id = #{purDepId}
+                   </if>
+                   <if test="purDepIds != null and purDepIds.size() &gt; 0">
+                   AND gb_DPG_purchase_department_id IN
+                   <foreach item="id" collection="purDepIds" open="(" separator="," close=")">
+                       #{id}
+                   </foreach>
+                   </if>
                    <if test="typeNotEqual != null">
                    AND gb_DPG_purchase_type != #{typeNotEqual}
                    </if>
@@ -833,6 +1004,15 @@
                    AND gb_DPG_distributer_id = #{disId}
                    AND gb_DPG_status &gt; 2
                    AND gb_DPG_buy_subtotal &gt; 0
+                   <if test="purDepId != null">
+                   AND gb_DPG_purchase_department_id = #{purDepId}
+                   </if>
+                   <if test="purDepIds != null and purDepIds.size() &gt; 0">
+                   AND gb_DPG_purchase_department_id IN
+                   <foreach item="id" collection="purDepIds" open="(" separator="," close=")">
+                       #{id}
+                   </foreach>
+                   </if>
                  GROUP BY gb_DPG_dis_goods_id
                  ORDER BY total_subtotal DESC
                  LIMIT 10
@@ -865,6 +1045,15 @@
                    AND gb_DPG_buy_price IS NOT NULL
                    AND TRIM(gb_DPG_buy_price) &lt;&gt; ''
                    AND gb_DPG_status &gt; 2
+                   <if test="purDepId != null">
+                   AND gb_DPG_purchase_department_id = #{purDepId}
+                   </if>
+                   <if test="purDepIds != null and purDepIds.size() &gt; 0">
+                   AND gb_DPG_purchase_department_id IN
+                   <foreach item="id" collection="purDepIds" open="(" separator="," close=")">
+                       #{id}
+                   </foreach>
+                   </if>
                    <if test="typeNotEqual != null">
                    AND gb_DPG_purchase_type != #{typeNotEqual}
                    </if>
@@ -876,6 +1065,36 @@
                       ON g.gb_distributer_goods_id = t.goods_id
         ORDER BY t.price_fluctuation DESC
         LIMIT 10
+    </select>
+
+    <!-- 采购概览：按供货商汇总采购金额 TopN（与 queryGbPurchaseGoodsCount 同 join 条件） -->
+    <select id="queryGbPurchaseSupplierSpendTop" resultType="java.util.LinkedHashMap">
+        SELECT t.supplier_id                                    AS supplierId,
+               CASE
+                   WHEN njs.nx_jrdhs_supplier_name IS NOT NULL
+                       AND TRIM(njs.nx_jrdhs_supplier_name) &lt;&gt; ''
+                       THEN TRIM(njs.nx_jrdhs_supplier_name)
+                   ELSE CONCAT('供货商ID ', IFNULL(t.supplier_id, ''), '（名称未维护）')
+                   END                                          AS supplierName,
+               ROUND(t.total_purchase_amount, 1)                AS totalPurchaseAmount,
+               t.purchase_line_count                            AS purchaseLineCount
+        FROM (
+                 SELECT gdpg.gb_DPG_purchase_nx_supplier_id AS supplier_id,
+                        COALESCE(SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))), 0) AS total_purchase_amount,
+                        COUNT(*) AS purchase_line_count
+                 FROM gb_distributer_purchase_goods AS gdpg
+                     LEFT JOIN gb_distributer_purchase_batch AS gdpb
+                 ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+                 <where>
+                     <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+                     AND gdpg.gb_DPG_purchase_nx_supplier_id IS NOT NULL
+                     AND gdpg.gb_DPG_purchase_nx_supplier_id &gt; 0
+                 </where>
+                 GROUP BY gdpg.gb_DPG_purchase_nx_supplier_id
+                 ORDER BY total_purchase_amount DESC
+                 LIMIT 10
+             ) t
+                 LEFT JOIN nx_jrdh_supplier AS njs ON njs.nx_jrdh_supplier_id = t.supplier_id
     </select>
 
     <!-- 从采购商品表查询商品大类 -->

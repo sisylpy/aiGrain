@@ -15,6 +15,7 @@ import com.nongxinle.service.GbDishCostAnalysisService;
 import com.nongxinle.service.GbDistributerFoodGoodsService;
 import com.nongxinle.service.GbDistributerFoodService;
 import com.nongxinle.service.GbDistributerGoodsService;
+import com.nongxinle.constants.AiInsightDishProfitScope;
 import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.GbDepartmentGoodsStockReduceSupport;
 import com.nongxinle.utils.GrossMarginStandardDisplay;
@@ -140,7 +141,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
 
     @Override
     public Map<String, Object> buildReport(String startDate, String stopDate, Integer disId, String searchDepId,
-            Integer depFatherId, String reportKind) {
+            Integer depFatherId, String reportKind, Collection<Integer> scopeDepartmentIdsAllowFilter) {
         if (startDate == null || stopDate == null || disId == null) {
             throw new IllegalArgumentException("startDate、stopDate、disId 不能为空");
         }
@@ -150,7 +151,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
             throw new IllegalArgumentException("reportKind 仅支持 salesDish 或 outboundQty");
         }
 
-        List<Integer> scopeDepIds = resolveScopeDepIds(disId, searchDepId, depFatherId);
+        List<Integer> scopeDepIds = resolveScopeDepIds(disId, searchDepId, depFatherId, scopeDepartmentIdsAllowFilter);
         Map<String, Object> reduceParams = buildReduceParams(disId, searchDepId, depFatherId, startDate, stopDate);
         List<Map<String, Object>> reduceAgg =
                 gbDepartmentGoodsStockReduceService.queryProductionReduceAggByDisGoods(reduceParams);
@@ -275,7 +276,6 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         out.put("startDate", startDate);
         out.put("stopDate", stopDate);
         out.put("disId", disId);
-        out.put("searchDepId", searchDepId);
         out.put("depFatherId", depFatherId);
         out.put("salesDishRows", REPORT_KIND_SALES_DISH.equals(rk) ? salesDishRows : null);
         out.put("outboundGoodsRows", REPORT_KIND_OUTBOUND_QTY.equals(rk) ? outboundGoodsRows : null);
@@ -311,7 +311,6 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     /** 与 {@link #loadIngredientAnalysisData} 同口径，供按菜/按商两条报表复用。 */
     private static final class IngredientAnalysisData {
         final String startDate;
-        final String endDate;
         final String stopDate;
         final Integer disId;
         final String searchDepId;
@@ -340,7 +339,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         /** 与 {@code scopeOutboundSubtotals.subtotalOutbound123} 一致：本区间 type1+2+3 出库金额合计。 */
         final BigDecimal scopeSubtotalOutbound123;
 
-        private IngredientAnalysisData(String startDate, String endDate, String stopDate, Integer disId, String searchDepId,
+        private IngredientAnalysisData(String startDate, String stopDate, Integer disId, String searchDepId,
                 Integer depFatherId, List<Integer> scopeDepIds, Map<String, Object> reduceParams,
                 Map<Integer, BigDecimal> reduceW, Map<Integer, BigDecimal> reduceS,
                 Map<Integer, BigDecimal> wasteW, Map<Integer, BigDecimal> wasteS,
@@ -354,7 +353,6 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
                 BigDecimal scopeListPriceRevenueTotal,
                 BigDecimal scopeSubtotalOutbound123) {
             this.startDate = startDate;
-            this.endDate = endDate;
             this.stopDate = stopDate;
             this.disId = disId;
             this.searchDepId = searchDepId;
@@ -423,10 +421,15 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         }
     }
 
-    private IngredientAnalysisData loadIngredientAnalysisData(String startDate, String endDate, Integer disId,
+    private IngredientAnalysisData loadIngredientAnalysisData(String startDate, String stopDate, Integer disId,
             String searchDepId, Integer depFatherId, Set<Integer> unionFoodIdsIntoScope) {
-        String stopDate = endDate;
-        List<Integer> scopeDepIds = resolveScopeDepIds(disId, searchDepId, depFatherId);
+        return loadIngredientAnalysisData(startDate, stopDate, disId, searchDepId, depFatherId, unionFoodIdsIntoScope, null);
+    }
+
+    private IngredientAnalysisData loadIngredientAnalysisData(String startDate, String stopDate, Integer disId,
+            String searchDepId, Integer depFatherId, Set<Integer> unionFoodIdsIntoScope,
+            Collection<Integer> scopeDepartmentIdsAllowFilter) {
+        List<Integer> scopeDepIds = resolveScopeDepIds(disId, searchDepId, depFatherId, scopeDepartmentIdsAllowFilter);
         Map<String, Object> reduceParams = buildReduceParams(disId, searchDepId, depFatherId, startDate, stopDate);
         BigDecimal scopeSubtotalOutbound123 = computeScopeOutbound123Subtotal(reduceParams);
         BigDecimal scopeListPriceRevenueTotal = BigDecimal.ZERO;
@@ -519,7 +522,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
             scopeListPriceRevenueTotal = scopeListPriceRevenueTotal.add(
                     qf.multiply(unit).setScale(2, RoundingMode.HALF_UP));
         }
-        return new IngredientAnalysisData(startDate, endDate, stopDate, disId, searchDepId, depFatherId, scopeDepIds, reduceParams,
+        return new IngredientAnalysisData(startDate, stopDate, disId, searchDepId, depFatherId, scopeDepIds, reduceParams,
                 reduceW, reduceS, wasteW, wasteS, lossW, lossS, salesQtyByFood, salesSubtotalByFood, totalPortions, totalSales,
                 theoryWtByFoodAndGoods, sumTheoryByGoods, allFoodIds, recipeAgg.sumUByGoods, recipeAgg.sumSalesByGoods,
                 sumNeedByGoods, disGoodsById, scopeListPriceRevenueTotal, scopeSubtotalOutbound123);
@@ -595,16 +598,16 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     }
 
     @Override
-    public Map<String, Object> buildOutboundIngredientAnalysisReport(String startDate, String endDate, Integer disId,
+    public Map<String, Object> buildOutboundIngredientAnalysisReport(String startDate, String stopDate, Integer disId,
             String searchDepId, Integer depFatherId, String sortBy, String sortOrder, String goodsNameSearch, Integer page,
             Integer pageSize) {
-        if (startDate == null || endDate == null || disId == null) {
-            throw new IllegalArgumentException("startDate、endDate、disId 不能为空");
+        if (startDate == null || stopDate == null || disId == null) {
+            throw new IllegalArgumentException("startDate、stopDate、disId 不能为空");
         }
         String outboundSort = normalizeOutboundSortBy(sortBy);
         String orderMode = normalizeOutboundSortOrder(sortOrder);
         boolean sortAsc = "asc".equals(orderMode);
-        IngredientAnalysisData d = loadIngredientAnalysisData(startDate, endDate, disId, searchDepId, depFatherId, null);
+        IngredientAnalysisData d = loadIngredientAnalysisData(startDate, stopDate, disId, searchDepId, depFatherId, null);
         List<PerDishAlloc> lines = collectPerDishAllocs(d);
         BigDecimal totalOutboundAmount = toBdFromDouble(
                         gbDepartmentGoodsStockReduceService.queryReduceProduceTotal(d.reduceParams))
@@ -659,7 +662,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         }
 
         LocalDate curStart = parseIsoLocalDate(d.startDate);
-        LocalDate curEnd = parseIsoLocalDate(d.endDate);
+        LocalDate curEnd = parseIsoLocalDate(d.stopDate);
         IngredientAnalysisData dPrev = loadIngredientAnalysisData(curStart.minusMonths(1).toString(),
                 curEnd.minusMonths(1).toString(), disId, searchDepId, depFatherId, null);
         Map<Integer, BigDecimal> utilPctPrev = computeOutboundUtilPercentByGoods(groupPerDishAllocsByGoods(collectPerDishAllocs(dPrev)));
@@ -755,9 +758,8 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         summ.put("priorMonthAbnormalIngredientCount", abnormalPrev);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("startDate", d.startDate);
-        out.put("endDate", d.endDate);
+        out.put("stopDate", d.stopDate);
         out.put("disId", d.disId);
-        out.put("searchDepId", d.searchDepId);
         out.put("depFatherId", d.depFatherId);
         out.put("sortBy", outboundSort);
         out.put("sortOrder", orderMode);
@@ -1144,15 +1146,15 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     }
 
     @Override
-    public Map<String, Object> buildIngredientAnalysisReport(String startDate, String endDate, Integer disId,
+    public Map<String, Object> buildIngredientAnalysisReport(String startDate, String stopDate, Integer disId,
             String searchDepId, Integer depFatherId, String sortBy, String sortOrder) {
-        if (startDate == null || endDate == null || disId == null) {
-            throw new IllegalArgumentException("startDate、endDate、disId 不能为空");
+        if (startDate == null || stopDate == null || disId == null) {
+            throw new IllegalArgumentException("startDate、stopDate、disId 不能为空");
         }
         String sortMode = normalizeIngredientSortBy(sortBy);
         String orderMode = normalizeIngredientSortOrder(sortOrder);
         boolean asc = "asc".equals(orderMode);
-        IngredientAnalysisData d = loadIngredientAnalysisData(startDate, endDate, disId, searchDepId, depFatherId, null);
+        IngredientAnalysisData d = loadIngredientAnalysisData(startDate, stopDate, disId, searchDepId, depFatherId, null);
         List<Map<String, Object>> salesDishRows = new ArrayList<>();
         for (Integer foodId : d.allFoodIds) {
             salesDishRows.add(buildIngredientAnalysisDishRow(foodId,
@@ -1193,9 +1195,8 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         scope.put("averagePricePerPortion", ingredientTwoDecimals(avg));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("startDate", startDate);
-        out.put("endDate", endDate);
+        out.put("stopDate", stopDate);
         out.put("disId", disId);
-        out.put("searchDepId", searchDepId);
         out.put("depFatherId", depFatherId);
         out.put("sortBy", sortMode);
         out.put("sortOrder", orderMode);
@@ -1206,10 +1207,16 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     }
 
     @Override
-    public Map<Integer, List<Map<String, Object>>> buildIngredientRowsForFoodIds(String startDate, String endDate,
+    public Map<Integer, List<Map<String, Object>>> buildIngredientRowsForFoodIds(String startDate, String stopDate,
             Integer disId, Integer depFatherId, Set<Integer> foodIds) {
-        if (startDate == null || endDate == null || disId == null) {
-            throw new IllegalArgumentException("startDate、endDate、disId 不能为空");
+        return buildIngredientRowsForFoodIds(startDate, stopDate, disId, depFatherId, null, foodIds);
+    }
+
+    @Override
+    public Map<Integer, List<Map<String, Object>>> buildIngredientRowsForFoodIds(String startDate, String stopDate,
+            Integer disId, Integer depFatherId, String searchDepId, Set<Integer> foodIds) {
+        if (startDate == null || stopDate == null || disId == null) {
+            throw new IllegalArgumentException("startDate、stopDate、disId 不能为空");
         }
         LinkedHashSet<Integer> ids = new LinkedHashSet<>();
         if (foodIds != null) {
@@ -1222,7 +1229,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         if (ids.isEmpty()) {
             return new LinkedHashMap<>();
         }
-        IngredientAnalysisData d = loadIngredientAnalysisData(startDate, endDate, disId, null, depFatherId, ids);
+        IngredientAnalysisData d = loadIngredientAnalysisData(startDate, stopDate, disId, searchDepId, depFatherId, ids);
         Map<Integer, List<Map<String, Object>>> out = new LinkedHashMap<>();
         for (Integer foodId : ids) {
             Map<String, Object> dishRow = buildIngredientAnalysisDishRow(foodId,
@@ -1240,10 +1247,10 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     }
 
     @Override
-    public Map<Integer, BigDecimal> getDishActualCostPerPortion123ByFoodIds(String startDate, String endDate, Integer disId,
-            Integer depFatherId, Set<Integer> foodIds) {
-        if (startDate == null || startDate.trim().isEmpty() || endDate == null || endDate.trim().isEmpty()) {
-            throw new IllegalArgumentException("startDate、endDate 不能为空");
+    public Map<Integer, BigDecimal> getDishActualCostPerPortion123ByFoodIds(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, String searchDepId, Set<Integer> foodIds, Collection<Integer> scopeDepartmentIdsAllowFilter) {
+        if (startDate == null || startDate.trim().isEmpty() || stopDate == null || stopDate.trim().isEmpty()) {
+            throw new IllegalArgumentException("startDate、stopDate 不能为空");
         }
         if (disId == null || depFatherId == null) {
             throw new IllegalArgumentException("disId、depFatherId 不能为空");
@@ -1252,8 +1259,9 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
             return Collections.emptyMap();
         }
         String sd = startDate.trim();
-        String ed = endDate.trim();
-        IngredientAnalysisData d = loadIngredientAnalysisData(sd, ed, disId, null, depFatherId, foodIds);
+        String st = stopDate.trim();
+        IngredientAnalysisData d = loadIngredientAnalysisData(sd, st, disId, searchDepId, depFatherId, foodIds,
+                scopeDepartmentIdsAllowFilter);
         Map<Integer, BigDecimal> out = new HashMap<>();
         for (Integer foodId : foodIds) {
             if (foodId == null) {
@@ -1272,10 +1280,10 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     }
 
     @Override
-    public Map<Integer, Map<String, String>> getDishPerPortionCosts123ByFoodIds(String startDate, String endDate, Integer disId,
+    public Map<Integer, Map<String, String>> getDishPerPortionCosts123ByFoodIds(String startDate, String stopDate, Integer disId,
             Integer depFatherId, Set<Integer> foodIds) {
-        if (startDate == null || startDate.trim().isEmpty() || endDate == null || endDate.trim().isEmpty()) {
-            throw new IllegalArgumentException("startDate、endDate 不能为空");
+        if (startDate == null || startDate.trim().isEmpty() || stopDate == null || stopDate.trim().isEmpty()) {
+            throw new IllegalArgumentException("startDate、stopDate 不能为空");
         }
         if (disId == null || depFatherId == null) {
             throw new IllegalArgumentException("disId、depFatherId 不能为空");
@@ -1284,8 +1292,8 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
             return Collections.emptyMap();
         }
         String sd = startDate.trim();
-        String ed = endDate.trim();
-        IngredientAnalysisData d = loadIngredientAnalysisData(sd, ed, disId, null, depFatherId, foodIds);
+        String st = stopDate.trim();
+        IngredientAnalysisData d = loadIngredientAnalysisData(sd, st, disId, null, depFatherId, foodIds);
         Map<Integer, Map<String, String>> out = new LinkedHashMap<>();
         for (Integer foodId : foodIds) {
             if (foodId == null) {
@@ -1313,16 +1321,16 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
     private static final int DASHBOARD_TREND_MAX_MONTHS = 18;
 
     @Override
-    public Map<String, Object> buildDishIngredientDashboard(String startDate, String endDate, Integer disId, Integer depFatherId,
+    public Map<String, Object> buildDishIngredientDashboard(String startDate, String stopDate, Integer disId, Integer depFatherId,
             Integer foodId, String trendStartDate, String trendEndDate, String trendGranularity, Integer primaryDisGoodsId) {
-        if (startDate == null || startDate.trim().isEmpty() || endDate == null || endDate.trim().isEmpty()) {
-            throw new IllegalArgumentException("startDate、endDate 不能为空");
+        if (startDate == null || startDate.trim().isEmpty() || stopDate == null || stopDate.trim().isEmpty()) {
+            throw new IllegalArgumentException("startDate、stopDate 不能为空");
         }
         if (disId == null || depFatherId == null || foodId == null) {
             throw new IllegalArgumentException("disId、depFatherId、foodId 不能为空");
         }
         String sd = startDate.trim();
-        String ed = endDate.trim();
+        String st = stopDate.trim();
         String gran = trendGranularity == null || trendGranularity.trim().isEmpty()
                 ? "month"
                 : trendGranularity.trim().toLowerCase(Locale.ROOT);
@@ -1330,7 +1338,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
             throw new IllegalArgumentException("trendGranularity 当前仅支持 month");
         }
 
-        IngredientAnalysisData d = loadIngredientAnalysisData(sd, ed, disId, null, depFatherId,
+        IngredientAnalysisData d = loadIngredientAnalysisData(sd, st, disId, null, depFatherId,
                 Collections.singleton(foodId));
         Map<String, Object> dishRow = buildIngredientAnalysisDishRow(foodId,
                 d.theoryWtByFoodAndGoods.getOrDefault(foodId, Collections.emptyMap()),
@@ -1370,7 +1378,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
 
         int resolvedPrimary = primaryDisGoodsId != null ? primaryDisGoodsId : pickPrimaryDisGoodsIdForTrend(ingredientRows);
         LocalDate mainStart = parseIsoLocalDate(sd);
-        LocalDate mainEnd = parseIsoLocalDate(ed);
+        LocalDate mainEnd = parseIsoLocalDate(st);
         LocalDate trendStart = trendStartDate != null && !trendStartDate.trim().isEmpty()
                 ? parseIsoLocalDate(trendStartDate.trim())
                 : mainEnd.minusMonths(5);
@@ -1406,7 +1414,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("startDate", sd);
-        out.put("endDate", ed);
+        out.put("stopDate", st);
         out.put("trendStartDate", trendStart.toString());
         out.put("trendEndDate", trendEnd.toString());
         out.put("trendGranularity", gran);
@@ -3127,9 +3135,11 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
      * {@code queryGroupDepsByDisId} 返回的是「分组父部门」，真实门店/后厨等在 {@code gbDepartmentEntityList} 子部门中，
      * 销售表 {@code gb_dep_food_sales.gb_dfs_department_id} 对应子部门 id，不能只用父行的 fatherId 过滤。
      */
-    private List<Integer> resolveScopeDepIds(Integer disId, String searchDepId, Integer depFatherId) {
+    private List<Integer> resolveScopeDepIds(Integer disId, String searchDepId, Integer depFatherId,
+            Collection<Integer> scopeDepartmentIdsAllowFilter) {
         if (searchDepId != null && !"-1".equals(searchDepId)) {
-            return Collections.singletonList(Integer.valueOf(searchDepId));
+            return applyScopeDepartmentAllowFilter(Collections.singletonList(Integer.valueOf(searchDepId)),
+                    scopeDepartmentIdsAllowFilter);
         }
         Map<String, Object> q = new HashMap<>();
         q.put("disId", disId);
@@ -3148,13 +3158,51 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
                 if (sub.getGbDepartmentId() == null) {
                     continue;
                 }
-                if (depFatherId != null && !depFatherId.equals(sub.getGbDepartmentFatherId())) {
+                if (!AiInsightDishProfitScope.isGroupWideMendianAggregateUnderDis(depFatherId)
+                        && depFatherId != null
+                        && !depFatherId.equals(sub.getGbDepartmentFatherId())) {
                     continue;
                 }
                 uniq.put(sub.getGbDepartmentId(), Boolean.TRUE);
             }
         }
-        return new ArrayList<>(uniq.keySet());
+        if (!AiInsightDishProfitScope.isGroupWideMendianAggregateUnderDis(depFatherId)
+                && depFatherId != null
+                && scopeDepartmentIdsAllowFilter != null) {
+            for (Integer allowed : scopeDepartmentIdsAllowFilter) {
+                if (allowed != null && allowed.equals(depFatherId)) {
+                    uniq.put(depFatherId, Boolean.TRUE);
+                    break;
+                }
+            }
+        }
+        return applyScopeDepartmentAllowFilter(new ArrayList<>(uniq.keySet()), scopeDepartmentIdsAllowFilter);
+    }
+
+    private static List<Integer> applyScopeDepartmentAllowFilter(List<Integer> scopeDeptIds,
+            Collection<Integer> allowFilter) {
+        if (scopeDeptIds == null || scopeDeptIds.isEmpty()) {
+            return scopeDeptIds == null ? Collections.emptyList() : scopeDeptIds;
+        }
+        if (allowFilter == null || allowFilter.isEmpty()) {
+            return scopeDeptIds;
+        }
+        Set<Integer> allow = new HashSet<>();
+        for (Integer id : allowFilter) {
+            if (id != null) {
+                allow.add(id);
+            }
+        }
+        if (allow.isEmpty()) {
+            return scopeDeptIds;
+        }
+        List<Integer> out = new ArrayList<>();
+        for (Integer id : scopeDeptIds) {
+            if (id != null && allow.contains(id)) {
+                out.add(id);
+            }
+        }
+        return out;
     }
 
     private List<GbDepFoodSalesEntity> loadFoodSales(String startDate, String stopDate, Integer disId,
@@ -3191,7 +3239,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
             String startDate, String stopDate) {
         Map<String, Object> map = GbDepartmentGoodsStockReduceSupport.buildReduceCostQueryMap(
                 startDate, stopDate, disId, null, searchDepId);
-        if (depFatherId != null) {
+        if (depFatherId != null && !AiInsightDishProfitScope.isGroupWideMendianAggregateUnderDis(depFatherId)) {
             map.put("depFatherId", depFatherId);
         }
         return map;

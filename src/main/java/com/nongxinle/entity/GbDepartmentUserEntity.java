@@ -52,7 +52,7 @@ public class GbDepartmentUserEntity implements Serializable {
     private String gbDuWxPhone;
 
     /**
-     * 是否管理员
+     * 用户脚色
      */
     private Integer gbDuAdmin;
 

@@ -53,6 +53,16 @@ public interface GbDepartmentGoodsStockReduceMapper extends BaseMapper<GbDepartm
     Map<String, Object> queryReduceAllTypesTotalOnDailyRevenueDays(@Param("params") Map<String, Object> map);
 
     /**
+     * 多门店父部门 in 列表；仅统计直营/加盟部门上的核销（与 gd 关联过滤类型）。
+     */
+    Map<String, Object> queryReduceAllTypesTotalForRetailDepartmentFathers(@Param("params") Map<String, Object> map);
+
+    /**
+     * 按父级门店拆分出库成本，返回每店的 produce/waste/loss/return 合计（集团门店毛利表用）。
+     */
+    List<Map<String, Object>> queryReduceAllTypesTotalGroupedByDepartmentFather(@Param("params") Map<String, Object> map);
+
+    /**
      * 按 subtotal 查询 Top 商品 (根据 type 过滤)
      */
     List<GbDistributerGoodsEntity> queryStockSubtotalTopTimes(@Param("params") Map<String, Object> map);

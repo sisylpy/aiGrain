@@ -128,7 +128,8 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
                     .divide(totalNetRevenue, 2, RoundingMode.HALF_UP);
         }
         result.put("利润率", formatStatNumber(grossProfitMargin));
-        result.put("利润率说明", ((BigDecimal) formatStatNumber(grossProfitMargin)).toPlainString() + "%");
+        result.put("利润率说明",
+                grossProfitMargin.setScale(1, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString() + "%");
 
         result.put("参考日均固定开支", formatStatNumber(dailyFixedCost));
 
@@ -456,6 +457,111 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         return data;
     }
 
+    @Override
+    public Map<String, Object> buildGroupWideIncomeFlattened(Map<String, Object> groupAggRow,
+            int visibleDeptNodeCount,
+            Integer parentStoreCountHint,
+            String startDate,
+            String endDate) {
+        String qStart = (startDate != null && !startDate.isBlank()) ? startDate.trim() : null;
+        String qEnd = (endDate != null && !endDate.isBlank()) ? endDate.trim() : null;
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (groupAggRow == null || groupAggRow.isEmpty()) {
+            return result;
+        }
+
+        int days = toPositiveInt(groupAggRow.get("distinctRecordDates"));
+        BigDecimal totalGross = toDecimal(groupAggRow.get("totalGrossRevenue"));
+        BigDecimal totalOrders = toDecimal(groupAggRow.get("totalOrders"));
+        BigDecimal totalPlatform = toDecimal(groupAggRow.get("totalPlatformFee"));
+        BigDecimal totalTakeout = toDecimal(groupAggRow.get("totalTakeout"));
+        BigDecimal totalTakeoutNetApprox = toDecimal(groupAggRow.get("totalTakeoutNetApprox"));
+        BigDecimal totalDineIn = toDecimal(groupAggRow.get("totalDineIn"));
+
+        BigDecimal avgDailyRevenue = days > 0
+                ? totalGross.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+        BigDecimal avgOrderCount = days > 0
+                ? totalOrders.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+        BigDecimal avgPerCustomer = totalOrders.compareTo(BigDecimal.ZERO) > 0
+                ? totalGross.divide(totalOrders, 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+        BigDecimal avgTakeoutRevenue = days > 0
+                ? totalTakeout.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+        BigDecimal avgTakeoutNet = days > 0
+                ? totalTakeoutNetApprox.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+        BigDecimal avgDineInRevenue = days > 0
+                ? totalDineIn.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+
+        BigDecimal avgNetRevenue = avgDailyRevenue;
+        if (days > 0) {
+            avgNetRevenue = avgDailyRevenue.subtract(
+                    totalPlatform.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP));
+        }
+
+        result.put("统计天数", days);
+        if (qStart != null) {
+            result.put("统计开始日期", qStart);
+        }
+        if (qEnd != null) {
+            result.put("统计结束日期", qEnd);
+        }
+        result.put("数据口径说明", groupScopeNote(visibleDeptNodeCount, parentStoreCountHint, groupAggRow));
+        result.put("日均营业额", formatStatNumber(avgDailyRevenue));
+        result.put("总营业额", formatStatNumber(totalGross));
+        result.put("日均订单数", formatStatNumber(avgOrderCount));
+        result.put("客单价", formatStatNumber(avgPerCustomer));
+        result.put("平台费合计", formatStatNumber(totalPlatform));
+        result.put("退款合计", formatStatNumber(BigDecimal.ZERO));
+        result.put("最高日营业额", formatStatNumber(toDecimal(groupAggRow.get("maxDailyGross"))));
+        result.put("最低日营业额", formatStatNumber(toDecimal(groupAggRow.get("minDailyGrossPositive"))));
+
+        result.put("日均固定开支", "—");
+        result.put("月工资", "—");
+        result.put("月租金", "—");
+
+        result.put("日均净收入", formatStatNumber(avgNetRevenue));
+        result.put("外卖营业额合计", formatStatNumber(totalTakeout));
+        result.put("日均外卖营业额", formatStatNumber(avgTakeoutRevenue));
+        result.put("外卖净收合计", formatStatNumber(totalTakeoutNetApprox));
+        result.put("日均外卖净收", formatStatNumber(avgTakeoutNet));
+        result.put("堂食营业额合计", formatStatNumber(totalDineIn));
+        result.put("日均堂食营业额", formatStatNumber(avgDineInRevenue));
+
+        result.put("利润率", "—");
+        result.put("利润率说明", "集团多门店汇总：未合并单店核销与食材成本");
+
+        result.put("盈亏状态码", "n_a");
+        result.put("盈亏状态", "不适用");
+        result.put("日均利润含库存成本", "—");
+        return result;
+    }
+
+    private static String groupScopeNote(int visibleDeptNodeCount, Integer parentStoreHint, Map<String, Object> agg) {
+        int withRows = toPositiveInt(agg.get("distinctRecordingDepartments"));
+        int missing = Math.max(0, visibleDeptNodeCount - withRows);
+        String storePart = (parentStoreHint != null && parentStoreHint > 0)
+                ? ("可见范围内约 " + parentStoreHint + " 家门店")
+                : ("可见范围内约 " + visibleDeptNodeCount + " 个组织单元");
+        String tail = missing > 0
+                ? ("；约 " + missing + " 家本期暂无日营收或未纳入本条汇总")
+                : "";
+        return "集团汇总：" + storePart + "；本期约 " + withRows + " 家有日营收入账" + tail
+                + "。统计天数为有营业额的自然日数（非简单日历跨度）。";
+    }
+
+    private static int toPositiveInt(Object v) {
+        if (v == null) {
+            return 0;
+        }
+        if (v instanceof Number n) {
+            return Math.max(0, n.intValue());
+        }
+        try {
+            return Math.max(0, new BigDecimal(v.toString().trim()).intValue());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     private static BigDecimal toDecimal(Object value) {
         if (value == null) {
             return BigDecimal.ZERO;
@@ -477,10 +583,10 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
             return value;
         }
         if (value instanceof BigDecimal bd) {
-            return bd.setScale(1, RoundingMode.HALF_UP).stripTrailingZeros();
+            return bd.setScale(1, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
         }
         if (value instanceof Number n) {
-            return new BigDecimal(n.toString()).setScale(1, RoundingMode.HALF_UP).stripTrailingZeros();
+            return new BigDecimal(n.toString()).setScale(1, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
         }
         return value;
     }

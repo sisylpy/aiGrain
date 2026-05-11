@@ -171,6 +171,11 @@ public class GbDepartmentGoodsStockReduceServiceImpl extends ServiceImpl<GbDepar
     }
 
     @Override
+    public Map<String, Object> queryReduceAllTypesTotalForRetailDepartmentFathers(Map<String, Object> map) {
+        return gbDepartmentGoodsStockReduceMapper.queryReduceAllTypesTotalForRetailDepartmentFathers(map);
+    }
+
+    @Override
     public Map<String, Object> queryReduceAllTypesTotalOnDailyRevenueDays(Map<String, Object> map) {
         return gbDepartmentGoodsStockReduceMapper.queryReduceAllTypesTotalOnDailyRevenueDays(map);
     }

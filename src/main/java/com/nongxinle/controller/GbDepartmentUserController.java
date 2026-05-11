@@ -141,7 +141,7 @@ public class GbDepartmentUserController {
 
         Map<String, Object> map = new HashMap<>();
         map.put("openId", openid);
-        map.put("admin", 2);
+        map.put("admin", GbConstants.DepartmentUserRole.STORE_MANAGER_APP);
         GbDepartmentUserEntity depUserEntities = gbDepartmentUserService.queryDepUsersByOpenIdAndAdmin(map);
         NxJrdhUserEntity nxJrdhUserEntity = nxJrdhUserService.queryWhichUserByOpenId(openid);
 
@@ -154,15 +154,17 @@ public class GbDepartmentUserController {
             gbDistributerEntity.setGbDistributerPrintName("ApplyHalfPanel");
             gbDistributerEntity.setGbDistributerSysCityId(6);
             gbDistributerEntity.setGbDistributerNxDisId(-1);
+            gbDistributerEntity.setGbDistributerRecordSeconds("30");
 
-            GbDepartmentUserEntity purUser = new GbDepartmentUserEntity();
+            GbDepartmentUserEntity managerUser = new GbDepartmentUserEntity();
             //1,上传图片
             String filePath = UploadFile.upload(session, ImagePaths.UPLOAD, file);
             //1 disuser save
-            purUser.setGbDuWxOpenId(openid);
-            purUser.setGbDuWxAvartraUrl(filePath);
-            purUser.setGbDuWxNickName(restaurantName+ "采购员");
-            gbDistributerEntity.setSingleDepartmentUser(purUser);
+            managerUser.setGbDuWxOpenId(openid);
+            managerUser.setGbDuAdmin(GbConstants.DepartmentUserRole.STORE_MANAGER_APP);
+            managerUser.setGbDuWxAvartraUrl(filePath);
+            managerUser.setGbDuWxNickName(restaurantName+ "管理员");
+            gbDistributerEntity.setSingleDepartmentUser(managerUser);
             Integer newDisId = gbDistributerService.saveSingleMendianDistributerGb(gbDistributerEntity);
 
             System.out.println("usidididid" + newDisId);
@@ -254,7 +256,7 @@ public class GbDepartmentUserController {
             Map<String, Object> mapRe = new HashMap<>();
             mapRe.put("disInfo", gbDistributerService.queryDistributerInfo(gbDisId));
             mapRe.put("depUserInfo", gbDepartmentUserService.queryDepUserByOpenId(openid));
-            mapRe.put("depInfo", gbDepartmentService.queryDepInfoGb(depId));
+            mapRe.put("depInfo", gbDepartmentService.getById(depId));
             return R.ok().put("data", mapRe);
 
         } else {
@@ -288,10 +290,12 @@ public class GbDepartmentUserController {
 
             if (departmentUserEntity != null) {
                 // 查询批发商信息
-                // 查询完整批发商信息（含所有部门列表）
-                GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerWithAllDepartments(departmentUserEntity.getGbDuDistributerId());
+                GbDistributerEntity gbDistributerEntity = gbDistributerService.getById(departmentUserEntity.getGbDuDistributerId());
+
                 // 查询部门信息
-                GbDepartmentEntity gbDepartmentEntity = gbDepartmentService.queryDepInfoGb(departmentUserEntity.getGbDuDepartmentId());
+                Map<String, Object> mapDep = new HashMap<>();
+                mapDep.put("depFatherId", departmentUserEntity.getGbDuDepartmentId());
+                GbDepartmentEntity gbDepartmentEntity = gbDepartmentService.queryDepInfo(mapDep);
 
                 Map<String, Object> data = new HashMap<>();
                 data.put("depUserInfo", departmentUserEntity);

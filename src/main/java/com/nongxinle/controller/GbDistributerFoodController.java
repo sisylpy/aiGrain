@@ -352,6 +352,25 @@ public class GbDistributerFoodController {
 		return null;
 	}
 
+	/**
+	 * 为部门菜列表填充 {@link GbDepFoodEntity#setGbDepartmentEntity}（含部门名称等），按部门 id 缓存减少重复查询。
+	 */
+	private void attachDepartmentsToDepFoods(List<GbDepFoodEntity> depFoods, Map<Integer, GbDepartmentEntity> depCache) {
+		if (depFoods == null || depFoods.isEmpty()) {
+			return;
+		}
+		for (GbDepFoodEntity depFood : depFoods) {
+			Integer depId = depFood.getGbDfDepId();
+			if (depId == null) {
+				continue;
+			}
+			if (!depCache.containsKey(depId)) {
+				depCache.put(depId, gbDepartmentService.getById(depId));
+			}
+			depFood.setGbDepartmentEntity(depCache.get(depId));
+		}
+	}
+
 	@RequestMapping(value = "/disGetFood/{disId}")
 	@ResponseBody
 	public R disGetFood(@PathVariable Integer disId) {
@@ -361,7 +380,13 @@ public class GbDistributerFoodController {
 		map.put("fatherId", 0);
 		logger.info("========== query params: {} ==========", map);
 		List<GbDistributerFoodEntity> supplierEntities = gbDistributerFoodService.queryFoodByParams(map);
+		Map<Integer, GbDepartmentEntity> depInfoCache = new HashMap<>();
 		for (GbDistributerFoodEntity father : supplierEntities) {
+			Map<String, Object> depMap = new HashMap<>();
+			depMap.put("foodId", father.getGbDistributerFoodId());
+			father.setGbDepFoodEntities(gbDepFoodService.queryDepFoodByParams(depMap));
+			attachDepartmentsToDepFoods(father.getGbDepFoodEntities(), depInfoCache);
+
 			Map<String, Object> childMap = new HashMap<>();
 			childMap.put("disId", disId);
 			childMap.put("fatherId", father.getGbDistributerFoodId());
@@ -373,6 +398,12 @@ public class GbDistributerFoodController {
 				}
 				return 0;
 			}));
+			for (GbDistributerFoodEntity child : children) {
+				Map<String, Object> childDepMap = new HashMap<>();
+				childDepMap.put("foodId", child.getGbDistributerFoodId());
+				child.setGbDepFoodEntities(gbDepFoodService.queryDepFoodByParams(childDepMap));
+				attachDepartmentsToDepFoods(child.getGbDepFoodEntities(), depInfoCache);
+			}
 			father.setFoodEntityList(children);
 		}
 		logger.info("========== query result size: {} ==========", supplierEntities.size());

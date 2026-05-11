@@ -32,10 +32,6 @@ public class GbDepartmentController {
     @Autowired
     private GbDepartmentDisGoodsService gbDepartmentDisGoodsService;
     @Autowired
-    private NxJrdhSupplierService nxJrdhSupplierService;
-    @Autowired
-    private GbDistributerPurchaseBatchService gbDPBService;
-    @Autowired
     private GbDepartmentGoodsStockService gbDepartmentGoodsStockService;
     @Autowired
     private GbDistributerPurchaseGoodsService gbDistributerPurchaseGoodsService;
@@ -164,7 +160,7 @@ public class GbDepartmentController {
     @ResponseBody
     public R getDepInfoGb(@PathVariable Integer depId) {
         System.out.println(depId + "idiid");
-        GbDepartmentEntity gbDepartmentEntity = gbDepartmentService.queryDepInfoGb(depId);
+        GbDepartmentEntity gbDepartmentEntity = gbDepartmentService.getById(depId);
         return R.ok().put("data", gbDepartmentEntity);
     }
 
@@ -191,7 +187,7 @@ public class GbDepartmentController {
         map.put("depId", depId);
         System.out.println("mapapa" + map);
 
-        GbDepartmentEntity departmentEntity = gbDepartmentService.queryDepInfoGb(depId);
+        GbDepartmentEntity departmentEntity = gbDepartmentService.getById(depId);
         List<GbDepartmentOrdersEntity> ordersEntities = gbDepartmentOrdersService.queryDisOrdersListByParams(map);
         List<GbDepartmentGoodsStockEntity> departmentGoodsStockEntities = gbDepartmentGoodsStockService.queryGoodsStockByParams(map);
         if (gbDepartmentUserEntities.size() > 0 || ordersEntities.size() > 0 || departmentGoodsStockEntities.size() > 0) {
@@ -205,7 +201,7 @@ public class GbDepartmentController {
             }
 
             Integer gbDepartmentFatherId = departmentEntity.getGbDepartmentFatherId();
-            GbDepartmentEntity fatherDep = gbDepartmentService.queryDepInfoGb(gbDepartmentFatherId);
+            GbDepartmentEntity fatherDep = gbDepartmentService.getById(gbDepartmentFatherId);
             fatherDep.setGbDepartmentSubAmount(fatherDep.getGbDepartmentSubAmount() - 1);
             gbDepartmentService.updateById(fatherDep);
 

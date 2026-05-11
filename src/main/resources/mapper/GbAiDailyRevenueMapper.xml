@@ -5,6 +5,7 @@
 	<resultMap id="BaseResultMap" type="com.nongxinle.entity.GbAiDailyRevenueEntity">
 		<id column="gb_ai_daily_revenue_id" property="gbAiDailyRevenueId" />
 		<result column="gb_ai_daily_revenue_department_id" property="gbAiDailyRevenueDepartmentId" />
+		<result column="gb_ai_daily_revenue_parent_department_id" property="gbAiDailyRevenueParentDepartmentId" />
 		<result column="gb_ai_daily_revenue_distributer_id" property="gbAiDailyRevenueDistributerId" />
 		<result column="gb_ai_daily_revenue_record_date" property="gbAiDailyRevenueRecordDate" />
 		<result column="gb_ai_daily_revenue_dine_in_revenue" property="gbAiDailyRevenueDineInRevenue" />
@@ -22,12 +23,20 @@
 		<result column="gb_ai_daily_revenue_update_time" property="gbAiDailyRevenueUpdateTime" />
 	</resultMap>
 
-	<!-- 查询日营业额列表 -->
+	<!-- 查询日营业额列表（传 departmentScopeIds 时按父部门+子部门集合查询；否则仅 departmentId） -->
 	<select id="queryDailyRevenueListByParams" resultMap="BaseResultMap">
 		SELECT * FROM gb_ai_daily_revenue
 		WHERE 1=1
-		<if test="departmentId != null">
-			AND gb_ai_daily_revenue_department_id = #{departmentId}
+		<if test="departmentScopeIds != null and departmentScopeIds.size() &gt; 0">
+			AND gb_ai_daily_revenue_department_id IN
+			<foreach collection="departmentScopeIds" item="sid" open="(" separator="," close=")">
+				#{sid}
+			</foreach>
+		</if>
+		<if test="departmentScopeIds == null or departmentScopeIds.size() == 0">
+			<if test="departmentId != null">
+				AND gb_ai_daily_revenue_department_id = #{departmentId}
+			</if>
 		</if>
 		<if test="startDate != null">
 			AND gb_ai_daily_revenue_record_date &gt;= #{startDate}
@@ -38,35 +47,217 @@
 		ORDER BY gb_ai_daily_revenue_record_date ASC
 	</select>
 
-	<!-- 查询营业额统计 -->
+	<!-- 查询营业额统计：先按自然日汇总父+子部门各行列，再算 avg/max/min，避免同一日多行重复计 days -->
 	<select id="selectStatsByDepartmentId" resultType="java.util.Map">
 		SELECT
 			COUNT(*) as days,
-			COALESCE(AVG(gb_ai_daily_revenue_gross_revenue), 0) as avg_daily_revenue,
-			COALESCE(SUM(gb_ai_daily_revenue_gross_revenue), 0) as total_revenue,
-			COALESCE(SUM(gb_ai_daily_revenue_dine_in_orders + gb_ai_daily_revenue_takeout_orders), 0) as total_orders,
-			COALESCE(AVG(gb_ai_daily_revenue_dine_in_orders + gb_ai_daily_revenue_takeout_orders), 0) as avg_order_count,
-			COALESCE(AVG((gb_ai_daily_revenue_dine_in_revenue + gb_ai_daily_revenue_takeout_revenue) / NULLIF((gb_ai_daily_revenue_dine_in_customers + gb_ai_daily_revenue_takeout_orders), 0)), 0) as avg_per_customer,
-			COALESCE(SUM(gb_ai_daily_revenue_platform_fee), 0) as total_coupon_amount,
-			COALESCE(SUM(gb_ai_daily_revenue_platform_fee), 0) as total_platform_fee,
-			COALESCE(SUM(gb_ai_daily_revenue_dine_in_revenue), 0) as total_dine_in_revenue,
-			COALESCE(AVG(gb_ai_daily_revenue_dine_in_revenue), 0) as avg_dine_in_revenue,
+			COALESCE(AVG(day_gross), 0) as avg_daily_revenue,
+			COALESCE(SUM(day_gross), 0) as total_revenue,
+			COALESCE(SUM(day_orders), 0) as total_orders,
+			COALESCE(AVG(day_orders), 0) as avg_order_count,
+			COALESCE(AVG((day_dine_in + day_takeout) / NULLIF((day_dine_cust + day_takeout_ord), 0)), 0) as avg_per_customer,
+			COALESCE(SUM(day_platform), 0) as total_coupon_amount,
+			COALESCE(SUM(day_platform), 0) as total_platform_fee,
+			COALESCE(SUM(day_dine_in), 0) as total_dine_in_revenue,
+			COALESCE(AVG(day_dine_in), 0) as avg_dine_in_revenue,
 			0 as total_refund_amount,
-			COALESCE(MAX(gb_ai_daily_revenue_gross_revenue), 0) as max_daily_revenue,
-			COALESCE(MIN(gb_ai_daily_revenue_gross_revenue), 0) as min_daily_revenue,
-			-- 新增外卖相关统计
-			COALESCE(SUM(gb_ai_daily_revenue_takeout_revenue), 0) as total_takeout_revenue,
-			COALESCE(AVG(gb_ai_daily_revenue_takeout_revenue), 0) as avg_takeout_revenue,
-			COALESCE(SUM(gb_ai_daily_revenue_takeout_revenue - gb_ai_daily_revenue_platform_fee), 0) as total_takeout_net,
-			COALESCE(AVG(gb_ai_daily_revenue_takeout_revenue - gb_ai_daily_revenue_platform_fee), 0) as avg_takeout_net
+			COALESCE(MAX(day_gross), 0) as max_daily_revenue,
+			COALESCE(MIN(day_gross), 0) as min_daily_revenue,
+			COALESCE(SUM(day_takeout), 0) as total_takeout_revenue,
+			COALESCE(AVG(day_takeout), 0) as avg_takeout_revenue,
+			COALESCE(SUM(day_takeout_net), 0) as total_takeout_net,
+			COALESCE(AVG(day_takeout_net), 0) as avg_takeout_net
+		FROM (
+			SELECT
+				gb_ai_daily_revenue_record_date,
+				COALESCE(SUM(COALESCE(gb_ai_daily_revenue_dine_in_revenue, 0)
+					+ COALESCE(gb_ai_daily_revenue_takeout_revenue, 0)), 0) AS day_gross,
+				COALESCE(SUM(gb_ai_daily_revenue_dine_in_revenue), 0) AS day_dine_in,
+				COALESCE(SUM(gb_ai_daily_revenue_takeout_revenue), 0) AS day_takeout,
+				COALESCE(SUM(COALESCE(gb_ai_daily_revenue_dine_in_orders, 0)
+					+ COALESCE(gb_ai_daily_revenue_takeout_orders, 0)), 0) AS day_orders,
+				COALESCE(SUM(gb_ai_daily_revenue_dine_in_customers), 0) AS day_dine_cust,
+				COALESCE(SUM(gb_ai_daily_revenue_takeout_orders), 0) AS day_takeout_ord,
+				COALESCE(SUM(gb_ai_daily_revenue_platform_fee), 0) AS day_platform,
+				COALESCE(SUM(gb_ai_daily_revenue_takeout_revenue), 0)
+					- COALESCE(SUM(gb_ai_daily_revenue_platform_fee), 0) AS day_takeout_net
+			FROM gb_ai_daily_revenue
+			WHERE gb_ai_daily_revenue_department_id IN
+			<foreach collection="params.departmentScopeIds" item="sid" open="(" separator="," close=")">
+				#{sid}
+			</foreach>
+			<if test="params.startDate != null and params.startDate != ''">
+				AND gb_ai_daily_revenue_record_date &gt;= #{params.startDate}
+			</if>
+			<if test="params.endDate != null and params.endDate != ''">
+				AND gb_ai_daily_revenue_record_date &lt;= #{params.endDate}
+			</if>
+			GROUP BY gb_ai_daily_revenue_record_date
+		) daily
+	</select>
+
+	<select id="sumNetRevenueForDepartmentIds" resultType="java.math.BigDecimal">
+		SELECT COALESCE(SUM(
+			COALESCE(gb_ai_daily_revenue_dine_in_revenue, 0)
+			+ COALESCE(gb_ai_daily_revenue_takeout_revenue, 0)
+			- COALESCE(gb_ai_daily_revenue_platform_fee, 0)
+		), 0)
 		FROM gb_ai_daily_revenue
-		WHERE gb_ai_daily_revenue_department_id = #{params.departmentId}
-		<if test="params.startDate != null and params.startDate != ''">
-			AND gb_ai_daily_revenue_record_date &gt;= #{params.startDate}
-		</if>
-		<if test="params.endDate != null and params.endDate != ''">
-			AND gb_ai_daily_revenue_record_date &lt;= #{params.endDate}
-		</if>
+		WHERE gb_ai_daily_revenue_department_id IN
+		<foreach collection="departmentIds" item="did" open="(" separator="," close=")">
+			#{did}
+		</foreach>
+		AND gb_ai_daily_revenue_record_date &gt;= #{startDate}
+		AND gb_ai_daily_revenue_record_date &lt;= #{endDate}
+	</select>
+
+	<select id="selectRevenueWindowAggregateForDepartmentIds" resultType="java.util.HashMap">
+		SELECT
+			COALESCE(SUM(COALESCE(gb_ai_daily_revenue_dine_in_revenue, 0)), 0) AS totalDineIn,
+			COALESCE(SUM(COALESCE(gb_ai_daily_revenue_takeout_revenue, 0)), 0) AS totalTakeout,
+			COALESCE(SUM(COALESCE(gb_ai_daily_revenue_platform_fee, 0)), 0) AS totalPlatformFee,
+			COUNT(*) AS revenueRowCount,
+			COUNT(DISTINCT gb_ai_daily_revenue_record_date) AS distinctRecordDates,
+			MIN(gb_ai_daily_revenue_record_date) AS minRecordDate,
+			MAX(gb_ai_daily_revenue_record_date) AS maxRecordDate
+		FROM gb_ai_daily_revenue
+		WHERE gb_ai_daily_revenue_department_id IN
+		<foreach collection="departmentIds" item="did" open="(" separator="," close=")">
+			#{did}
+		</foreach>
+		AND gb_ai_daily_revenue_record_date &gt;= #{startDate}
+		AND gb_ai_daily_revenue_record_date &lt;= #{endDate}
+	</select>
+
+	<select id="selectRevenueWindowAggregateForDistributerId" resultType="java.util.HashMap">
+		SELECT
+			COALESCE(SUM(COALESCE(gb_ai_daily_revenue_dine_in_revenue, 0)), 0) AS totalDineIn,
+			COALESCE(SUM(COALESCE(gb_ai_daily_revenue_takeout_revenue, 0)), 0) AS totalTakeout,
+			COALESCE(SUM(COALESCE(gb_ai_daily_revenue_platform_fee, 0)), 0) AS totalPlatformFee,
+			COUNT(*) AS revenueRowCount,
+			COUNT(DISTINCT gb_ai_daily_revenue_record_date) AS distinctRecordDates,
+			MIN(gb_ai_daily_revenue_record_date) AS minRecordDate,
+			MAX(gb_ai_daily_revenue_record_date) AS maxRecordDate
+		FROM gb_ai_daily_revenue
+		WHERE gb_ai_daily_revenue_distributer_id = #{distributerId}
+		AND gb_ai_daily_revenue_record_date &gt;= #{startDate}
+		AND gb_ai_daily_revenue_record_date &lt;= #{endDate}
+	</select>
+
+	<select id="sumNetRevenueForDistributerId" resultType="java.math.BigDecimal">
+		SELECT COALESCE(SUM(
+			COALESCE(gb_ai_daily_revenue_dine_in_revenue, 0)
+			+ COALESCE(gb_ai_daily_revenue_takeout_revenue, 0)
+			- COALESCE(gb_ai_daily_revenue_platform_fee, 0)
+		), 0)
+		FROM gb_ai_daily_revenue
+		WHERE gb_ai_daily_revenue_distributer_id = #{distributerId}
+		AND gb_ai_daily_revenue_record_date &gt;= #{startDate}
+		AND gb_ai_daily_revenue_record_date &lt;= #{endDate}
+	</select>
+
+	<select id="listNetRevenueGroupedByRecordingDepartmentIds" resultType="com.nongxinle.dto.AiStoreNetRevenueAggRow">
+		SELECT gb_ai_daily_revenue_department_id AS departmentId,
+			'' AS departmentName,
+			COALESCE(SUM(
+				COALESCE(gb_ai_daily_revenue_dine_in_revenue, 0)
+				+ COALESCE(gb_ai_daily_revenue_takeout_revenue, 0)
+				- COALESCE(gb_ai_daily_revenue_platform_fee, 0)
+			), 0) AS netRevenue
+		FROM gb_ai_daily_revenue
+		WHERE gb_ai_daily_revenue_department_id IN
+		<foreach collection="departmentIds" item="did" open="(" separator="," close=")">
+			#{did}
+		</foreach>
+		AND gb_ai_daily_revenue_record_date &gt;= #{startDate}
+		AND gb_ai_daily_revenue_record_date &lt;= #{endDate}
+		GROUP BY gb_ai_daily_revenue_department_id
+	</select>
+
+	<!-- 集团：多记账部门 id 一次汇总；distinctRecordDates = 至少一条日营收行的自然日数 -->
+	<select id="selectGroupIncomeAggregateForDepartmentIds" resultType="java.util.HashMap">
+		SELECT
+			COALESCE(SUM(COALESCE(dr.gb_ai_daily_revenue_dine_in_revenue, 0)
+				+ COALESCE(dr.gb_ai_daily_revenue_takeout_revenue, 0)), 0) AS totalGrossRevenue,
+			COALESCE(SUM(COALESCE(dr.gb_ai_daily_revenue_dine_in_orders, 0)
+				+ COALESCE(dr.gb_ai_daily_revenue_takeout_orders, 0)), 0) AS totalOrders,
+			COALESCE(SUM(COALESCE(dr.gb_ai_daily_revenue_platform_fee, 0)), 0) AS totalPlatformFee,
+			COALESCE(SUM(COALESCE(dr.gb_ai_daily_revenue_dine_in_revenue, 0)), 0) AS totalDineIn,
+			COALESCE(SUM(COALESCE(dr.gb_ai_daily_revenue_takeout_revenue, 0)), 0) AS totalTakeout,
+			COALESCE(SUM(
+				COALESCE(dr.gb_ai_daily_revenue_takeout_revenue, 0)
+				- COALESCE(dr.gb_ai_daily_revenue_platform_fee, 0)
+			), 0) AS totalTakeoutNetApprox,
+			COUNT(DISTINCT dr.gb_ai_daily_revenue_record_date) AS distinctRecordDates,
+			COUNT(DISTINCT dr.gb_ai_daily_revenue_department_id) AS distinctRecordingDepartments,
+			COALESCE((
+				SELECT MAX(agg.day_gross) FROM (
+					SELECT SUM(COALESCE(dx.gb_ai_daily_revenue_dine_in_revenue, 0)
+						+ COALESCE(dx.gb_ai_daily_revenue_takeout_revenue, 0)) AS day_gross
+					FROM gb_ai_daily_revenue dx
+					WHERE dx.gb_ai_daily_revenue_department_id IN
+					<foreach collection="departmentIds" item="did" open="(" separator="," close=")">
+						#{did}
+					</foreach>
+					AND dx.gb_ai_daily_revenue_record_date &gt;= #{startDate}
+					AND dx.gb_ai_daily_revenue_record_date &lt;= #{endDate}
+					GROUP BY dx.gb_ai_daily_revenue_record_date
+				) agg
+			), 0) AS maxDailyGross,
+			COALESCE((
+				SELECT MIN(agg2.day_gross) FROM (
+					SELECT SUM(COALESCE(dy.gb_ai_daily_revenue_dine_in_revenue, 0)
+						+ COALESCE(dy.gb_ai_daily_revenue_takeout_revenue, 0)) AS day_gross
+					FROM gb_ai_daily_revenue dy
+					WHERE dy.gb_ai_daily_revenue_department_id IN
+					<foreach collection="departmentIds" item="did" open="(" separator="," close=")">
+						#{did}
+					</foreach>
+					AND dy.gb_ai_daily_revenue_record_date &gt;= #{startDate}
+					AND dy.gb_ai_daily_revenue_record_date &lt;= #{endDate}
+					GROUP BY dy.gb_ai_daily_revenue_record_date
+					HAVING SUM(COALESCE(dy.gb_ai_daily_revenue_dine_in_revenue, 0)
+						+ COALESCE(dy.gb_ai_daily_revenue_takeout_revenue, 0)) &gt; 0
+				) agg2
+			), 0) AS minDailyGrossPositive
+		FROM gb_ai_daily_revenue dr
+		WHERE dr.gb_ai_daily_revenue_department_id IN
+		<foreach collection="departmentIds" item="did" open="(" separator="," close=")">
+			#{did}
+		</foreach>
+		AND dr.gb_ai_daily_revenue_record_date &gt;= #{startDate}
+		AND dr.gb_ai_daily_revenue_record_date &lt;= #{endDate}
+	</select>
+
+	<select id="selectDistinctRecordingDepartmentIdsInRange" resultType="java.lang.Integer">
+		SELECT DISTINCT dr.gb_ai_daily_revenue_department_id
+		FROM gb_ai_daily_revenue dr
+		WHERE dr.gb_ai_daily_revenue_department_id IN
+		<foreach collection="departmentIds" item="did" open="(" separator="," close=")">
+			#{did}
+		</foreach>
+		AND dr.gb_ai_daily_revenue_record_date &gt;= #{startDate}
+		AND dr.gb_ai_daily_revenue_record_date &lt;= #{endDate}
+	</select>
+
+	<select id="listRecordingDeptRevenueAggInRange" resultType="com.nongxinle.dto.AiRecordingDeptRevenueAggRow">
+		SELECT
+			dr.gb_ai_daily_revenue_department_id AS departmentId,
+			COALESCE(SUM(COALESCE(dr.gb_ai_daily_revenue_dine_in_revenue, 0)
+				+ COALESCE(dr.gb_ai_daily_revenue_takeout_revenue, 0)), 0) AS grossRevenue,
+			COALESCE(SUM(COALESCE(dr.gb_ai_daily_revenue_dine_in_orders, 0)
+				+ COALESCE(dr.gb_ai_daily_revenue_takeout_orders, 0)), 0) AS totalOrders,
+			CAST(COUNT(DISTINCT dr.gb_ai_daily_revenue_record_date) AS SIGNED INTEGER) AS distinctRecordDates,
+			COALESCE(SUM(COALESCE(dr.gb_ai_daily_revenue_takeout_revenue, 0)), 0) AS takeoutRevenue,
+			COALESCE(SUM(COALESCE(dr.gb_ai_daily_revenue_platform_fee, 0)), 0) AS platformFee
+		FROM gb_ai_daily_revenue dr
+		WHERE dr.gb_ai_daily_revenue_department_id IN
+		<foreach collection="departmentIds" item="did" open="(" separator="," close=")">
+			#{did}
+		</foreach>
+		AND dr.gb_ai_daily_revenue_record_date &gt;= #{startDate}
+		AND dr.gb_ai_daily_revenue_record_date &lt;= #{endDate}
+		GROUP BY dr.gb_ai_daily_revenue_department_id
 	</select>
 
 </mapper>

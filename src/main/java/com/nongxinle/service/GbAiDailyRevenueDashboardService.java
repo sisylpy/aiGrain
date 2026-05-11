@@ -20,4 +20,18 @@ public interface GbAiDailyRevenueDashboardService {
      */
     Map<String, Object> buildStatsDashboard(Long departmentFatherId, GbAiRestaurantProfileEntity profile,
                                           Map<String, Object> stats, String startDate, String endDate);
+
+    /**
+     * 集团多部门：与日营收单行聚合同源字段（{@code selectGroupIncomeAggregateForDepartmentIds}），扁平中文 stats。
+     * 不合并核销/画像成本；利润率、盈亏等为占位说明。
+     *
+     * @param groupAggRow          mapper 聚合行（含 totalGrossRevenue、totalOrders、distinctRecordDates 等）
+     * @param visibleDeptNodeCount AiQueryScope.resolvedDepartmentIds 大小（可见部门节点数）
+     * @param parentStoreCountHint 范围内父级门店数，可为 null
+     */
+    Map<String, Object> buildGroupWideIncomeFlattened(Map<String, Object> groupAggRow,
+                                                      int visibleDeptNodeCount,
+                                                      Integer parentStoreCountHint,
+                                                      String startDate,
+                                                      String endDate);
 }
