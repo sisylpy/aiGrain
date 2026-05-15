@@ -1,7 +1,5 @@
 package com.nongxinle.ai.security;
 
-import java.util.Set;
-
 /**
  * AI 内部角色编码：由 {@code gb_department_user.gb_du_admin}
  * 经 {@link com.nongxinle.ai.mapping.AiRoleMapper} 映射得到。
@@ -43,23 +41,18 @@ public final class AiRoleCodes {
     public static final String REGION_WAREHOUSE = "REGION_WAREHOUSE";
 
     /**
-     * 单测专用：不参与 {@code gb_department_user} 取值，仅当前端/测试显式传
-     * {@link com.nongxinle.ai.platform.dto.AiRunCreateRequest#getRoleCode()} 时使用。
+     * 财务视图角色（{@code gb_du_admin = 91}，见 {@link com.nongxinle.utils.GbConstants.DepartmentUserRole#FINANCE_MANAGER_AI_APP}）。
      */
     public static final String FINANCE_MANAGER = "FINANCE_MANAGER";
+    /**
+     * 营销工作台视图角色（{@code gb_du_admin = 92}，见 {@link com.nongxinle.utils.GbConstants.DepartmentUserRole#MARKETING_MANAGER_AI_APP}）。
+     */
     public static final String MARKETING_MANAGER = "MARKETING_MANAGER";
 
     /** @deprecated 请使用 {@link #GROUP_MANAGER}；保留别名以免历史 JSON 误判。 */
     @Deprecated(since = "2026-05", forRemoval = false)
     public static final String GROUP_BOSS = GROUP_MANAGER;
 
-    private static final Set<String> LEGACY_SYNTHETIC = Set.of(FINANCE_MANAGER, MARKETING_MANAGER);
-
     private AiRoleCodes() {
-    }
-
-    /** 是否为不走 admin 表的合成角色（单测 / 过渡期）。 */
-    public static boolean isLegacySyntheticRoleCode(String roleCode) {
-        return roleCode != null && LEGACY_SYNTHETIC.contains(roleCode);
     }
 }

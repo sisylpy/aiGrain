@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -84,6 +85,7 @@ public class StockReduceQueryTool implements AiTool {
 
         Map<String, Object> raw;
         Long anchorFather = null;
+        List<Long> perStoreRankingFathers = new ArrayList<>();
         try {
             if (group) {
                 // 仅按 orgScope.visibleStores 的门店根 ID 汇总；不得用 dataScope 展开 ID（会与单店追问不一致）。
@@ -97,6 +99,7 @@ public class StockReduceQueryTool implements AiTool {
                                     Map.of("reason", "missing_departmentFatherIds"),
                                     "集团汇总缺少门店根 ID（visibleStores）"));
                 }
+                perStoreRankingFathers = new ArrayList<>(fatherIds);
                 params.put("departmentFatherIds", fatherIds);
                 log.info("[StockReduceQueryTool] harness group runId={} departmentFatherIds={} (fromVisibleStoresPreferred)",
                         request.getRunId(), fatherIds);
@@ -110,6 +113,7 @@ public class StockReduceQueryTool implements AiTool {
                                     "缺少门店根 departmentFatherId"));
                 }
                 anchorFather = dept;
+                perStoreRankingFathers = List.of(dept);
                 // 与集团同源：零售父部门 type in (1,11) + 四类 subtotal，避免「集团 IN 与单店 =」口径分叉
                 params.put("departmentFatherIds", List.of(dept));
                 log.info("[StockReduceQueryTool] harness store runId={} departmentFatherId={} (singletonVisibleStoreWinsOverArgs)",
@@ -145,9 +149,14 @@ public class StockReduceQueryTool implements AiTool {
         data.put("totalsBasis", "CALENDAR_NATURAL_DAY");
         data.put("groupStockReduceAggregation", group);
 
-        boolean ranking =
+        if (AiQuerySemanticLexicon.STRUCTURED_STORE_OUTBOUND_AMOUNT_RANKING.equals(narrative) && !mock
+                && perStoreRankingFathers.size() >= 2) {
+            attachPerStoreOutboundGrandTotals(params, request, data, perStoreRankingFathers, rctx);
+        }
+
+        boolean goodsRanking =
                 AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_RANKING.equals(narrative);
-        if (ranking && !mock) {
+        if (goodsRanking && !mock) {
             try {
                 Map<String, Object> topParams = new HashMap<>(params);
                 List<Map<String, Object>> rows = topGoodsPayload(
@@ -156,6 +165,14 @@ public class StockReduceQueryTool implements AiTool {
             } catch (Exception e) {
                 log.debug("[StockReduceQueryTool] top goods runId={}: {}", request.getRunId(), e.toString());
             }
+            try {
+                Map<String, Object> timesParams = new HashMap<>(params);
+                List<Map<String, Object>> byTimes = outboundTimesRankingPayload(
+                        stockReduceService.queryStockOutboundTimesTopForRetailFathers(timesParams));
+                data.put("topGoodsOutboundByOutboundTimes", byTimes);
+            } catch (Exception e) {
+                log.debug("[StockReduceQueryTool] top outbound times runId={}: {}", request.getRunId(), e.toString());
+            }
         }
 
         return ToolResult.builder()
@@ -163,6 +180,67 @@ public class StockReduceQueryTool implements AiTool {
                 .message(mock ? "empty" : "ok")
                 .data(AiBusinessToolResponses.envelope(name(), true, mock, start, stop, anchorFather, dis, data, null))
                 .build();
+    }
+
+    /**
+     * 多店并排问「哪家出库金额高」：对每个门店根依次调用与集团汇总相同的 harness SQL（单笔 IN 单个 father），
+     * 聚合成 {@code topStoresOutboundByGrandTotal}；不写新 Mapper 聚合口径。
+     */
+    private void attachPerStoreOutboundGrandTotals(Map<String, Object> baseSqlParams,
+            ToolRequest request,
+            Map<String, Object> data,
+            List<Long> fatherIds,
+            AiResolvedQueryContext rctx) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (fatherIds == null) {
+            return;
+        }
+        for (Long fid : fatherIds) {
+            if (fid == null || fid <= 0L) {
+                continue;
+            }
+            try {
+                Map<String, Object> singleParams = new HashMap<>(baseSqlParams);
+                singleParams.put("departmentFatherIds", List.of(fid));
+                Map<String, Object> oneRaw =
+                        stockReduceService.queryReduceAllTypesTotalForRetailDepartmentFathers(singleParams);
+                BigDecimal produce = nz(oneRaw.get("produceTotal"));
+                BigDecimal waste = nz(oneRaw.get("wasteTotal"));
+                BigDecimal loss = nz(oneRaw.get("lossTotal"));
+                BigDecimal ret = nz(oneRaw.get("returnTotal"));
+                BigDecimal grand = produce.add(waste).add(loss).add(ret);
+                LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+                row.put("storeDepartmentId", fid);
+                row.put("storeName", resolveVisibleStoreLabel(rctx, fid));
+                row.put("produceTotal", produce);
+                row.put("wasteTotal", waste);
+                row.put("lossTotal", loss);
+                row.put("returnTotal", ret);
+                row.put("grandTotalFourTypes", grand);
+                row.put("amount", grand.doubleValue());
+                rows.add(row);
+            } catch (Exception ex) {
+                log.debug("[StockReduceQueryTool] perStoreOutboundGrand runId={} father={}: {}",
+                        request.getRunId(), fid, ex.toString());
+            }
+        }
+        rows.sort((a, b) -> nz(b.get("grandTotalFourTypes")).compareTo(nz(a.get("grandTotalFourTypes"))));
+        data.put("topStoresOutboundByGrandTotal", rows);
+        log.info("[StockReduceQueryTool] storeOutboundAmountRanking runId={} rowCount={}", request.getRunId(),
+                rows.size());
+    }
+
+    private static String resolveVisibleStoreLabel(AiResolvedQueryContext rctx, Long storeDepartmentFatherId) {
+        if (rctx != null && rctx.getOrgScope() != null && rctx.getOrgScope().getVisibleStores() != null) {
+            for (AiStoreScopeDTO s : rctx.getOrgScope().getVisibleStores()) {
+                if (s != null && s.getStoreDepartmentId() != null
+                        && s.getStoreDepartmentId().equals(storeDepartmentFatherId)) {
+                    String nm = s.getStoreName();
+                    return nm != null && !nm.isBlank() ? nm.trim() : ("门店 " + storeDepartmentFatherId);
+                }
+            }
+        }
+        return "门店 " + storeDepartmentFatherId;
     }
 
     private static ToolResult harnessError(ToolRequest request, String start, String stop, Long dept, Long dis,
@@ -273,6 +351,58 @@ public class StockReduceQueryTool implements AiTool {
                             "查询异常：半真实 mock"))
                     .build();
         }
+    }
+
+    /**
+     * 与 {@link #queryStockOutboundTimesTopForRetailFathers} 结果对齐：name、outboundTimes、amount（可选）、disGoodsId。
+     */
+    private static List<Map<String, Object>> outboundTimesRankingPayload(List<Map<String, Object>> rawRows) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (rawRows == null) {
+            return rows;
+        }
+        int lim = Math.min(rawRows.size(), 10);
+        for (int i = 0; i < lim; i++) {
+            Map<String, Object> r = rawRows.get(i);
+            if (r == null || r.isEmpty()) {
+                continue;
+            }
+            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+            Object name = r.get("name");
+            if (name == null) {
+                name = r.get("NAME");
+            }
+            row.put("name", name == null ? "" : name.toString());
+            Number ot = null;
+            Object otimes = r.get("outboundTimes");
+            if (otimes == null) {
+                otimes = r.get("OUTBOUNDTIMES");
+            }
+            if (otimes instanceof Number n) {
+                ot = n;
+            } else if (otimes != null) {
+                try {
+                    ot = Long.parseLong(otimes.toString().trim());
+                } catch (NumberFormatException ignore) {
+                    ot = 0L;
+                }
+            }
+            row.put("outboundTimes", ot == null ? 0L : ot.longValue());
+            Object amt = r.get("amount");
+            if (amt == null) {
+                amt = r.get("AMOUNT");
+            }
+            row.put("amount", nz(amt));
+            Object disId = r.get("disGoodsId");
+            if (disId == null) {
+                disId = r.get("DISGOODSID");
+            }
+            if (disId != null) {
+                row.put("disGoodsId", disId);
+            }
+            rows.add(row);
+        }
+        return rows;
     }
 
     private static List<Map<String, Object>> topGoodsPayload(List<GbDistributerGoodsEntity> tops) {

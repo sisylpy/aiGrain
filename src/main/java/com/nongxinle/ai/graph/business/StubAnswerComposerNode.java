@@ -4,17 +4,30 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
+import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiBusinessOverviewResult;
-import com.nongxinle.ai.dto.business.AiDishProfitDishBrief;
+import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
-import com.nongxinle.ai.dto.business.AiOverviewCoveredStoreItem;
-import com.nongxinle.ai.dto.business.AiOverviewStoreIssueItem;
+import com.nongxinle.ai.dto.business.BusinessDiagnosisPlan;
+import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
+import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
+import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
+import com.nongxinle.ai.dto.business.DiagnosisPlan;
+import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
 import com.nongxinle.ai.dto.cost.AiCostDiagnosisResult;
 import com.nongxinle.ai.gateway.LlmGateway;
+import com.nongxinle.ai.composer.payload.AnswerComposerPayloadFactory;
+import com.nongxinle.ai.composer.AnswerBoundaryNoteComposer;
+import com.nongxinle.ai.composer.renderer.DiagnosisDeterministicRenderer;
+import com.nongxinle.ai.composer.renderer.DeterministicAnswerRenderer;
+import com.nongxinle.ai.composer.summary.BusinessOverviewDeterministicSummaryBuilder;
+import com.nongxinle.ai.prompt.AiPromptIds;
+import com.nongxinle.ai.prompt.AiPromptService;
 import com.nongxinle.ai.mapping.AiRoleMapper;
 import com.nongxinle.ai.security.AiAnswerBoundary;
 import com.nongxinle.ai.security.AiRoleCodes;
@@ -24,14 +37,20 @@ import com.nongxinle.ai.util.AiNumericPlainText;
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
 import com.alibaba.fastjson2.JSON;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -45,14 +64,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class StubAnswerComposerNode implements AgentNode {
 
-    private static final Pattern PREV_TURN_PURCHASE_CARRY_PREFIX =
-            Pattern.compile("^carry_po=(\\d+),carry_amt=([^|]+)\\|");
-
-    private record PurchaseCarryHint(int orderCount, String amountToken) {
-    }
-
-    private static final int MAX_FALLBACK_FINDINGS = 3;
-    private static final int MAX_FALLBACK_RECOMMENDATIONS = 3;
+    private static final Logger log = LoggerFactory.getLogger(StubAnswerComposerNode.class);
 
     /** 库存重量对用户展示单位（与业务库存字段常见口径一致）。 */
     private static final String W_STOCK_WEIGHT_UNIT = "斤";
@@ -74,106 +86,6 @@ public class StubAnswerComposerNode implements AgentNode {
         return v instanceof List<?> l && !l.isEmpty();
     }
 
-    private static final String COST_COMPOSER_SYSTEM =
-            "你是餐饮集团 AI 经营顾问。前端「成本诊断卡片」已展示：风险、摘要、关键指标、发现问题、建议动作、是否需要更多数据等完整结构化内容。\n"
-                    + "\n"
-                    + "你的任务：把下面 JSON 里的诊断要点改写成老板能一眼看完的短回复。\n"
-                    + "硬性要求：\n"
-                    + "- 只用中文简体；不要输出 JSON、代码块、不要用「##」类标题。\n"
-                    + "- 不要复述卡片中已有的整段关键指标明细，不要逐条抄写数值表。\n"
-                    + "- 正文结构：① 一句话结论；② 至多 3 条重点发现；③ 至多 3 条建议动作；篇幅简短。\n"
-                    + "- 文末可加一句「详细指标见下方成本诊断卡片」若语气自然；不要冗长。\n"
-                    + "- 严格基于输入中的 summary、riskLevel、findings、recommendations 的含义，不编造数字。\n"
-                    + "- 禁止在回答中出现 dataPlanTools、toolResults、workspaceMode 等技术词。\n";
-
-    private static final String BUSINESS_COMPOSER_SYSTEM =
-            "你是餐饮门店/集团经营 AI 助手。前端有「经营概览」结构化卡片，但聊天正文必须先让老板看清真实数字。\n"
-                    + "\n"
-                    + "你的任务：根据输入 JSON（含 queryScopeBanner、queryScopeCoverage、numericHeadlineText、dashboardStatsCn 摘录、摘要与发现）写短回复。\n"
-                    + "硬性要求：\n"
-                    + "- 只用中文简体；不要输出 JSON、代码块。\n"
-                    + "- 【必须】正文第一段先复述 queryScopeBanner 与 queryScopeCoverage（若为非空字符串），明确是集团／门店范围及门店覆盖（用白话，勿出现「登记口径」「父级网点」「主体」「节点」等后台用语）；"
-                    + "第二段再复述 numericHeadlineText 的具体数字（营业额、天数、日均、订单、客单、券/平台费列、退款、外卖）；"
-                    + "numericHeadlineText 已含查询起止日期与「录入营业额的自然日」含义，勿擅自改写为「本月」「这个月」，除非用户问题明确指向当月；summary 字段亦勿强加「本月」。\n"
-                    + "dashboardStatsCn 里有的键才可引用数值，没有的写「暂无」，禁止编造。\n"
-                    + "- 【金额与数字】一律用日常十进制写法（如 30、85.4、854），禁止使用科学计数法或类似 3E+1、2E+1 的写法；也不要自行给金额加括号拆解。\n"
-                    + "- 【定性】统计天数少于 5 时，禁止输出「集团经营规模较小」「规模较小」等对整体规模的武断评价；可提示样本少、不宜据此判断整体经营水平。\n"
-                    + "- 【门店关注】集团广角且看板有效时，priorityStoresBrief 要么以「需要优先关注的门店：」开头列出至多 3 家原因摘要，要么整句为「当前没有识别到明显异常门店。」；禁止输出「当前未识别到需要单独点名处理的门店」或其它相近含糊话术。\n"
-                    + "- 【禁止】在未见分项利润与外送成本明细时断言「外卖净贡献为负」「外卖拖累净利」或对利润下绝对结论；\n"
-                    + "- 【外卖与平台费】仅当 JSON 中 overviewScope.platformFeeExceedsTakeoutRevenue 严格为 true 时，才可写「平台费/优惠券合计高于外卖营业额」或提示两者可能口径混用需核对；"
-                    + "若该字段为 false、为 null 或 JSON 中无此键，禁止写「外卖营业额低于平台费」「外卖低于券费」类比较（含颠倒两金额大小），只能分别读出两列金额；需要对比时只能说「请核对后台口径」，禁止臆断谁高谁低。\n"
-                    + "- 【优先】若有 priorityStoresBrief（需要优先关注的门店 Top3），在「重点观察」中点到为止复述，不要超过 3 家门店，不要展开卡片中的完整清单。\n"
-                    + "- 结构：① 两句话内完成查询范围复述 + 结论（须含至少一个数字）；② 至多 3 条重点观察；③ 至多 3 条可执行建议。\n"
-                    + "- keyMetrics/findings/recommendations 可作补充来源，但以 queryScopeCoverage 与 numericHeadlineText、日营收字段为准。\n"
-                    + "- 不编造环比/同比或未提供的数字。\n"
-                    + "- 禁止 dataPlanTools、toolResults、workspaceMode、英文字段键名等与用户无关的词。\n";
-
-    /** 前端可有菜品毛利结构化卡片；正文须引用真实菜名与销售/毛利率可读串，严禁编造明细。 */
-    private static final String DISH_PROFIT_COMPOSER_SYSTEM =
-            "你是餐饮门店/集团菜品经营顾问。输入为「菜品毛利透视」结构化 JSON。\n"
-                    + "硬性要求：\n"
-                    + "- 只用中文简体；不要输出 JSON、代码块、不要用「##」标题。\n"
-                    + "- 【开篇范围】必须使用 queryScopeBanner（若为非空）：逐字复述其核心含义（集团/门店、可见门店家数与店名、参与统计门店与缺数据门店）；"
-                    + "禁止使用「下面按你可查看的门店菜品数据」等模糊句替代 queryScopeBanner。"
-                    + "若 queryScopeBanner 为空，再用一句说明当前为门店视角。\n"
-                    + "- 【综合结论】复述 summary 中的销售额、理论成本、实际成本、毛利额、综合毛利率数字；"
-                    + "若 grossProfitRateUncertain=true，必须说明这是按当前可取得成本的粗算参考，不能当作已审计的最终毛利结论，不得同时写「已准确计算」「非常准确」之类措辞。\n"
-                    + "- 【三段菜品】必须分三块叙述，标题用简短中文句首，不用 markdown：\n"
-                    + "  A）毛利表现较好的菜：仅列 reliableProfitDishes（或 topProfitDishes，二者一致），只含成本口径相对完整的菜；逐条含菜名、销量、销售额、理论成本、实际成本、毛利率要点。\n"
-                    + "  B）需要关注的低毛利或成本偏高菜：列 lowProfitDishes，含原因（可引用 riskReason）。\n"
-                    + "  C）成本数据不完整的菜：列 costDataIncompleteDishes，说明缺 BOM/出库核销等，明确当前显示的高毛利率（如 100%）不可靠；不得把 C 类菜放进 A 类。\n"
-                    + "  若 B）/C）某块列表为空可写「暂无」；若 A）列表为空须写「该统计周期内暂未识别到成本数据完整且毛利表现突出的菜品」（勿仅写「暂无」）。\n"
-                    + "- riskLevel=data_incomplete 时不得与「综合毛利率约 X%」的确定性语气矛盾：应改为「仅基于可见行的粗算」并指向 costDataIncompleteDishes。\n"
-                    + "- 金额与份量用口语十进制写法，禁用科学计数法。\n"
-                    + "- 禁止 dataPlanTools、toolResults、workspaceMode、grossMarginRateOnListPrice 等内部键名或未解释英文字段。\n";
-
-    private static final String GENERIC_CHAT_SYSTEM =
-            "你是餐饮集团 AI 顾问，面向店长、集团管理、库房与门店采购等业务同事说话。\n"
-                    + "- 仅用自然中文简体；勿输出 JSON / 代码块；勿复述英文字段。\n"
-                    + "- **禁止**在答复中出现下列任何字眼或同类意思：dataPlanTools、toolResults、workspaceMode、"
-                    + "BUSINESS_CHAT、「系统尚未执行任何数据查询工具」「当前时间窗口是」「子树范围」等开发与调试话术。\n"
-                    + "- 禁止使用「建议您补充口径」「请用户收窄问题并补充口径」等生硬措辞；说不清时可引导用户换一种问法。\n"
-                    + "- 若当前上下文不足以形成经营或成本概要，请先说明「当前可用数据不足，暂时无法给出完整分析」，"
-                    + "再给出一两条可操作的检查方向（如对账月份、选对门店归属等）；不要推断内部执行状态。\n";
-
-    private static final String GENERIC_CHAT_EMPTY_LLM_FALLBACK =
-            "当前可用数据不足，暂时无法给出完整分析。";
-
-    private static final String PURCHASE_COMPOSER_SYSTEM =
-            "你是餐饮供应链顾问。用户可能使用「经营怎么样」等话术，但若上下文标明「门店采购角色」或「经营概览已切换为采购视角」，则回答必须严格限定在采购入库与核销/出库摘要。\n"
-                    + "硬性要求：\n"
-                    + "- 用中文简体短回复；仅覆盖输入中给出的采购/核销数字；不编造。\n"
-                    + "- **总览数据**：须写明统计周期内采购入库「笔数」与「总金额（元）」；**勿**向用户报告「采购总重量」或把不同单位混成「斤」汇总。\n"
-                    + "- **采购方式**：若 JSON「采购概览」中 purchaseNarrativeMode 为 purchase_source_amount_query，"
-                    + "用一两句话直接给出金额与笔数，可附带至多两个「金额最高」单品；"
-                    + "**禁止**输出商品频次完整排行、核销分项长段、门店覆盖复述、采购方式「其中」拆分或「其中自采/供货商」重复句式"
-                    + "（数据可能已是来源过滤后的结果）。\n"
-                    + "- **采购方式（其它）**：若 purchaseNarrativeMode 不是 purchase_source_amount_query，且 purchaseMethodBreakdownSupported 为 true 且含 purchaseMethodSummaryFragment，"
-                    + "须在总金额后接「其中」+ 该片段（笔数与金额与字段一致）；若为 false 但有 purchaseMethodNote，用一两句人话说明暂不按方式拆分即可，勿编方式占比。\n"
-                    + "- **商品频次/金额**：须含「次」与「元」；频次列表用 goodsPurchaseFrequencyTop（每项 purchaseTimes），金额列表用 goodsPurchaseAmountTop 或 highAmountItems（purchaseSubtotal）。勿写「采购次数最多的是A、B等」而无具体次数。\n"
-                    + "- 若 JSON 含「集团门店采购覆盖说明_须向用户复述」，须完整引用该句，勿改写店名与分支结论。\n"
-                    + "- 供货商名称沿用输入；不得自拟「供货商-1」类假名；若已为「未维护供货商名称」或「供货商ID…（名称未维护）」则照读。\n"
-                    + "- 若 purchaseNarrativeMode（或工具概览中的同义字段）为供货商/供应商「金额排行」（supplier_amount_ranking），"
-                    + "只允许输出：时间范围 + 查询范围一句 + 名次列表（采购金额元、笔数）+ 真实供货商家数一句；"
-                    + "禁止复述全部采购总金额、自采/供货商拆分、单品频次或金额排行、核销分项、采购方式「其中」片段、尾段建议。\n"
-                    + "- 若核销各分项均为 0 或上下文仅说明「统计周期内暂无核销/出库记录」，勿再罗列「均为0」式排比句。\n"
-                    + "- 若有核销非零：可用「核销方面：生产耗用…元，出品…元，废弃…元，损耗（亦称报损）…元，退货…元。」\n"
-                    + "- 禁止出现或暗示：总营业额、日均营业额、订单数、客单价、毛利率、利润、经营规模、集团经营情况等完整经营指标。\n"
-                    + "- 禁止 dataPlanTools、toolResults、workspaceMode、蛇形英文名工具代号、purchaseMethodBreakdownSupported 等技术字段名照抄给用户；只用中文叙述。\n";
-
-    private static final String WAREHOUSE_COMPOSER_SYSTEM =
-            "你是餐饮库房与库存管理顾问。用户可能用「这个月经营怎么样」或「库存怎么样」提问；若上下文标明库房端、门店库存视角或集团库存汇总（scopeType=GROUP），则回答只能围绕：当前库存商品种数与批次规模、库存剩余金额与重量、查询区间内入库金额与入库重量、核销与出库分型（生产耗用、废弃、损耗、退货），以及分三段输出的关注清单。\n"
-                    + "硬性要求：\n"
-                    + "- 中文简体短回复；仅用输入中的数字与清单；不编造。\n"
-                    + "- **称谓与开篇**：必须严格遵守输入 JSON 中的「称谓与开篇_模型须严格遵守」；若与该条矛盾，以该字段为准；被要求客观开篇或无称呼时，勿用「店长」「老板」等硬套对方岗位，亦勿用「库管」称呼对方。\n"
-                    + "- 【重量】必须写成「剩余 0.7 斤」或「重量约 9.20（单位见字段）」；禁止「9.20重量」「剩余重量9.20」等老板难懂的拼接。\n"
-                    + "- 【三段清单】须按顺序分块标题输出：「低库存 / 需补货」「库存偏高 / 建议优先消耗」「早入库批次 / 建议盘点」；同一商品**禁止**同时出现在低库存与积压两类（输入 JSON 已去重，你也不得把同一商品写进两类）。\n"
-                    + "- 若 scopeType=GROUP 或上下文写明集团汇总：开篇明确为集团下属门店范围，若上下文中同时出现库房视角再写「门店/库房」；**禁止**反问用户指定哪家门店或品类；不得输出营业额、订单、客单价、毛利、利润、菜品销售收入。\n"
-                    + "- 第一段复述摘要中的核心数字；库存权重若有 weightDisplayUnit 字段须与摘要一致，勿擅自改成斤。\n"
-                    + "- 禁止在商品名后加「（积压）」等与分类重复的标记。\n"
-                    + "- 禁止营业额、订单、客单价、毛利、利润、集团经营概况、菜品销售收入；不要把主线写成采购员式的供应商分析或采购议价话术。\n"
-                    + "- 禁止 dataPlanTools、toolResults、workspaceMode 等技术词。\n";
-
     /** 按岗位去掉不当的「店长」寒暄（与 {@link #warehouseSalutationDirective} 一致）。 */
     private static final Pattern WAREHOUSE_LEADING_SALUTATION =
             Pattern.compile("^((好的|嗯|您好)[，,\\s]*)?((亲爱的)?店长)([，,。．、:\\s]+|(?=本库房|以下是|以下按|当前|说明|目前|共有))");
@@ -183,6 +95,9 @@ public class StubAnswerComposerNode implements AgentNode {
 
     private final LlmGateway llmGateway;
     private final AiSseEventPublisher publisher;
+    private final AiPromptService aiPromptService;
+    private final AnswerComposerPayloadFactory answerComposerPayloadFactory;
+    private final DeterministicAnswerRenderer deterministicAnswerRenderer;
 
     @Override
     public String name() {
@@ -209,8 +124,19 @@ public class StubAnswerComposerNode implements AgentNode {
         if (state.getResolvedQueryContext() != null) {
             String n = state.getResolvedQueryContext().getAnswerBoundaryNote();
             if (n != null && !n.isBlank()) {
-                boundaryNote = n.trim();
+                boundaryNote = AnswerBoundaryNoteComposer.refineUserFacingBoundaryNote(
+                        state.getResolvedQueryContext(), n.trim());
             }
+        }
+
+        // 库存排行确定性正文已含「查询范围 / 统计时间」，rankTakeover 时再置位，避免 head 重复 scope/intent/boundary。
+        boolean suppressScopeIntentBoundaryHead = false;
+
+        String coreToolPermissionOnlyBody = AiAnswerBoundary.tryComposeCoreToolPermissionOnlyAnswer(state);
+        if (StringUtils.hasText(coreToolPermissionOnlyBody)) {
+            coreToolPermissionOnlyBody = coreToolPermissionOnlyBody.trim();
+        } else {
+            coreToolPermissionOnlyBody = null;
         }
 
         String answer;
@@ -221,69 +147,192 @@ public class StubAnswerComposerNode implements AgentNode {
             answer = "";
         } else if (state.getCostDiagnosisResult() != null) {
             AiCostDiagnosisResult d = state.getCostDiagnosisResult();
-            String llm = llmGateway.chatSimple(COST_COMPOSER_SYSTEM, JSON.toJSONString(compactCostPayload(state, d)));
-            answer = pickLlmSanitized(llm, shortFallbackCost(d));
-        } else if (state.isDishProfitPath()) {
-            AiDishProfitOverviewResult dp = state.getDishProfitOverviewResult();
-            if (dp != null) {
-                if (dishProfitUseDeterministicSummaryOnly(state)) {
-                    answer = pickLlmSanitized("", shortFallbackDishProfit(dp, state));
+            String pid = AiPromptIds.COMPOSER_COST_DIAGNOSIS_V1;
+            state.setComposerPromptRegistryId(pid);
+            String llm = llmGateway.chatSimple(aiPromptService.require(pid),
+                    JSON.toJSONString(answerComposerPayloadFactory.buildCostPayload(state, d)));
+            answer = pickLlmSanitized(llm, deterministicAnswerRenderer.renderCostFallback(d));
+        } else if (coreToolPermissionOnlyBody != null) {
+            answer = coreToolPermissionOnlyBody;
+        } else if (state.isBusinessDiagnosisPath() && state.getBusinessDiagnosisPlan() != null
+                && AiAnswerBoundary.shouldRenderPermissionDowngradedBusinessDiagnosis(state)) {
+            answer = deterministicAnswerRenderer.renderPermissionDowngradedBusinessDiagnosis(state,
+                    state.getBusinessDiagnosisPlan());
+        } else if (!DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)
+                && state.getDiagnosisPlan() != null
+                && DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS.equals(state.getDiagnosisPlan().getPlanType())
+                && (state.isBusinessDiagnosisPath()
+                || DiagnosisPlanBuilder.shouldPreferDiagnosisPlanInComposer(state))) {
+            // 新版 DiagnosisPlan：经营诊断 path 上即使 dishProfitPath 仍为 true（历史标志位）也必须优先，避免落入旧 BusinessDiagnosisPlan+LLM
+            answer = deterministicAnswerRenderer.renderHarnessDiagnosisPlan(state, state.getDiagnosisPlan());
+        } else if (state.isBusinessDiagnosisPath() && state.getBusinessDiagnosisPlan() != null) {
+            BusinessDiagnosisPlan bdPlan = state.getBusinessDiagnosisPlan();
+            if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)) {
+                if (DiagnosisDeterministicRenderer.isWarehouseOrgScope(state)) {
+                    answer = deterministicAnswerRenderer.renderWarehouseBoundedBusinessDiagnosisStorePriority(state,
+                            bdPlan);
                 } else {
-                    String llm = llmGateway.chatSimple(DISH_PROFIT_COMPOSER_SYSTEM,
-                            JSON.toJSONString(compactDishProfitPayload(state, dp)));
-                    answer = pickLlmSanitized(llm, shortFallbackDishProfit(dp, state));
+                    LinkedHashMap<String, Object> spPayload =
+                            answerComposerPayloadFactory.buildBusinessDiagnosisStorePriorityPayload(state, bdPlan);
+                    String pidSp = AiPromptIds.COMPOSER_DIAGNOSIS_STORE_PRIORITY_V1;
+                    state.setComposerPromptRegistryId(pidSp);
+                    String llmSp = llmGateway.chatSimple(aiPromptService.require(pidSp),
+                            JSON.toJSONString(spPayload));
+                    String draftSp =
+                            pickLlmSanitized(llmSp, deterministicAnswerRenderer.renderStorePriorityRanking(state, bdPlan));
+                    answer = guardBusinessDiagnosisAnswer(draftSp, state, bdPlan);
                 }
             } else {
-                answer = shortFallbackDishProfit(null, state);
+                LinkedHashMap<String, Object> bdPayload =
+                        answerComposerPayloadFactory.buildBusinessDiagnosisPayload(state, bdPlan);
+                String pidBd = AiPromptIds.COMPOSER_DIAGNOSIS_V1;
+                state.setComposerPromptRegistryId(pidBd);
+                String llm = llmGateway.chatSimple(aiPromptService.require(pidBd), JSON.toJSONString(bdPayload));
+                String draft = pickLlmSanitized(llm,
+                        deterministicAnswerRenderer.renderBusinessDiagnosisFallback(state, bdPlan));
+                answer = guardBusinessDiagnosisAnswer(draft, state, bdPlan);
             }
+        } else if (dishSalesDeterministicEligible(state)) {
+            answer = deterministicAnswerRenderer.renderDishSalesAnswerPlan(state.getDishSalesAnswerPlan());
+        } else if (state.isDishProfitPath()) {
+            // 最终短文由 DeterministicAnswerRenderer.renderDishProfitFallback 组装；其中有 focusRows 的 AnswerPlan 优先于工具 summary。
+            AiDishProfitOverviewResult dp = state.getDishProfitOverviewResult();
+            if (dp != null) {
+                if (dishProfitUseDeterministicSummaryOnly(state) || dishProfitNarrowRankingOrReasonPlan(state)) {
+                    answer = pickLlmSanitized("",
+                            deterministicAnswerRenderer.renderDishProfitFallback(dp, state));
+                } else {
+                    String pidDp = AiPromptIds.COMPOSER_DISH_PROFIT_V1;
+                    state.setComposerPromptRegistryId(pidDp);
+                    String llm = llmGateway.chatSimple(aiPromptService.require(pidDp),
+                            JSON.toJSONString(answerComposerPayloadFactory.buildDishProfitPayload(state, dp)));
+                    answer = pickLlmSanitized(llm, deterministicAnswerRenderer.renderDishProfitFallback(dp, state));
+                }
+            } else {
+                answer = deterministicAnswerRenderer.renderDishProfitFallback(null, state);
+            }
+        } else if (state.isRevenueOverviewPath()) {
+            if (AiAnswerBoundary.isRevenuePermissionDenied(state.getPermissionDenials())) {
+                answer = AiAnswerBoundary.revenuePermissionDeniedComposerBody(state);
+            } else {
+                AiTimeWindowTextFormatter.UserPhrases twRevenue = AiTimeWindowTextFormatter.forAnswer(state);
+                DailyRevenueAnswerPlan rap = state.getRevenueAnswerPlan();
+                String revenueFromPlan = BusinessOverviewDeterministicSummaryBuilder.composeRevenueDeterministicFromAnswerPlan(rap, twRevenue);
+                if (revenueFromPlan != null && !revenueFromPlan.isBlank()) {
+                    answer = revenueFromPlan;
+                } else {
+                    answer = deterministicAnswerRenderer.renderRevenueEnvelopeFallback(state);
+                }
+            }
+        } else if (businessOverviewMultiAgentFourDomainDeterministicEligible(state)) {
+            answer = composeBusinessOverviewMultiAgentFourDomainMarkdown(state).trim();
         } else if (state.getBusinessOverviewResult() != null) {
             AiBusinessOverviewResult o = state.getBusinessOverviewResult();
-            String llm = llmGateway.chatSimple(BUSINESS_COMPOSER_SYSTEM, JSON.toJSONString(compactBusinessPayload(state, o)));
-            answer = pickLlmSanitized(llm, shortFallbackBusiness(state, o));
+            boolean skipOverviewLlm = BusinessOverviewDeterministicSummaryBuilder.hasAuthoritativeBusinessOverviewRevenuePlan(state);
+            if (skipOverviewLlm) {
+                answer = deterministicAnswerRenderer.renderBusinessOverviewFallback(state, o).trim();
+            } else {
+                String pidBo = AiPromptIds.COMPOSER_BUSINESS_OVERVIEW_V1;
+                state.setComposerPromptRegistryId(pidBo);
+                String llm = llmGateway.chatSimple(aiPromptService.require(pidBo),
+                        JSON.toJSONString(answerComposerPayloadFactory.buildBusinessOverviewPayload(state, o)));
+                answer = pickLlmSanitized(llm,
+                        deterministicAnswerRenderer.renderBusinessOverviewFallback(state, o));
+            }
         } else if (state.isWarehouseStockOverviewPath()) {
             Map<String, Object> woForSalutation = extractWarehouseOverviewPayload(state);
-            LinkedHashMap<String, Object> whCtx = summarizeWarehouseToolPresenceCn(state);
+            LinkedHashMap<String, Object> whCtx = answerComposerPayloadFactory.buildWarehouseOverviewPayload(state);
             state.setWarehouseOverview(buildWarehouseOverviewStructured(state));
-            String fb = warehouseStockFallback(state);
-            String llmRaw = "";
-            try {
-                String payload;
-                try {
-                    payload = JSON.toJSONString(whCtx);
-                } catch (Exception jsonEx) {
-                    payload = "{}";
-                }
-                llmRaw = llmGateway.chatSimple(WAREHOUSE_COMPOSER_SYSTEM, payload);
-            } catch (Exception ignored) {
-                llmRaw = "";
+            String fb = deterministicAnswerRenderer.renderWarehouseStockFallback(state);
+            boolean rankTakeover = warehouseStockRankingDeterministicTakeoverEligible(state);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "[D6-4B-WH-RANKING] composer warehouse branch runId={} rankTakeover={} fbHasTop3Amount={} fbHasTop3Sku={}",
+                        state.getRunId(),
+                        rankTakeover,
+                        fb != null && fb.contains("门店库存金额排行 Top3"),
+                        fb != null && fb.contains("门店库存商品种类排行 Top3"));
             }
-            String llmUse = llmLooksUnavailable(llmRaw) ? "" : llmRaw;
-            answer = pickLlmSanitized(llmUse, fb);
+            if (rankTakeover) {
+                // 与 dishSalesDeterministicEligible 一致：结构化排行由确定性渲染出 Top3，避免 COMPOSER_WAREHOUSE_V1 覆盖 fb。
+                suppressScopeIntentBoundaryHead = true;
+                answer = pickLlmSanitized("", fb);
+            } else {
+                String llmRaw = "";
+                try {
+                    String payload;
+                    try {
+                        payload = JSON.toJSONString(whCtx);
+                    } catch (Exception jsonEx) {
+                        payload = "{}";
+                    }
+                    String pidWh = AiPromptIds.COMPOSER_WAREHOUSE_V1;
+                    state.setComposerPromptRegistryId(pidWh);
+                    llmRaw = llmGateway.chatSimple(aiPromptService.require(pidWh), payload);
+                } catch (Exception ignored) {
+                    llmRaw = "";
+                }
+                String llmUse = llmLooksUnavailable(llmRaw) ? "" : llmRaw;
+                answer = pickLlmSanitized(llmUse, fb);
+            }
             answer = applyWarehouseSalutationPolicy(answer, state, woForSalutation);
         } else if (state.isStockReduceQueryPath()) {
-            answer = stockReduceQueryDeterministicFallback(state);
+            AiTimeWindowTextFormatter.UserPhrases twStockReduce = AiTimeWindowTextFormatter.forAnswer(state);
+            String stockReduceFromPlan = composeStockReduceDeterministicFromAnswerPlan(
+                    state.getStockReduceAnswerPlan(), twStockReduce, state);
+            if (stockReduceFromPlan != null && !stockReduceFromPlan.isBlank()) {
+                answer = stockReduceFromPlan;
+            } else {
+                answer = deterministicAnswerRenderer.renderStockReduceToolFallback(state);
+            }
         } else if (state.isPurchaseCostInsightPath()) {
             Map<String, Object> poRaw = extractPurchaseOverviewPayload(state);
             if (!poRaw.isEmpty()) {
                 state.setPurchaseOverview(new LinkedHashMap<>(poRaw));
             }
-            boolean deterministicPurchaseOnly = shouldForceDeterministicPurchaseAnswer(state);
-            String llm = "";
-            if (!deterministicPurchaseOnly) {
-                LinkedHashMap<String, Object> purchaseCtx = new LinkedHashMap<>();
-                purchaseCtx.put("用户问题", nz(state.getNormalizedUserInput()));
-                purchaseCtx.putAll(summarizePurchaseToolPresenceCn(state));
-                try {
-                    llm = llmGateway.chatSimple(PURCHASE_COMPOSER_SYSTEM, JSON.toJSONString(purchaseCtx));
-                } catch (Exception ignored) {
-                    llm = "";
+            AiTimeWindowTextFormatter.UserPhrases twPurchase = AiTimeWindowTextFormatter.forAnswer(state);
+            String purchaseFromPlan = composePurchaseDeterministicFromAnswerPlan(state.getPurchaseAnswerPlan(), twPurchase);
+            if (purchaseFromPlan != null && !purchaseFromPlan.isBlank()) {
+                answer = purchaseFromPlan;
+            } else {
+                boolean deterministicPurchaseOnly = shouldForceDeterministicPurchaseAnswer(state);
+                String llm = "";
+                if (!deterministicPurchaseOnly) {
+                    LinkedHashMap<String, Object> purchaseCtx =
+                            answerComposerPayloadFactory.buildPurchaseOverviewPayload(state);
+                    try {
+                        String pidPo = AiPromptIds.COMPOSER_PURCHASE_OVERVIEW_V1;
+                        state.setComposerPromptRegistryId(pidPo);
+                        llm = llmGateway.chatSimple(aiPromptService.require(pidPo),
+                                JSON.toJSONString(purchaseCtx));
+                    } catch (Exception ignored) {
+                        llm = "";
+                    }
                 }
+                answer = pickLlmSanitized(llm, deterministicAnswerRenderer.renderPurchaseCostFallback(state));
             }
-            answer = pickLlmSanitized(llm, purchaseCostFallback(state));
+        } else if (genericChatBlockedForDishReasonInDiagnosisContext(state)) {
+            answer = "这类问题需要对照菜品毛利与成本数据作答。当前未走通数据查询链路，请改用完整提问（例如点明菜名并说明为什么毛利偏低或成本高），"
+                    + "或在经营诊断结果页再追问该菜。";
+        } else if (composerEmitRevenueDeniedPermissionOnly(state)) {
+            answer = AiAnswerBoundary.revenuePermissionDeniedComposerBody(state);
         } else {
             LinkedHashMap<String, Object> ctx = composeSafeFallbackContext(state);
-            String llmOnly = llmGateway.chatSimple(GENERIC_CHAT_SYSTEM, JSON.toJSONString(ctx));
-            answer = pickLlmSanitized(llmOnly, GENERIC_CHAT_EMPTY_LLM_FALLBACK);
+            String pidGc = AiPromptIds.COMPOSER_GENERIC_CHAT_V1;
+            state.setComposerPromptRegistryId(pidGc);
+            String llmOnly = llmGateway.chatSimple(aiPromptService.require(pidGc), JSON.toJSONString(ctx));
+            answer = pickLlmSanitized(llmOnly, deterministicAnswerRenderer.genericEmptyLlmFallback());
+        }
+        if (suppressScopeIntentBoundaryHead) {
+            scopeP = "";
+            intentP = "";
+            boundaryNote = "";
+        } else if (shouldUseStoreCompareIntentHeader(state)) {
+            intentP = DiagnosisDeterministicRenderer.storeCompareIntentConvergencePrefix(state.getDiagnosisPlan());
+        } else if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)) {
+            intentP =
+                    AiAnswerBoundary.costIntentConvergencePrefix(
+                            rewriteStorePriorityRankingCostIntentNote(state.getCostIntentConvergenceNote(), state));
         }
         StringBuilder head = new StringBuilder();
         if (!boundaryNote.isEmpty()) {
@@ -310,7 +359,12 @@ public class StubAnswerComposerNode implements AgentNode {
         if (head.length() > 0) {
             answer = head + (answer.isEmpty() ? "" : "\n" + answer);
         }
-        state.setFinalAnswerText(AiAnswerBoundary.stripDeveloperFacingLeakage(answer.trim()));
+        if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)) {
+            answer = DiagnosisDeterministicRenderer.applyStorePrioritySingleStoreScopeDisplayPatches(
+                    (answer == null ? "" : answer).trim(), state);
+        }
+        state.setFinalAnswerText(AiAnswerBoundary.stripDeveloperFacingLeakage(
+                (answer == null ? "" : answer).trim()));
 
         publisher.publish(rid, "agent_finished", Map.of(
                 "agent", "AnswerComposerNode",
@@ -318,11 +372,53 @@ public class StubAnswerComposerNode implements AgentNode {
                 "hasStructuredCostDiagnosis", state.getCostDiagnosisResult() != null,
                 "hasDishProfitOverview", state.getDishProfitOverviewResult() != null,
                 "hasBusinessOverview", state.getBusinessOverviewResult() != null,
+                "businessDiagnosisPath", state.isBusinessDiagnosisPath(),
                 "purchaseCostInsightPath", state.isPurchaseCostInsightPath(),
                 "warehouseStockOverviewPath", state.isWarehouseStockOverviewPath(),
-                "stockReduceQueryPath", state.isStockReduceQueryPath()
+                "stockReduceQueryPath", state.isStockReduceQueryPath(),
+                "revenueOverviewPath", state.isRevenueOverviewPath()
         ));
         return state;
+    }
+
+    /**
+     * 仅 {@code store_priority_ranking}：重写 Planner 下发的 {@code costIntentConvergenceNote} 中短语，终稿「【意图说明】」与 Phase 2B
+     * 用语一致；**不**改写 {@link DiagnosisPlan#TYPE_OVERALL_BUSINESS_DIAGNOSIS} / 采购收敛等其它诊断话术。
+     */
+    private static String rewriteStorePriorityRankingCostIntentNote(String note, AiRunState state) {
+        if (note == null || note.isBlank()) {
+            return note;
+        }
+        String n = note.replace(
+                "按集团权限范围内门店合并做经营诊断", "按集团权限范围内各门店做综合风险优先排序");
+        return DiagnosisDeterministicRenderer.applyStorePrioritySingleStoreScopeDisplayPatches(n, state);
+    }
+
+    /**
+     * 仅当本轮会走 Harness {@link DiagnosisPlan} 且存在门店经营对比证据时，替换【意图说明】，
+     * 避免沿用 Planner 的「集团权限范围内门店合并做经营诊断」话术。
+     */
+    private static boolean shouldUseStoreCompareIntentHeader(AiRunState state) {
+        if (state == null || state.isNeedClarification() || state.isCouponCostInsightBlocked()) {
+            return false;
+        }
+        if (state.getCostDiagnosisResult() != null) {
+            return false;
+        }
+        DiagnosisPlan p = state.getDiagnosisPlan();
+        if (p == null) {
+            return false;
+        }
+        if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)) {
+            return false;
+        }
+        if (!DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS.equals(p.getPlanType())) {
+            return false;
+        }
+        if (!state.isBusinessDiagnosisPath() && !DiagnosisPlanBuilder.shouldPreferDiagnosisPlanInComposer(state)) {
+            return false;
+        }
+        return DiagnosisDeterministicRenderer.isStoreCompareEvidenceAnswerTurn(state, p);
     }
 
     private static String pickLlmSanitized(String llm, String fallback) {
@@ -346,136 +442,125 @@ public class StubAnswerComposerNode implements AgentNode {
     }
 
     /**
-     * 不含 keyMetrics：指标由前端 costDiagnosis 卡片展示，避免模型在正文复述。
+     * LLM 偶发忽略 focusRows 时：若仍存在结构化风险依据，则打回兜底句，避免「未识别风险」类错答。
      */
-    private static Map<String, Object> compactCostPayload(AiRunState state, AiCostDiagnosisResult d) {
-        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
-        m.put("hint", "成本诊断卡片已含关键指标；聊天正文勿重复罗列指标数值");
-        m.put("userQuestion", nz(state.getNormalizedUserInput()));
-        m.put("summary", d.getSummary());
-        m.put("riskLevel", d.getRiskLevel());
-        m.put("needMoreData", d.getNeedMoreData());
-        m.put("findings", d.getFindings());
-        m.put("recommendations", d.getRecommendations());
-        m.put("questions", d.getQuestions());
-        return m;
+    private String guardBusinessDiagnosisAnswer(String text, AiRunState state, BusinessDiagnosisPlan plan) {
+        if (!businessDiagnosisHasRiskSignal(state, plan)) {
+            return text;
+        }
+        String t = text == null ? "" : text;
+        boolean badDenial = containsBusinessDiagnosisBadDenial(t);
+        if (badDenial) {
+            return deterministicAnswerRenderer.renderBusinessDiagnosisFallback(state, plan);
+        }
+        return t;
     }
 
-    private static Map<String, Object> compactDishProfitPayload(AiRunState state, AiDishProfitOverviewResult dp) {
-        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
-        m.put("queryScopeBanner", nz(dp.getQueryScopeBanner()));
-        m.put("scopeIntro", nz(state.getScopeConvergenceNote()));
-        m.put("userQuestion", nz(state.getNormalizedUserInput()));
-        m.put("scopeType", nz(dp.getScopeType()));
-        m.put("scopeName", nz(dp.getScopeName()));
-        m.put("visibleStores", dp.getVisibleStores() == null ? List.of() : dp.getVisibleStores());
-        m.put("coveredStores", dp.getCoveredStores() == null ? List.of() : dp.getCoveredStores());
-        m.put("dataMissingStores", dp.getDataMissingStores() == null ? List.of() : dp.getDataMissingStores());
-        m.put("summary", nz(dp.getSummary()));
-        m.put("statStartDate", nz(dp.getStatStartDate()));
-        m.put("statEndDate", nz(dp.getStatEndDate()));
-        m.put("dishCount", dp.getDishCount());
-        m.put("totalDishSalesAmount", nz(dp.getTotalDishSalesAmount()));
-        m.put("totalTheoreticalCost", nz(dp.getTotalTheoreticalCost()));
-        m.put("totalActualCost", nz(dp.getTotalActualCost()));
-        m.put("grossProfitAmount", nz(dp.getGrossProfitAmount()));
-        m.put("grossProfitRate", nz(dp.getGrossProfitRate()));
-        m.put("grossProfitRateUncertain", dp.isGrossProfitRateUncertain());
-        m.put("riskLevel", nz(dp.getRiskLevel()));
-        m.put("reliableProfitDishes", capDishBriefs(dp.getReliableProfitDishes(), 5));
-        m.put("lowProfitDishes", capDishBriefs(dp.getLowProfitDishes(), 5));
-        m.put("costDataIncompleteDishes", capDishBriefs(dp.getCostDataIncompleteDishes(), 8));
-        m.put("topProfitDishes", capDishBriefs(dp.getTopProfitDishes(), 5));
-        m.put("abnormalDishes", capDishBriefs(dp.getAbnormalDishes(), 6));
-        m.put("recommendations", dp.getRecommendations() == null ? List.of() : dp.getRecommendations());
-        return m;
+    private static boolean businessDiagnosisHasRiskSignal(AiRunState state, BusinessDiagnosisPlan plan) {
+        if (plan != null && plan.getStorePriorityRanking() != null
+                && plan.getStorePriorityRanking().getFocusStores() != null
+                && !plan.getStorePriorityRanking().getFocusStores().isEmpty()) {
+            return true;
+        }
+        if (plan != null && plan.getRiskItems() != null && !plan.getRiskItems().isEmpty()) {
+            return true;
+        }
+        DishProfitAnswerPlan ap = state != null ? state.getDishProfitAnswerPlan() : null;
+        if (ap != null && ap.getFocusRows() != null && !ap.getFocusRows().isEmpty()) {
+            return true;
+        }
+        return false;
     }
 
-    private static List<Map<String, Object>> capDishBriefs(List<AiDishProfitDishBrief> xs, int max) {
-        if (xs == null || xs.isEmpty()) {
-            return List.of();
+    /** 与「暂无风险」「未识别」等指令冲突的泛泛否认（在有 risk/focusRows 时不可用）。 */
+    private static boolean containsBusinessDiagnosisBadDenial(String t) {
+        if (t == null || t.isBlank()) {
+            return true;
         }
-        List<AiDishProfitDishBrief> deduped = dedupeDishBriefsForComposer(xs);
-        List<AiDishProfitDishBrief> sub = deduped.size() <= max ? deduped : deduped.subList(0, max);
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (AiDishProfitDishBrief b : sub) {
-            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
-            row.put("dishName", nz(b.getDishName()));
-            row.put("salesQty", nz(b.getSalesQty()));
-            row.put("salesAmount", nz(b.getSalesAmount()));
-            row.put("theoreticalCost", nz(b.getTheoreticalCost()));
-            row.put("actualCost", nz(b.getActualCost()));
-            row.put("grossProfitAmount", nz(b.getGrossProfitAmount()));
-            row.put("grossProfitRate", nz(b.getGrossProfitRate()));
-            row.put("riskReason", nz(b.getRiskReason()));
-            out.add(row);
+        String s = t;
+        if (s.contains("未识别到") && (s.contains("风险") || s.contains("具体"))) {
+            return true;
         }
-        return out;
+        if (s.contains("暂无风险") || s.contains("无具体建议") || s.contains("没有明显风险")) {
+            return true;
+        }
+        if (s.contains("暂无具体执行") || s.contains("无具体执行事项")) {
+            return true;
+        }
+        return false;
     }
 
-    private static List<AiDishProfitDishBrief> dedupeDishBriefsForComposer(List<AiDishProfitDishBrief> xs) {
-        LinkedHashMap<String, AiDishProfitDishBrief> m = new LinkedHashMap<>();
-        for (AiDishProfitDishBrief b : xs) {
-            String key;
-            if (b.getFoodId() != null && !b.getFoodId().isBlank()) {
-                key = "id:" + b.getFoodId().trim();
-            } else if (b.getDishName() != null && !b.getDishName().isBlank()) {
-                key = "n:" + b.getDishName().trim();
-            } else {
-                key = "row:" + m.size();
-            }
-            m.putIfAbsent(key, b);
+
+    private static boolean dishSalesDeterministicEligible(AiRunState state) {
+        if (state == null || state.getDishSalesAnswerPlan() == null) {
+            return false;
         }
-        return new ArrayList<>(m.values());
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        String effIntentRaw = rq.getEffectiveIntentCode();
+        String effPathRaw = rq.getEffectivePathCode();
+        String effIntent = StringUtils.hasText(effIntentRaw) ? effIntentRaw.trim() : null;
+        String effPath = StringUtils.hasText(effPathRaw) ? effPathRaw.trim() : null;
+        boolean dishSales =
+                AiResolvedQueryIntent.DISH_SALES_QUERY.equals(effIntent)
+                        || AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(effPath);
+        if (!dishSales) {
+            return false;
+        }
+        DishSalesAnswerPlan p = state.getDishSalesAnswerPlan();
+        String pt = p.getPlanType();
+        if (!StringUtils.hasText(pt)) {
+            return false;
+        }
+        pt = pt.trim();
+        return DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_HIGH.equals(pt)
+                || DishSalesAnswerPlan.TYPE_DISH_SALES_AMOUNT_RANKING_HIGH.equals(pt)
+                || DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_LOW.equals(pt);
     }
 
-    private static String shortFallbackDishProfit(AiDishProfitOverviewResult r, AiRunState state) {
-        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
-        if (r == null) {
-            String range = tw != null && tw.getDisplayTimeRange() != null ? tw.getDisplayTimeRange() : "该统计区间";
-            return "按「" + range + "」口径，当前可用的菜品利润/毛利数据不足，暂时无法给出有效分析。"
-                    + "请确认该门店在该统计周期内是否有完整销售、成本与配方/核销数据。";
+    /**
+     * 库存门店/仓库排行 wire：{@link com.nongxinle.ai.composer.renderer.WarehouseDeterministicRenderer} 已出确定性结论，
+     * Composer 侧禁止再走 LLM，否则会覆盖 Top3（payload Summary 未带排行字段时模型常写总览）。
+     */
+    private static boolean warehouseStockRankingDeterministicTakeoverEligible(AiRunState state) {
+        if (state == null || state.getResolvedQueryContext() == null) {
+            return false;
         }
-        if (dishProfitUseDeterministicSummaryOnly(state)) {
-            if (r.getSummary() != null && !r.getSummary().isBlank()) {
-                return r.getSummary().trim();
+        AiResolvedQueryContext ctx = state.getResolvedQueryContext();
+        String raw = null;
+        AiResolvedQueryIntent qi = ctx.getQueryIntent();
+        if (qi != null && StringUtils.hasText(qi.getStructuredIntentDetail())) {
+            raw = qi.getStructuredIntentDetail().trim();
+        }
+        if (!StringUtils.hasText(raw)
+                && ctx.getQuerySemanticParse() != null
+                && ctx.getQuerySemanticParse().getMetric() != null) {
+            String rt = ctx.getQuerySemanticParse().getMetric().getRankingType();
+            if (StringUtils.hasText(rt)) {
+                raw = rt.trim();
             }
-            if (r.getQueryScopeBanner() != null && !r.getQueryScopeBanner().isBlank()) {
-                return r.getQueryScopeBanner().trim();
-            }
-            return "当前结构化菜品毛利数据不足或本轮工具未返回明细，请先核对配方与出库核销数据是否齐备。";
         }
-        StringBuilder sb = new StringBuilder();
-        if (r.getQueryScopeBanner() != null && !r.getQueryScopeBanner().isBlank()) {
-            sb.append(r.getQueryScopeBanner().trim());
+        String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(raw);
+        String rankingTypeFallback = ctx.getQuerySemanticParse() != null
+                        && ctx.getQuerySemanticParse().getMetric() != null
+                ? ctx.getQuerySemanticParse().getMetric().getRankingType()
+                : null;
+        boolean eligible = AiQuerySemanticLexicon.STRUCTURED_STORE_STOCK_AMOUNT_RANKING.equals(wire)
+                || AiQuerySemanticLexicon.STRUCTURED_STORE_STOCK_ITEM_COUNT_RANKING.equals(wire)
+                || AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_STOCK_AMOUNT_RANKING.equals(wire)
+                || AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_STOCK_ITEM_COUNT_RANKING.equals(wire);
+        if (log.isInfoEnabled()) {
+            log.info(
+                    "[D6-4B-WH-RANKING] takeoverEligible={} runId={} queryIntentStructuredDetail={} metricRankingType={} canonicalWire={}",
+                    eligible,
+                    state.getRunId(),
+                    qi != null ? qi.getStructuredIntentDetail() : null,
+                    rankingTypeFallback,
+                    wire);
         }
-        if (r.getSummary() != null && !r.getSummary().isBlank()) {
-            if (sb.length() > 0) {
-                sb.append("\n\n");
-            }
-            sb.append(r.getSummary().trim());
-        }
-        if (dishProfitAnswerIsActualOutboundOnly(state)) {
-            String s = sb.toString().trim();
-            return !s.isEmpty() ? s : nz(r.getSummary());
-        }
-        appendDishSectionOrPlaceholder(sb, "毛利表现较好的菜（成本口径相对完整）", r.getReliableProfitDishes(), 3, false,
-                tw);
-        appendDishSectionOrPlaceholder(sb, "需要关注的低毛利或成本偏高菜", r.getLowProfitDishes(), 3, false, tw);
-        appendDishSectionOrPlaceholder(sb, "成本数据不完整、毛利率仅供参考的菜", r.getCostDataIncompleteDishes(), 4, true,
-                tw);
-        String s = sb.toString().trim();
-        if (!s.isEmpty()) {
-            return s;
-        }
-        if (r.getDishCount() > 0 && r.getSummary() != null && !r.getSummary().isBlank()) {
-            return r.getSummary().trim();
-        }
-        if (r.getDishCount() > 0) {
-            return "本轮识别到 " + r.getDishCount()
-                    + " 道菜品销量记录，但草稿中未能展开结构化明细行；请查看上方摘要或菜品卡片。";
-        }
-        return "当前结构化菜品毛利数据不足或本轮工具未返回明细，请先核对配方与出库核销数据是否齐备。";
+        return eligible;
     }
 
     private static boolean dishProfitUseDeterministicSummaryOnly(AiRunState state) {
@@ -491,362 +576,27 @@ public class StubAnswerComposerNode implements AgentNode {
         if (sid == null || sid.isBlank()) {
             return false;
         }
-        return AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(sid)
-                || AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(sid)
-                || AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(sid)
-                || AiQuerySemanticLexicon.STRUCTURED_DISH_LOW_PROFIT_REASON.equals(sid);
-    }
-
-    private static boolean dishProfitAnswerIsActualOutboundOnly(AiRunState state) {
-        if (state == null) {
-            return false;
-        }
-        AiResolvedQueryContext ctx = state.getResolvedQueryContext();
-        var qi = ctx != null ? ctx.getQueryIntent() : null;
-        return qi != null
-                && AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(qi.getStructuredIntentDetail());
-    }
-
-    private static void appendDishSectionOrPlaceholder(StringBuilder sb, String title, List<AiDishProfitDishBrief> dishes,
-            int max, boolean incompleteCost, AiTimeWindowTextFormatter.UserPhrases tw) {
-        if (dishes == null || dishes.isEmpty()) {
-            if (sb.length() > 0) {
-                sb.append("\n\n");
-            }
-            if (title != null && title.contains("毛利表现较好")) {
-                sb.append(title).append("：").append(tw.getDisplayTimeRange())
-                        .append("内暂未识别到成本数据完整且毛利表现突出的菜品。");
-            } else {
-                sb.append(title).append("：暂无");
-            }
-            return;
-        }
-        appendDishSection(sb, title, dishes, max, incompleteCost);
-    }
-
-    private static void appendDishSection(StringBuilder sb, String title, List<AiDishProfitDishBrief> dishes, int max,
-            boolean incompleteCost) {
-        if (dishes == null || dishes.isEmpty()) {
-            return;
-        }
-        List<AiDishProfitDishBrief> use = dedupeDishBriefsForComposer(dishes);
-        if (sb.length() > 0) {
-            sb.append("\n\n");
-        }
-        sb.append(title).append("：");
-        int n = 0;
-        for (AiDishProfitDishBrief b : use) {
-            if (n >= max || b == null) {
-                break;
-            }
-            if (b.getDishName() == null || b.getDishName().isBlank()) {
-                continue;
-            }
-            sb.append("\n• ").append(nz(b.getDishName()))
-                    .append("：销量约 ").append(nz(b.getSalesQty()))
-                    .append("，销售额约 ").append(nz(b.getSalesAmount()))
-                    .append("，理论成本 ").append(nz(b.getTheoreticalCost()))
-                    .append("，实际成本 ").append(nz(b.getActualCost()))
-                    .append("，毛利率 ").append(nz(b.getGrossProfitRate()));
-            if (incompleteCost) {
-                sb.append("（成本未齐，该毛利率不可靠；请先补 BOM/出库核销）");
-            } else if (b.getRiskReason() != null && !b.getRiskReason().isBlank()) {
-                sb.append("（").append(b.getRiskReason().trim()).append("）");
-            }
-            n++;
-        }
-        if (n == 0) {
-            sb.append("\n暂无");
-        }
-    }
-
-    private static Map<String, Object> compactBusinessPayload(AiRunState state, AiBusinessOverviewResult o) {
-        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
-        Map<String, Object> os = o.getOverviewScope();
-        if (os != null && !os.isEmpty()) {
-            Object pb = os.get("primaryBanner");
-            Object cd = os.get("coverageDetail");
-            m.put("queryScopeBanner", pb == null ? "" : pb.toString().trim());
-            m.put("queryScopeCoverage", cd == null ? "" : cd.toString().trim());
-            m.put("overviewScope", os);
-        } else {
-            m.put("queryScopeBanner", "");
-            m.put("queryScopeCoverage", "");
-        }
-        m.put("visibleStores", o.getVisibleStores() == null ? List.of() : o.getVisibleStores());
-        m.put("hint", "numericHeadlineText 必须由模型在查询范围复述之后照抄复述；缺失项仅写暂无");
-        m.put("numericHeadlineText", nz(extractOverviewNumericHeadline(state, o)));
-        m.put("dashboardStatsCn摘录", excerptDashboardStatsCn(o.getDashboardStatsCn()));
-        m.put("userQuestion", nz(state.getNormalizedUserInput()));
-        m.put("summary", o.getSummary());
-        m.put("priorityStoresBrief", nz(o.getPriorityStoresBrief()));
-        m.put("coveredStoresBrief", nz(o.getCoveredStoresBrief()));
-        m.put("coveredStores", capCoveredStoresPreview(o.getCoveredStores(), 80));
-        m.put("dataMissingStores", capIssueItemsPreview(o.getDataMissingStores(), 12));
-        m.put("attentionStores", capIssueItemsPreview(o.getAttentionStores(), 12));
-        m.put("riskLevel", o.getRiskLevel());
-        m.put("needMoreData", o.getNeedMoreData());
-        m.put("keyMetrics", o.getKeyMetrics());
-        m.put("findings", o.getFindings());
-        m.put("recommendations", o.getRecommendations());
-        m.put("questions", o.getQuestions());
-        return m;
-    }
-
-    private static List<AiOverviewCoveredStoreItem> capCoveredStoresPreview(List<AiOverviewCoveredStoreItem> full, int max) {
-        if (full == null || full.isEmpty()) {
-            return List.of();
-        }
-        if (full.size() <= max) {
-            return new ArrayList<>(full);
-        }
-        return new ArrayList<>(full.subList(0, max));
-    }
-
-    private static List<AiOverviewStoreIssueItem> capIssueItemsPreview(List<AiOverviewStoreIssueItem> full, int max) {
-        if (full == null || full.isEmpty()) {
-            return List.of();
-        }
-        if (full.size() <= max) {
-            return new ArrayList<>(full);
-        }
-        return new ArrayList<>(full.subList(0, max));
-    }
-
-    /** 与日营收看板中文键对齐的摘录，避免整包 stats 过长。 */
-    private static Map<String, Object> excerptDashboardStatsCn(Map<String, Object> stats) {
-        if (stats == null || stats.isEmpty()) {
-            return Map.of();
-        }
-        String[] keys = {
-                "数据口径说明",
-                "统计开始日期", "统计结束日期",
-                "统计天数", "总营业额", "日均营业额", "日均订单数", "客单价",
-                "平台费合计", "退款合计", "外卖营业额合计", "日均净收入",
-                "盈亏状态", "利润率", "日均利润含库存成本"
-        };
-        LinkedHashMap<String, Object> out = new LinkedHashMap<>();
-        for (String k : keys) {
-            if (stats.containsKey(k)) {
-                Object v = stats.get(k);
-                if (v == null) {
-                    out.put(k, "暂无");
-                } else if ("数据口径说明".equals(k) || "盈亏状态".equals(k)) {
-                    out.put(k, v.toString().trim());
-                } else if ("统计开始日期".equals(k) || "统计结束日期".equals(k)) {
-                    String d = v.toString().trim();
-                    out.put(k, d.isBlank() ? "暂无" : d);
-                } else {
-                    out.put(k, plainStatSnippet(v));
-                }
-            }
-        }
-        return out;
-    }
-
-    private static String extractOverviewNumericHeadline(AiRunState state, AiBusinessOverviewResult o) {
-        Map<String, Object> st = o.getDashboardStatsCn();
-        if (st == null || st.isEmpty()) {
-            st = loadStatsFallbackFromTool(state);
-        }
-        if (st != null && !st.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            appendDistinctRevenueDayLead(sb, st);
-            sb.append("，总营业额 ");
-            appendPlainValue(sb, st.get("总营业额"));
-            sb.append(" 元，日均营业额 ");
-            appendPlainValue(sb, st.get("日均营业额"));
-            sb.append(" 元，日均订单数 ");
-            appendPlainValue(sb, st.get("日均订单数"));
-            sb.append(" 单/天，客单价 ");
-            appendPlainValue(sb, st.get("客单价"));
-            sb.append(" 元。优惠券/平台费合计 ");
-            appendPlainValue(sb, st.get("平台费合计"));
-            sb.append(" 元，退款合计 ");
-            appendPlainValue(sb, st.get("退款合计"));
-            sb.append(" 元，外卖营业额合计 ");
-            appendPlainValue(sb, st.get("外卖营业额合计"));
-            sb.append(" 元");
-            Object profit = st.get("盈亏状态");
-            if (profit != null && !profit.toString().isBlank()) {
-                String ps = profit.toString().trim();
-                if (!"-".equals(ps) && !"—".equals(ps)) {
-                    sb.append("。盈亏状态：").append(ps);
-                }
-            }
-            sb.append("。");
-            return sb.toString();
-        }
-        String fromSummary = o.getSummary();
-        if (fromSummary != null && !fromSummary.isBlank()) {
-            return fromSummary.trim();
-        }
-        return "暂无日营收经营看板数据，无法列出查询区间内具体数字。";
+        return AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(sid);
     }
 
     /**
-     * 与 {@link com.nongxinle.service.impl.GbAiDailyRevenueDashboardServiceImpl#buildGroupWideIncomeFlattened}
-     * 等指标一致：先说明本次查询日期边界，再说明「统计天数」是区间内有营业额入账的自然日数（非日历满跨度）。
+     * 排行/原因类子意图：服务端已压缩 summary 与 answerPlan，Composer 走确定性短文，避免总览模板。
      */
-    private static void appendDistinctRevenueDayLead(StringBuilder sb, Map<String, Object> statsCn) {
-        String qStart = trimStatDate(statsCn.get("统计开始日期"));
-        String qEnd = trimStatDate(statsCn.get("统计结束日期"));
-        if (!qStart.isEmpty() && !qEnd.isEmpty()) {
-            if (qStart.equals(qEnd)) {
-                sb.append(qStart).append(" 当日");
-            } else {
-                sb.append("所选区间 ").append(qStart).append("～").append(qEnd).append(" 内");
-            }
-        } else if (!qStart.isEmpty()) {
-            sb.append("自 ").append(qStart).append(" 起");
-        } else if (!qEnd.isEmpty()) {
-            sb.append("截至 ").append(qEnd);
-        } else {
-            sb.append("本查询区间内");
+    private static boolean dishProfitNarrowRankingOrReasonPlan(AiRunState state) {
+        DishProfitAnswerPlan plan = state != null ? state.getDishProfitAnswerPlan() : null;
+        if (plan == null || plan.getPlanType() == null || plan.getPlanType().isBlank()) {
+            return false;
         }
-        sb.append("，录入营业额的自然日共 ");
-        appendPlainValue(sb, statsCn.get("统计天数"));
-        sb.append(" 天");
+        String t = plan.getPlanType().trim();
+        return DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN.equals(t)
+                || DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST.equals(t)
+                || DishProfitAnswerPlan.TYPE_DISH_PROFIT_REASON.equals(t)
+                || DishProfitAnswerPlan.TYPE_DISH_THEORETICAL_COST.equals(t)
+                || DishProfitAnswerPlan.TYPE_DISH_ACTUAL_OUTBOUND_COST.equals(t)
+                || DishProfitAnswerPlan.TYPE_DISH_PROFIT_RATE.equals(t)
+                || DishProfitAnswerPlan.TYPE_DISH_COST_GAP.equals(t);
     }
 
-    private static String trimStatDate(Object raw) {
-        if (raw == null) {
-            return "";
-        }
-        String t = raw.toString().trim();
-        return t.isBlank() ? "" : t;
-    }
-
-    private static Map<String, Object> loadStatsFallbackFromTool(AiRunState state) {
-        Map<String, Object> bo = overviewToolData(state);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> st = bo.get("stats") instanceof Map ? (Map<String, Object>) bo.get("stats") : Map.of();
-        return st;
-    }
-
-    private static void appendPlainValue(StringBuilder sb, Object v) {
-        if (v == null || v.toString().isBlank()) {
-            sb.append("暂无");
-            return;
-        }
-        String raw = v.toString().trim();
-        if ("-".equals(raw) || "—".equals(raw) || "不适用".equals(raw)) {
-            sb.append(raw);
-            return;
-        }
-        sb.append(AiNumericPlainText.plainNumber(v));
-    }
-
-    /** 给模型看的摘录：金额类避免科学计数法。 */
-    private static String plainStatSnippet(Object v) {
-        if (v == null || v.toString().isBlank()) {
-            return "暂无";
-        }
-        String raw = v.toString().trim();
-        if ("-".equals(raw) || "—".equals(raw) || "不适用".equals(raw)) {
-            return raw;
-        }
-        if (v instanceof String) {
-            return AiNumericPlainText.plainNumber(v);
-        }
-        if (v instanceof Number) {
-            return AiNumericPlainText.plainNumber(v);
-        }
-        try {
-            return AiNumericPlainText.plainNumber(raw);
-        } catch (Exception e) {
-            return raw;
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> overviewToolData(AiRunState state) {
-        Object env = state.getToolResults().get(AiBusinessToolIds.BUSINESS_OVERVIEW_QUERY);
-        if (!(env instanceof Map)) {
-            return Map.of();
-        }
-        Object data = ((Map<String, Object>) env).get("data");
-        if (!(data instanceof Map)) {
-            return Map.of();
-        }
-        return (Map<String, Object>) data;
-    }
-
-    private static String shortFallbackCost(AiCostDiagnosisResult d) {
-        StringBuilder sb = new StringBuilder();
-        if (d.getSummary() != null && !d.getSummary().isBlank()) {
-            sb.append(d.getSummary().trim());
-        } else {
-            sb.append("已根据当前可查数据完成成本诊断初步判断。");
-        }
-        sb.append('\n');
-        appendNumbered(sb, "重点发现", capCopy(d.getFindings(), MAX_FALLBACK_FINDINGS), MAX_FALLBACK_FINDINGS);
-        appendNumbered(sb, "建议先做", capCopy(d.getRecommendations(), MAX_FALLBACK_RECOMMENDATIONS), MAX_FALLBACK_RECOMMENDATIONS);
-        sb.append("\n下面的成本诊断卡片里有详细指标。");
-        return sb.toString().trim();
-    }
-
-    private static String shortFallbackBusiness(AiRunState state, AiBusinessOverviewResult o) {
-        StringBuilder sb = new StringBuilder();
-        Map<String, Object> os = o.getOverviewScope();
-        if (os != null && !os.isEmpty()) {
-            Object pb = os.get("primaryBanner");
-            Object cd = os.get("coverageDetail");
-            if (pb != null && !pb.toString().isBlank()) {
-                sb.append(pb.toString().trim());
-            }
-            if (cd != null && !cd.toString().isBlank()) {
-                if (sb.length() > 0) {
-                    sb.append('\n');
-                }
-                sb.append(cd.toString().trim());
-            }
-            if (sb.length() > 0) {
-                sb.append('\n');
-            }
-        }
-        String cs = nz(o.getCoveredStoresBrief()).trim();
-        if (!cs.isBlank()) {
-            sb.append(cs).append('\n');
-        }
-        if (os != null && !os.isEmpty()) {
-            Object dmb = os.get("dataMissingStoresBrief");
-            if (dmb != null && !dmb.toString().isBlank()) {
-                sb.append(dmb.toString().trim()).append('\n');
-            }
-        }
-        sb.append(extractOverviewNumericHeadline(state, o));
-        sb.append('\n');
-        String ps = nz(o.getPriorityStoresBrief()).trim();
-        if (!ps.isBlank()) {
-            sb.append(ps).append('\n');
-        }
-        appendNumbered(sb, "当前重点", capCopy(o.getFindings(), MAX_FALLBACK_FINDINGS), MAX_FALLBACK_FINDINGS);
-        appendNumbered(sb, "建议动作", capCopy(o.getRecommendations(), MAX_FALLBACK_RECOMMENDATIONS), MAX_FALLBACK_RECOMMENDATIONS);
-        sb.append("\n完整指标详见下方经营概览卡片。");
-        return sb.toString().trim();
-    }
-
-    private static void appendNumbered(StringBuilder sb, String title, List<String> lines, int max) {
-        if (lines == null || lines.isEmpty()) {
-            return;
-        }
-        sb.append('\n').append(title).append("：\n");
-        int n = Math.min(lines.size(), max);
-        for (int i = 0; i < n; i++) {
-            sb.append(i + 1).append(". ").append(lines.get(i).trim()).append('\n');
-        }
-    }
-
-    private static List<String> capCopy(List<String> list, int max) {
-        if (list == null || list.isEmpty()) {
-            return List.of();
-        }
-        if (list.size() <= max) {
-            return new ArrayList<>(list);
-        }
-        return new ArrayList<>(list.subList(0, max));
-    }
 
     private static String nz(String s) {
         return s == null ? "" : s;
@@ -854,41 +604,6 @@ public class StubAnswerComposerNode implements AgentNode {
 
     private static String nz(Object o) {
         return o == null ? "" : o.toString();
-    }
-
-    private static LinkedHashMap<String, Object> summarizePurchaseToolPresenceCn(AiRunState state) {
-        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
-        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
-        m.put("timeRangeForAnswer", tw.getBracketTimeRangeLine());
-        Map<String, Object> innerPo = toolDataInnerMap(state, AiBusinessToolIds.PURCHASE_OVERVIEW);
-        Object pOverview = innerPo.get("purchaseOverview");
-        if (pOverview instanceof Map<?, ?> pom) {
-            m.put("采购概览", pom);
-            Object scs = pom.get("storeCoverageSummary");
-            if (scs != null && !scs.toString().isBlank()) {
-                m.put("集团门店采购覆盖说明_须向用户复述", scs.toString().trim());
-            }
-        }
-        Map<String, Object> pu = toolDataInnerMap(state, AiBusinessToolIds.PURCHASE_QUERY);
-        Map<String, Object> stk = toolDataInnerMap(state, AiBusinessToolIds.STOCK_REDUCE_QUERY);
-        m.put("采购入库有可读结果", !pu.isEmpty());
-        m.put("核销出库有可读结果", !stk.isEmpty());
-        if (isBusinessOverviewToPurchaseConvergence(state)) {
-            m.put("答复口径",
-                    "用户用经营类话术提问，但账号为门店采购：仅总结采购笔数、采购金额、采购方式拆分（若有）及核销/出库结构；禁止营业额与毛利类表述；勿提采购总重量。");
-        }
-        if (!pu.isEmpty()) {
-            m.put("统计周期内采购入库金额_元", plainNumericHint(pu.get("purchaseSubTotal")));
-            m.put("采购明细行数", plainNumericHint(pu.get("purchaseRowCount")));
-        }
-        if (!stk.isEmpty()) {
-            m.put("核销生产耗用合计", plainNumericHint(stk.get("productionTotal")));
-            m.put("核销出品合计", plainNumericHint(stk.get("produceTotal")));
-            m.put("核销废弃合计_type2", plainNumericHint(stk.get("wasteTotal")));
-            m.put("核销损耗合计_type3", plainNumericHint(stk.get("lossTotal")));
-            m.put("核销退货合计", plainNumericHint(stk.get("returnTotal")));
-        }
-        return m;
     }
 
     private static String plainNumericHint(Object v) {
@@ -905,12 +620,7 @@ public class StubAnswerComposerNode implements AgentNode {
         return s.isEmpty() ? "暂无" : s;
     }
 
-    private static boolean isBusinessOverviewToPurchaseConvergence(AiRunState state) {
-        Map<String, String> ic = state.getIntentConvergence();
-        return ic != null
-                && "BUSINESS_OVERVIEW".equals(ic.get("from"))
-                && "PURCHASE_OVERVIEW".equals(ic.get("to"));
-    }
+
 
     private static boolean shouldForceDeterministicPurchaseAnswer(AiRunState state) {
         var ctx = state.getResolvedQueryContext();
@@ -924,345 +634,400 @@ public class StubAnswerComposerNode implements AgentNode {
         if (AiQuerySemanticLexicon.isSupplierAmountRankingDetail(sid)) {
             return true;
         }
-        String msg = nz(state.getNormalizedUserInput());
-        return AiQuerySemanticLexicon.looksLikeSupplierRanking(msg)
-                && !AiQuerySemanticLexicon.looksLikeExplicitPurchaseGeneralOverviewOrGoodsRankingOnly(msg);
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING.equals(sid)) {
+            return true;
+        }
+        return false;
     }
 
-    private static String purchaseCostFallback(AiRunState state) {
+    private static boolean businessOverviewMultiAgentFourDomainDeterministicEligible(AiRunState state) {
+        if (state == null || !state.isBusinessOverviewPath()) {
+            return false;
+        }
+        BusinessOverviewAnswerPlan bop = state.getBusinessOverviewAnswerPlan();
+        if (bop == null) {
+            return false;
+        }
+        String pt = bop.getPlanType();
+        if (pt == null || !BusinessOverviewAnswerPlan.PLAN_TYPE_BUSINESS_OVERVIEW_MULTI_AGENT_V1.equals(pt.trim())) {
+            return false;
+        }
+        List<String> missing = bop.getMissingSections();
+        if (missing != null && !missing.isEmpty()) {
+            return false;
+        }
+        return state.getRevenueAnswerPlan() != null
+                && state.getPurchaseAnswerPlan() != null
+                && state.getStockReduceAnswerPlan() != null
+                && state.getDishProfitAnswerPlan() != null;
+    }
+
+    private String composeBusinessOverviewMultiAgentFourDomainMarkdown(AiRunState state) {
         AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
-        Map<String, Object> overview = extractPurchaseOverviewPayload(state);
-        Map<String, Object> stk = toolDataInnerMap(state, AiBusinessToolIds.STOCK_REDUCE_QUERY);
-        boolean convergence = isBusinessOverviewToPurchaseConvergence(state);
-        if (!overview.isEmpty()) {
-            return purchaseOverviewStructuredFallback(state, overview, stk, convergence, tw);
-        }
-        Map<String, Object> p = toolDataInnerMap(state, AiBusinessToolIds.PURCHASE_QUERY);
+        String bracket = tw.getBracketTimeRangeLine().trim();
+        BusinessOverviewAnswerPlan bop = state.getBusinessOverviewAnswerPlan();
+
+        String revenueBlock =
+                nz(BusinessOverviewDeterministicSummaryBuilder.composeRevenueDeterministicFromAnswerPlan(
+                        state.getRevenueAnswerPlan(), tw));
+        String purchaseBlock = nz(composePurchaseDeterministicFromAnswerPlan(state.getPurchaseAnswerPlan(), tw));
+        String stockBlock =
+                nz(composeStockReduceDeterministicFromAnswerPlan(state.getStockReduceAnswerPlan(), tw, state));
+        String dishBlock = nz(deterministicAnswerRenderer.renderDishProfitAnswerPlanOneLiner(
+                state.getDishProfitAnswerPlan()));
+
         StringBuilder sb = new StringBuilder();
-        sb.append(tw.getBracketTimeRangeLine()).append("\n");
-        if (convergence) {
-            sb.append("说明：以下仅基于采购与库存权限汇总，不包含营业额、订单数、客单价、毛利或利润等经营指标。\n");
-        } else {
-            sb.append("（采购视角）已按权限汇总采购入库与核销/出库数据，不包含营业额与毛利率诊断。\n");
+        sb.append("【经营概览·四域汇总】\n");
+        sb.append(bracket).append('\n');
+        String scope = resolveBusinessOverviewAggregateScopeLabel(bop, state);
+        if (!scope.isBlank()) {
+            sb.append("组织范围：").append(scope.trim()).append('\n');
         }
-        boolean purchaseHasRows = purchaseHasDataRows(p);
-        if (!p.isEmpty() && purchaseHasRows) {
-            sb.append(tw.getDisplayTimeRange()).append("，采购入库金额约 ")
-                    .append(plainNumericHint(p.get("purchaseSubTotal")))
-                    .append(" 元；采购明细行数 ")
-                    .append(plainNumericHint(p.get("purchaseRowCount")))
-                    .append("。\n");
-        }
-        appendPurchaseStockReduceParagraph(sb, stk, true, tw);
-        if (!purchaseHasRows && stk.isEmpty()) {
-            if (convergence) {
-                sb.append("你当前账号可查看采购相关数据，但").append(tw.getDisplayTimeRange())
-                        .append("暂未查询到采购记录；核销/出库侧亦无可用汇总。\n");
-            } else {
-                sb.append("当前可用数据不足，暂时无法给出完整分析；请核对本岗权限、所选门店与时间区间是否与录入一致。\n");
-            }
-        } else if (!purchaseHasRows && !stk.isEmpty() && convergence) {
-            sb.append(tw.getDisplayTimeRange()).append("采购入库侧暂未查询到明细记录，可先结合上方核销/出库汇总排查是否与入库录入一致。\n");
-        }
-        sb.append("供应商价格与品类波动建议在采购或供货商模块导出核对。");
+        sb.append("\n本轮四域子计划均已返回；以下为对各子域 AnswerPlan 的直接宣读（未重算）：\n\n");
+
+        sb.append("【营业额】\n");
+        sb.append(orNonBlankParagraph(
+                stripDuplicateBracketTimeLine(revenueBlock, bracket), "营业额侧概要暂不可用。"));
+        sb.append("\n\n【采购】\n");
+        sb.append(orNonBlankParagraph(
+                stripDuplicateBracketTimeLine(purchaseBlock, bracket), "采购侧概要暂不可用。"));
+        sb.append("\n\n【出库/核销】\n");
+        sb.append(orNonBlankParagraph(
+                stripDuplicateBracketTimeLine(stockBlock, bracket), "出库/核销侧概要暂不可用。"));
+        sb.append("\n\n【菜品毛利】\n");
+        sb.append(orNonBlankParagraph(dishBlock, "菜品毛利侧概要暂不可用。"));
+
+        sb.append("\n\n【重点问题】\n");
+        appendBusinessOverviewAggregateFocusIssues(sb, state);
+
+        sb.append("\n【下一步建议】\n");
+        sb.append("1. 需要某一域更细拆分（渠道、排行、SKU 明细等），请切换到该业务专线再问。\n");
+        sb.append("2. 可对照页面经营概览卡片查看结构化明细。\n");
+
         return sb.toString().trim();
     }
 
-    private static String purchaseOverviewStructuredFallback(AiRunState state, Map<String, Object> overview,
-            Map<String, Object> stk, boolean convergence, AiTimeWindowTextFormatter.UserPhrases tw) {
-        Object narrativeObj = overview.get("purchaseNarrativeMode");
-        String narrative = narrativeObj != null ? narrativeObj.toString().trim() : "";
-        if (narrative.isBlank()) {
-            narrative = AiQuerySemanticLexicon.STRUCTURED_PURCHASE_OVERVIEW_SUMMARY;
+    private static String resolveBusinessOverviewAggregateScopeLabel(BusinessOverviewAnswerPlan bop, AiRunState state) {
+        if (bop != null && !nz(bop.getScopeLabel()).isBlank()) {
+            return nz(bop.getScopeLabel()).trim();
         }
-        Object focusObj = overview.get("purchaseSourceFocus");
-        String purchaseFocus = focusObj != null ? focusObj.toString().trim() : "";
-        boolean treatAsSupplierRanking = useSupplierRankingFocusedTemplate(state, narrative);
-        if (treatAsSupplierRanking) {
-            return purchaseSupplierRankingFallback(state, overview, tw);
+        if (state.getRevenueAnswerPlan() != null && !nz(state.getRevenueAnswerPlan().getScopeLabel()).isBlank()) {
+            return nz(state.getRevenueAnswerPlan().getScopeLabel()).trim();
         }
-        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY.equals(narrative)) {
-            return purchaseSourceAmountOnlyFallback(state, overview, purchaseFocus, tw);
+        if (state.getPurchaseAnswerPlan() != null && !nz(state.getPurchaseAnswerPlan().getScopeLabel()).isBlank()) {
+            return nz(state.getPurchaseAnswerPlan().getScopeLabel()).trim();
         }
-        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(narrative)) {
-            return purchaseSourceGoodsNarrowFallback(state, overview, purchaseFocus, tw);
+        if (state.getStockReduceAnswerPlan() != null
+                && !nz(state.getStockReduceAnswerPlan().getScopeLabel()).isBlank()) {
+            return nz(state.getStockReduceAnswerPlan().getScopeLabel()).trim();
         }
-        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_SUMMARY.equals(narrative)) {
-            return purchaseSourceSummaryNarrowFallback(state, overview, purchaseFocus, tw);
+        if (state.getDishProfitAnswerPlan() != null && !nz(state.getDishProfitAnswerPlan().getScopeLabel()).isBlank()) {
+            return nz(state.getDishProfitAnswerPlan().getScopeLabel()).trim();
         }
-        return purchaseOverviewFullSummaryFallback(state, overview, stk, convergence, purchaseFocus, tw);
+        return "";
     }
 
-    /** 是否走「仅供货商采购金额排行」短答（与 purchase_overview_summary 全量模板区分）。 */
-    private static boolean useSupplierRankingFocusedTemplate(AiRunState state, String narrativeFromOverview) {
-        if (AiQuerySemanticLexicon.isSupplierAmountRankingDetail(narrativeFromOverview)) {
-            return true;
+    private static void appendBusinessOverviewAggregateFocusIssues(StringBuilder sb, AiRunState state) {
+        DiagnosisPlan dp = state != null ? state.getDiagnosisPlan() : null;
+        if (dp == null || dp.getFocusFindings() == null || dp.getFocusFindings().isEmpty()) {
+            sb.append("暂无。\n");
+            return;
         }
-        if (state == null || state.getResolvedQueryContext() == null) {
-            return false;
+        int printed = 0;
+        int maxOut = 3;
+        int seq = 1;
+        for (Map<String, Object> row : dp.getFocusFindings()) {
+            if (printed >= maxOut) {
+                break;
+            }
+            if (row == null || row.isEmpty()) {
+                continue;
+            }
+            Object d = row.get("detail");
+            if (d == null || d.toString().isBlank()) {
+                continue;
+            }
+            sb.append(seq++).append(". ").append(d.toString().trim()).append('\n');
+            printed++;
         }
-        var qi = state.getResolvedQueryContext().getQueryIntent();
-        if (qi != null && AiQuerySemanticLexicon.isSupplierAmountRankingDetail(qi.getStructuredIntentDetail())) {
-            return true;
+        if (printed == 0) {
+            sb.append("暂无。\n");
         }
-        String msg = nz(state.getNormalizedUserInput());
-        if (!AiQuerySemanticLexicon.looksLikeSupplierRanking(msg)) {
-            return false;
-        }
-        if (AiQuerySemanticLexicon.looksLikeExplicitPurchaseGeneralOverviewOrGoodsRankingOnly(msg)) {
-            return false;
-        }
-        return true;
     }
 
-    private static PurchaseCarryHint tryParsePurchaseCarryFromPreviousTurn(AiRunState state) {
-        if (state == null || state.getResolvedQueryContext() == null) {
-            return null;
+    private static String stripDuplicateBracketTimeLine(String block, String bracketLine) {
+        if (block == null || block.isBlank()) {
+            return "";
         }
-        AiConversationTurnMemory prev = state.getResolvedQueryContext().getPreviousTurn();
-        if (prev == null || prev.getLastToolSummary() == null) {
-            return null;
+        String trimmed = block.trim();
+        if (bracketLine == null || bracketLine.isBlank()) {
+            return trimmed;
         }
-        Matcher m = PREV_TURN_PURCHASE_CARRY_PREFIX.matcher(prev.getLastToolSummary().trim());
-        if (!m.find()) {
-            return null;
+        String br = bracketLine.trim();
+        int nl = trimmed.indexOf('\n');
+        String firstLine = nl < 0 ? trimmed : trimmed.substring(0, nl).trim();
+        if (!firstLine.equals(br)) {
+            return trimmed;
         }
-        try {
-            int po = Integer.parseInt(m.group(1));
-            String amtTok = m.group(2).trim();
-            return new PurchaseCarryHint(po, amtTok);
-        } catch (Exception ignored) {
-            return null;
-        }
+        return nl < 0 ? "" : trimmed.substring(nl + 1).trim();
+    }
+
+    private static String orNonBlankParagraph(String s, String placeholder) {
+        return s != null && !s.isBlank() ? s.trim() : placeholder;
     }
 
     /**
-     * 供货商渠道汇总为 0 时的说明正文（不含时间括号行）；若上一轮有 carry 则对比全口径结论。
+     * 采购 AnswerPlan：排序与选行已在 Builder 完成；此处仅宣读 focusRows / secondaryRows，不重算、不重排。
+     *
+     * @return 可展示的确定性正文；不满足条件时返回 {@code null} 交由 summary / LLM fallback。
      */
-    private static void appendSupplierPurchaseZeroNarrativeBody(StringBuilder sb, AiRunState state,
+    private static String composePurchaseDeterministicFromAnswerPlan(PurchaseAnswerPlan plan,
             AiTimeWindowTextFormatter.UserPhrases tw) {
-        PurchaseCarryHint carry = tryParsePurchaseCarryFromPreviousTurn(state);
-        String storeSubject = resolveSinglePurchaseStoreSubject(state);
-        String timePhrase = resolvedTimeSubjectPhrase(tw);
-        String leadInStoreTime = spacedStorePlusTimePhrase(storeSubject, timePhrase);
-        String resultStoreTime = compactResultStoreTimePhrase(storeSubject, timePhrase);
-        sb.append("沿用上文 ").append(leadInStoreTime).append("口径，本轮只看供货商采购。");
-        sb.append("查询结果：").append(resultStoreTime).append("暂无供货商采购记录，供货商采购 0 笔、0 元。");
-        if (carry != null && carry.orderCount() > 0) {
-            String amtDisp = plainNumericHint(carry.amountToken());
-            sb.append("结合上一轮").append(resultStoreTime).append("总采购 ").append(carry.orderCount()).append(" 笔、")
-                    .append(amtDisp).append(" 元，可判断这些采购均为自采记录。");
-        } else {
-            sb.append("（未附带上一轮全口径对照数据时无法在答复中自动判断是否均为自采，请在系统中按入库来源拆分核对供货商/自采。）");
+        if (plan == null || plan.getFocusRows() == null || plan.getPlanType() == null || plan.getPlanType().isBlank()) {
+            return null;
         }
+        AiTimeWindowTextFormatter.UserPhrases p =
+                tw != null ? tw : AiTimeWindowTextFormatter.fromIsoRange(null, null, java.time.LocalDate.now());
+        String type = plan.getPlanType().trim();
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW.equals(type)) {
+            return composePurchaseOverviewTotalsFromPlan(plan, p, false, false);
+        }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_SELF_OVERVIEW.equals(type)) {
+            return composePurchaseOverviewTotalsFromPlan(plan, p, true, false);
+        }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_OVERVIEW.equals(type)) {
+            return composePurchaseOverviewTotalsFromPlan(plan, p, false, true);
+        }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING.equals(type)) {
+            return composePurchaseGoodsAmountRankingFromPlan(plan, p);
+        }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_COUNT_RANKING.equals(type)) {
+            return composePurchaseGoodsCountRankingFromPlan(plan, p);
+        }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING.equals(type)) {
+            return composePurchaseSupplierAmountRankingFromPlan(plan, p);
+        }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_STORE_AMOUNT_RANKING.equals(type)) {
+            return composePurchaseStoreAmountRankingFromPlan(plan, p);
+        }
+        return null;
     }
 
-    /** 与用户可见【查询范围】前缀配合：阐明继承口径下的供货商筛选结论，避免笼统「暂无有效采购」。 */
-    private static String supplierPurchaseFilteredZeroParagraph(AiRunState state,
+    /** 并排门店采购金额（AnswerPlan Builder 已定序）。 */
+    private static String composePurchaseStoreAmountRankingFromPlan(PurchaseAnswerPlan plan,
             AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        List<Map<String, Object>> sec =
+                plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
         StringBuilder sb = new StringBuilder();
         sb.append(tw.getBracketTimeRangeLine()).append("\n");
-        appendSupplierPurchaseZeroNarrativeBody(sb, state, tw);
-        return sb.toString().trim();
-    }
-
-    private static String resolveSinglePurchaseStoreSubject(AiRunState state) {
-        AiResolvedQueryContext ctx = state != null ? state.getResolvedQueryContext() : null;
-        if (ctx == null || ctx.getOrgScope() == null || ctx.getOrgScope().getVisibleStores() == null
-                || ctx.getOrgScope().getVisibleStores().size() != 1) {
-            return "";
+        if (focus == null || focus.isEmpty()) {
+            sb.append(tw.getDisplayTimeRange()).append(
+                    "，当前未能按门店对比采购入库金额范围（请在问题中并排点到具体门店并保持可见范围）。");
+            return sb.toString();
         }
-        AiStoreScopeDTO s = ctx.getOrgScope().getVisibleStores().get(0);
-        if (s == null || s.getStoreName() == null || s.getStoreName().isBlank()) {
-            return "";
-        }
-        return s.getStoreName().trim();
-    }
-
-    private static String resolvedTimeSubjectPhrase(AiTimeWindowTextFormatter.UserPhrases tw) {
-        String time = tw.getTimeSubjectText();
-        if (time == null || time.isBlank()) {
-            return "该统计区间";
-        }
-        return time.trim();
-    }
-
-    private static String spacedStorePlusTimePhrase(String store, String timePhrase) {
-        if (store == null || store.isBlank()) {
-            return timePhrase;
-        }
-        return store + " + " + timePhrase;
-    }
-
-    private static String compactResultStoreTimePhrase(String store, String timePhrase) {
-        if (store == null || store.isBlank()) {
-            return timePhrase;
-        }
-        return store + " " + timePhrase;
-    }
-
-    /** 自采/供货商「金额是多少」类：只报金额、笔数，至多 2 个金额最高单品；不追加「其中…」拆分与核销长段。 */
-    private static String purchaseSourceAmountOnlyFallback(AiRunState state, Map<String, Object> overview,
-            String purchaseFocus,
-            AiTimeWindowTextFormatter.UserPhrases tw) {
-        int cnt = intHint(overview.get("purchaseOrderCount"));
-        double amt = parseDoubleLoose(overview.get("totalPurchaseAmount"));
-        boolean selfFocus = AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE.equals(purchaseFocus);
-        boolean supFocus = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equals(purchaseFocus);
-        if (cnt <= 0 && amt <= 0) {
-            if (selfFocus) {
-                return "当前范围内暂未查询到自采入库记录，请确认时间与门店范围内是否有自采入库数据。";
-            }
-            if (supFocus) {
-                return supplierPurchaseFilteredZeroParagraph(state, tw);
-            }
-            return "当前范围内暂未查询到有效采购记录，请确认采购入库数据是否已录入。";
-        }
-        StringBuilder sb = new StringBuilder();
-        sb.append(tw.getBracketTimeRangeLine()).append("\n");
-        if (selfFocus) {
-            sb.append(tw.getDisplayTimeRange()).append("，自采金额为")
-                    .append(plainNumericHint(overview.get("totalPurchaseAmount")))
-                    .append("元，共")
-                    .append(cnt)
-                    .append("笔自采入库");
-        } else if (supFocus) {
-            sb.append(tw.getDisplayTimeRange()).append("，供货商渠道采购金额为")
-                    .append(plainNumericHint(overview.get("totalPurchaseAmount")))
-                    .append("元，共")
-                    .append(cnt)
-                    .append("笔供货商采购入库");
-        } else {
-            sb.append(tw.getDisplayTimeRange()).append("，采购入库总金额为")
-                    .append(plainNumericHint(overview.get("totalPurchaseAmount")))
-                    .append("元，共")
-                    .append(cnt)
-                    .append("笔");
-        }
+        Map<String, Object> top = focus.get(0);
+        sb.append(tw.getDisplayTimeRange()).append("，").append(purchaseStoreLabelFromPurchasePlanRow(top))
+                .append("采购金额为").append(plainNumericHint(purchaseStorePurchaseSubtotalFromRow(top))).append("元");
+        sb.append(buildPurchaseStoreRankingTail(sec));
         sb.append("。");
-        List<String> tops = pickPurchaseAmountTopParts(overview, 2);
-        if (!tops.isEmpty()) {
-            if (selfFocus) {
-                sb.append("自采金额最高的商品是").append(String.join("、", tops)).append("。");
-            } else if (supFocus) {
-                sb.append("供货商渠道采购金额最高的商品是").append(String.join("、", tops)).append("。");
-            } else {
-                sb.append("采购金额最高的商品是").append(String.join("、", tops)).append("。");
-            }
+        return sb.toString();
+    }
+
+    private static String purchaseStoreLabelFromPurchasePlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return "该门店";
+        }
+        Object n = row.get("storeName");
+        return n != null && !n.toString().isBlank() ? n.toString().trim() + "：" : "该门店：";
+    }
+
+    private static Object purchaseStorePurchaseSubtotalFromRow(Map<String, Object> row) {
+        if (row == null) {
+            return null;
+        }
+        Object v = row.get("purchaseSubtotal");
+        if (v == null) {
+            v = row.get("totalPurchaseAmount");
+        }
+        return v;
+    }
+
+    /** @param secondaryRows AnswerPlan.secondaryRows（其余门店）；用于「其后依次为」。 */
+    private static String buildPurchaseStoreRankingTail(List<Map<String, Object>> secondaryRows) {
+        if (secondaryRows.isEmpty()) {
+            return "";
+        }
+        List<String> parts = new ArrayList<>();
+        for (Map<String, Object> r : secondaryRows) {
+            parts.add(purchaseStoreLabelFromPurchasePlanRow(r).replace("：", "").trim()
+                    + "采购金额" + plainNumericHint(purchaseStorePurchaseSubtotalFromRow(r)) + "元");
+        }
+        return "；其后依次为：" + String.join("；", parts);
+    }
+
+    private static String composePurchaseOverviewTotalsFromPlan(PurchaseAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw, boolean self, boolean supplierChannel) {
+        List<Map<String, Object>> fr = plan.getFocusRows();
+        if (fr.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> row = fr.get(0);
+        int cnt = intHint(row.get("purchaseOrderCount"));
+        String amt = plainNumericHint(row.get("totalPurchaseAmount"));
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append("\n");
+        String range = tw.getDisplayTimeRange();
+        if (self) {
+            sb.append(range).append("，自采金额为").append(amt).append("元，共").append(cnt).append("笔自采入库。");
+        } else if (supplierChannel) {
+            sb.append(range).append("，供货商渠道采购金额为").append(amt).append("元，共").append(cnt).append("笔供货商采购入库。");
+        } else {
+            sb.append(range).append("，采购入库总金额为").append(amt).append("元，共").append(cnt).append("笔。");
         }
         return sb.toString();
     }
 
-    /** 「自采了哪些商品」：笔数+金额 + 频次/金额 Top；不展开核销与门店覆盖长段。 */
-    private static String purchaseSourceGoodsNarrowFallback(AiRunState state, Map<String, Object> overview,
-            String purchaseFocus, AiTimeWindowTextFormatter.UserPhrases tw) {
-        int cnt = intHint(overview.get("purchaseOrderCount"));
-        double amt = parseDoubleLoose(overview.get("totalPurchaseAmount"));
-        StringBuilder sb = new StringBuilder();
-        sb.append(tw.getBracketTimeRangeLine()).append("\n");
-        sb.append("（采购视角）以下汇总采购入库商品情况，不包含营业额与毛利率诊断。\n");
-        Object b = overview.get("queryScopeBanner");
-        if (b != null && !b.toString().isBlank()) {
-            sb.append(b.toString().trim()).append("\n");
+    private static String goodsNameFromPurchasePlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return "";
         }
-        appendPurchaseCountAmountLine(sb, state, overview, purchaseFocus, tw);
-        if (cnt <= 0 && amt <= 0) {
-            return sb.toString().trim();
-        }
-        if (sb.length() > 0 && sb.charAt(sb.length() - 1) != '\n') {
-            sb.append("\n");
-        }
-        appendGoodsFrequencyTopSentence(sb, overview.get("goodsPurchaseFrequencyTop"), purchaseFocus);
-        Object amtTop = overview.get("goodsPurchaseAmountTop");
-        if (!(amtTop instanceof List<?>) || ((List<?>) amtTop).isEmpty()) {
-            amtTop = overview.get("highAmountItems");
-        }
-        appendGoodsAmountTopSentence(sb, amtTop, purchaseFocus);
-        return sb.toString().trim();
+        Object g = row.get("goodsName");
+        return g != null ? g.toString().trim() : "";
     }
 
-    /** 「自采有多少」：笔数+金额 + 可 Top 商品；不展开完整概览。 */
-    private static String purchaseSourceSummaryNarrowFallback(AiRunState state, Map<String, Object> overview,
-            String purchaseFocus, AiTimeWindowTextFormatter.UserPhrases tw) {
-        int cnt = intHint(overview.get("purchaseOrderCount"));
-        double amt = parseDoubleLoose(overview.get("totalPurchaseAmount"));
-        StringBuilder sb = new StringBuilder();
-        sb.append(tw.getBracketTimeRangeLine()).append("\n");
-        sb.append("（采购视角）以下汇总采购入库情况，不包含营业额与毛利率诊断。\n");
-        Object b = overview.get("queryScopeBanner");
-        if (b != null && !b.toString().isBlank()) {
-            sb.append(b.toString().trim()).append("\n");
+    private static Object purchaseGoodsAmountFromPlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return null;
         }
-        appendPurchaseCountAmountLine(sb, state, overview, purchaseFocus, tw);
-        if (cnt <= 0 && amt <= 0) {
-            return sb.toString().trim();
+        Object v = row.get("purchaseSubtotal");
+        if (v == null) {
+            v = row.get("totalPurchaseAmount");
         }
-        if (sb.length() > 0 && sb.charAt(sb.length() - 1) != '\n') {
-            sb.append("\n");
-        }
-        appendGoodsFrequencyTopSentence(sb, overview.get("goodsPurchaseFrequencyTop"), purchaseFocus);
-        Object amtTop = overview.get("goodsPurchaseAmountTop");
-        if (!(amtTop instanceof List<?>) || ((List<?>) amtTop).isEmpty()) {
-            amtTop = overview.get("highAmountItems");
-        }
-        appendGoodsAmountTopSentence(sb, amtTop, purchaseFocus);
-        return sb.toString().trim();
+        return v;
     }
 
-    /** 供货商采购金额排行：只输出名次与户数，不包含全量采购/自采拆分/单品 Top/核销。 */
-    private static String purchaseSupplierRankingFallback(AiRunState state, Map<String, Object> overview,
+    private static Object purchaseGoodsCountFromPlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return null;
+        }
+        Object v = row.get("purchaseTimes");
+        if (v == null) {
+            v = row.get("purchaseCount");
+        }
+        if (v == null) {
+            v = row.get("purchaseLineCount");
+        }
+        return v;
+    }
+
+    private static Object supplierPurchaseAmountFromPlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return null;
+        }
+        Object v = row.get("totalPurchaseAmount");
+        if (v == null) {
+            v = row.get("purchaseAmount");
+        }
+        return v;
+    }
+
+    private static String supplierNameFromPurchasePlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return "";
+        }
+        Object n = row.get("supplierName");
+        return n != null ? n.toString().trim() : "";
+    }
+
+    private static boolean purchasePlanRowCountsEqual(Map<String, Object> row, Object topCountObj) {
+        String a = plainNumericHint(purchaseGoodsCountFromPlanRow(row));
+        String b = plainNumericHint(topCountObj);
+        return Objects.equals(a, b);
+    }
+
+    private static String composePurchaseGoodsAmountRankingFromPlan(PurchaseAnswerPlan plan,
             AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        List<Map<String, Object>> sec =
+                plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
         StringBuilder sb = new StringBuilder();
-        sb.append(tw != null ? tw.getDisplayTimeRange() : "统计周期")
-                .append("，")
-                .append(supplierRankingScopeLead(state, overview))
-                .append("供货商采购金额排名如下：\n");
-        Object topRaw = overview.get("topSuppliers");
-        if (!(topRaw instanceof List<?> topList) || topList.isEmpty()) {
-            int po = intHint(overview.get("purchaseOrderCount"));
-            double amt = parseDoubleLoose(overview.get("totalPurchaseAmount"));
-            if (po <= 0 && amt <= 0) {
-                sb.append("当前范围内暂未查询到采购入库记录。");
-            } else {
-                sb.append("暂无真实供货商采购记录。");
-                sb.append("本周期仍有采购入账，但未识别到挂靠供货商的入账行（常见于全部为自采或入库未登记供货商）；与上一轮若为「全自采」结论一致时也属正常。");
-            }
-            return sb.toString().trim();
+        sb.append(tw.getBracketTimeRangeLine()).append("\n");
+        if (focus.isEmpty()) {
+            sb.append(tw.getDisplayTimeRange()).append("暂未查询到采购商品金额排行数据。");
+            return sb.toString();
         }
-        int pos = 1;
-        for (Object o : topList) {
-            if (pos > 50) {
-                break;
-            }
-            if (!(o instanceof Map<?, ?> row)) {
-                continue;
-            }
-            Object nm = row.get("supplierName");
-            if (nm == null || nm.toString().isBlank()) {
-                continue;
-            }
-            int lines = supplierRankingLineCountHint(row);
-            double rowAmt = parseDoubleLoose(row.get("totalPurchaseAmount"));
-            sb.append("第")
-                    .append(pos)
-                    .append("名：")
-                    .append(nm.toString().trim())
-                    .append("，采购金额")
-                    .append(rowAmt > 1e-9 ? plainNumericHint(row.get("totalPurchaseAmount")) : plainNumericHint(0))
-                    .append("元，共")
-                    .append(lines > 0 ? lines : Math.max(intHint(row.get("orderCount")), intHint(row.get("lineCount"))))
-                    .append("笔。\n");
-            pos++;
+        Map<String, Object> top = focus.get(0);
+        sb.append(tw.getDisplayTimeRange()).append("，采购金额最高的商品为")
+                .append(nz(goodsNameFromPurchasePlanRow(top)))
+                .append("，约")
+                .append(plainNumericHint(purchaseGoodsAmountFromPlanRow(top)))
+                .append("元。");
+        List<String> restParts = new ArrayList<>();
+        for (int i = 1; i < focus.size(); i++) {
+            Map<String, Object> r = focus.get(i);
+            restParts.add(nz(goodsNameFromPurchasePlanRow(r)) + "约" + plainNumericHint(purchaseGoodsAmountFromPlanRow(r))
+                    + "元");
         }
-        int counted = pos - 1;
-        if (counted <= 0) {
-            sb.append("暂无真实供货商采购记录。");
+        for (Map<String, Object> r : sec) {
+            restParts.add(nz(goodsNameFromPurchasePlanRow(r)) + "约" + plainNumericHint(purchaseGoodsAmountFromPlanRow(r))
+                    + "元");
+        }
+        if (!restParts.isEmpty()) {
+            sb.append("其后依次为：").append(String.join("；", restParts)).append("。");
+        }
+        return sb.toString();
+    }
+
+    private static String composePurchaseGoodsCountRankingFromPlan(PurchaseAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        List<Map<String, Object>> sec =
+                plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append("\n");
+        if (focus.isEmpty()) {
+            sb.append(tw.getDisplayTimeRange()).append("暂未查询到采购商品次数排行数据。");
+            return sb.toString();
+        }
+        List<Map<String, Object>> ordered = new ArrayList<>(focus.size() + sec.size());
+        ordered.addAll(focus);
+        ordered.addAll(sec);
+        Object topCountObj = purchaseGoodsCountFromPlanRow(ordered.get(0));
+        String topCountDisp = plainNumericHint(topCountObj);
+        int i = 0;
+        while (i < ordered.size() && purchasePlanRowCountsEqual(ordered.get(i), topCountObj)) {
+            i++;
+        }
+        List<String> tieNames = new ArrayList<>();
+        for (int k = 0; k < i; k++) {
+            String nm = nz(goodsNameFromPurchasePlanRow(ordered.get(k)));
+            if (!nm.isBlank()) {
+                tieNames.add(nm);
+            }
+        }
+        if (tieNames.isEmpty()) {
+            return null;
+        }
+        String range = tw.getDisplayTimeRange();
+        if (tieNames.size() > 1) {
+            sb.append(range).append("，采购次数最多的商品包括").append(String.join("、", tieNames)).append("，均为")
+                    .append(topCountDisp).append("次。");
         } else {
-            sb.append("\n当前口径下仅查询到")
-                    .append(counted)
-                    .append("家真实供货商采购记录。");
+            sb.append(range).append("，采购次数最多的商品为").append(tieNames.get(0)).append("，共").append(topCountDisp)
+                    .append("次。");
         }
-        return sb.toString().trim();
+        List<String> restParts = new ArrayList<>();
+        while (i < ordered.size()) {
+            Map<String, Object> r = ordered.get(i);
+            restParts.add(nz(goodsNameFromPurchasePlanRow(r)) + "共" + plainNumericHint(purchaseGoodsCountFromPlanRow(r))
+                    + "次");
+            i++;
+        }
+        if (!restParts.isEmpty()) {
+            sb.append("其后依次为：").append(String.join("；", restParts)).append("。");
+        }
+        return sb.toString();
     }
 
     private static int supplierRankingLineCountHint(Map<?, ?> row) {
@@ -1273,357 +1038,36 @@ public class StubAnswerComposerNode implements AgentNode {
         return intHint(row.get("purchaseOrderCount"));
     }
 
-    /** 接在时间及逗号后的范围提示，如「集团范围」。 */
-    private static String supplierRankingScopeLead(AiRunState state, Map<String, Object> overview) {
-        Object b = overview != null ? overview.get("queryScopeBanner") : null;
-        String banner = b != null ? b.toString().trim() : "";
-        if (banner.contains("集团")) {
-            return "集团范围";
-        }
-        if (state != null && state.getResolvedQueryContext() != null) {
-            var org = state.getResolvedQueryContext().getOrgScope();
-            if (org != null) {
-                if (AiResolvedOrgScope.SCOPE_GROUP.equals(org.getScopeType())) {
-                    return "集团范围";
-                }
-                if (org.getVisibleStores() != null && org.getVisibleStores().size() == 1) {
-                    return "当前门店范围";
-                }
-            }
-        }
-        if (!banner.isEmpty()) {
-            return banner.replaceFirst("^【?查询范围】?[:：]?\\s*", "").trim();
-        }
-        return "当前查询范围";
-    }
-
-    private static void appendPurchaseCountAmountLine(StringBuilder sb, AiRunState state,
-            Map<String, Object> overview, String purchaseFocus, AiTimeWindowTextFormatter.UserPhrases tw) {
-        int cnt = intHint(overview.get("purchaseOrderCount"));
-        double amt = parseDoubleLoose(overview.get("totalPurchaseAmount"));
-        boolean selfFocus = AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE.equals(purchaseFocus);
-        boolean supFocus = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equals(purchaseFocus);
-        if (cnt <= 0 && amt <= 0) {
-            if (selfFocus) {
-                sb.append("当前范围内暂未查询到自采入库记录，请确认时间与门店范围内是否有自采入库数据。");
-            } else if (supFocus) {
-                if (state != null) {
-                    appendSupplierPurchaseZeroNarrativeBody(sb, state, tw);
-                } else {
-                    sb.append(
-                            "本轮按供货商采购渠道汇总：暂无供货商入库记录（0 笔、0 元）；未表示全口径采购为空，请核对时间与录入口径。");
-                }
-            } else {
-                sb.append("当前范围内暂未查询到有效采购记录，请确认采购入库数据是否已录入。");
-            }
-            return;
-        }
-        String rangeLead = tw != null ? tw.getDisplayTimeRange() : "统计周期";
-        if (selfFocus) {
-            sb.append(rangeLead).append("，自采入库共")
-                    .append(cnt)
-                    .append("笔，自采金额")
-                    .append(plainNumericHint(overview.get("totalPurchaseAmount")))
-                    .append("元。");
-        } else if (supFocus) {
-            sb.append(rangeLead).append("，供货商渠道采购入库共")
-                    .append(cnt)
-                    .append("笔，金额")
-                    .append(plainNumericHint(overview.get("totalPurchaseAmount")))
-                    .append("元。");
-        } else {
-            sb.append(rangeLead).append("，采购入库共")
-                    .append(cnt)
-                    .append("笔，金额")
-                    .append(plainNumericHint(overview.get("totalPurchaseAmount")))
-                    .append("元。");
-        }
-    }
-
-    private static List<String> pickPurchaseAmountTopParts(Map<String, Object> overview, int maxN) {
-        if (maxN <= 0) {
-            return Collections.emptyList();
-        }
-        Object amtTop = overview.get("goodsPurchaseAmountTop");
-        if (!(amtTop instanceof List<?>) || ((List<?>) amtTop).isEmpty()) {
-            amtTop = overview.get("highAmountItems");
-        }
-        if (!(amtTop instanceof List<?> list) || list.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<String> parts = new ArrayList<>();
-        for (Object o : list) {
-            if (parts.size() >= maxN) {
-                break;
-            }
-            if (o instanceof Map<?, ?> row) {
-                Object nm = row.get("goodsName");
-                Object sub = row.get("purchaseSubtotal");
-                if (nm != null && !nm.toString().isBlank() && sub != null
-                        && parseDoubleLoose(sub) > 1e-9) {
-                    parts.add(nm.toString().trim() + plainNumericHint(sub) + "元");
-                }
-            }
-        }
-        return parts;
-    }
-
-    private static String purchaseOverviewFullSummaryFallback(AiRunState state, Map<String, Object> overview,
-            Map<String, Object> stk, boolean convergence, String purchaseFocus,
+    private static String composePurchaseSupplierAmountRankingFromPlan(PurchaseAnswerPlan plan,
             AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        List<Map<String, Object>> sec =
+                plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
         StringBuilder sb = new StringBuilder();
         sb.append(tw.getBracketTimeRangeLine()).append("\n");
-        if (convergence) {
-            sb.append("说明：以下仅基于采购与库存权限汇总，不包含营业额、订单数、客单价、毛利或利润等经营指标。\n");
-        } else {
-            sb.append("（采购视角）已按权限汇总采购入库与核销/出库数据，不包含营业额与毛利率诊断。\n");
+        if (focus.isEmpty()) {
+            sb.append("当前口径下暂未查询到真实供货商采购记录；本期采购主要为自采或未挂靠供货商采购。");
+            return sb.toString();
         }
-        Object b = overview.get("queryScopeBanner");
-        if (b != null && !b.toString().isBlank()) {
-            sb.append(b.toString().trim()).append("\n");
+        Map<String, Object> top = focus.get(0);
+        int lines = supplierRankingLineCountHint(top);
+        sb.append(tw.getDisplayTimeRange()).append("，供货商采购金额第一名为").append(nz(supplierNameFromPurchasePlanRow(top)))
+                .append("，采购金额").append(plainNumericHint(supplierPurchaseAmountFromPlanRow(top))).append("元，共")
+                .append(lines > 0 ? lines : Math.max(intHint(top.get("purchaseCount")), intHint(top.get("orderCount"))))
+                .append("笔。");
+        if (!sec.isEmpty()) {
+            List<String> parts = new ArrayList<>();
+            for (Map<String, Object> r : sec) {
+                int ln = supplierRankingLineCountHint(r);
+                parts.add(nz(supplierNameFromPurchasePlanRow(r)) + "采购金额"
+                        + plainNumericHint(supplierPurchaseAmountFromPlanRow(r)) + "元，共"
+                        + (ln > 0 ? ln : Math.max(intHint(r.get("purchaseCount")), intHint(r.get("orderCount")))) + "笔");
+            }
+            sb.append("其后依次为：").append(String.join("；", parts)).append("。");
         }
-        Object scs = overview.get("storeCoverageSummary");
-        if (scs != null && !scs.toString().isBlank()) {
-            sb.append(scs.toString().trim()).append("\n");
-        }
-        int cnt = intHint(overview.get("purchaseOrderCount"));
-        double amt = parseDoubleLoose(overview.get("totalPurchaseAmount"));
-        boolean selfFocus = AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE.equals(purchaseFocus);
-        boolean supFocus = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equals(purchaseFocus);
-        if (cnt <= 0 && amt <= 0) {
-            if (selfFocus) {
-                sb.append("当前范围内暂未查询到自采入库记录，请确认时间与门店范围内是否有自采入库数据。\n");
-            } else if (supFocus) {
-                if (state != null) {
-                    appendSupplierPurchaseZeroNarrativeBody(sb, state, tw);
-                    sb.append("\n");
-                } else {
-                    sb.append(
-                            "本轮按供货商采购渠道汇总：暂无供货商入库记录（0 笔、0 元）；未表示全口径采购为空，请核对时间与录入口径。\n");
-                }
-            } else {
-                sb.append("当前范围内暂未查询到有效采购记录，请确认采购入库数据是否已录入。\n");
-            }
-        } else {
-            String rangeLead = tw.getDisplayTimeRange();
-            sb.append(rangeLead).append("，");
-            if (selfFocus) {
-                sb.append("自采入库共");
-            } else if (supFocus) {
-                sb.append("供货商渠道采购入库共");
-            } else {
-                sb.append("采购入库共");
-            }
-            sb.append(cnt)
-                    .append("笔，")
-                    .append(selfFocus ? "自采金额" : (supFocus ? "供货商渠道采购金额" : "总金额"))
-                    .append(plainNumericHint(overview.get("totalPurchaseAmount")))
-                    .append("元");
-            boolean methodOk = Boolean.TRUE.equals(overview.get("purchaseMethodBreakdownSupported"));
-            Object frag = overview.get("purchaseMethodSummaryFragment");
-            Object methodNote = overview.get("purchaseMethodNote");
-            if (methodOk && frag != null && !frag.toString().isBlank() && !selfFocus && !supFocus) {
-                sb.append("其中").append(frag.toString().trim()).append("。");
-            } else if (methodNote != null && !methodNote.toString().isBlank() && !selfFocus && !supFocus) {
-                sb.append(" ").append(methodNote.toString().trim()).append("。");
-            } else {
-                sb.append("。");
-            }
-            appendGoodsFrequencyTopSentence(sb, overview.get("goodsPurchaseFrequencyTop"), purchaseFocus);
-            Object amtTop = overview.get("goodsPurchaseAmountTop");
-            if (!(amtTop instanceof List<?>) || ((List<?>) amtTop).isEmpty()) {
-                amtTop = overview.get("highAmountItems");
-            }
-            appendGoodsAmountTopSentence(sb, amtTop, purchaseFocus);
-            appendPrimarySuppliersSentence(sb, overview.get("topSuppliers"));
-
-            appendBriefPurchaseList(sb, "价格波动较明显的商品", overview.get("priceChangeItems"), "goodsName", 3);
-            appendBriefPurchaseList(sb, "有采购但无销售/无核销（待核对）", overview.get("purchaseWithoutSalesItems"),
-                    "goodsName", 3);
-        }
-        appendWarehouseRecommendations(sb, overview.get("recommendations"));
-        appendPurchaseStockReduceParagraph(sb, stk, true, tw);
-        sb.append("供应商价格与品类波动建议在采购或供货商模块导出核对。");
-        return sb.toString().trim();
+        return sb.toString();
     }
 
-    private static void appendGoodsFrequencyTopSentence(StringBuilder sb, Object listObj, String purchaseSourceFocus) {
-        if (!(listObj instanceof List<?> list) || list.isEmpty()) {
-            return;
-        }
-        List<String> parts = new ArrayList<>();
-        int n = 0;
-        for (Object o : list) {
-            if (n >= 5) {
-                break;
-            }
-            if (o instanceof Map<?, ?> row) {
-                Object nm = row.get("goodsName");
-                int times = intHint(row.get("purchaseTimes"));
-                if (nm != null && !nm.toString().isBlank() && times > 0) {
-                    parts.add(nm.toString().trim() + times + "次");
-                    n++;
-                }
-            }
-        }
-        if (parts.isEmpty()) {
-            return;
-        }
-        String head = "采购次数较多的是";
-        if (AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE.equals(purchaseSourceFocus)) {
-            head = "自采商品采购频次较高的是";
-        } else if (AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equals(purchaseSourceFocus)) {
-            head = "供货商采购商品采购频次较高的是";
-        }
-        sb.append(head).append(String.join("、", parts)).append("。\n");
-    }
-
-    private static void appendGoodsAmountTopSentence(StringBuilder sb, Object listObj, String purchaseSourceFocus) {
-        if (!(listObj instanceof List<?> list) || list.isEmpty()) {
-            return;
-        }
-        List<String> parts = new ArrayList<>();
-        int n = 0;
-        for (Object o : list) {
-            if (n >= 5) {
-                break;
-            }
-            if (o instanceof Map<?, ?> row) {
-                Object nm = row.get("goodsName");
-                Object sub = row.get("purchaseSubtotal");
-                if (nm != null && !nm.toString().isBlank() && sub != null
-                        && parseDoubleLoose(sub) > 1e-9) {
-                    parts.add(nm.toString().trim() + plainNumericHint(sub) + "元");
-                    n++;
-                }
-            }
-        }
-        if (parts.isEmpty()) {
-            return;
-        }
-        String head = "采购金额最高的是";
-        if (AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE.equals(purchaseSourceFocus)) {
-            head = "自采商品采购金额较高的是";
-        } else if (AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equals(purchaseSourceFocus)) {
-            head = "供货商采购商品金额较高的是";
-        }
-        sb.append(head).append(String.join("、", parts)).append("。\n");
-    }
-
-    private static void appendPrimarySuppliersSentence(StringBuilder sb, Object listObj) {
-        appendPrimarySuppliersSentence(sb, listObj, 4);
-    }
-
-    private static void appendPrimarySuppliersSentence(StringBuilder sb, Object listObj, int maxSuppliers) {
-        if (!(listObj instanceof List<?> list) || list.isEmpty()) {
-            return;
-        }
-        int cap = maxSuppliers > 0 ? maxSuppliers : 4;
-        List<String> parts = new ArrayList<>();
-        int n = 0;
-        for (Object o : list) {
-            if (n >= cap) {
-                break;
-            }
-            if (o instanceof Map<?, ?> row) {
-                Object nm = row.get("supplierName");
-                Object am = row.get("totalPurchaseAmount");
-                if (nm != null && !nm.toString().isBlank()) {
-                    StringBuilder one = new StringBuilder(nm.toString().trim());
-                    if (am != null && parseDoubleLoose(am) > 1e-9) {
-                        one.append("（").append(plainNumericHint(am)).append("元）");
-                    }
-                    parts.add(one.toString());
-                    n++;
-                }
-            }
-        }
-        if (parts.isEmpty()) {
-            return;
-        }
-        sb.append("主要供货商为").append(String.join("、", parts)).append("。\n");
-    }
-
-    private static void appendPurchaseStockReduceParagraph(StringBuilder sb, Map<String, Object> stk,
-            boolean closureHint, AiTimeWindowTextFormatter.UserPhrases tw) {
-        if (stk == null || stk.isEmpty()) {
-            return;
-        }
-        if (allPurchaseStockReduceMetricsZero(stk)) {
-            String range = tw != null ? tw.getDisplayTimeRange() : "统计周期";
-            sb.append(range).append("暂无核销/出库记录。\n");
-            return;
-        }
-        sb.append("核销方面：生产耗用 ")
-                .append(plainNumericHint(stk.get("productionTotal")))
-                .append(" 元，出品 ")
-                .append(plainNumericHint(stk.get("produceTotal")))
-                .append(" 元，废弃 ")
-                .append(plainNumericHint(stk.get("wasteTotal")))
-                .append(" 元，损耗 ")
-                .append(plainNumericHint(stk.get("lossTotal")))
-                .append(" 元（亦称报损），退货 ")
-                .append(plainNumericHint(stk.get("returnTotal")))
-                .append(" 元");
-        if (closureHint) {
-            sb.append("。请结合入库核对链路是否闭合");
-        }
-        sb.append("。\n");
-    }
-
-    private static boolean allPurchaseStockReduceMetricsZero(Map<String, Object> stk) {
-        if (stk == null || stk.isEmpty()) {
-            return true;
-        }
-        String[] keys = {"productionTotal", "produceTotal", "wasteTotal", "lossTotal", "returnTotal"};
-        for (String k : keys) {
-            if (parseDoubleLoose(stk.get(k)) > 1e-9) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static void appendBriefPurchaseList(StringBuilder sb, String title, Object listObj, String nameKey, int max) {
-        if (!(listObj instanceof List<?> list) || list.isEmpty()) {
-            return;
-        }
-        StringBuilder line = new StringBuilder();
-        int n = 0;
-        for (Object o : list) {
-            if (n >= max) {
-                break;
-            }
-            if (o instanceof Map<?, ?> row) {
-                Object nm = row.get(nameKey);
-                if (nm == null) {
-                    nm = row.get("goodsName");
-                }
-                if (nm != null && !nm.toString().isBlank()) {
-                    line.append(nm.toString().trim()).append("；");
-                    n++;
-                }
-            }
-        }
-        if (n > 0) {
-            sb.append(title).append("：").append(line).append("\n");
-        }
-    }
-
-    private static boolean purchaseHasDataRows(Map<String, Object> p) {
-        if (p == null || p.isEmpty()) {
-            return false;
-        }
-        Object rc = p.get("purchaseRowCount");
-        if (rc instanceof Number n) {
-            return n.intValue() > 0;
-        }
-        try {
-            return rc != null && Integer.parseInt(rc.toString().trim()) > 0;
-        } catch (Exception e) {
-            return false;
-        }
-    }
 
     private static boolean isBusinessToWarehouseStockConvergence(AiRunState state) {
         Map<String, String> ic = state.getIntentConvergence();
@@ -1732,91 +1176,6 @@ public class StubAnswerComposerNode implements AgentNode {
         return t.isBlank() ? answer : t;
     }
 
-    private static LinkedHashMap<String, Object> summarizeWarehouseToolPresenceCn(AiRunState state) {
-        Map<String, Object> wo = extractWarehouseOverviewPayload(state);
-        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
-        m.put("用户问题", nz(state.getNormalizedUserInput()));
-        m.put("称谓与开篇_模型须严格遵守", warehouseSalutationDirective(state, wo));
-        if (!wo.isEmpty()) {
-            m.put("库房库存概览工具已聚合", true);
-            Object qb = wo.get("queryScopeBanner");
-            if (qb != null && !qb.toString().isBlank()) {
-                m.put("查询范围_queryScopeBanner", qb.toString().trim());
-            }
-            if (state.isGroupWarehouseStockOverview()) {
-                boolean mixWh = warehouseOverviewHasVisibleWarehouses(wo);
-                m.put("查询范围",
-                        mixWh ? "集团下属门店/库房库存汇总（默认不按登录 departmentId 单一门店）"
-                                : "集团下属门店库存汇总（默认不按登录 departmentId 单一门店）");
-                m.put("答复禁忌", "禁止反问指定门店或品类；勿默认称呼「店长」；禁止营业额/订单/客单价。");
-            }
-            Object st = wo.get("scopeType");
-            if (st != null && !st.toString().isBlank()) {
-                m.put("scopeType", st.toString().trim());
-            }
-            Object sn = wo.get("scopeName");
-            if (sn != null && !sn.toString().isBlank()) {
-                m.put("scopeName", sn.toString().trim());
-            }
-            if (wo.containsKey("visibleStoreCount")) {
-                m.put("纳入门店数_visibleStoreCount", plainNumericHint(wo.get("visibleStoreCount")));
-            }
-            if (wo.containsKey("dataAvailableStoreCount")) {
-                m.put("有库存信号门店数", plainNumericHint(wo.get("dataAvailableStoreCount")));
-            }
-            if (wo.containsKey("dataMissingStoreCount")) {
-                m.put("暂无库存信号门店数", plainNumericHint(wo.get("dataMissingStoreCount")));
-            }
-            if (wo.get("coveredStores") instanceof List<?> cov && !cov.isEmpty()) {
-                m.put("有数据门店摘要条数", cov.size());
-            }
-            if (wo.get("dataMissingStores") instanceof List<?> miss && !miss.isEmpty()) {
-                m.put("缺数据门店摘要条数", miss.size());
-            }
-            m.put("摘要_summary", nz(wo.get("summary")));
-            m.put("库存商品种数", plainNumericHint(wo.get("stockItemCount")));
-            m.put("库存批次行数", plainNumericHint(wo.get("stockBatchRowCount")));
-            m.put("库存剩余总金额约_元", plainNumericHint(wo.get("totalStockAmount")));
-            m.put("库存剩余总重量", fmtStockWeightCn(wo.get("totalStockWeight")));
-            m.put("区间内入库金额约_元", plainNumericHint(wo.get("inboundAmount")));
-            m.put("区间内入库重量", fmtStockWeightCn(wo.get("inboundWeight")));
-            m.put("核销出品金额", plainNumericHint(wo.get("produceAmount")));
-            m.put("核销出库合计金额", plainNumericHint(wo.get("stockReduceAmount")));
-            m.put("核销废弃金额_type2", plainNumericHint(wo.get("wasteAmount")));
-            m.put("核销损耗金额_type3", plainNumericHint(wo.get("lossAmount")));
-            m.put("核销退货金额", plainNumericHint(wo.get("returnAmount")));
-            m.put("低库存商品条目", wo.get("lowStockItems"));
-            m.put("积压偏高商品条目", wo.get("overStockItems"));
-            m.put("早入库仍有剩余批次", wo.get("inactiveStockItems"));
-            m.put("建议动作", wo.get("recommendations"));
-        } else {
-            Map<String, Object> sq = toolDataInnerMap(state, AiBusinessToolIds.STOCK_QUERY);
-            Map<String, Object> stk = toolDataInnerMap(state, AiBusinessToolIds.STOCK_REDUCE_QUERY);
-            m.put("库房库存快照有结果", !sq.isEmpty());
-            m.put("核销出库有结果", !stk.isEmpty());
-            if (!sq.isEmpty()) {
-                m.put("库存批次行数", plainNumericHint(sq.get("stockBatchRowCount")));
-                m.put("库存剩余金额约_元", plainNumericHint(sq.get("stockRestSubtotal")));
-                m.put("库存剩余重量汇总", fmtStockWeightCn(sq.get("stockRestWeightTotal")));
-                m.put("区间内入库批次金额约_元", plainNumericHint(sq.get("periodInboundSubtotal")));
-                m.put("区间内入库重量汇总", fmtStockWeightCn(sq.get("periodInboundWeightTotal")));
-            }
-            if (!stk.isEmpty()) {
-                m.put("核销生产耗用合计", plainNumericHint(stk.get("productionTotal")));
-                m.put("核销出品", plainNumericHint(stk.get("produceTotal")));
-                m.put("核销废弃_type2", plainNumericHint(stk.get("wasteTotal")));
-                m.put("核销损耗_type3", plainNumericHint(stk.get("lossTotal")));
-                m.put("核销退货", plainNumericHint(stk.get("returnTotal")));
-            }
-        }
-        if (isBusinessToWarehouseStockConvergence(state)) {
-            m.put("答复口径", "经营类话术已切换为库房库存视角：禁止营业额与菜品销售；不作采购员式采购分析主线。");
-        } else if (state.isGroupWarehouseStockOverview()) {
-            m.put("答复口径", "集团库存汇总：开篇写明集团范围；禁止反问指定门店；禁止营业额/订单/客单价；勿默认称呼店长。");
-        }
-        return m;
-    }
-
     private static Map<String, Object> buildWarehouseOverviewStructured(AiRunState state) {
         Map<String, Object> wo = extractWarehouseOverviewPayload(state);
         if (!wo.isEmpty()) {
@@ -1848,208 +1207,6 @@ public class StubAnswerComposerNode implements AgentNode {
         return legacy;
     }
 
-    private static String warehouseStockFallback(AiRunState state) {
-        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
-        Map<String, Object> wo = extractWarehouseOverviewPayload(state);
-        if (!wo.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            Object qb = wo.get("queryScopeBanner");
-            if (qb != null && !qb.toString().isBlank()) {
-                sb.append(qb.toString().trim()).append("\n\n");
-            }
-            sb.append(tw.getBracketTimeRangeLine()).append("\n");
-            boolean group = "GROUP".equalsIgnoreCase(String.valueOf(wo.get("scopeType")).trim());
-            boolean groupStoresOnly = group && !warehouseOverviewHasVisibleWarehouses(wo);
-            sb.append(group
-                    ? (groupStoresOnly
-                            ? "说明：以下为集团下属门店合并库存汇总（按门店根部门逐店聚合），不包含营业额、订单、客单价、毛利或利润。\n"
-                            : "说明：以下为集团下属门店/库房合并库存汇总（按门店根部门逐店聚合），不包含营业额、订单、客单价、毛利或利润。\n")
-                    : "说明：以下按库房库存视角汇总，不包含营业额、订单、客单价、毛利或利润；不作采购员式采购分析。\n");
-            sb.append(nz(wo.get("summary"))).append("\n\n");
-            sb.append("【库存规模】约有 ").append(plainNumericHint(wo.get("stockItemCount")))
-                    .append(" 种商品仍有账面剩余（全库批次约 ")
-                    .append(plainNumericHint(wo.get("stockBatchRowCount"))).append(" 行）；库存剩余总金额约 ")
-                    .append(plainNumericHint(wo.get("totalStockAmount"))).append(" 元，剩余总重量约 ")
-                    .append(fmtStockWeightCn(wo.get("totalStockWeight"))).append("。\n");
-            sb.append("【入库】入库金额约 ").append(plainNumericHint(wo.get("inboundAmount")))
-                    .append(" 元，入库重量约 ").append(fmtStockWeightCn(wo.get("inboundWeight"))).append("。\n");
-            sb.append("【核销/出库】出品约 ").append(plainNumericHint(wo.get("produceAmount")))
-                    .append(" 元；废弃 ").append(plainNumericHint(wo.get("wasteAmount")))
-                    .append(" 元，损耗 ").append(plainNumericHint(wo.get("lossAmount")))
-                    .append(" 元，退货 ").append(plainNumericHint(wo.get("returnAmount")))
-                    .append(" 元；各类型合计约 ").append(plainNumericHint(wo.get("stockReduceAmount")))
-                    .append(" 元。\n\n");
-            appendWarehouseConcernSection(sb, "低库存 / 需补货", wo.get("lowStockItems"),
-                    WarehouseConcernKind.LOW);
-            appendWarehouseConcernSection(sb, "库存偏高 / 建议优先消耗", wo.get("overStockItems"),
-                    WarehouseConcernKind.OVER);
-            appendWarehouseConcernSection(sb, "早入库批次 / 建议盘点", wo.get("priorityStocktakeItems"),
-                    WarehouseConcernKind.INACTIVE);
-            appendWarehouseRecommendations(sb, wo.get("recommendations"));
-            return sb.toString().trim();
-        }
-        Map<String, Object> sq = toolDataInnerMap(state, AiBusinessToolIds.STOCK_QUERY);
-        Map<String, Object> stk = toolDataInnerMap(state, AiBusinessToolIds.STOCK_REDUCE_QUERY);
-        StringBuilder sb = new StringBuilder();
-        sb.append(tw.getBracketTimeRangeLine()).append("\n");
-        sb.append("说明：以下按库房库存视角汇总，不包含营业额、订单、客单价、毛利或集团经营口径；不作采购员式的采购专项分析。\n");
-        boolean hasStock = stockSnapshotHasSignal(sq, stk, extractWarehouseOverviewPayload(state));
-        if (!sq.isEmpty() && hasStock) {
-            sb.append("当前库房库存侧：可见批次约 ")
-                    .append(plainNumericHint(sq.get("stockBatchRowCount")))
-                    .append(" 行；库存剩余金额约 ")
-                    .append(plainNumericHint(sq.get("stockRestSubtotal")))
-                    .append(" 元，剩余重量汇总 ")
-                    .append(fmtStockWeightCn(sq.get("stockRestWeightTotal")))
-                    .append("。\n");
-            sb.append("查询区间内入库批次金额约 ")
-                    .append(plainNumericHint(sq.get("periodInboundSubtotal")))
-                    .append(" 元，入库重量汇总 ")
-                    .append(fmtStockWeightCn(sq.get("periodInboundWeightTotal")))
-                    .append("。\n");
-        }
-        if (!stk.isEmpty()) {
-            sb.append("核销/出库：生产耗用合计约 ")
-                    .append(plainNumericHint(stk.get("productionTotal")))
-                    .append("（出品 ")
-                    .append(plainNumericHint(stk.get("produceTotal")))
-                    .append("，废弃 ")
-                    .append(plainNumericHint(stk.get("wasteTotal")))
-                    .append("，损耗 ")
-                    .append(plainNumericHint(stk.get("lossTotal")))
-                    .append("，退货 ")
-                    .append(plainNumericHint(stk.get("returnTotal")))
-                    .append("）。\n");
-        }
-        if (!hasStock && stk.isEmpty()) {
-            sb.append("你当前账号可查看库房库存数据，但当前库房暂未查询到有效库存记录。\n");
-        } else if (!hasStock && !stk.isEmpty()) {
-            sb.append("库存快照侧暂未拉到有效剩余汇总，可先依据核销/出库数据核对是否与实物一致。\n");
-        }
-        sb.append("如需单品预警或批次明细，请在库存管理模块按商品/批次下钻。");
-        return sb.toString().trim();
-    }
-
-    private enum WarehouseConcernKind {
-        LOW,
-        OVER,
-        INACTIVE
-    }
-
-    private static void appendWarehouseConcernSection(StringBuilder sb, String title, Object listObj,
-            WarehouseConcernKind kind) {
-        if (!(listObj instanceof List<?> list) || list.isEmpty()) {
-            return;
-        }
-        sb.append(title).append("：\n");
-        int i = 1;
-        for (Object o : list) {
-            if (!(o instanceof Map<?, ?> mm)) {
-                continue;
-            }
-            Object snStore = mm.get("storeName");
-            Object nm = mm.get("goodsName");
-            if (nm == null || nm.toString().isBlank()) {
-                continue;
-            }
-            String goods = sanitizeWarehouseGoodsLabel(nm.toString().trim());
-            Object rw = mm.get("restWeightTotal");
-            Object ra = mm.get("restAmountTotal");
-            Object bd = mm.get("batchDate");
-            Object rw2 = mm.get("restWeight");
-            Object batchId = mm.get("stockBatchId");
-
-            sb.append(i++).append(". ");
-            if (snStore != null && !snStore.toString().isBlank()) {
-                sb.append(snStore.toString().trim()).append(" · ");
-            }
-            if (kind == WarehouseConcernKind.LOW) {
-                Object wSrc = pickWeightForDisplay(rw, rw2);
-                sb.append(goods).append("：")
-                        .append(formatRestWeightPhrase(wSrc, mm))
-                        .append("，金额 ")
-                        .append(plainNumericHint(ra))
-                        .append(" 元。建议关注补货。\n");
-            } else if (kind == WarehouseConcernKind.OVER) {
-                sb.append(goods).append("：")
-                        .append(formatRestWeightPhrase(rw, mm))
-                        .append("，金额 ")
-                        .append(plainNumericHint(ra))
-                        .append(" 元。\n");
-            } else {
-                Object wSrc = pickWeightForDisplay(rw2, rw);
-                sb.append(goods).append("：");
-                if (batchId != null && !batchId.toString().isBlank()) {
-                    sb.append("库存批次号 ").append(batchId.toString().trim()).append("，");
-                }
-                if (bd != null && !bd.toString().isBlank()) {
-                    sb.append(bd.toString().trim()).append(" 入库的批次仍有剩余 ")
-                            .append(stockWeightNumberOnly(wSrc))
-                            .append(" ")
-                            .append(weightUnitSuffix(mm))
-                            .append("，建议盘点核对。\n");
-                } else {
-                    sb.append("仍有剩余 ")
-                            .append(stockWeightNumberOnly(wSrc))
-                            .append(" ")
-                            .append(weightUnitSuffix(mm))
-                            .append("，建议盘点核对。\n");
-                }
-            }
-            if (i > 9) {
-                break;
-            }
-        }
-        sb.append("\n");
-    }
-
-    private static Object pickWeightForDisplay(Object primary, Object secondary) {
-        if (primary != null && !primary.toString().isBlank()) {
-            return primary;
-        }
-        return secondary;
-    }
-
-    /** 与「剩余 0.7 斤」可读口径一致；若条目带 weightDisplayUnit 则用该单位，否则用斤。 */
-    private static String formatRestWeightPhrase(Object weightObj, Map<?, ?> item) {
-        return "剩余 " + stockWeightNumberOnly(weightObj) + " " + weightUnitSuffix(item);
-    }
-
-    private static String weightUnitSuffix(Map<?, ?> item) {
-        if (item == null) {
-            return W_STOCK_WEIGHT_UNIT;
-        }
-        Object u = item.get("weightDisplayUnit");
-        if (u != null && !u.toString().isBlank()) {
-            return u.toString().trim();
-        }
-        return W_STOCK_WEIGHT_UNIT;
-    }
-
-    private static String sanitizeWarehouseGoodsLabel(String raw) {
-        if (raw == null) {
-            return "";
-        }
-        return raw.replace("（积压）", "").replace("(积压)", "").trim();
-    }
-
-    private static void appendWarehouseRecommendations(StringBuilder sb, Object recObj) {
-        if (!(recObj instanceof List<?> list) || list.isEmpty()) {
-            return;
-        }
-        sb.append("建议：\n");
-        int i = 1;
-        for (Object o : list) {
-            if (o == null || o.toString().isBlank()) {
-                continue;
-            }
-            sb.append(i++).append(". ").append(o.toString().trim()).append("\n");
-            if (i > 6) {
-                break;
-            }
-        }
-    }
-
     @SuppressWarnings("unchecked")
     private static Map<String, Object> extractPurchaseOverviewPayload(AiRunState state) {
         Map<String, Object> inner = toolDataInnerMap(state, AiBusinessToolIds.PURCHASE_OVERVIEW);
@@ -2078,34 +1235,6 @@ public class StubAnswerComposerNode implements AgentNode {
         return new LinkedHashMap<>(raw);
     }
 
-    private static boolean stockSnapshotHasSignal(Map<String, Object> sq, Map<String, Object> stk,
-            Map<String, Object> wo) {
-        if (wo != null && !wo.isEmpty()) {
-            int sku = intHint(wo.get("stockItemCount"));
-            double amt = parseDoubleLoose(wo.get("totalStockAmount"));
-            double wt = parseDoubleLoose(wo.get("totalStockWeight"));
-            double inbound = parseDoubleLoose(wo.get("inboundAmount"));
-            double reduce = parseDoubleLoose(wo.get("stockReduceAmount"));
-            return sku > 0 || amt > 0 || wt > 0 || inbound > 0 || reduce > 0;
-        }
-        if (sq == null || sq.isEmpty()) {
-            return stk != null && !stk.isEmpty();
-        }
-        Object rc = sq.get("stockBatchRowCount");
-        int rows = 0;
-        if (rc instanceof Number n) {
-            rows = n.intValue();
-        } else if (rc != null) {
-            try {
-                rows = Integer.parseInt(rc.toString().trim());
-            } catch (Exception ignored) {
-                rows = 0;
-            }
-        }
-        double rest = parseDoubleLoose(sq.get("stockRestSubtotal"));
-        double inbound = parseDoubleLoose(sq.get("periodInboundSubtotal"));
-        return rows > 0 || rest > 0 || inbound > 0;
-    }
 
     private static int intHint(Object v) {
         if (v == null) {
@@ -2135,101 +1264,398 @@ public class StubAnswerComposerNode implements AgentNode {
         }
     }
 
-    /** 出库/核销专线 stub：可读数字 + 分项，避免走错采购/成本话术。 */
-    private static String stockReduceQueryDeterministicFallback(AiRunState state) {
-        Map<String, Object> d = toolDataInnerMap(state, AiBusinessToolIds.STOCK_REDUCE_QUERY);
-        if (d == null || d.isEmpty()) {
-            return "暂时没有拿到出库/核销汇总数据，请确认统计周期与门店权限后重试。";
+    /**
+     * 出库 AnswerPlan：仅宣读 {@link StockReduceAnswerPlan} 的 focusRows / secondaryRows，不重算、不重排、不改口径。
+     *
+     * @return 可展示的确定性正文；{@code null} 表示交由出库/核销工具结果确定性朗读。
+     */
+    private static String composeStockReduceDeterministicFromAnswerPlan(StockReduceAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw, AiRunState state) {
+        if (plan == null || plan.getPlanType() == null || plan.getPlanType().isBlank()) {
+            return null;
         }
-        boolean mock = Boolean.TRUE.equals(toolEnvelope(state, AiBusinessToolIds.STOCK_REDUCE_QUERY).get("mock"));
-        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
-        String timeLine = nz(tw.getTimeSubjectText());
-        String basisNote = "CALENDAR_NATURAL_DAY".equals(String.valueOf(d.get("totalsBasis")))
-                ? "（自然日历日四类金额合计；不按「仅日营业额日」过滤）"
-                : "（与同段成本工具一致：仅日营业额日核销口径）";
+        AiTimeWindowTextFormatter.UserPhrases p =
+                tw != null ? tw : AiTimeWindowTextFormatter.fromIsoRange(null, null, java.time.LocalDate.now());
+        String type = plan.getPlanType().trim();
+        if (StockReduceAnswerPlan.TYPE_STOCK_REDUCE_OVERVIEW.equals(type)) {
+            return composeStockReduceOverviewFromPlan(plan, p);
+        }
+        if (StockReduceAnswerPlan.TYPE_STOCK_REDUCE_PRODUCTION_OVERVIEW.equals(type)) {
+            return composeStockReduceProductionOverviewFromPlan(plan, p);
+        }
+        if (StockReduceAnswerPlan.TYPE_STOCK_REDUCE_OUTPUT_OVERVIEW.equals(type)) {
+            return composeStockReduceOutputOverviewFromPlan(plan, p);
+        }
+        if (StockReduceAnswerPlan.TYPE_STOCK_REDUCE_WASTE_OVERVIEW.equals(type)) {
+            return composeStockReduceWasteOverviewFromPlan(plan, p);
+        }
+        if (StockReduceAnswerPlan.TYPE_STOCK_REDUCE_LOSS_OVERVIEW.equals(type)) {
+            return composeStockReduceLossOverviewFromPlan(plan, p);
+        }
+        if (StockReduceAnswerPlan.TYPE_STOCK_REDUCE_RETURN_OVERVIEW.equals(type)) {
+            return composeStockReduceReturnOverviewFromPlan(plan, p);
+        }
+        if (StockReduceAnswerPlan.TYPE_STOCK_REDUCE_GOODS_AMOUNT_RANKING.equals(type)) {
+            return composeStockReduceGoodsAmountRankingFromPlan(plan, p);
+        }
+        if (StockReduceAnswerPlan.TYPE_STOCK_REDUCE_GOODS_COUNT_RANKING.equals(type)) {
+            return composeStockReduceGoodsCountRankingFromPlan(plan, p);
+        }
+        if (StockReduceAnswerPlan.TYPE_STOCK_REDUCE_STORE_AMOUNT_RANKING.equals(type)) {
+            return composeStockReduceStoreAmountRankingFromPlan(plan, p, state);
+        }
+        return null;
+    }
 
-        List<String> storeNames = new ArrayList<>();
+    /** 并排门店出库/核销四类金额合计对比（与非商品排行口径一致的自然说明）。 */
+    private static String composeStockReduceStoreAmountRankingFromPlan(StockReduceAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw, AiRunState state) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        List<Map<String, Object>> sec =
+                plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        if (focus == null || focus.isEmpty()) {
+            if (composerSingleVisibleStoreRankingDegradeEligible(state)) {
+                String storeLabel = nz(firstVisibleScopedStoreHumanName(state)).trim();
+                if (storeLabel.isEmpty()) {
+                    storeLabel = "该门店";
+                }
+                sb.append(stockReducePlanLead(plan, tw)).append(
+                        "，你权限范围内仅能查看一家门店「" + storeLabel
+                                + "」，因此出库/核销四类金额合计最高的就是这一家；无法进行多门店并排排行对比。");
+            } else {
+                sb.append(stockReducePlanLead(plan, tw)).append(
+                        "，当前未能生成门店维度的出库/核销金额并排对比结果，请稍后重试或并排点到具体门店。");
+            }
+            return sb.toString();
+        }
+        Map<String, Object> top = focus.get(0);
+        sb.append(stockReducePlanLead(plan, tw)).append("，出库/核销四类金额合计较高的是 ")
+                .append(nz(stockReduceStoreCaptionFromPlanRow(top))).append("，约 ")
+                .append(plainNumericHint(stockReduceAmountFromPlanRow(top))).append(" 元。");
+        if (!sec.isEmpty()) {
+            List<String> parts = new ArrayList<>();
+            for (Map<String, Object> r : sec) {
+                parts.add(nz(stockReduceStoreCaptionFromPlanRow(r)) + "约 "
+                        + plainNumericHint(stockReduceAmountFromPlanRow(r)) + " 元");
+            }
+            sb.append("其后依次为：").append(String.join("；", parts)).append("。");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 店长/门店采购单锚点 Scope：visibleStores.size==1 时，门店额排行 AnswerPlan 可能无 focusRows，但语义上仍可解读为「该店即为最高」。
+     */
+    private static boolean composerSingleVisibleStoreRankingDegradeEligible(AiRunState state) {
+        if (state == null || state.getResolvedQueryContext() == null) {
+            return false;
+        }
+        AiResolvedOrgScope org = state.getResolvedQueryContext().getOrgScope();
+        if (org == null) {
+            return false;
+        }
+        String scopeType = org.getScopeType();
+        if (!AiResolvedOrgScope.SCOPE_STORE.equals(scopeType)
+                && !AiResolvedOrgScope.SCOPE_PURCHASER.equals(scopeType)) {
+            return false;
+        }
+        List<AiStoreScopeDTO> vis = org.getVisibleStores();
+        return vis != null && vis.size() == 1;
+    }
+
+    private static String firstVisibleScopedStoreHumanName(AiRunState state) {
         AiResolvedQueryContext ctx = state != null ? state.getResolvedQueryContext() : null;
-        if (ctx != null && ctx.getOrgScope() != null && ctx.getOrgScope().getVisibleStores() != null) {
-            for (AiStoreScopeDTO s : ctx.getOrgScope().getVisibleStores()) {
-                if (s != null && s.getStoreName() != null && !s.getStoreName().isBlank()) {
-                    storeNames.add(s.getStoreName().trim());
-                }
+        if (ctx == null) {
+            return "";
+        }
+        AiResolvedOrgScope org = ctx.getOrgScope();
+        if (org == null || org.getVisibleStores() == null) {
+            return "";
+        }
+        for (AiStoreScopeDTO row : org.getVisibleStores()) {
+            if (row != null && StringUtils.hasText(row.getStoreName())) {
+                return row.getStoreName().trim();
             }
         }
-        boolean groupAgg = Boolean.TRUE.equals(d.get("groupStockReduceAggregation"));
-        String scopeLine = storeNames.isEmpty()
-                ? (groupAgg ? "范围为集团你可查看门店集合。" : "范围为当前账号可见门店。")
-                : ("门店：" + String.join("、", storeNames) + "。");
+        return "";
+    }
 
-        String wireDetail =
-                ctx != null && ctx.getQueryIntent() != null ? nz(ctx.getQueryIntent().getStructuredIntentDetail()) : "";
+    private static String stockReduceStoreCaptionFromPlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return "该门店";
+        }
+        Object n = row.get("storeName");
+        if (n != null && !n.toString().isBlank()) {
+            return n.toString().trim();
+        }
+        Object id = row.get("storeDepartmentId");
+        return id != null ? "门店 " + id : "该门店";
+    }
 
-        String pAmt = plainNumericHint(d.get("produceTotal"));
-        String wAmt = plainNumericHint(d.get("wasteTotal"));
-        String lAmt = plainNumericHint(d.get("lossTotal"));
-        String rAmt = plainNumericHint(d.get("returnTotal"));
-        String gAmt = plainNumericHint(d.get("grandTotalFourTypes"));
+    private static String stockReducePlanLead(StockReduceAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw) {
+        String lead = tw.getDisplayTimeRange();
+        String scope = plan.getScopeLabel();
+        if (scope != null && !scope.isBlank()) {
+            lead = scope.trim() + "；" + lead;
+        }
+        return lead;
+    }
 
-        if (AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_RANKING.equals(wireDetail)) {
-            Object rawTop = d.get("topGoodsOutboundBySubtotal");
-            StringBuilder ranks = new StringBuilder();
-            if (rawTop instanceof List<?> list) {
-                int idx = 0;
-                for (Object rowObj : list) {
-                    if (!(rowObj instanceof Map<?, ?> row)) {
-                        continue;
-                    }
-                    if (idx >= 5) {
-                        break;
-                    }
-                    if (ranks.length() > 0) {
-                        ranks.append(' ');
-                    }
-                    ranks.append(idx + 1).append(')').append(nz(row.get("name"))).append(" ")
-                            .append(plainNumericHint(row.get("amount"))).append(" 元.");
-                    idx++;
+    private static String stockReduceGoodsNameFromPlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return "";
+        }
+        Object g = row.get("goodsName");
+        if (g == null) {
+            g = row.get("name");
+        }
+        return g != null ? g.toString().trim() : "";
+    }
+
+    private static Object stockReduceAmountFromPlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return null;
+        }
+        Object v = row.get("amount");
+        if (v == null) {
+            v = row.get("totalAmount");
+        }
+        if (v == null) {
+            v = row.get("subtotal");
+        }
+        if (v == null) {
+            v = row.get("reduceAmount");
+        }
+        if (v == null) {
+            v = row.get("totalReduceAmount");
+        }
+        if (v == null) {
+            v = row.get("outboundAmount");
+        }
+        if (v == null) {
+            v = row.get("grandTotalFourTypes");
+        }
+        return v;
+    }
+
+    private static Object stockReduceCountFromPlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return null;
+        }
+        Object v = row.get("outboundTimes");
+        if (v == null) {
+            v = row.get("reduceTimes");
+        }
+        if (v == null) {
+            v = row.get("count");
+        }
+        if (v == null) {
+            v = row.get("times");
+        }
+        return v;
+    }
+
+    private static String stockReduceLabelFromPlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return "";
+        }
+        Object l = row.get("label");
+        return l != null ? l.toString().trim() : "";
+    }
+
+    private static boolean stockReducePlanRowCountsEqual(Map<String, Object> row, Object topCountObj) {
+        String a = plainNumericHint(stockReduceCountFromPlanRow(row));
+        String b = plainNumericHint(topCountObj);
+        return Objects.equals(a, b);
+    }
+
+    private static boolean stockReduceSingleTypeRowMissingOrZero(List<Map<String, Object>> focus) {
+        if (focus == null || focus.isEmpty()) {
+            return true;
+        }
+        return parseDoubleLoose(stockReduceAmountFromPlanRow(focus.get(0))) == 0.0;
+    }
+
+    private static String composeStockReduceOverviewFromPlan(StockReduceAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        if (focus == null || focus.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> row0 = focus.get(0);
+        String totalAmt = plainNumericHint(stockReduceAmountFromPlanRow(row0));
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        sb.append(stockReducePlanLead(plan, tw)).append("，本期出库/核销合计金额约 ").append(totalAmt).append(" 元。");
+        List<Map<String, Object>> sec = plan.getSecondaryRows();
+        if (sec != null && !sec.isEmpty()) {
+            List<String> parts = new ArrayList<>();
+            for (Map<String, Object> r : sec) {
+                String lbl = stockReduceLabelFromPlanRow(r);
+                if (lbl.isBlank()) {
+                    lbl = nz(r.get("reduceType"));
                 }
+                parts.add(lbl + " " + plainNumericHint(stockReduceAmountFromPlanRow(r)) + " 元");
             }
-            String mockNote = mock ? "（提示：当前结果为占位或数据源不足，请稍后重试。）" : "";
-            return String.format("%s在%s%s，%s出库金额最高的商品：%s%s",
-                    mock ? "[数据待完善] " : "",
-                    timeLine.isBlank() ? "该时段" : timeLine,
-                    basisNote,
-                    scopeLine,
-                    ranks.length() > 0 ? ranks.toString() : "暂未查询到明细。",
-                    mockNote);
+            if (!parts.isEmpty()) {
+                sb.append("其中").append(String.join("、", parts)).append("。");
+            }
         }
-        if (AiQuerySemanticLexicon.STRUCTURED_PRODUCE_CONSUME.equals(wireDetail)) {
-            return String.format("在%s%s，%s生产耗用（type1）出库金额合计约 %s 元。分项：废弃 %s 元、损耗 %s 元、退货 %s 元%s",
-                    timeLine.isBlank() ? "该时段" : timeLine, basisNote, scopeLine,
-                    pAmt, wAmt, lAmt, rAmt, mock ? " [mock]" : "");
-        }
-        if (AiQuerySemanticLexicon.STRUCTURED_WASTE.equals(wireDetail)) {
-            return String.format("在%s%s，%s废弃（type2）出库金额约 %s 元。", timeLine.isBlank() ? "该时段" : timeLine,
-                    basisNote, scopeLine, wAmt) + (mock ? " [mock]" : "");
-        }
-        if (AiQuerySemanticLexicon.STRUCTURED_LOSS.equals(wireDetail)) {
-            return String.format("在%s%s，%s损耗（type3，口语常称报损）出库金额约 %s 元。", timeLine.isBlank() ? "该时段" : timeLine,
-                    basisNote, scopeLine, lAmt) + (mock ? " [mock]" : "");
-        }
-        if (AiQuerySemanticLexicon.STRUCTURED_RETURN.equals(wireDetail)) {
-            return String.format("在%s%s，%s退货出库（type4）金额约 %s 元。", timeLine.isBlank() ? "该时段" : timeLine,
-                    basisNote, scopeLine, rAmt) + (mock ? " [mock]" : "");
-        }
-
-        String head = mock ? "[占位/不完整数据] " : "";
-        return head + String.format(
-                "%s%s，%s出库/核销金额合计（四类之和）约 %s 元，其中生产耗用 %s 元、废弃 %s 元、损耗 %s 元、退货 %s 元。",
-                timeLine.isBlank() ? "该时段" : timeLine, basisNote, scopeLine,
-                gAmt, pAmt, wAmt, lAmt, rAmt);
+        return sb.toString();
     }
 
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> toolEnvelope(AiRunState state, String toolKey) {
-        Object env = state.getToolResults().get(toolKey);
-        return env instanceof Map ? (Map<String, Object>) env : Map.of();
+    private static String composeStockReduceProductionOverviewFromPlan(StockReduceAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        if (focus == null || focus.isEmpty()) {
+            return null;
+        }
+        String amt = plainNumericHint(stockReduceAmountFromPlanRow(focus.get(0)));
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        sb.append(stockReducePlanLead(plan, tw)).append("，生产耗用金额约 ").append(amt).append(" 元。");
+        return sb.toString();
     }
+
+    private static String composeStockReduceOutputOverviewFromPlan(StockReduceAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        if (focus == null || focus.isEmpty()) {
+            return null;
+        }
+        String amt = plainNumericHint(stockReduceAmountFromPlanRow(focus.get(0)));
+        boolean outputNarr =
+                plan.getDebug() != null && "OUTPUT".equals(String.valueOf(plan.getDebug().get("narrative")));
+        String phrase = outputNarr ? "出品耗用" : "出品用量";
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        sb.append(stockReducePlanLead(plan, tw)).append("，").append(phrase).append("金额约 ").append(amt).append(" 元。");
+        return sb.toString();
+    }
+
+    private static String composeStockReduceWasteOverviewFromPlan(StockReduceAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        if (stockReduceSingleTypeRowMissingOrZero(focus)) {
+            sb.append(stockReducePlanLead(plan, tw)).append("，当前口径下暂未查询到对应类型的出库/核销金额，或本期金额为 0。");
+            return sb.toString();
+        }
+        String amt = plainNumericHint(stockReduceAmountFromPlanRow(focus.get(0)));
+        sb.append(stockReducePlanLead(plan, tw)).append("，废弃（type2）金额约 ").append(amt).append(" 元。");
+        return sb.toString();
+    }
+
+    private static String composeStockReduceLossOverviewFromPlan(StockReduceAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        if (stockReduceSingleTypeRowMissingOrZero(focus)) {
+            sb.append(stockReducePlanLead(plan, tw)).append("，当前口径下暂未查询到对应类型的出库/核销金额，或本期金额为 0。");
+            return sb.toString();
+        }
+        String amt = plainNumericHint(stockReduceAmountFromPlanRow(focus.get(0)));
+        sb.append(stockReducePlanLead(plan, tw)).append("，损耗/报损（type3）金额约 ").append(amt).append(" 元。");
+        return sb.toString();
+    }
+
+    private static String composeStockReduceReturnOverviewFromPlan(StockReduceAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        if (stockReduceSingleTypeRowMissingOrZero(focus)) {
+            sb.append(stockReducePlanLead(plan, tw)).append("，当前口径下暂未查询到对应类型的出库/核销金额，或本期金额为 0。");
+            return sb.toString();
+        }
+        String amt = plainNumericHint(stockReduceAmountFromPlanRow(focus.get(0)));
+        sb.append(stockReducePlanLead(plan, tw)).append("，退货（type4）金额约 ").append(amt).append(" 元。");
+        return sb.toString();
+    }
+
+    private static String composeStockReduceGoodsAmountRankingFromPlan(StockReduceAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        List<Map<String, Object>> sec =
+                plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        if (focus == null || focus.isEmpty()) {
+            sb.append(stockReducePlanLead(plan, tw)).append("，当前口径下暂未查询到商品出库排行数据。");
+            return sb.toString();
+        }
+        Map<String, Object> top = focus.get(0);
+        sb.append(stockReducePlanLead(plan, tw)).append("，出库金额最高的商品为")
+                .append(nz(stockReduceGoodsNameFromPlanRow(top))).append("，约")
+                .append(plainNumericHint(stockReduceAmountFromPlanRow(top))).append(" 元。");
+        List<String> restParts = new ArrayList<>();
+        for (Map<String, Object> r : sec) {
+            restParts.add(nz(stockReduceGoodsNameFromPlanRow(r)) + "约"
+                    + plainNumericHint(stockReduceAmountFromPlanRow(r)) + " 元");
+        }
+        if (!restParts.isEmpty()) {
+            sb.append("其后依次为：").append(String.join("；", restParts)).append("。");
+        }
+        return sb.toString();
+    }
+
+    private static String composeStockReduceGoodsCountRankingFromPlan(StockReduceAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        List<Map<String, Object>> sec =
+                plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        if (focus == null || focus.isEmpty()) {
+            sb.append(stockReducePlanLead(plan, tw)).append("，当前口径下暂未查询到商品出库排行数据。");
+            return sb.toString();
+        }
+        List<Map<String, Object>> ordered = new ArrayList<>(focus.size() + sec.size());
+        ordered.addAll(focus);
+        ordered.addAll(sec);
+        Object topCountObj = stockReduceCountFromPlanRow(ordered.get(0));
+        String topCountDisp = plainNumericHint(topCountObj);
+        int i = 0;
+        while (i < ordered.size() && stockReducePlanRowCountsEqual(ordered.get(i), topCountObj)) {
+            i++;
+        }
+        List<String> tieNames = new ArrayList<>();
+        for (int k = 0; k < i; k++) {
+            String nm = nz(stockReduceGoodsNameFromPlanRow(ordered.get(k)));
+            if (!nm.isBlank()) {
+                tieNames.add(nm);
+            }
+        }
+        if (tieNames.isEmpty()) {
+            sb.append(stockReducePlanLead(plan, tw)).append("，当前口径下暂未查询到商品出库排行数据。");
+            return sb.toString();
+        }
+        String lead = stockReducePlanLead(plan, tw);
+        if (tieNames.size() > 1) {
+            sb.append(lead).append("，出库次数最多的商品包括").append(String.join("、", tieNames)).append("，均为")
+                    .append(topCountDisp).append(" 次。");
+        } else {
+            sb.append(lead).append("，出库次数最多的商品为").append(tieNames.get(0)).append("，共").append(topCountDisp)
+                    .append(" 次。");
+        }
+        List<String> restParts = new ArrayList<>();
+        while (i < ordered.size()) {
+            Map<String, Object> r = ordered.get(i);
+            restParts.add(nz(stockReduceGoodsNameFromPlanRow(r)) + "共"
+                    + plainNumericHint(stockReduceCountFromPlanRow(r)) + " 次");
+            i++;
+        }
+        if (!restParts.isEmpty()) {
+            sb.append("其后依次为：").append(String.join("；", restParts)).append("。");
+        }
+        return sb.toString();
+    }
+
+    /** 出库/核销专线 stub：可读数字 + 分项，避免走错采购/成本话术。 */
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> toolDataInnerMap(AiRunState state, String toolKey) {
@@ -2242,6 +1668,101 @@ public class StubAnswerComposerNode implements AgentNode {
             return Map.of();
         }
         return (Map<String, Object>) data;
+    }
+
+    /** 经营诊断/菜品毛利上下文中「某菜为什么这么低」：禁止落入泛泛经营建议，引导走 harness。 */
+    private static boolean genericChatBlockedForDishReasonInDiagnosisContext(AiRunState state) {
+        if (state == null || state.getResolvedQueryContext() == null) {
+            return false;
+        }
+        AiResolvedQueryContext rqc = state.getResolvedQueryContext();
+        String structured =
+                rqc.getQueryIntent() != null ? rqc.getQueryIntent().getStructuredIntentDetail() : null;
+        if (!AiQuerySemanticLexicon.isDishLowProfitReasonStructuredWire(structured)) {
+            return false;
+        }
+        String dish = AiQuerySemanticLexicon.finalizeMentionedDishNameForDishProfit(rqc.getMentionedDishName());
+        if (dish == null || dish.isBlank()) {
+            if (rqc.getQuerySemanticParse() != null) {
+                dish = AiQuerySemanticLexicon.finalizeMentionedDishNameForDishProfit(
+                        rqc.getQuerySemanticParse().getMentionedDishName());
+            }
+        }
+        if (dish == null || dish.isBlank()) {
+            return false;
+        }
+        AiConversationTurnMemory prev = state.getResolvedQueryContext().getPreviousTurn();
+        if (prev == null) {
+            return false;
+        }
+        String p = prev.getLastPathCode();
+        return AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(p)
+                || AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(p);
+    }
+
+    /**
+     * D-11：营业额意图且营收权限/工具被拒、未命中其它专属 Composer 分支时，仅用权限说明正文，禁止 generic LLM 捏造「零元 / 数据不足」。
+     */
+    private static boolean composerEmitRevenueDeniedPermissionOnly(AiRunState state) {
+        if (state == null || state.getPermissionDenials() == null || state.getPermissionDenials().isEmpty()) {
+            return false;
+        }
+        if (!AiAnswerBoundary.isRevenuePermissionDenied(state.getPermissionDenials())) {
+            return false;
+        }
+        if (!resolvedIntentIsRevenueOverview(state)) {
+            return false;
+        }
+        if (state.isRevenueOverviewPath()) {
+            return false;
+        }
+        if (state.isWarehouseStockOverviewPath()
+                || state.isStockReduceQueryPath()
+                || state.isPurchaseCostInsightPath()
+                || state.isBusinessDiagnosisPath()
+                || state.isDishProfitPath()
+                || dishSalesDeterministicEligible(state)) {
+            return false;
+        }
+        if (state.getCostDiagnosisResult() != null) {
+            return false;
+        }
+        if (!DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)
+                && state.getDiagnosisPlan() != null
+                && DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS.equals(state.getDiagnosisPlan().getPlanType())
+                && (state.isBusinessDiagnosisPath()
+                        || DiagnosisPlanBuilder.shouldPreferDiagnosisPlanInComposer(state))) {
+            return false;
+        }
+        if (state.isBusinessDiagnosisPath() && state.getBusinessDiagnosisPlan() != null) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean resolvedIntentIsRevenueOverview(AiRunState state) {
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        if (StringUtils.hasText(rq.getEffectiveIntentCode())
+                && AiResolvedQueryIntent.REVENUE_OVERVIEW.equals(rq.getEffectiveIntentCode().trim())) {
+            return true;
+        }
+        if (StringUtils.hasText(rq.getEffectivePathCode())
+                && AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(rq.getEffectivePathCode().trim())) {
+            return true;
+        }
+        AiResolvedQueryIntent qi = rq.getQueryIntent();
+        if (qi == null) {
+            return false;
+        }
+        if (StringUtils.hasText(qi.getIntentCode())
+                && AiResolvedQueryIntent.REVENUE_OVERVIEW.equals(qi.getIntentCode().trim())) {
+            return true;
+        }
+        return StringUtils.hasText(qi.getPathCode())
+                && AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(qi.getPathCode().trim());
     }
 
     /** 不向模型暴露 Workspace、Tool 英文名与原始 trace。 */

@@ -35,12 +35,17 @@ public final class AiConversationTurnMemoryEntities {
         e.setGbAiCtmFocusedStoreId(fs);
         e.setGbAiCtmFocusedStoreName(trimToNull(m.getLastFocusedStoreName()));
         e.setGbAiCtmMentionedStore(trimToNull(m.getLastMentionedStore()));
+        e.setGbAiCtmMentionedDishName(trimToNull(m.getLastMentionedDishName()));
         e.setGbAiCtmFocusType(trimToNull(m.getLastFocusType()));
         e.setGbAiCtmFocusName(trimToNull(m.getLastFocusName()));
         e.setGbAiCtmEffectiveScopeSource(trimToNull(m.getLastEffectiveScopeSource()));
         e.setGbAiCtmEffectiveQuestion(trimToNull(m.getLastEffectiveQuestion()));
         e.setGbAiCtmAnswerSummary(trimToNull(m.getLastAnswerSummary()));
         String ts = trimToNull(m.getLastToolSummary());
+        if (m.getLastHarnessMultiStoreMatchedStores() != null
+                && !m.getLastHarnessMultiStoreMatchedStores().isEmpty()) {
+            ts = trimToNull(AiConversationTurnMemory.embedHarnessMultiStoreInToolSummary(ts, m.getLastHarnessMultiStoreMatchedStores()));
+        }
         if (ts != null && ts.length() > 1900) {
             ts = ts.substring(0, 1900) + "…";
         }
@@ -62,6 +67,8 @@ public final class AiConversationTurnMemoryEntities {
                 storeIds = List.of();
             }
         }
+        String rawTs = trimToNull(e.getGbAiCtmToolSummary());
+        List<String> harnessMs = AiConversationTurnMemory.readHarnessMultiStoreFromToolSummary(rawTs);
         return AiConversationTurnMemory.builder()
                 .conversationId(e.getGbAiConversationId())
                 .previousRunId(e.getGbAiCtmRunId())
@@ -77,12 +84,15 @@ public final class AiConversationTurnMemoryEntities {
                 .lastFocusedStoreId(e.getGbAiCtmFocusedStoreId())
                 .lastFocusedStoreName(trimToNull(e.getGbAiCtmFocusedStoreName()))
                 .lastMentionedStore(trimToNull(e.getGbAiCtmMentionedStore()))
+                .lastMentionedDishName(trimToNull(e.getGbAiCtmMentionedDishName()))
                 .lastFocusType(trimToNull(e.getGbAiCtmFocusType()))
                 .lastFocusName(trimToNull(e.getGbAiCtmFocusName()))
                 .lastEffectiveScopeSource(trimToNull(e.getGbAiCtmEffectiveScopeSource()))
                 .lastEffectiveQuestion(trimToNull(e.getGbAiCtmEffectiveQuestion()))
                 .lastAnswerSummary(trimToNull(e.getGbAiCtmAnswerSummary()))
-                .lastToolSummary(trimToNull(e.getGbAiCtmToolSummary()))
+                .lastToolSummary(rawTs)
+                .lastHarnessMultiStoreMatchedStores(
+                        harnessMs == null || harnessMs.isEmpty() ? null : harnessMs)
                 .build();
     }
 

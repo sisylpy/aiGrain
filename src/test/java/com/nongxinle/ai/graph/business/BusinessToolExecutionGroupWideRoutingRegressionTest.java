@@ -1,7 +1,8 @@
 package com.nongxinle.ai.graph.business;
 
 import com.nongxinle.ai.context.AiDepartmentUserTestRows;
-import com.nongxinle.ai.context.AiOrgScopeResolver;
+import com.nongxinle.ai.context.AiResolvedOrgScope;
+import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContextResolver;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
@@ -19,16 +20,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class BusinessToolExecutionGroupWideRoutingRegressionTest {
 
-    private static AiRunState sampleState(AiUserContextResolver ur, AiOrgScopeResolver or,
-            AiRunCreateRequest rq) {
+    private static AiRunState sampleState(AiUserContextResolver ur, AiRunCreateRequest rq, String resolvedScopeType) {
         var uc = ur.resolve(rq);
+        AiResolvedOrgScope org = AiResolvedOrgScope.builder()
+                .scopeType(resolvedScopeType)
+                .distributerId(rq.getDistributerId())
+                .requestDepartmentId(rq.getDepartmentId())
+                .currentDepartmentId(uc.getDepartmentId())
+                .build();
         return AiRunState.builder()
                 .runId(1L)
                 .userId(rq.getUserId())
                 .departmentId(rq.getDepartmentId())
                 .distributerId(rq.getDistributerId())
                 .aiUserContext(uc)
-                .aiOrgScope(or.resolve(uc, rq))
+                .resolvedQueryContext(AiResolvedQueryContext.builder().orgScope(org).build())
                 .statStartDate("2026-05-01")
                 .statEndDate("2026-05-10")
                 .scope(AiQueryScope.builder()
@@ -42,13 +48,12 @@ class BusinessToolExecutionGroupWideRoutingRegressionTest {
     void groupManagerApp_viaDbRow_routesWide() {
         AiUserContextResolver ur = AiDepartmentUserTestRows.resolverReturning(
                 AiDepartmentUserTestRows.groupManager(701, 1, 99));
-        AiOrgScopeResolver or = new AiOrgScopeResolver();
         AiRunCreateRequest rq = new AiRunCreateRequest();
         rq.setUserId(701L);
         rq.setDepartmentId(1L);
         rq.setDistributerId(99L);
 
-        AiRunState st = sampleState(ur, or, rq);
+        AiRunState st = sampleState(ur, rq, AiResolvedOrgScope.SCOPE_GROUP);
         assertThat(BusinessToolExecutionNode.shouldRouteGroupWideBusinessOverview(st)).isTrue();
     }
 
@@ -56,11 +61,10 @@ class BusinessToolExecutionGroupWideRoutingRegressionTest {
     void groupManagerApp_roleCodeMissingBut_sourceAdmin_fallback_routesWide() {
         AiUserContextResolver ur = AiDepartmentUserTestRows.resolverReturning(
                 AiDepartmentUserTestRows.groupManager(702, 1, 99));
-        AiOrgScopeResolver or = new AiOrgScopeResolver();
         AiRunCreateRequest rq = new AiRunCreateRequest();
         rq.setUserId(702L);
 
-        AiRunState st = sampleState(ur, or, rq);
+        AiRunState st = sampleState(ur, rq, AiResolvedOrgScope.SCOPE_GROUP);
         st.getAiUserContext().setRoleCode(null);
 
         assertThat(st.getAiUserContext().getSourceAdminRole()).isEqualTo(GbConstants.DepartmentUserRole.GROUP_MANAGER_APP);
@@ -70,14 +74,12 @@ class BusinessToolExecutionGroupWideRoutingRegressionTest {
     @Test
     void storeManagerApp_viaDbRow_doesNotRouteWide() {
         AiUserContextResolver ur = AiDepartmentUserTestRows.resolverReturning(
-                AiDepartmentUserTestRows.storeManager(
-                        (int) AiUserContextResolver.TEST_STORE_MANAGER_UID, 100, 2));
-        AiOrgScopeResolver or = new AiOrgScopeResolver();
+                AiDepartmentUserTestRows.storeManager(AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK, 100, 2));
         AiRunCreateRequest rq = new AiRunCreateRequest();
-        rq.setUserId(AiUserContextResolver.TEST_STORE_MANAGER_UID);
+        rq.setUserId((long) AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK);
         rq.setDepartmentId(100L);
 
-        AiRunState st = sampleState(ur, or, rq);
+        AiRunState st = sampleState(ur, rq, AiResolvedOrgScope.SCOPE_STORE);
         assertThat(st.getAiUserContext().getRoleCode()).isEqualTo(AiRoleCodes.STORE_MANAGER);
         assertThat(BusinessToolExecutionNode.shouldRouteGroupWideBusinessOverview(st)).isFalse();
     }

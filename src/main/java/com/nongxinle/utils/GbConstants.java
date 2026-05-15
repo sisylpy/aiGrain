@@ -96,6 +96,10 @@ public final class GbConstants {
         public static final Integer REGION_PURCHASER_APP = 52;
         /** 区域库房端 */
         public static final Integer REGION_WAREHOUSE_APP = 53;
+        /** AI 权限模型专用：映射 {@link com.nongxinle.ai.security.AiRoleCodes#FINANCE_MANAGER}，勿与业务真实 admin 冲突 */
+        public static final Integer FINANCE_MANAGER_AI_APP = 91;
+        /** AI 权限模型专用：映射 {@link com.nongxinle.ai.security.AiRoleCodes#MARKETING_MANAGER} */
+        public static final Integer MARKETING_MANAGER_AI_APP = 92;
     }
 
     // -------------------------------------------------------------------------

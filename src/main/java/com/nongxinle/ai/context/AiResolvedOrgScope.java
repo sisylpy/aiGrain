@@ -10,8 +10,7 @@ import java.util.List;
 
 /**
  * 本轮 Run <b>最终</b>的业务组织范围（门店根列表、库房锚点、收窄后的可见门店等），是 Agent / Tool 的<b>首选</b>组织入口。
- * 与过渡类 {@link AiOrgScope} 区分：{@link AiOrgScope} 仅表示权限粗快照；本类表示已结合请求部门、角色规则与子部门归一后的
- * 解析结果；{@link AiResolvedQueryContext#getDataScope()} 中的查库部门列表由本对象推导。
+ * 表示已结合请求部门、角色规则与子部门归一后的解析结果；{@link AiResolvedQueryContext#getDataScope()} 中的查库部门列表由本对象推导。
  * <p>
  * 规则见 {@code docs/DOMAIN_ORG_MODEL.md} 与 {@code docs/AI_AGENT_DEVELOPMENT_GUIDE.md}。
  */

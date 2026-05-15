@@ -36,6 +36,10 @@ public class AiResolvedDataScope {
     public static final String QUERY_SCOPE_STORE_ROOT_ONLY = "STORE_ROOT_ONLY";
     /** 解析层对门店口径做了「根 ∪ 直属子」SQL 展开，见 {@link #expandedSqlDepartmentIds} */
     public static final String QUERY_SCOPE_STORE_ROOTS_AND_DIRECT_CHILDREN = "STORE_ROOTS_AND_DIRECT_CHILDREN";
+    /**
+     * 单店/门店根已落地的简化观测值（与非 EMPTY distributor 相对的 SUCCESS 语义）；仍为根∪直属子展开。
+     */
+    public static final String QUERY_SCOPE_MODE_STORE = "STORE";
     /** 库房：按部门 id 记账 */
     public static final String QUERY_SCOPE_WAREHOUSE_DEPARTMENT = "WAREHOUSE_DEPARTMENT";
     public static final String QUERY_SCOPE_DEPARTMENT_EXPLICIT = "DEPARTMENT_EXPLICIT";
@@ -317,7 +321,7 @@ public class AiResolvedDataScope {
                 .queryDistributerId(null)
                 .storeToDepartmentIds(new LinkedHashMap<>())
                 .expandedSqlDepartmentIds(new ArrayList<>(expandedInt))
-                .queryScopeMode(QUERY_SCOPE_STORE_ROOTS_AND_DIRECT_CHILDREN)
+                .queryScopeMode(QUERY_SCOPE_MODE_STORE)
                 .visibleStoreIds(new ArrayList<>(storeIds))
                 .storeRootDepartmentIds(new ArrayList<>(storeIds))
                 .targetStoreIds(new ArrayList<>(storeIds))

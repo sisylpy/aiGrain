@@ -1,12 +1,21 @@
 package com.nongxinle.ai.core;
 
-import com.nongxinle.ai.context.AiOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.dto.business.AiBusinessOverviewResult;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
+import com.nongxinle.ai.dto.business.BusinessDiagnosisPlan;
+import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
+import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
+import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
+import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
+import com.nongxinle.ai.dto.business.DiagnosisPlan;
+import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
 import com.nongxinle.ai.dto.cost.AiCostDiagnosisResult;
+import com.nongxinle.ai.planner.BusinessDiagnosisCompositeExecutionResult;
+import com.nongxinle.ai.planner.BusinessDiagnosisCompositeGateResult;
 import com.nongxinle.ai.scope.AiQueryScope;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -46,11 +55,10 @@ public class AiRunState {
     private AiQueryScope scope;
 
     private AiUserContext aiUserContext;
-    private AiOrgScope aiOrgScope;
 
     /**
      * 统一查询上下文（组织/时间/意图/数据范围）；在 {@link com.nongxinle.ai.platform.AiRunService#startRun} 早期生成。
-     * 后续 Node / Tool 应优先只读此对象；与 {@link #aiUserContext}/{@link #aiOrgScope} 并存，逐步收敛。
+     * 后续 Node / Tool 应只读此对象。
      */
     private AiResolvedQueryContext resolvedQueryContext;
 
@@ -68,6 +76,9 @@ public class AiRunState {
     private List<String> selectedAgents = new ArrayList<>();
 
     private String finalAnswerText;
+
+    /** Harness：AnswerComposer LLM system prompt 所使用的 promptId；未调用 Composer LLM 时为 null。 */
+    private String composerPromptRegistryId;
 
     private boolean needClarification;
     private String clarificationQuestion;
@@ -125,6 +136,12 @@ public class AiRunState {
     private boolean groupStockReduceQuery = false;
 
     /**
+     * 日营业额 / 营收专线（{@link com.nongxinle.ai.tool.business.AiBusinessToolIds#REVENUE_QUERY}）。
+     */
+    @Builder.Default
+    private boolean revenueOverviewPath = false;
+
+    /**
      * 优惠券/营销端用户问成本：不拉数，仅输出权限说明（由 {@link com.nongxinle.ai.graph.business.StubAnswerComposerNode} 处理）。
      */
     @Builder.Default
@@ -151,6 +168,12 @@ public class AiRunState {
     @Builder.Default
     private boolean dishProfitPath = false;
 
+    /**
+     * 经营诊断编排链（采购概览 + 出库/核销 + 菜品毛利透视；独立 path，不启用 {@link #dishProfitPath}）。
+     */
+    @Builder.Default
+    private boolean businessDiagnosisPath = false;
+
     @Builder.Default
     private List<String> dataPlanTools = new ArrayList<>();
 
@@ -158,7 +181,43 @@ public class AiRunState {
 
     private AiBusinessOverviewResult businessOverviewResult;
 
+    /** 经营概览 MultiAgent：四域 AnswerPlan 聚合（可选；与 {@link #businessOverviewResult} 并存）。 */
+    private BusinessOverviewAnswerPlan businessOverviewAnswerPlan;
+
     private AiDishProfitOverviewResult dishProfitOverviewResult;
+
+    /**
+     * 菜品毛利：本轮 AnswerPlan（选行+排序在服务端完成，Composer 只读）。
+     */
+    private DishProfitAnswerPlan dishProfitAnswerPlan;
+
+    /**
+     * 菜品销量/销售额排行：本轮 AnswerPlan（Harness / Debug；Phase 1 数据来自 {@link com.nongxinle.ai.tool.business.AiBusinessToolIds#DISH_PROFIT_ANALYSIS} 快照）。
+     */
+    private DishSalesAnswerPlan dishSalesAnswerPlan;
+
+    /**
+     * 采购概览：本轮 AnswerPlan（{@link com.nongxinle.ai.graph.business.PurchaseOverviewTool} 结果衍生；Composer 后续只读）。
+     */
+    private PurchaseAnswerPlan purchaseAnswerPlan;
+
+    /**
+     * 出库/核销专线：本轮 AnswerPlan（{@link com.nongxinle.ai.tool.business.StockReduceQueryTool} 结果衍生）。
+     */
+    private StockReduceAnswerPlan stockReduceAnswerPlan;
+
+    /**
+     * 日营业额 / 营收专线：本轮 AnswerPlan（{@link com.nongxinle.ai.tool.business.RevenueQueryTool} 结果衍生）。
+     */
+    private DailyRevenueAnswerPlan revenueAnswerPlan;
+
+    /** 经营诊断 Harness：服务端组装的计划（Composer / Debug 同源）。 */
+    private BusinessDiagnosisPlan businessDiagnosisPlan;
+
+    /**
+     * 经营诊断：只读子域 AnswerPlan 聚合（{@link DiagnosisPlanBuilder}）；与 {@link #businessDiagnosisPlan} 并存。
+     */
+    private DiagnosisPlan diagnosisPlan;
 
     /** 库房库存概览结构化摘要（供 {@code answer_delta.data.warehouseOverview}）。 */
     private Map<String, Object> warehouseOverview;
@@ -168,6 +227,20 @@ public class AiRunState {
 
     /** 审核节点占位输出（如 passed/score）；供 Composer 汇入最终提示。 */
     private Map<String, Object> outcomeReviewStub;
+
+    /**
+     * MasterBusinessAgent 编排调试摘要（扁平字段见 {@link com.nongxinle.ai.harness.AiHarnessResolvedContextSummarizer}）。
+     */
+    private Map<String, Object> masterBusinessAgentDebug;
+
+    /**
+     * C-55：经营诊断 Composite 生产入口 Gate 观测结果（只记录，不改变主链路路由 / Tool / 答复）；默认 feature 关闭时为
+     * {@link com.nongxinle.ai.planner.BusinessDiagnosisCompositeGateReasonCode#FEATURE_FLAG_DISABLED}。
+     */
+    private BusinessDiagnosisCompositeGateResult businessDiagnosisCompositeGateResult;
+
+    /** C-58：仅 Harness {@code GRAPH_RUN} + {@code compositeBusinessDiagnosisExecutionMode=HARNESS_ONLY} 时写入；不影响主链路终稿 */
+    private BusinessDiagnosisCompositeExecutionResult businessDiagnosisCompositeExecutionResult;
 
     private volatile boolean cancelled;
 }

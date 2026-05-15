@@ -21,8 +21,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
@@ -76,9 +77,12 @@ class BusinessOverviewQueryToolGroupSnapshotIsolationTest {
                 ArgumentMatchers.<Integer>anyList(), ArgumentMatchers.eq("2026-05-01"), ArgumentMatchers.eq("2026-05-02")))
                 .thenReturn(agg);
 
+        when(revenueService.getStatsByDepartmentId(eq(50L), eq("2026-05-01"), eq("2026-05-02")))
+                .thenReturn(Map.of("total_revenue", new BigDecimal("100")));
+
         when(dashboardService.buildGroupWideIncomeFlattened(
                         ArgumentMatchers.eq(agg), anyInt(), ArgumentMatchers.any(), ArgumentMatchers.anyString(),
-                        ArgumentMatchers.anyString()))
+                        ArgumentMatchers.anyString(), eq(1)))
                 .thenReturn(statsCn);
 
         doThrow(new RuntimeException("simulate snapshot SQL failure")).when(issuesService)

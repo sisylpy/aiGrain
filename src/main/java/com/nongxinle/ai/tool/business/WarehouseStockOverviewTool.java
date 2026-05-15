@@ -54,6 +54,14 @@ public class WarehouseStockOverviewTool implements AiTool {
     private static final int LOW_STOCK_TOP_N = 10;
     private static final int INACTIVE_BATCH_MAX = 15;
 
+    /**
+     * 集团聚合仅为门店根维度；无独立仓库维汇总时不提供真实仓库级排行（与 semantic wire
+     * {@code warehouse_stock_amount_ranking} / {@code warehouse_stock_item_count_ranking} 区分）。
+     */
+    private static final String WAREHOUSE_STOCK_RANKING_DEGRADED_NOTE =
+            "当前为按门店根部门维度的库存汇总；系统未做独立仓库维聚合，不提供真实的仓库级库存排行，"
+                    + "请勿将下方门店排行等同于仓库排行。";
+
     private final GbDepartmentGoodsStockService gbDepartmentGoodsStockService;
     private final GbDepartmentGoodsStockReduceService gbDepartmentGoodsStockReduceService;
     private final AiScopeResolver scopeResolver;
@@ -203,6 +211,7 @@ public class WarehouseStockOverviewTool implements AiTool {
 
             List<Map<String, Object>> coveredStores = new ArrayList<>();
             List<Map<String, Object>> dataMissingStores = new ArrayList<>();
+            List<LinkedHashMap<String, Object>> storeRankingBaseRows = new ArrayList<>();
 
             for (Integer sid : storeIds) {
                 if (sid == null || sid <= 0) {
@@ -221,6 +230,8 @@ public class WarehouseStockOverviewTool implements AiTool {
                     miss.put("hasData", false);
                     miss.put("queryError", "STORE_AGG_FAILED");
                     dataMissingStores.add(miss);
+                    storeRankingBaseRows.add(buildStoreRankingBaseRow(sid, storeLabel, null, false,
+                            "本门店库存聚合失败（STORE_AGG_FAILED），未写入估计金额。"));
                     continue;
                 }
                 Boolean rm = (Boolean) one.remove("_reduceMock");
@@ -251,6 +262,11 @@ public class WarehouseStockOverviewTool implements AiTool {
 
                 mergeGoodAggs(mergedGoods, one.get("_byGoods"));
                 appendInactiveWithStore(mergedInactive, one.get("inactiveStockItems"), storeLabel);
+
+                String noSignalNote = storeSignal
+                        ? null
+                        : "本门店在统计口径下暂无库存侧有效信号（金额、种数、批次、入库或核销均为空），未臆造数值。";
+                storeRankingBaseRows.add(buildStoreRankingBaseRow(sid, storeLabel, one, storeSignal, noSignalNote));
 
                 one.clear();
             }
@@ -329,6 +345,9 @@ public class WarehouseStockOverviewTool implements AiTool {
             wo.put("overStockItems", tagItemsWithScope(overStock, "集团汇总"));
             wo.put("inactiveStockItems", mergedInactive);
             wo.put("recommendations", recommendations);
+            wo.put("storeStockAmountRanking", sortAndRankStoresByTotalStockAmountDesc(storeRankingBaseRows));
+            wo.put("storeStockItemCountRanking", sortAndRankStoresByStockItemCountDesc(storeRankingBaseRows));
+            wo.put("warehouseStockRankingDegradedNote", WAREHOUSE_STOCK_RANKING_DEGRADED_NOTE);
 
             applyResolvedScopeFromArgs(wo, args);
             ensureGroupVisibleStores(wo, storeIds, namesById);
@@ -404,6 +423,9 @@ public class WarehouseStockOverviewTool implements AiTool {
                 "若多次失败请检查数据库连接或联系技术支持。"));
         wo.put("queryErrorCode", "WAREHOUSE_STOCK_QUERY_FAILED");
         wo.put("queryErrorMessage", e == null ? "" : String.valueOf(e.getMessage()));
+        wo.put("storeStockAmountRanking", List.of());
+        wo.put("storeStockItemCountRanking", List.of());
+        wo.put("warehouseStockRankingDegradedNote", WAREHOUSE_STOCK_RANKING_DEGRADED_NOTE);
         return wo;
     }
 
@@ -438,6 +460,9 @@ public class WarehouseStockOverviewTool implements AiTool {
         wo.put("inactiveStockItems", List.of());
         wo.put("recommendations",
                 List.of("请核对分销户下是否维护门店，且 gb_department_father_id=0 的门店锚点是否存在。"));
+        wo.put("storeStockAmountRanking", List.of());
+        wo.put("storeStockItemCountRanking", List.of());
+        wo.put("warehouseStockRankingDegradedNote", WAREHOUSE_STOCK_RANKING_DEGRADED_NOTE);
         return wo;
     }
 
@@ -765,6 +790,79 @@ public class WarehouseStockOverviewTool implements AiTool {
             LinkedHashMap<String, Object> copy = new LinkedHashMap<>(it);
             copy.putIfAbsent("scopeNote", scopeNote);
             out.add(copy);
+        }
+        return out;
+    }
+
+    /** D-6 Phase 4C：门店级排行基准行（不含 rank；排序后浅拷贝写入 rank）。 */
+    private static LinkedHashMap<String, Object> buildStoreRankingBaseRow(int sid, String storeName,
+            Map<String, Object> one, boolean dataAvailable, String note) {
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        m.put("storeDepartmentId", sid);
+        m.put("storeName", storeName);
+        if (one != null) {
+            m.put("totalStockAmount", round2(parseDoubleLoose(one.get("totalStockAmount"))));
+            m.put("stockItemCount", intHint(one.get("stockItemCount")));
+            m.put("stockBatchRowCount", intHint(one.get("stockBatchRowCount")));
+            m.put("lowStockItemCount", listSize(one.get("lowStockItems")));
+            m.put("overStockItemCount", listSize(one.get("overStockItems")));
+        } else {
+            m.put("totalStockAmount", 0.0);
+            m.put("stockItemCount", 0);
+            m.put("stockBatchRowCount", 0);
+            m.put("lowStockItemCount", 0);
+            m.put("overStockItemCount", 0);
+        }
+        m.put("dataAvailable", dataAvailable);
+        if (note != null && !note.isBlank()) {
+            m.put("note", note);
+        }
+        return m;
+    }
+
+    private static int listSize(Object listObj) {
+        if (listObj instanceof List<?> l) {
+            return l.size();
+        }
+        return 0;
+    }
+
+    private static List<Map<String, Object>> sortAndRankStoresByTotalStockAmountDesc(
+            List<LinkedHashMap<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<LinkedHashMap<String, Object>> sorted = new ArrayList<>(rows);
+        sorted.sort(Comparator
+                .<LinkedHashMap<String, Object>, Double>comparing(m -> ((Number) m.get("totalStockAmount")).doubleValue())
+                .reversed()
+                .thenComparing(m -> (Integer) m.get("storeDepartmentId")));
+        List<Map<String, Object>> out = new ArrayList<>(sorted.size());
+        int rank = 1;
+        for (LinkedHashMap<String, Object> src : sorted) {
+            LinkedHashMap<String, Object> row = new LinkedHashMap<>(src);
+            row.put("rank", rank++);
+            out.add(row);
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> sortAndRankStoresByStockItemCountDesc(
+            List<LinkedHashMap<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<LinkedHashMap<String, Object>> sorted = new ArrayList<>(rows);
+        sorted.sort(Comparator
+                .<LinkedHashMap<String, Object>, Integer>comparing(m -> (Integer) m.get("stockItemCount"))
+                .reversed()
+                .thenComparing(m -> (Integer) m.get("storeDepartmentId")));
+        List<Map<String, Object>> out = new ArrayList<>(sorted.size());
+        int rank = 1;
+        for (LinkedHashMap<String, Object> src : sorted) {
+            LinkedHashMap<String, Object> row = new LinkedHashMap<>(src);
+            row.put("rank", rank++);
+            out.add(row);
         }
         return out;
     }

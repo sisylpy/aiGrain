@@ -13,8 +13,6 @@ import java.util.Map;
 
 /**
  * 采购概览链路下「短追问包络命中但未收窄 purchaseSourceType」的未知语义采样，供扩充 {@code AiQuerySemanticLexicon}。
- * 仅由 {@link com.nongxinle.ai.conversation.AiFollowUpResolver} 的 {@code PURCHASE_DETAIL_FOLLOW_UP} 分支调用，
- * 不把纯门店追问（{@code STORE_SCOPE_FOLLOW_UP}）记为采购来源未识别。
  */
 @Slf4j
 @Component

@@ -1,11 +1,12 @@
 package com.nongxinle.ai.platform;
 
 import com.alibaba.fastjson2.JSON;
-import com.nongxinle.ai.context.AiOrgScopeResolver;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
+import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.context.AiUserContextResolver;
+import com.nongxinle.ai.platform.dto.StopRunOutcome;
 import com.nongxinle.ai.resolver.AiResolvedQueryContextResolver;
 import com.nongxinle.ai.core.AiGraphRunner;
 import com.nongxinle.ai.core.AiRunState;
@@ -14,7 +15,14 @@ import com.nongxinle.ai.platform.dto.AiRunStartResult;
 import com.nongxinle.ai.scope.AiConversationScopeMode;
 import com.nongxinle.entity.GbAiConversationEntity;
 import com.nongxinle.service.GbAiChatService;
-import com.nongxinle.ai.platform.dto.StopRunOutcome;
+import com.nongxinle.ai.planner.BusinessDiagnosisCompositeExecutionMode;
+import com.nongxinle.ai.planner.BusinessDiagnosisCompositeExecutionResult;
+import com.nongxinle.ai.planner.BusinessDiagnosisCompositeExecutionService;
+import com.nongxinle.ai.planner.BusinessDiagnosisCompositeGateResult;
+import com.nongxinle.ai.planner.BusinessDiagnosisCompositeProductionGate;
+import com.nongxinle.ai.planner.ShadowDecision;
+import com.nongxinle.ai.planner.ShadowPolicy;
+import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.trace.AiAgentTraceService;
 import com.nongxinle.ai.followup.AiFollowUpConversationMemory;
 import com.nongxinle.ai.followup.FollowUpIntentResolveService;
@@ -36,10 +44,13 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.Optional;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -52,14 +63,32 @@ public class AiRunService {
     private final AiRunAsyncExecutor asyncExecutor;
     private final AiAgentTraceService traceService;
     private final AiUserContextResolver userContextResolver;
-    private final AiOrgScopeResolver orgScopeResolver;
     private final AiFollowUpConversationMemory followUpConversationMemory;
     private final AiResolvedQueryContextResolver resolvedQueryContextResolver;
     private final AiConversationMemoryService conversationMemoryService;
     private final GbAiChatService gbAiChatService;
 
+    /** C-58：仅 Harness {@code GRAPH_RUN} 在满足条件时跑 Composite PlannerExecutor（不替换主链路终稿）。 */
+    private final BusinessDiagnosisCompositeExecutionService businessDiagnosisCompositeExecutionService;
+
+    /** C-63：SHADOW Composite 灰度闸（不参与 Harness_only）。 */
+    private final ShadowPolicy shadowPolicy;
+
     @Value("${ai.harness.debug-context-enabled:false}")
     private boolean harnessDebugContextEnabled;
+
+    /**
+     * C-55 / C-56：是否允许 Composite 生产放行（当前仅观测 Gate，不接 PlannerExecutor）；默认 false。
+     */
+    @Value("${ai.composite.businessDiagnosis.productionEnabled:true}")
+    private boolean compositeBusinessDiagnosisProductionEnabled;
+
+    /**
+     * C-60：普通 Run Composite 执行模式 spring 配置 {@code OFF|HARNESS_ONLY|SHADOW|PRIMARY}；
+     * 仅 {@code SHADOW} 在 {@link #executeRun(long)} 中旁路 PlannerExecutor（{@code PRIMARY} 不接）。
+     */
+    @Value("${ai.composite.businessDiagnosis.executionMode:SHADOW}")
+    private String compositeBusinessDiagnosisExecutionModeSpring;
 
     public AiRunStartResult startRun(AiRunCreateRequest req) {
         if (req == null || req.getUserId() == null) {
@@ -83,27 +112,11 @@ public class AiRunService {
         long runId = sessionRegistry.nextRunId();
 
         var uc = userContextResolver.resolve(req);
-        var os = orgScopeResolver.resolve(uc, req);
         AiResolvedQueryContext resolved = resolvedQueryContextResolver.resolve(runId, req, uc);
 
-        String normalizedInput = resolved.getNormalizedQuestion();
-        if (!StringUtils.hasText(normalizedInput)) {
-            normalizedInput = req.getMessage().trim();
-        }
-
-        AiRunState state = AiRunState.builder()
-                .runId(runId)
-                .conversationId(req.getConversationId())
-                .userId(req.getUserId())
-                .departmentId(req.getDepartmentId())
-                .distributerId(req.getDistributerId())
-                .aiUserContext(uc)
-                .aiOrgScope(os)
-                .resolvedQueryContext(resolved)
-                .userRole(uc.getRoleCode())
-                .rawUserInput(req.getMessage())
-                .normalizedUserInput(normalizedInput)
-                .build();
+        AiRunState state = newRunStateFromResolved(runId, req, uc, resolved);
+        maybeAppendOutOfScopeMentionDenial(resolvedQueryContextResolver, resolved, state);
+        recordCompositeProductionGateObservation(state, null);
 
         logResolvedQueryContext(runId, req.getConversationId(), resolved);
         logHarnessTurnMemory(runId, req.getConversationId(), resolved);
@@ -113,6 +126,324 @@ public class AiRunService {
 
         asyncExecutor.runAsync(() -> executeRun(runId));
         return new AiRunStartResult(runId, req.getConversationId());
+    }
+
+    private static void maybeAppendOutOfScopeMentionDenial(
+            AiResolvedQueryContextResolver resolver, AiResolvedQueryContext resolved, AiRunState state) {
+        if (resolver == null || resolved == null || state == null) {
+            return;
+        }
+        Optional<AiPermissionDenied> d = resolver.maybeDenialForSemanticMentionsOutsideVisibleStores(resolved);
+        d.ifPresent(denial -> state.getPermissionDenials().add(denial));
+    }
+
+    private static AiRunState newRunStateFromResolved(
+            long runId, AiRunCreateRequest req, AiUserContext uc, AiResolvedQueryContext resolved) {
+        String normalizedInput = resolved.getNormalizedQuestion();
+        if (!StringUtils.hasText(normalizedInput)) {
+            normalizedInput = req.getMessage().trim();
+        }
+        return AiRunState.builder()
+                .runId(runId)
+                .conversationId(req.getConversationId())
+                .userId(req.getUserId())
+                .departmentId(req.getDepartmentId())
+                .distributerId(req.getDistributerId())
+                .aiUserContext(uc)
+                .resolvedQueryContext(resolved)
+                .userRole(uc.getRoleCode())
+                .rawUserInput(req.getMessage())
+                .normalizedUserInput(normalizedInput)
+                .needClarification(resolved.isNeedSemanticClarification())
+                .clarificationQuestion(
+                        resolved.isNeedSemanticClarification()
+                                        && StringUtils.hasText(resolved.getSemanticClarificationQuestion())
+                                ? resolved.getSemanticClarificationQuestion()
+                                : null)
+                .build();
+    }
+
+    /**
+     * C-55 / C-56.2：仅观测 Composite 生产 Gate；不改变路由、不执行 Composite {@code PlannerExecutor}。
+     *
+     * @param harnessProductionEnabledOverride 仅 Harness {@code GRAPH_RUN} 传入；{@code null} 使用 Spring 配置。
+     */
+    private void recordCompositeProductionGateObservation(AiRunState state, Boolean harnessProductionEnabledOverride) {
+        if (state == null) {
+            return;
+        }
+        boolean effectiveEnabled =
+                harnessProductionEnabledOverride != null
+                        ? harnessProductionEnabledOverride
+                        : compositeBusinessDiagnosisProductionEnabled;
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        BusinessDiagnosisCompositeGateResult gateResult =
+                BusinessDiagnosisCompositeProductionGate.evaluate(rq, state, effectiveEnabled);
+        Map<String, Object> gd = gateResult.getDebug();
+        if (gd == null) {
+            gd = new LinkedHashMap<>();
+            gateResult.setDebug(gd);
+        }
+        gd.put(
+                "productionEnabledSource",
+                harnessProductionEnabledOverride != null ? "HARNESS_OVERRIDE" : "CONFIG");
+        gd.put("productionEnabledEffective", effectiveEnabled);
+        state.setBusinessDiagnosisCompositeGateResult(gateResult);
+        if (log.isInfoEnabled() && gateResult != null) {
+            log.info(
+                    "[AiRunService] compositeProductionGate runId={} conversationId={} allowed={} reasonCode={} "
+                            + "recommendedCaseKind={} productionEnabledSource={} productionEnabledEffective={}",
+                    state.getRunId(),
+                    state.getConversationId(),
+                    gateResult.isAllowed(),
+                    gateResult.getReasonCode(),
+                    gateResult.getRecommendedCaseKind(),
+                    gd.get("productionEnabledSource"),
+                    effectiveEnabled);
+        }
+    }
+
+    /**
+     * Harness Replay：同步执行与 {@link #executeRun} 相同的 Business Graph（无 Session 注册、无 SSE、无异步），
+     * 并成功路径下写入 Turn / Follow-up 记忆；{@code frozenClockDate} 经 {@code today} 传入 Resolver。
+     *
+     * @param compositeProductionGateProductionEnabledOverride C-56.2：仅 Harness 传入；{@code null} 使用 Spring 配置
+     * @param compositeBusinessDiagnosisExecutionMode C-58：{@code OFF}/{@code HARNESS_ONLY}/… API 字符串；{@code null}→OFF；
+     *     仅 {@code HARNESS_ONLY} 会尝试 Composite PlannerExecutor
+     */
+    public AiRunState executeBusinessGraphSyncForHarness(
+            AiRunCreateRequest req,
+            LocalDate today,
+            long runId,
+            Boolean compositeProductionGateProductionEnabledOverride,
+            String compositeBusinessDiagnosisExecutionMode) {
+        if (req == null || req.getUserId() == null) {
+            throw new IllegalArgumentException("userId required");
+        }
+        if (!StringUtils.hasText(req.getMessage())) {
+            throw new IllegalArgumentException("message required");
+        }
+        if (req.getConversationId() == null) {
+            throw new IllegalArgumentException("conversationId required for harness graph replay");
+        }
+        if (today == null) {
+            throw new IllegalArgumentException("today required");
+        }
+        gbAiChatService.requireConversationOwnedByUser(req.getConversationId(), req.getUserId());
+
+        var uc = userContextResolver.resolve(req);
+        AiResolvedQueryContext resolved = resolvedQueryContextResolver.resolve(runId, req, uc, today);
+        resolved.setRunId(runId);
+
+        AiRunState state = newRunStateFromResolved(runId, req, uc, resolved);
+        maybeAppendOutOfScopeMentionDenial(resolvedQueryContextResolver, resolved, state);
+        recordCompositeProductionGateObservation(state, compositeProductionGateProductionEnabledOverride);
+        logResolvedQueryContext(runId, req.getConversationId(), resolved);
+        logHarnessTurnMemory(runId, req.getConversationId(), resolved);
+
+        long t0 = System.currentTimeMillis();
+        traceService.insertRunStarting(runId, state);
+        AiRunState ended = state;
+        String statusName = AiRunStatus.COMPLETED.name();
+        try {
+            ended = graphRunner.runBusinessGraph(state);
+            if (!ended.isCancelled()) {
+                maybeExecuteHarnessCompositePlanner(ended, compositeBusinessDiagnosisExecutionMode);
+            } else {
+                ended.setBusinessDiagnosisCompositeExecutionResult(null);
+            }
+            if (ended.isCancelled()) {
+                statusName = AiRunStatus.CANCELLED.name();
+            }
+        } catch (RuntimeException e) {
+            statusName = AiRunStatus.FAILED.name();
+            log.warn("[AiRunService] harness sync runId={} failed: {}", runId, e.toString(), e);
+            throw e;
+        } finally {
+            String workspaceMode = ended.getWorkspaceMode() == null ? null : ended.getWorkspaceMode().name();
+            traceService.updateRunFinished(runId, statusName, ended, System.currentTimeMillis() - t0, workspaceMode);
+        }
+        if (!ended.isCancelled()) {
+            AiConversationTurnMemory turnMemory = AiConversationTurnMemory.fromCompletedState(ended);
+            if (turnMemory != null && ended.getUserId() != null) {
+                conversationMemoryService.rememberCompletedTurn(
+                        ended.getUserId(), ended.getConversationId(), turnMemory);
+            }
+            AiFollowUpIntentSnapshot snap = FollowUpIntentResolveService.snapshotFromCompletedState(ended);
+            if (snap != null && ended.getUserId() != null) {
+                followUpConversationMemory.remember(ended.getUserId(), ended.getConversationId(), snap);
+            }
+        }
+        return ended;
+    }
+
+    /**
+     * C-58：仅 Harness 同步图跑完后写入 {@link AiRunState#getBusinessDiagnosisCompositeExecutionResult()}；
+     * 不修改 {@link AiRunState#getFinalAnswerText()}。
+     */
+    private void maybeExecuteHarnessCompositePlanner(AiRunState ended, String compositeBusinessDiagnosisExecutionModeRaw) {
+        if (ended == null) {
+            return;
+        }
+        BusinessDiagnosisCompositeExecutionMode mode =
+                BusinessDiagnosisCompositeExecutionMode.fromHarnessApiString(compositeBusinessDiagnosisExecutionModeRaw);
+        if (mode != BusinessDiagnosisCompositeExecutionMode.HARNESS_ONLY) {
+            ended.setBusinessDiagnosisCompositeExecutionResult(null);
+            return;
+        }
+        BusinessDiagnosisCompositeExecutionResult result =
+                businessDiagnosisCompositeExecutionService.tryExecute(
+                        ended,
+                        ended.getResolvedQueryContext(),
+                        ended.getBusinessDiagnosisCompositeGateResult(),
+                        mode);
+        ended.setBusinessDiagnosisCompositeExecutionResult(result);
+    }
+
+    /**
+     * C-60：普通异步 Run — legacy {@code Graph} 完结且未 cancel 后旁路 Composite；不写 {@link AiRunState#getFinalAnswerText()}。
+     * C-61：写入 {@code compositeShadow*} 观测（耗时、两侧是否有正文、未替换契约）。
+     * 同步于主线程（后续可异步化）；Composite 异常吞掉。
+     */
+    private void maybeExecuteShadowCompositePlanner(AiRunState ended) {
+        if (ended == null || ended.isCancelled()) {
+            return;
+        }
+        if (!compositeBusinessDiagnosisProductionEnabled) {
+            return;
+        }
+        BusinessDiagnosisCompositeExecutionMode cfg =
+                BusinessDiagnosisCompositeExecutionMode.fromHarnessApiString(compositeBusinessDiagnosisExecutionModeSpring);
+        if (cfg != BusinessDiagnosisCompositeExecutionMode.SHADOW) {
+            return;
+        }
+        BusinessDiagnosisCompositeGateResult gate = ended.getBusinessDiagnosisCompositeGateResult();
+        if (gate == null || !gate.isAllowed()) {
+            return;
+        }
+        ShadowDecision shadowDecision = shadowPolicy.evaluate(ended, ended.getResolvedQueryContext());
+        if (!shadowDecision.isAllowed()) {
+            ended.setBusinessDiagnosisCompositeExecutionResult(buildShadowSkippedObservation(ended, shadowDecision));
+            return;
+        }
+        long shadowT0 = System.nanoTime();
+        try {
+            BusinessDiagnosisCompositeExecutionResult result =
+                    businessDiagnosisCompositeExecutionService.tryExecute(
+                            ended,
+                            ended.getResolvedQueryContext(),
+                            gate,
+                            BusinessDiagnosisCompositeExecutionMode.SHADOW);
+            long latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - shadowT0);
+            ended.setBusinessDiagnosisCompositeExecutionResult(
+                    enrichShadowExecutionObservation(ended, latencyMs, result));
+        } catch (RuntimeException ex) {
+            long latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - shadowT0);
+            log.warn(
+                    "[AiRunService] shadow composite runId={} failed (legacy answer unaffected): {}",
+                    ended.getRunId(),
+                    ex.toString(),
+                    ex);
+            String msg = ex.getMessage() == null ? "" : ex.getMessage().trim();
+            boolean legacyPresent = shadowAnswerTextPresent(ended.getFinalAnswerText());
+            ended.setBusinessDiagnosisCompositeExecutionResult(
+                    BusinessDiagnosisCompositeExecutionResult.builder()
+                            .mode(BusinessDiagnosisCompositeExecutionMode.SHADOW)
+                            .executed(true)
+                            .success(false)
+                            .fallbackRequired(true)
+                            .fallbackReason("COMPOSITE_SHADOW_EXCEPTION")
+                            .errorCode("COMPOSITE_SHADOW_EXCEPTION")
+                            .errorMessage(
+                                    ex.getClass().getSimpleName()
+                                            + (msg.isEmpty() ? "" : ": ".concat(msg)))
+                            .businessDiagnosisCompositeAnswerPlan(null)
+                            .composeResult(null)
+                            .plannerExecutorTrace(null)
+                            .plannerOverallStatus(null)
+                            .degradedSteps(List.of())
+                            .compositeShadowLatencyMs(latencyMs)
+                            .compositeShadowLegacyAnswerPresent(legacyPresent)
+                            .compositeShadowCompositeAnswerPresent(false)
+                            .compositeShadowComparedWithLegacy(false)
+                            .compositeShadowFinalAnswerReplaced(false)
+                            .compositeShadowSkipped(Boolean.FALSE)
+                            .compositeShadowSkipReason(null)
+                            .compositeShadowThrottleHit(Boolean.FALSE)
+                            .compositeShadowWhitelistMatched(Boolean.TRUE)
+                            .build());
+        }
+    }
+
+    /** C-63：未进入 Composite {@code tryExecute} 时仍写出灰度观测，不影响 legacy。 */
+    private static BusinessDiagnosisCompositeExecutionResult buildShadowSkippedObservation(
+            AiRunState ended, ShadowDecision shadowDecision) {
+        return BusinessDiagnosisCompositeExecutionResult.builder()
+                .mode(BusinessDiagnosisCompositeExecutionMode.SHADOW)
+                .executed(false)
+                .success(false)
+                .fallbackRequired(false)
+                .fallbackReason(null)
+                .errorCode(null)
+                .errorMessage(null)
+                .businessDiagnosisCompositeAnswerPlan(null)
+                .composeResult(null)
+                .plannerExecutorTrace(null)
+                .plannerOverallStatus(null)
+                .compositeShadowSkipped(Boolean.TRUE)
+                .compositeShadowSkipReason(shadowDecision.getSkipReason())
+                .compositeShadowThrottleHit(Boolean.TRUE.equals(shadowDecision.getThrottleHit()))
+                .compositeShadowWhitelistMatched(shadowDecision.getWhitelistMatched())
+                .compositeShadowLatencyMs(null)
+                .compositeShadowComparedWithLegacy(null)
+                .compositeShadowLegacyAnswerPresent(null)
+                .compositeShadowCompositeAnswerPresent(null)
+                .compositeShadowFinalAnswerReplaced(null)
+                .build();
+    }
+
+    private static boolean shadowAnswerTextPresent(String text) {
+        return text != null && !text.trim().isEmpty();
+    }
+
+    private static String shadowCompositeFinalText(BusinessDiagnosisCompositeExecutionResult r) {
+        if (r == null || r.getComposeResult() == null) {
+            return null;
+        }
+        return r.getComposeResult().getFinalAnswerText();
+    }
+
+    /** C-61：不读用户原文；仅基于 {@code finalAnswerText} / Composer 产出填观测。 */
+    private static BusinessDiagnosisCompositeExecutionResult enrichShadowExecutionObservation(
+            AiRunState ended, long latencyMs, BusinessDiagnosisCompositeExecutionResult base) {
+        if (base == null) {
+            return null;
+        }
+        boolean legacyPresent = shadowAnswerTextPresent(ended != null ? ended.getFinalAnswerText() : null);
+        boolean compositePresent = shadowAnswerTextPresent(shadowCompositeFinalText(base));
+        return base.toBuilder()
+                .compositeShadowSkipped(Boolean.FALSE)
+                .compositeShadowSkipReason(null)
+                .compositeShadowThrottleHit(Boolean.FALSE)
+                .compositeShadowWhitelistMatched(Boolean.TRUE)
+                .compositeShadowLatencyMs(latencyMs)
+                .compositeShadowLegacyAnswerPresent(legacyPresent)
+                .compositeShadowCompositeAnswerPresent(compositePresent)
+                .compositeShadowComparedWithLegacy(legacyPresent && compositePresent)
+                .compositeShadowFinalAnswerReplaced(false)
+                .build();
+    }
+
+    /** C-60：`compositeGate*` + `compositeExecution*` 独立于 harness 摘要开关下发 SSE。 */
+    private void envelopePutCompositeGateAndExecution(AiRunState state, Map<String, Object> envelope) {
+        if (state == null || envelope == null) {
+            return;
+        }
+        try {
+            envelope.putAll(AiHarnessResolvedContextSummarizer.summarizeCompositeGateAndExecutionOnly(state));
+        } catch (RuntimeException ex) {
+            log.debug("[AiRunService] summarizeCompositeGateAndExecutionOnly skipped: {}", ex.toString());
+        }
     }
 
     private static AiConversationScopeMode inferAgentRunScopeMode(AiRunCreateRequest req) {
@@ -140,10 +471,14 @@ public class AiRunService {
         LinkedHashMap<String, Object> runStarted = new LinkedHashMap<>();
         runStarted.put("displayText", "任务已接收，开始执行…");
         enrichSseEnvelopeWithHarnessDebug(session.getState(), runStarted);
+        envelopePutCompositeGateAndExecution(session.getState(), runStarted);
         eventPublisher.publish(runId, "run_started", runStarted);
         traceService.insertRunStarting(runId, session.getState());
         try {
             endedState = graphRunner.runBusinessGraph(session.getState());
+            if (!endedState.isCancelled()) {
+                maybeExecuteShadowCompositePlanner(endedState);
+            }
 
             String answerText = endedState.getFinalAnswerText() == null ? "" : endedState.getFinalAnswerText();
             Map<String, Object> data = new HashMap<>();
@@ -169,6 +504,24 @@ public class AiRunService {
                     data.put("dishProfitOverviewWarning", "serialize_failed");
                 }
             }
+            if (endedState.getDishProfitAnswerPlan() != null) {
+                try {
+                    data.put("dishProfitAnswerPlan", JSON.parseObject(JSON.toJSONString(endedState.getDishProfitAnswerPlan())));
+                } catch (Exception ignore) {
+                    data.put("dishProfitAnswerPlanWarning", "serialize_failed");
+                }
+            }
+            if (endedState.getPurchaseAnswerPlan() != null) {
+                try {
+                    data.put("purchaseAnswerPlan", JSON.parseObject(JSON.toJSONString(endedState.getPurchaseAnswerPlan())));
+                    data.put("purchaseAnswerPlanPresent", true);
+                } catch (Exception ignore) {
+                    data.put("purchaseAnswerPlanWarning", "serialize_failed");
+                    data.put("purchaseAnswerPlanPresent", false);
+                }
+            } else {
+                data.put("purchaseAnswerPlanPresent", false);
+            }
             if (endedState.getIntentConvergence() != null && !endedState.getIntentConvergence().isEmpty()) {
                 data.put("intentConvergence", endedState.getIntentConvergence());
             }
@@ -188,6 +541,25 @@ public class AiRunService {
                     data.put("purchaseOverviewWarning", "serialize_failed");
                 }
             }
+            if (endedState.getDiagnosisPlan() != null) {
+                try {
+                    data.put("diagnosisPlan", JSON.parseObject(JSON.toJSONString(endedState.getDiagnosisPlan())));
+                    data.put("diagnosisPlanPresent", true);
+                } catch (Exception ignore) {
+                    data.put("diagnosisPlanWarning", "serialize_failed");
+                    data.put("diagnosisPlanPresent", false);
+                }
+            } else {
+                data.put("diagnosisPlanPresent", false);
+            }
+            if (endedState.getBusinessDiagnosisPlan() != null) {
+                try {
+                    data.put("businessDiagnosisPlan",
+                            JSON.parseObject(JSON.toJSONString(endedState.getBusinessDiagnosisPlan())));
+                } catch (Exception ignore) {
+                    data.put("businessDiagnosisPlanWarning", "serialize_failed");
+                }
+            }
             if (harnessDebugContextEnabled && endedState.getResolvedQueryContext() != null) {
                 try {
                     data.put("resolvedQueryContextSummary", AiHarnessResolvedContextSummarizer.summarize(
@@ -198,6 +570,8 @@ public class AiRunService {
                     data.put("resolvedQueryContextSummaryWarning", "summarize_failed");
                 }
             }
+
+            envelopePutCompositeGateAndExecution(endedState, data);
 
             Map<String, Object> delta = new HashMap<>();
             delta.put("text", answerText);
@@ -236,6 +610,7 @@ public class AiRunService {
             fin.put("displayText", runFinishedDisplayText(session.getStatus()));
             fin.put("data", new HashMap<String, Object>());
             enrichSseEnvelopeWithHarnessDebug(endedState, fin);
+            envelopePutCompositeGateAndExecution(endedState, fin);
             eventPublisher.publish(runId, "run_finished", fin);
             session.completeEmitters();
         }
@@ -461,7 +836,9 @@ public class AiRunService {
         if (!harnessDebugContextEnabled || state == null || envelope == null) {
             return;
         }
+        envelope.put("composerPromptId", state.getComposerPromptRegistryId());
         AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        envelope.put("semanticPromptId", rq != null ? rq.getSemanticPromptRegistryId() : null);
         if (rq == null) {
             return;
         }
@@ -486,7 +863,6 @@ public class AiRunService {
         envelope.put("effectivePathCode", sum.get("effectivePathCode"));
         envelope.put("visibleStoreRootIds", sum.get("visibleStoreRootIds"));
         envelope.put("childDepartmentIds", sum.get("childDepartmentIds"));
-        envelope.put("effectiveSqlDepartmentIds", sum.get("effectiveSqlDepartmentIds"));
         envelope.put("expandedSqlDepartmentIds", sum.get("expandedSqlDepartmentIds"));
         envelope.put("dishProfitSqlDepartmentIds", sum.get("dishProfitSqlDepartmentIds"));
         envelope.put("departmentScopeModelNote", sum.get("departmentScopeModelNote"));
@@ -497,8 +873,34 @@ public class AiRunService {
         envelope.put("storeToDepartmentIds", sum.get("storeToDepartmentIds"));
         envelope.put("salesDishCount", sum.get("salesDishCount"));
         envelope.put("riskLevel", sum.get("riskLevel"));
+        envelope.put("dishProfitAnswerPlan", sum.get("dishProfitAnswerPlan"));
+        envelope.put("dishProfitAnswerPlanPresent", sum.get("dishProfitAnswerPlanPresent"));
+        envelope.put("purchaseAnswerPlan", sum.get("purchaseAnswerPlan"));
+        envelope.put("purchaseAnswerPlanPresent", sum.get("purchaseAnswerPlanPresent"));
+        envelope.put("purchaseAnswerPlanType", sum.get("purchaseAnswerPlanType"));
+        envelope.put("purchaseAnswerPlanSortKey", sum.get("purchaseAnswerPlanSortKey"));
+        envelope.put("purchaseAnswerPlanSortDirection", sum.get("purchaseAnswerPlanSortDirection"));
+        envelope.put("purchaseAnswerPlanFocusRows", sum.get("purchaseAnswerPlanFocusRows"));
+        envelope.put("purchaseAnswerPlanSecondaryRows", sum.get("purchaseAnswerPlanSecondaryRows"));
+        envelope.put("purchaseAnswerPlanDebug", sum.get("purchaseAnswerPlanDebug"));
         envelope.put("buildInsightInputStoreRootIds", sum.get("buildInsightInputStoreRootIds"));
         envelope.put("buildInsightInputDepartmentIdsAllowFilter", sum.get("buildInsightInputDepartmentIdsAllowFilter"));
+        envelope.put("diagnosisPlan", sum.get("diagnosisPlan"));
+        envelope.put("diagnosisPlanPresent", sum.get("diagnosisPlanPresent"));
+        envelope.put("diagnosisPlanType", sum.get("diagnosisPlanType"));
+        envelope.put("businessDiagnosisPlan", sum.get("businessDiagnosisPlan"));
+        envelope.put("diagnosisRiskLevel", sum.get("diagnosisRiskLevel"));
+        envelope.put("diagnosisDataCompleteness", sum.get("diagnosisDataCompleteness"));
+        envelope.put("planSource", sum.get("planSource"));
+        envelope.put("compositeGateAllowed", sum.get("compositeGateAllowed"));
+        envelope.put("compositeGateReasonCode", sum.get("compositeGateReasonCode"));
+        envelope.put("compositeGateReason", sum.get("compositeGateReason"));
+        envelope.put("compositeGateScopeType", sum.get("compositeGateScopeType"));
+        envelope.put("compositeGateRecommendedCaseKind", sum.get("compositeGateRecommendedCaseKind"));
+        envelope.put("compositeGateFinalAnswerPlanType", sum.get("compositeGateFinalAnswerPlanType"));
+        envelope.put("compositeGateDebug", sum.get("compositeGateDebug"));
+        envelope.put("compositeGateProductionEnabledSource", sum.get("compositeGateProductionEnabledSource"));
+        envelope.put("compositeGateProductionEnabledEffective", sum.get("compositeGateProductionEnabledEffective"));
     }
 
     private static HttpProbe probeHttpClient() {

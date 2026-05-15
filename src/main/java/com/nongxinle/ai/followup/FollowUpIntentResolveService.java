@@ -2,7 +2,6 @@ package com.nongxinle.ai.followup;
 
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
-import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.core.AiWorkspaceMode;
 import lombok.RequiredArgsConstructor;
@@ -19,8 +18,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 识别「这个月呢」「换成本月」等短句追问，继承上一轮经营主线语义，仅刷新时间用语（体现在 normalizedUserInput）。
+ * 【已废弃业务语义】追问扩写与时间片语提取曾用于 Java keyword 链路；追问路由与时间窗已统一交由
+ * {@link com.nongxinle.ai.semantic.AiQuerySemanticLlmParser} + {@link com.nongxinle.ai.resolver.AiResolvedQueryContextResolver}
+ *。<b>禁止</b>新业务调用 {@link #applyIfFollowUp}、{@link #isShortTemporalFollowUp(String)}。
  */
+@Deprecated(forRemoval = false)
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -39,53 +41,16 @@ public class FollowUpIntentResolveService {
      *
      * @return true 表示已做过等价扩写
      */
+    @Deprecated(forRemoval = false)
     public boolean applyIfFollowUp(AiRunState state) {
-        if (state == null) {
-            return false;
-        }
-        AiResolvedQueryContext rctx = state.getResolvedQueryContext();
-        if (rctx != null && rctx.getFollowUpResolution() != null
-                && rctx.getFollowUpResolution().isNormalizedInputExpandedAtResolvePhase()) {
-            return false;
-        }
-        if (state.getWorkspaceMode() != AiWorkspaceMode.BUSINESS_CHAT) {
-            return false;
-        }
-        Long conv = state.getConversationId();
-        Long uid = state.getUserId();
-        if (uid == null) {
-            return false;
-        }
-        String rawCur = state.getNormalizedUserInput();
-        if (!StringUtils.hasText(rawCur)) {
-            return false;
-        }
-        AiFollowUpIntentSnapshot snap = memory.load(uid, conv);
-        if (snap == null || !StringUtils.hasText(snap.getEffectiveQuestion()) || snap.getPathKind() == null) {
-            return false;
-        }
-        String cur = rawCur.trim();
-        if (!looksLikeTemporalFollowUp(cur)) {
-            return false;
-        }
-        if (topicConflict(cur, snap.getPathKind())) {
-            return false;
-        }
-        Optional<String> maybeNewPhrase = extractNewTemporalPhrase(cur);
-        if (maybeNewPhrase.isEmpty()) {
-            return false;
-        }
-        String newPhrase = maybeNewPhrase.get();
-        String expanded = spliceTemporal(snap.getEffectiveQuestion(), newPhrase);
-        if (!StringUtils.hasText(expanded) || expanded.equals(snap.getEffectiveQuestion())) {
-            return false;
-        }
-        log.info("[FollowUpIntent] conversationId={} expand '{}' -> '{}' (path={})",
-                conv, cur, expanded, snap.getPathKind());
-        state.setNormalizedUserInput(expanded);
-        return true;
+        // normalizedUserInput 扩写已由 LLM 语义解析 + Resolver 收口；禁用 Java 「短时间短句」spliceTemporal。
+        return false;
     }
 
+    /**
+     * @deprecated Java 短语时间判断已不再参与主链路；仅保留兼容单测/Harness。禁止新业务调用。
+     */
+    @Deprecated(forRemoval = false)
     public static boolean isShortTemporalFollowUp(String cur) {
         if (!StringUtils.hasText(cur) || cur.length() > MAX_FOLLOW_LEN) {
             return false;
@@ -108,21 +73,8 @@ public class FollowUpIntentResolveService {
         if (!StringUtils.hasText(rawMessage)) {
             return false;
         }
-        String t = rawMessage.trim();
-        AiResolvedQueryIntent probe = AiResolvedQueryIntent.fromUserMessage(t);
-        if (StringUtils.hasText(probe.getPathCode())) {
-            return true;
-        }
-        if (AiQuerySemanticLexicon.looksPurchaseDomainShortQuestion(t)) {
-            return true;
-        }
-        AiQuerySemanticLexicon.mergePurchaseCuesInto(probe, t);
-        AiQuerySemanticLexicon.mergeStockReduceCuesInto(probe, t);
-        if (StringUtils.hasText(probe.getStructuredIntentDetail())
-                && AiQuerySemanticLexicon.isStructuredStockReduceDetail(probe.getStructuredIntentDetail())) {
-            return true;
-        }
-        return StringUtils.hasText(probe.getStructuredIntentDetail());
+        // 语义域切换由 AiQuerySemanticLlmParser 输出收口；此处不再用语义词典探测领域。
+        return StringUtils.hasText(rawMessage.trim()) && SWITCH_TOPIC_HINT.matcher(rawMessage.replace(" ", "")).find();
     }
 
     private static boolean looksLikeTemporalFollowUp(String cur) {
@@ -138,66 +90,8 @@ public class FollowUpIntentResolveService {
         return topicConflict(cur, last);
     }
 
-    /** 新业务词与上一轮路径明显不一致时不继承（避免库存/采购插队）。 */
+    /** 新业务词与上一轮路径明显不一致时不继承（避免库存/采购插队）。语义切换改由 QuerySemanticParser；此处恒不阻断。 */
     private static boolean topicConflict(String cur, FollowUpPathKind last) {
-        String s = cur.replace(" ", "");
-        boolean hasWarehouse = s.contains("库存");
-        boolean hasPurchase = s.contains("采购") || s.contains("供货商") || s.contains("供应商") || s.contains("入库");
-        boolean hasTurnoverCue = s.contains("营业额") || s.contains("流水");
-        switch (last) {
-            case WAREHOUSE_STOCK:
-                if (hasPurchase && !hasWarehouse) {
-                    return true;
-                }
-                break;
-            case DISH_PROFIT:
-                if (hasWarehouse) {
-                    return true;
-                }
-                if (hasPurchase) {
-                    return true;
-                }
-                break;
-            case BUSINESS_OVERVIEW:
-                if (hasWarehouse || hasPurchase) {
-                    return true;
-                }
-                break;
-            case PURCHASE_OVERVIEW:
-                if (hasWarehouse && !hasPurchase) {
-                    return true;
-                }
-                if (s.contains("菜品") && (s.contains("毛利") || s.contains("利润"))) {
-                    return true;
-                }
-                // 泛利润/盈利/毛利问法：切换出采购域，避免「AAA 利润怎么样」被当成仅换店继承采购
-                if (!s.contains("采购") && !s.contains("进货") && !s.contains("订货")
-                        && !s.contains("供货商") && !s.contains("供应商") && !s.contains("入库")) {
-                    if (s.contains("利润") || s.contains("盈利") || s.contains("盈亏")) {
-                        return true;
-                    }
-                    if (s.contains("毛利") && (s.contains("怎么样") || s.contains("如何") || s.contains("多少"))) {
-                        return true;
-                    }
-                }
-                break;
-            case STOCK_REDUCE_QUERY:
-                // 出库链路上：裸「采购/进货」换域；含制作/做菜/核销/出库等同域词则保留
-                if (hasPurchase && !(s.contains("出库") || s.contains("核销") || s.contains("损耗") || s.contains("报损")
-                        || s.contains("退货") || s.contains("生产") || s.contains("制作") || s.contains("做菜")
-                        || s.contains("废弃") || s.contains("退回"))) {
-                    return true;
-                }
-                break;
-            default:
-                if (hasWarehouse && last != FollowUpPathKind.WAREHOUSE_STOCK) {
-                    return true;
-                }
-                break;
-        }
-        if (hasTurnoverCue && last != FollowUpPathKind.BUSINESS_OVERVIEW && last != FollowUpPathKind.DISH_PROFIT) {
-            return true;
-        }
         return false;
     }
 
@@ -344,6 +238,8 @@ public class FollowUpIntentResolveService {
             kind = FollowUpPathKind.WAREHOUSE_STOCK;
         } else if (state.isStockReduceQueryPath()) {
             kind = FollowUpPathKind.STOCK_REDUCE_QUERY;
+        } else if (state.isRevenueOverviewPath()) {
+            kind = FollowUpPathKind.REVENUE_OVERVIEW;
         } else if (state.isPurchaseOverviewPath()) {
             kind = FollowUpPathKind.PURCHASE_OVERVIEW;
         } else if (state.isPurchaseCostInsightPath()) {

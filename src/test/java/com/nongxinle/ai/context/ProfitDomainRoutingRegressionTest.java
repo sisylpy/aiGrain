@@ -23,22 +23,27 @@ class ProfitDomainRoutingRegressionTest {
     }
 
     @Test
-    void currentMessageDeclaresDomain_for_store_prefixed_profit_question() {
+    void currentMessageDeclaresDomainPath_false_for_plain_profit_question_without_switch_hint() {
         Assertions.assertThat(
-                FollowUpIntentResolveService.currentMessageDeclaresDomainPath("AAA 利润怎么样？")).isTrue();
+                FollowUpIntentResolveService.currentMessageDeclaresDomainPath("AAA 利润怎么样？")).isFalse();
     }
 
     @Test
-    void topicConflict_when_previous_was_purchase_and_message_is_profit() {
+    void currentMessageDeclaresDomainPath_true_when_explicit_switch_topic_hint() {
+        Assertions.assertThat(
+                FollowUpIntentResolveService.currentMessageDeclaresDomainPath("换成菜品毛利")).isTrue();
+    }
+
+    @Test
+    void topicConflict_always_false_domain_switch_owned_by_semantic_parser() {
         Assertions.assertThat(followUp.conflictsWithPreviousPath("AAA利润怎么样？", FollowUpPathKind.PURCHASE_OVERVIEW))
-                .isTrue();
+                .isFalse();
         Assertions.assertThat(followUp.conflictsWithPreviousPath("毛利怎么样？", FollowUpPathKind.PURCHASE_OVERVIEW))
-                .isTrue();
+                .isFalse();
     }
 
     @Test
     void topicConflict_false_when_still_in_purchase_wording_with_supplier_and_profit_is_substring_noise() {
-        // 「供应商」子串命中 hasPurchase，利润子句也不应单独切走（保守：仍可能走采购解读）
         Assertions.assertThat(followUp.conflictsWithPreviousPath(
                 "供货商订货利润占比多少", FollowUpPathKind.PURCHASE_OVERVIEW)).isFalse();
     }

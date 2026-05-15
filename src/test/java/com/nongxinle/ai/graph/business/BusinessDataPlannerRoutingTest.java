@@ -39,7 +39,7 @@ class BusinessDataPlannerRoutingTest {
     }
 
     @Test
-    void overviewPhrase_enablesOverviewPathAndFourTools() {
+    void overviewPhrase_enablesOverviewPathAndSixTools() {
         AiRunState st = AiRunState.builder()
                 .runId(2L)
                 .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
@@ -52,7 +52,7 @@ class BusinessDataPlannerRoutingTest {
     }
 
     @Test
-    void storeManagerMonthlyOperationsPhrase_enablesOverviewPathAndFourTools() {
+    void storeManagerMonthlyOperationsPhrase_enablesOverviewPathAndSixTools() {
         AiRunState st = AiRunState.builder()
                 .runId(22L)
                 .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
@@ -61,6 +61,7 @@ class BusinessDataPlannerRoutingTest {
         node.run(st);
         assertThat(st.isBusinessOverviewPath()).isTrue();
         assertThat(st.getDataPlanTools()).isEqualTo(AiBusinessToolIds.DEFAULT_BUSINESS_OVERVIEW_TOOLS);
+        assertThat(st.getDataPlanTools()).hasSize(6);
     }
 
     @Test

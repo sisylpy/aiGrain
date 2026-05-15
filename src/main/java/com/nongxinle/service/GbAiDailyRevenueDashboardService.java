@@ -25,13 +25,19 @@ public interface GbAiDailyRevenueDashboardService {
      * 集团多部门：与日营收单行聚合同源字段（{@code selectGroupIncomeAggregateForDepartmentIds}），扁平中文 stats。
      * 不合并核销/画像成本；利润率、盈亏等为占位说明。
      *
-     * @param groupAggRow          mapper 聚合行（含 totalGrossRevenue、totalOrders、distinctRecordDates 等）
-     * @param visibleDeptNodeCount AiQueryScope.resolvedDepartmentIds 大小（可见部门节点数）
-     * @param parentStoreCountHint 范围内父级门店数，可为 null
+     * @param groupAggRow                    mapper 聚合行（含 totalGrossRevenue、totalOrders、distinctRecordDates 等）
+     * @param visibleStoreRootCount           本轮参与汇总的<strong>门店根</strong>数量（与广角 retailAnchors 一致）
+     * @param parentStoreCountHint           可选：Scope 侧的父级门店数提示，可为 null（仅兜底展示用）
+     * @param startDate                       yyyy-MM-dd
+     * @param endDate                         yyyy-MM-dd
+     * @param storeRootsWithRecordedRevenue  可选：按<strong>门店根</strong>{@code getStatsByDepartmentId} 统计的、区间内有营业额
+     *                                         台账的门店数；非 null 时「数据口径说明」入账句不再使用
+     *                                         {@code distinctRecordingDepartments}（展开后的记账部门数），避免写成「几家」错乱
      */
     Map<String, Object> buildGroupWideIncomeFlattened(Map<String, Object> groupAggRow,
-                                                      int visibleDeptNodeCount,
+                                                      int visibleStoreRootCount,
                                                       Integer parentStoreCountHint,
                                                       String startDate,
-                                                      String endDate);
+                                                      String endDate,
+                                                      Integer storeRootsWithRecordedRevenue);
 }

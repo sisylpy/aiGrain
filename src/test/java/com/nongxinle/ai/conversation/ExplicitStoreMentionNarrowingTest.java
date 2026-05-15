@@ -8,10 +8,11 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/** LLM 口述店名 → 候选 visible 门店的唯一映射与单店收窄。 */
 class ExplicitStoreMentionNarrowingTest {
 
     @Test
-    void compoundPurchaseQuestion_narrowsGroupOrgToNamedStore() {
+    void llmMentionNarrowsGroupOrgToNamedStore() {
         AiResolvedOrgScope group = AiResolvedOrgScope.builder()
                 .scopeType(AiResolvedOrgScope.SCOPE_GROUP)
                 .distributerId(1L)
@@ -19,15 +20,16 @@ class ExplicitStoreMentionNarrowingTest {
                         AiStoreScopeDTO.builder().storeDepartmentId(101L).storeName("AAA").build(),
                         AiStoreScopeDTO.builder().storeDepartmentId(102L).storeName("汀兰餐厅").build()))
                 .build();
-        AiResolvedOrgScope out = AiFollowUpResolver.maybeNarrowGroupScopeToExplicitStoreMention(
-                "汀兰餐厅采购总额是多少？", group, null);
+        var hit = AiFollowUpResolver.uniquelyResolvedStoreFromLlmMention("汀兰餐厅", group.getVisibleStores());
+        assertThat(hit).isPresent();
+        AiResolvedOrgScope out = AiFollowUpResolver.copyOrgNarrowedToSingleStore(group, hit.get());
         assertThat(out.getScopeType()).isEqualTo(AiResolvedOrgScope.SCOPE_STORE);
         assertThat(out.getVisibleStores()).hasSize(1);
         assertThat(out.getVisibleStores().get(0).getStoreDepartmentId()).isEqualTo(102L);
     }
 
     @Test
-    void noStoreNamedInMessage_keepsGroupScope() {
+    void noResolvableLlmMentionDoesNotMapToStore() {
         AiResolvedOrgScope group = AiResolvedOrgScope.builder()
                 .scopeType(AiResolvedOrgScope.SCOPE_GROUP)
                 .distributerId(1L)
@@ -35,8 +37,7 @@ class ExplicitStoreMentionNarrowingTest {
                         AiStoreScopeDTO.builder().storeDepartmentId(101L).storeName("AAA").build(),
                         AiStoreScopeDTO.builder().storeDepartmentId(102L).storeName("汀兰餐厅").build()))
                 .build();
-        AiResolvedOrgScope out = AiFollowUpResolver.maybeNarrowGroupScopeToExplicitStoreMention(
-                "这个月采购总额是多少？", group, null);
-        assertThat(out).isSameAs(group);
+        assertThat(AiFollowUpResolver.uniquelyResolvedStoreFromLlmMention("虚构门店", group.getVisibleStores()))
+                .isEmpty();
     }
 }

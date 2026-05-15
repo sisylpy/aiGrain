@@ -1,16 +1,17 @@
 package com.nongxinle.ai.graph.business;
 
-import com.nongxinle.ai.context.AiOrgScope;
-import com.nongxinle.ai.context.AiOrgScopeResolver;
+import com.nongxinle.ai.context.AiResolvedDataScope;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
+import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiDishProfitDishBrief;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
+import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.AiOverviewStoreIssueItem;
 import com.nongxinle.ai.dto.business.AiOverviewVisibleStoreItem;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
@@ -18,6 +19,7 @@ import com.nongxinle.ai.trace.AiSseEventPublisher;
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
 import com.nongxinle.utils.GbDepartmentGoodsStockReduceSupport;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -40,6 +42,7 @@ import java.util.stream.Collectors;
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class DishProfitAgentNode implements AgentNode {
 
     private static final Pattern BEFORE_MAO = Pattern.compile("([\\u4e00-\\u9fa5]{2,16})毛利");
@@ -53,9 +56,18 @@ public class DishProfitAgentNode implements AgentNode {
 
     @Override
     public boolean shouldRun(AiRunState state) {
-        return state.isDishProfitPath()
-                && state.getDataPlanTools() != null
-                && !state.getDataPlanTools().isEmpty();
+        if (state == null || state.getDataPlanTools() == null || state.getDataPlanTools().isEmpty()) {
+            return false;
+        }
+        if (state.isBusinessOverviewPath()
+                && state.getDataPlanTools().contains(AiBusinessToolIds.DISH_PROFIT_ANALYSIS)) {
+            return true;
+        }
+        if (state.isDishProfitPath()) {
+            return true;
+        }
+        return state.isBusinessDiagnosisPath()
+                && state.getDataPlanTools().contains(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
     }
 
     @Override
@@ -95,6 +107,19 @@ public class DishProfitAgentNode implements AgentNode {
     }
 
     private static AiDishProfitOverviewResult deriveOverview(AiRunState state) {
+        if (state != null) {
+            state.setDishProfitAnswerPlan(null);
+        }
+        return computeOverviewAndAttachPlans(state, false);
+    }
+
+    /**
+     * 与 {@link #deriveOverview} 同源：产出 overview 并挂载 {@link DishProfitAnswerPlan}（含结构化子意图与聚合 fallback）。
+     * 包内由 {@link DishProfitAnswerPlanBuilder} 在子 Agent 侧复用，以保证 Master 与子图契约一致。
+     *
+     * @param orchestrationEnvelope 为 true 时在 {@link DishProfitAnswerPlan#getDebug()} 中标记（经营概览 Multi-Agent 子域 envelope）
+     */
+    static AiDishProfitOverviewResult computeOverviewAndAttachPlans(AiRunState state, boolean orchestrationEnvelope) {
         Map<String, Object> data = toolEnvelopeData(state, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
         Map<String, Object> cov = coverageFromToolEnvelope(data);
         boolean ok = toolSuccess(state, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
@@ -123,6 +148,7 @@ public class DishProfitAgentNode implements AgentNode {
         applyResolvedVisibleStores(empty, state);
 
         if (!ok) {
+            DishSalesAnswerPlanBuilder.attachIfApplicable(state, empty);
             return empty;
         }
 
@@ -152,9 +178,11 @@ public class DishProfitAgentNode implements AgentNode {
                 if (isActualOutboundCostOnlyQuestion(state)) {
                     shrinkToActualOutboundOnlyPresentation(empty, aggB, bisDishHint, state);
                 }
+                DishSalesAnswerPlanBuilder.attachIfApplicable(state, empty);
                 return empty;
             }
             empty.setSummary(toolsReturnedNoRows(state));
+            DishSalesAnswerPlanBuilder.attachIfApplicable(state, empty);
             return empty;
         }
 
@@ -246,30 +274,653 @@ public class DishProfitAgentNode implements AgentNode {
             shrinkToLowestMarginRankingPresentation(out, allPeerBriefs, state);
         } else if (isHighActualCostRankingQuestion(state)) {
             shrinkToHighActualCostRankingPresentation(out, allPeerBriefs, state);
-        } else if (isLowProfitReasonQuestion(state) && (focusMode || allBriefs.size() == 1)) {
+        } else if (isGapRankingMaxQuestion(state)) {
+            shrinkToGapRankingMaxPresentation(out, allPeerBriefs, state);
+        } else if (isLowProfitReasonQuestion(state)
+                && (focusMode || allBriefs.size() == 1 || singleDishMentioned(state))) {
             shrinkToLowProfitReasonPresentation(out, allBriefs, allPeerBriefs, state);
+        } else if (isSingleDishBuildInsightMetricQuestion(state)) {
+            shrinkToSingleDishBuildInsightMetricPresentation(out, allBriefs, allPeerBriefs, state);
         } else if (isActualOutboundCostOnlyQuestion(state)) {
             shrinkToActualOutboundOnlyPresentation(out, agg, scoped.size(), state);
         }
+        tryAttachDishProfitAnswerPlan(state, out, dishRowsRaw, scoped);
+        maybeAttachPortfolioAggregatePlan(state, out, orchestrationEnvelope);
+        DishSalesAnswerPlanBuilder.attachIfApplicable(state, out);
         return out;
+    }
+
+    private record RowSnap(Map<String, Object> row, AiDishProfitDishBrief brief) {
+    }
+
+    /**
+     * 为首批结构化子意图生成 AnswerPlan（选行/排序仅在服务端；与 {@link #dishRowsRaw} 全量 peer 排行一致）。
+     */
+    private static void tryAttachDishProfitAnswerPlan(
+            AiRunState state,
+            AiDishProfitOverviewResult out,
+            List<Map<String, Object>> dishRowsAllPeers,
+            List<Map<String, Object>> dishRowsScoped) {
+        if (state == null || out == null || dishRowsAllPeers == null) {
+            return;
+        }
+        boolean peersEmpty = dishRowsAllPeers.isEmpty();
+        if (peersEmpty && !isSingleDishBuildInsightMetricQuestion(state) && !isLowProfitReasonQuestion(state)) {
+            return;
+        }
+        var qi = queryIntentFrom(state);
+        if (qi == null) {
+            return;
+        }
+        String sid = qi.getStructuredIntentDetail();
+        String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(sid);
+        String scopeLabel = dishProfitAnswerPlanScopeLabel(out);
+        String timeLabel = dishProfitAnswerPlanTimeLabel(out, state);
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("structuredIntentDetail", sid);
+        dbg.put("structuredIntentDetailWire", wire);
+        String dbgMention = effectiveMentionedDishNameForMetric(state);
+        if (StringUtils.hasText(dbgMention)) {
+            dbg.put("mentionedDishName", dbgMention);
+        }
+        AiResolvedQueryContext rctx = state.getResolvedQueryContext();
+
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(wire)) {
+            attachLowestMarginRankingPlan(state, dishRowsAllPeers, scopeLabel, timeLabel, dbg);
+            if (state.getDishProfitAnswerPlan() != null) {
+                return;
+            }
+        }
+
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN.equals(wire)) {
+            attachHighestMarginRankingPlan(state, dishRowsAllPeers, scopeLabel, timeLabel, dbg);
+            if (state.getDishProfitAnswerPlan() != null) {
+                return;
+            }
+        }
+
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(wire)) {
+            List<RowSnap> ranked = dishRowsAllPeers.stream()
+                    .map(r -> new RowSnap(r, briefFromRow(r)))
+                    .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()))
+                    .sorted(Comparator.comparingDouble((RowSnap rs) -> nzDec(rs.brief().getActualCost()).doubleValue())
+                            .reversed())
+                    .collect(Collectors.toList());
+            if (ranked.isEmpty()) {
+                log.info("[DishProfitAgentNode] dishProfitAnswerPlan skip HIGHEST_ACTUAL_COST rankedEmpty runId={}",
+                        state.getRunId());
+                return;
+            }
+            RowSnap top = ranked.get(0);
+            List<Map<String, Object>> secondary = new ArrayList<>();
+            for (int i = 1; i < ranked.size() && secondary.size() < 3; i++) {
+                secondary.add(insightRowToAnswerPlanRow(ranked.get(i).row(), ranked.get(i).brief()));
+            }
+            DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                    .planType(DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST)
+                    .scopeLabel(scopeLabel)
+                    .timeLabel(timeLabel)
+                    .sortKey("actualCostAmount")
+                    .sortDirection("DESC")
+                    .topN(1)
+                    .focusRows(List.of(insightRowToAnswerPlanRow(top.row(), top.brief())))
+                    .secondaryRows(secondary)
+                    .debug(dbg)
+                    .build();
+            finishAttachDishProfitAnswerPlan(state, plan);
+            return;
+        }
+
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_GAP_RANKING_MAX.equals(wire)) {
+            List<RowSnap> ranked = dishRowsAllPeers.stream()
+                    .map(r -> new RowSnap(r, briefFromRow(r)))
+                    .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()))
+                    .sorted(Comparator.comparingDouble((RowSnap rs) -> dec(rs.row().get("actualCostAmount"))
+                                    .subtract(dec(rs.row().get("theoryCostAmount")))
+                                    .doubleValue())
+                            .reversed())
+                    .collect(Collectors.toList());
+            if (ranked.isEmpty()) {
+                log.info("[DishProfitAgentNode] dishProfitAnswerPlan skip GAP_RANKING rankedEmpty runId={}",
+                        state.getRunId());
+                return;
+            }
+            LinkedHashMap<String, Object> dGap = new LinkedHashMap<>(dbg);
+            dGap.put("rankingMode", "actual_minus_theory");
+            RowSnap topG = ranked.get(0);
+            List<Map<String, Object>> secondaryGap = new ArrayList<>();
+            for (int i = 1; i < ranked.size() && secondaryGap.size() < 3; i++) {
+                LinkedHashMap<String, Object> sm = new LinkedHashMap<>();
+                RowSnap rs = ranked.get(i);
+                putAnswerPlanField(sm, "dishName", rs.row().get("dishName"));
+                BigDecimal gap = dec(rs.row().get("actualCostAmount"))
+                        .subtract(dec(rs.row().get("theoryCostAmount")));
+                putAnswerPlanField(sm, "diffCostAmount", stripBdRound(gap, 2));
+                secondaryGap.add(sm);
+            }
+            DishProfitAnswerPlan planGap = DishProfitAnswerPlan.builder()
+                    .planType(DishProfitAnswerPlan.TYPE_DISH_COST_GAP)
+                    .scopeLabel(scopeLabel)
+                    .timeLabel(timeLabel)
+                    .sortKey("diffCostAmount")
+                    .sortDirection("DESC")
+                    .topN(1)
+                    .focusRows(List.of(insightRowToAnswerPlanRowWithDiff(topG.row(), topG.brief())))
+                    .secondaryRows(secondaryGap)
+                    .debug(dGap)
+                    .build();
+            finishAttachDishProfitAnswerPlan(state, planGap);
+            return;
+        }
+
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_LOW_PROFIT_REASON.equals(wire)) {
+            String mention = nz(effectiveMentionedDishNameForMetric(state));
+            if (mention.isEmpty()) {
+                log.info("[DishProfitAgentNode] dishProfitAnswerPlan skip REASON emptyMention runId={}", state.getRunId());
+                return;
+            }
+            List<Map<String, Object>> pool = dishRowsScoped != null ? dishRowsScoped : dishRowsAllPeers;
+            RowSnap hit = pool.stream()
+                    .map(r -> new RowSnap(r, briefFromRow(r)))
+                    .filter(rs -> dishNameMatchesMention(mention, rs.brief().getDishName()))
+                    .findFirst()
+                    .orElse(null);
+            if (hit == null) {
+                hit = dishRowsAllPeers.stream()
+                        .map(r -> new RowSnap(r, briefFromRow(r)))
+                        .filter(rs -> dishNameMatchesMention(mention, rs.brief().getDishName()))
+                        .findFirst()
+                        .orElse(null);
+            }
+            if (hit == null) {
+                dbg.put("dishNotFoundInScope", true);
+                DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                        .planType(DishProfitAnswerPlan.TYPE_DISH_PROFIT_REASON)
+                        .scopeLabel(scopeLabel)
+                        .timeLabel(timeLabel)
+                        .sortKey(null)
+                        .sortDirection(null)
+                        .topN(1)
+                        .focusRows(List.of())
+                        .secondaryRows(List.of())
+                        .debug(dbg)
+                        .build();
+                finishAttachDishProfitAnswerPlan(state, plan);
+                return;
+            }
+            DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                    .planType(DishProfitAnswerPlan.TYPE_DISH_PROFIT_REASON)
+                    .scopeLabel(scopeLabel)
+                    .timeLabel(timeLabel)
+                    .sortKey(null)
+                    .sortDirection(null)
+                    .topN(1)
+                    .focusRows(List.of(insightRowToAnswerPlanRow(hit.row(), hit.brief())))
+                    .secondaryRows(List.of())
+                    .debug(dbg)
+                    .build();
+            finishAttachDishProfitAnswerPlan(state, plan);
+            return;
+        }
+
+        if (attachSingleDishBuildInsightMetricAnswerPlanIfApplicable(
+                state, dishRowsAllPeers, dishRowsScoped, wire, scopeLabel, timeLabel, dbg, rctx)) {
+            return;
+        }
+
+        if (state.getDishProfitAnswerPlan() == null) {
+            log.info(
+                    "[DishProfitAgentNode] dishProfitAnswerPlan not attached runId={} structuredIntentDetail={} wire={}",
+                    state.getRunId(),
+                    sid,
+                    wire);
+        }
+    }
+
+    /**
+     * 结构化子意图未挂载 {@link DishProfitAnswerPlan} 时，从 Overview 补聚合档位：
+     * 经营诊断 path 用 {@link DishProfitAnswerPlan#TYPE_BUSINESS_DIAGNOSIS_DISH_OVERVIEW}；
+     * 经营概览 / 菜品专线用 {@link DishProfitAnswerPlan#TYPE_AGGREGATED_DISH_PORTFOLIO_FALLBACK}。
+     */
+    static void maybeAttachPortfolioAggregatePlan(
+            AiRunState state, AiDishProfitOverviewResult out, boolean orchestrationEnvelope) {
+        if (state == null || out == null) {
+            return;
+        }
+        if (!(state.isBusinessDiagnosisPath() || state.isBusinessOverviewPath() || state.isDishProfitPath())) {
+            return;
+        }
+        if (state.getDishProfitAnswerPlan() != null) {
+            return;
+        }
+        if (!businessDiagnosisDishOverviewHasSignal(out)) {
+            return;
+        }
+        String scopeLabel = dishProfitAnswerPlanScopeLabel(out);
+        String timeLabel = dishProfitAnswerPlanTimeLabel(out, state);
+
+        AiDishProfitDishBrief primary = firstBriefFromLists(
+                out.getLowProfitDishes(),
+                out.getAbnormalDishes(),
+                out.getReliableProfitDishes(),
+                out.getTopProfitDishes());
+
+        List<Map<String, Object>> focus = new ArrayList<>();
+        List<Map<String, Object>> secondary = new ArrayList<>();
+        if (primary != null) {
+            focus.add(briefToDiagnosisAnswerPlanRow(primary));
+            appendSecondaryLowProfitDishes(secondary, out.getLowProfitDishes(), primary, 3);
+        } else if (out.getDishCount() > 0 || hasPortfolioTotals(out)) {
+            focus.add(portfolioTotalsDiagnosisRow(out));
+        } else {
+            return;
+        }
+
+        String planType;
+        String attachMode;
+        String wire;
+        if (state.isBusinessDiagnosisPath()) {
+            planType = DishProfitAnswerPlan.TYPE_BUSINESS_DIAGNOSIS_DISH_OVERVIEW;
+            attachMode = "business_diagnosis_dish_overview_fallback";
+            wire = "BUSINESS_DIAGNOSIS_DISH_OVERVIEW";
+        } else {
+            planType = DishProfitAnswerPlan.TYPE_AGGREGATED_DISH_PORTFOLIO_FALLBACK;
+            attachMode = "aggregated_dish_portfolio_fallback";
+            wire = "AGGREGATED_DISH_PORTFOLIO_FALLBACK";
+        }
+
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("attachMode", attachMode);
+        dbg.put("structuredIntentDetailWire", wire);
+        if (orchestrationEnvelope) {
+            dbg.put("orchestrationSubAgentEnvelope", true);
+        }
+
+        DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                .planType(planType)
+                .scopeLabel(scopeLabel)
+                .timeLabel(timeLabel)
+                .sortKey(null)
+                .sortDirection(null)
+                .topN(focus.isEmpty() ? 0 : 1)
+                .focusRows(focus)
+                .secondaryRows(secondary)
+                .debug(dbg)
+                .build();
+        finishAttachDishProfitAnswerPlan(state, plan);
+        log.info("[DishProfitAgentNode] dishProfitAnswerPlan portfolio aggregate attached runId={} planType={}",
+                state.getRunId(), planType);
+    }
+
+    private static boolean businessDiagnosisDishOverviewHasSignal(AiDishProfitOverviewResult out) {
+        if (out.getDishCount() > 0) {
+            return true;
+        }
+        if (nonEmptyBriefList(out.getLowProfitDishes())
+                || nonEmptyBriefList(out.getAbnormalDishes())
+                || nonEmptyBriefList(out.getReliableProfitDishes())
+                || nonEmptyBriefList(out.getTopProfitDishes())) {
+            return true;
+        }
+        String rev = nz(out.getTotalDishSalesAmount());
+        return !rev.isEmpty() && !"暂无".equals(rev);
+    }
+
+    private static boolean nonEmptyBriefList(List<AiDishProfitDishBrief> list) {
+        return list != null && !list.isEmpty();
+    }
+
+    @SafeVarargs
+    private static AiDishProfitDishBrief firstBriefFromLists(List<AiDishProfitDishBrief>... lists) {
+        if (lists == null) {
+            return null;
+        }
+        for (List<AiDishProfitDishBrief> list : lists) {
+            if (list != null && !list.isEmpty()) {
+                return list.get(0);
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasPortfolioTotals(AiDishProfitOverviewResult out) {
+        String rev = nz(out.getTotalDishSalesAmount());
+        return !rev.isEmpty() && !"暂无".equals(rev);
+    }
+
+    private static LinkedHashMap<String, Object> portfolioTotalsDiagnosisRow(AiDishProfitOverviewResult out) {
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        putAnswerPlanField(m, "dishName", "（区间菜品组合）");
+        putAnswerPlanField(m, "listPriceRevenue", out.getTotalDishSalesAmount());
+        putAnswerPlanField(m, "theoryCostAmount", out.getTotalTheoreticalCost());
+        putAnswerPlanField(m, "actualCostAmount", out.getTotalActualCost());
+        putAnswerPlanField(m, "blendedGrossMarginRateOnListPrice", out.getGrossProfitRate());
+        return m;
+    }
+
+    private static LinkedHashMap<String, Object> briefToDiagnosisAnswerPlanRow(AiDishProfitDishBrief b) {
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        if (b == null) {
+            return m;
+        }
+        putAnswerPlanField(m, "dishName", b.getDishName());
+        putAnswerPlanField(m, "salesQuantity", b.getSalesQty());
+        putAnswerPlanField(m, "listPriceRevenue", b.getSalesAmount());
+        putAnswerPlanField(m, "theoryCostAmount", b.getTheoreticalCost());
+        putAnswerPlanField(m, "actualCostAmount", b.getActualCost());
+        putAnswerPlanField(m, "blendedGrossMarginRateOnListPrice", b.getGrossProfitRate());
+        putAnswerPlanField(m, "riskReason", b.getRiskReason());
+        return m;
+    }
+
+    private static void appendSecondaryLowProfitDishes(
+            List<Map<String, Object>> secondary,
+            List<AiDishProfitDishBrief> lowProfits,
+            AiDishProfitDishBrief primary,
+            int maxSecondary) {
+        if (lowProfits == null || lowProfits.isEmpty()) {
+            return;
+        }
+        for (AiDishProfitDishBrief b : lowProfits) {
+            if (secondary.size() >= maxSecondary) {
+                break;
+            }
+            if (b == null) {
+                continue;
+            }
+            if (primary != null && sameDishBrief(primary, b)) {
+                continue;
+            }
+            secondary.add(briefToDiagnosisAnswerPlanRow(b));
+        }
+    }
+
+    private static void attachLowestMarginRankingPlan(
+            AiRunState state,
+            List<Map<String, Object>> dishRowsAllPeers,
+            String scopeLabel,
+            String timeLabel,
+            LinkedHashMap<String, Object> dbg) {
+        List<RowSnap> ranked = dishRowsAllPeers.stream()
+                .map(r -> new RowSnap(r, briefFromRow(r)))
+                .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()) && !isCostDataIncomplete(rs.brief()))
+                .sorted(Comparator.comparingDouble(rs -> percentSortKeyAsc(rs.brief())))
+                .collect(Collectors.toList());
+        if (ranked.isEmpty()) {
+            log.info("[DishProfitAgentNode] dishProfitAnswerPlan skip LOW_MARGIN rankedEmpty runId={}", state.getRunId());
+            return;
+        }
+        RowSnap top = ranked.get(0);
+        List<Map<String, Object>> secondary = new ArrayList<>();
+        for (int i = 1; i < ranked.size() && secondary.size() < 3; i++) {
+            secondary.add(insightRowToAnswerPlanRow(ranked.get(i).row(), ranked.get(i).brief()));
+        }
+        DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                .planType(DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN)
+                .scopeLabel(scopeLabel)
+                .timeLabel(timeLabel)
+                .sortKey("blendedGrossMarginRateOnListPrice")
+                .sortDirection("ASC")
+                .topN(1)
+                .focusRows(List.of(insightRowToAnswerPlanRow(top.row(), top.brief())))
+                .secondaryRows(secondary)
+                .debug(dbg)
+                .build();
+        finishAttachDishProfitAnswerPlan(state, plan);
+    }
+
+    private static void attachHighestMarginRankingPlan(
+            AiRunState state,
+            List<Map<String, Object>> dishRowsAllPeers,
+            String scopeLabel,
+            String timeLabel,
+            LinkedHashMap<String, Object> dbg) {
+        List<RowSnap> ranked = dishRowsAllPeers.stream()
+                .map(r -> new RowSnap(r, briefFromRow(r)))
+                .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()) && !isCostDataIncomplete(rs.brief()))
+                .sorted(Comparator.comparingDouble((RowSnap rs) -> percentSortKeyDesc(rs.brief())).reversed())
+                .collect(Collectors.toList());
+        if (ranked.isEmpty()) {
+            log.info("[DishProfitAgentNode] dishProfitAnswerPlan skip HIGH_MARGIN rankedEmpty runId={}", state.getRunId());
+            return;
+        }
+        RowSnap top = ranked.get(0);
+        List<Map<String, Object>> secondary = new ArrayList<>();
+        for (int i = 1; i < ranked.size() && secondary.size() < 3; i++) {
+            secondary.add(insightRowToAnswerPlanRow(ranked.get(i).row(), ranked.get(i).brief()));
+        }
+        DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                .planType(DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN)
+                .scopeLabel(scopeLabel)
+                .timeLabel(timeLabel)
+                .sortKey("blendedGrossMarginRateOnListPrice")
+                .sortDirection("DESC")
+                .topN(1)
+                .focusRows(List.of(insightRowToAnswerPlanRow(top.row(), top.brief())))
+                .secondaryRows(secondary)
+                .debug(dbg)
+                .build();
+        finishAttachDishProfitAnswerPlan(state, plan);
+    }
+
+    private static void finishAttachDishProfitAnswerPlan(AiRunState state, DishProfitAnswerPlan plan) {
+        mergePlanServerDebug(plan, state);
+        state.setDishProfitAnswerPlan(plan);
+        log.info(
+                "[DishProfitAgentNode] dishProfitAnswerPlan attached runId={} type={} sortKey={} focusRows={} secondaryRows={}",
+                state.getRunId(),
+                plan.getPlanType(),
+                plan.getSortKey(),
+                plan.getFocusRows() == null ? 0 : plan.getFocusRows().size(),
+                plan.getSecondaryRows() == null ? 0 : plan.getSecondaryRows().size());
+    }
+
+    private static boolean dishProfitToolUsedBuildInsight(AiRunState state) {
+        if (state == null || state.getToolResults() == null) {
+            return false;
+        }
+        Object pay = state.getToolResults().get(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        if (pay instanceof Map<?, ?> tm) {
+            Object data = tm.get("data");
+            if (data instanceof Map<?, ?> dm) {
+                return Boolean.TRUE.equals(dm.get("buildInsightUsed")) || Boolean.TRUE.equals(dm.get("usedBuildInsight"))
+                        || dm.containsKey("businessInsightSummary");
+            }
+        }
+        return false;
+    }
+
+    private static void mergePlanServerDebug(DishProfitAnswerPlan plan, AiRunState state) {
+        if (plan == null) {
+            return;
+        }
+        Map<String, Object> d = plan.getDebug();
+        LinkedHashMap<String, Object> copy = d == null ? new LinkedHashMap<>() : new LinkedHashMap<>(d);
+        copy.put("source", "DishProfitAgentNode");
+        copy.put("usedBuildInsight", dishProfitToolUsedBuildInsight(state));
+        plan.setDebug(copy);
+    }
+
+    private static boolean dishNameMatchesMention(String mention, String dishName) {
+        if (!StringUtils.hasText(mention) || !StringUtils.hasText(dishName)) {
+            return false;
+        }
+        String m = mention.trim();
+        String d = dishName.trim();
+        return d.equals(m) || d.contains(m) || m.contains(d);
+    }
+
+    private static String dishProfitAnswerPlanScopeLabel(AiDishProfitOverviewResult out) {
+        if (out == null) {
+            return "当前查询范围";
+        }
+        String n = nz(out.getScopeName());
+        if (!n.isEmpty()) {
+            return n;
+        }
+        String b = nz(out.getQueryScopeBanner());
+        return !b.isEmpty() ? b : "当前查询范围";
+    }
+
+    private static String dishProfitAnswerPlanTimeLabel(AiDishProfitOverviewResult out, AiRunState state) {
+        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
+        if (tw != null && StringUtils.hasText(tw.getDisplayTimeRange())) {
+            return tw.getDisplayTimeRange().trim();
+        }
+        if (out == null) {
+            return "";
+        }
+        String a = nz(out.getStatStartDate());
+        String b = nz(out.getStatEndDate());
+        if (!a.isEmpty() && !b.isEmpty()) {
+            return a + " 至 " + b;
+        }
+        return !a.isEmpty() ? a : b;
+    }
+
+    /**
+     * 将 {@code buildInsight} 行压为 AnswerPlan 行（浅拷贝、字符串化，便于 Replay/Composer）。
+     */
+    private static LinkedHashMap<String, Object> insightRowToAnswerPlanRow(
+            Map<String, Object> row, AiDishProfitDishBrief brief) {
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        if (row != null) {
+            Object fid = row.get("foodId");
+            m.put("dishId", fid == null ? null : fid.toString());
+            putAnswerPlanField(m, "dishName", row.get("dishName"));
+            putAnswerPlanField(m, "salesQuantity", row.get("soldPortionsTotal"));
+            putAnswerPlanField(m, "listPriceRevenue", row.get("listPriceRevenue"));
+            putAnswerPlanField(m, "theoryCostAmount", row.get("theoryCostAmount"));
+            putAnswerPlanField(m, "actualCostAmount", row.get("actualCostAmount"));
+            putAnswerPlanField(m, "actualCostTotalAmount123", row.get("actualCostTotalAmount123"));
+            putAnswerPlanField(m, "blendedGrossMarginRateOnListPrice", row.get("blendedGrossMarginRateOnListPrice"));
+            putAnswerPlanField(m, "grossMarginRateTheoryOnListPrice", row.get("grossMarginRateTheoryOnListPrice"));
+            putAnswerPlanField(m, "diffCostAmount", row.get("diffCostAmount"));
+            putAnswerPlanField(m, "grossMarginLevel", row.get("grossMarginLevel"));
+            putAnswerPlanField(m, "riskReason", row.get("riskReason"));
+            putAnswerPlanField(m, "utilizationRate", row.get("utilizationRate"));
+        }
+        if (brief != null) {
+            if (!StringUtils.hasText(stringify(m.get("riskReason")))) {
+                putAnswerPlanField(m, "riskReason", brief.getRiskReason());
+            }
+        }
+        return m;
+    }
+
+    /** 与 insight 行一致写入 {@code diffCostAmount = actual − theory}，便于 Harness / Composer。 */
+    private static LinkedHashMap<String, Object> insightRowToAnswerPlanRowWithDiff(
+            Map<String, Object> row, AiDishProfitDishBrief brief) {
+        LinkedHashMap<String, Object> m = insightRowToAnswerPlanRow(row, brief);
+        BigDecimal gap = dec(row.get("actualCostAmount")).subtract(dec(row.get("theoryCostAmount")));
+        putAnswerPlanField(m, "diffCostAmount", stripBdRound(gap, 2));
+        return m;
+    }
+
+    private static void putAnswerPlanField(LinkedHashMap<String, Object> m, String key, Object raw) {
+        if (raw == null) {
+            if (!m.containsKey(key)) {
+                m.put(key, null);
+            }
+            return;
+        }
+        if (raw instanceof String s) {
+            m.put(key, s.isBlank() ? null : s);
+            return;
+        }
+        m.put(key, raw.toString());
     }
 
     private static boolean isLowMarginRankingQuestion(AiRunState state) {
         var qi = queryIntentFrom(state);
-        return qi != null
-                && AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(qi.getStructuredIntentDetail());
+        if (qi == null) {
+            return false;
+        }
+        String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail());
+        return AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(wire);
     }
 
     private static boolean isHighActualCostRankingQuestion(AiRunState state) {
         var qi = queryIntentFrom(state);
-        return qi != null
-                && AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(qi.getStructuredIntentDetail());
+        if (qi == null) {
+            return false;
+        }
+        String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail());
+        return AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(wire);
+    }
+
+    private static boolean isGapRankingMaxQuestion(AiRunState state) {
+        var qi = queryIntentFrom(state);
+        if (qi == null) {
+            return false;
+        }
+        String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail());
+        return AiQuerySemanticLexicon.STRUCTURED_DISH_GAP_RANKING_MAX.equals(wire);
     }
 
     private static boolean isLowProfitReasonQuestion(AiRunState state) {
         var qi = queryIntentFrom(state);
-        return qi != null
-                && AiQuerySemanticLexicon.STRUCTURED_DISH_LOW_PROFIT_REASON.equals(qi.getStructuredIntentDetail());
+        if (qi == null) {
+            return false;
+        }
+        String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail());
+        return AiQuerySemanticLexicon.STRUCTURED_DISH_LOW_PROFIT_REASON.equals(wire);
+    }
+
+    private static boolean singleDishMentioned(AiRunState state) {
+        return StringUtils.hasText(effectiveMentionedDishNameForMetric(state));
+    }
+
+    /**
+     * 单菜指标/构建 Insight：以 {@link AiResolvedQueryContext#getMentionedDishName()} 为准；
+     * 多轮短句未带菜名时，若解析层未写入则从 {@link AiConversationTurnMemory#getLastMentionedDishName()} 兜底。
+     */
+    private static String effectiveMentionedDishNameForMetric(AiRunState state) {
+        AiResolvedQueryContext ctx = state != null ? state.getResolvedQueryContext() : null;
+        if (ctx == null) {
+            return "";
+        }
+        var qi = ctx.getQueryIntent();
+        String rankingWire = qi != null
+                ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail())
+                : null;
+        if (AiQuerySemanticLexicon.isDishProfitRankingStructuredDetail(rankingWire)) {
+            return "";
+        }
+        if (StringUtils.hasText(ctx.getMentionedDishName())) {
+            return ctx.getMentionedDishName().trim();
+        }
+        AiConversationTurnMemory prev = ctx.getPreviousTurn();
+        if (prev != null && StringUtils.hasText(prev.getLastMentionedDishName())) {
+            return prev.getLastMentionedDishName().trim();
+        }
+        return "";
+    }
+
+    /**
+     * 单菜指标/原因在范围内无明细行：与业务口径一致的短答（非总览列表）。
+     */
+    private static String buildSingleDishNotFoundSummary(
+            AiDishProfitOverviewResult out, AiRunState state, String mention) {
+        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
+        String time = tw != null ? nz(tw.getDisplayTimeRange()) : "";
+        boolean group = out != null && (AiResolvedOrgScope.SCOPE_GROUP.equals(out.getScopeType())
+                || nz(out.getScopeName()).contains("集团"));
+        String store = firstSingleVisibleStoreLabel(out);
+        String queryPreamble;
+        if (group) {
+            queryPreamble = "当前按集团范围查询";
+        } else if (!store.isEmpty()) {
+            queryPreamble = "当前按「" + store + "」门店范围查询";
+        } else {
+            queryPreamble = "当前按可见范围查询";
+        }
+        String timePhrase = StringUtils.hasText(time) ? time : "该时段";
+        return String.format(Locale.CHINA,
+                "%s。%s 暂未查询到「%s」的菜品毛利明细，可能该门店没有销售这道菜，或该菜未配置配方/成本数据。",
+                queryPreamble,
+                timePhrase,
+                mention);
     }
 
     private static com.nongxinle.ai.context.AiResolvedQueryIntent queryIntentFrom(AiRunState state) {
@@ -295,18 +946,28 @@ public class DishProfitAgentNode implements AgentNode {
         } else {
             String prefix = dishProfitAnswerScopeTimePrefix(out, state);
             String head = prefix.isEmpty() ? "" : prefix;
-            String body = String.format(Locale.CHINA,
+            StringBuilder sum = new StringBuilder(String.format(Locale.CHINA,
                     "%s毛利率最低的菜品是「%s」，综合毛利率约 %s，销售额 %s 元，理论成本 %s 元，实际成本 %s 元。",
                     head,
                     nz(best.getDishName()),
                     nzRatePlain(best.getGrossProfitRate()),
                     nz(best.getSalesAmount()),
                     nz(best.getTheoreticalCost()),
-                    nz(best.getActualCost()));
-            out.setSummary(body.trim());
+                    nz(best.getActualCost())).trim());
+            long soldPeers = peerBriefs == null ? 0
+                    : peerBriefs.stream().filter(x -> soldQtyGtZero(x.getSalesQty())).count();
+            BigDecimal marginPts = pctToPercentPoints(best.getGrossProfitRate());
+            boolean lossLike = nzDec(best.getGrossProfitAmount()).signum() < 0
+                    || (marginPts != null && marginPts.compareTo(BigDecimal.ZERO) < 0);
+            if (!lossLike && soldPeers >= 2) {
+                sum.append(String.format(Locale.CHINA,
+                        "\n\n它不是亏损菜，但在当前 %d 道菜中毛利率最低，需要关注定价和配方成本。",
+                        soldPeers));
+            }
+            out.setSummary(sum.toString().trim());
         }
         clearDishListPanels(out);
-        out.setQueryScopeBanner("");
+        out.setQueryScopeBanner(narrowStoreScopeBannerLine(state, out));
         out.setRecommendations(List.of());
     }
 
@@ -352,7 +1013,76 @@ public class DishProfitAgentNode implements AgentNode {
             out.setSummary(sb.toString().trim());
         }
         clearDishListPanels(out);
-        out.setQueryScopeBanner("");
+        out.setQueryScopeBanner(narrowStoreScopeBannerLine(state, out));
+        out.setRecommendations(List.of());
+    }
+
+    private static void shrinkToGapRankingMaxPresentation(
+            AiDishProfitOverviewResult out,
+            List<AiDishProfitDishBrief> peerBriefs,
+            AiRunState state) {
+        if (out == null) {
+            return;
+        }
+        List<AiDishProfitDishBrief> pool = peerBriefs == null ? List.of() : peerBriefs.stream()
+                .filter(x -> soldQtyGtZero(x.getSalesQty()))
+                .sorted(Comparator.comparingDouble((AiDishProfitDishBrief x) ->
+                                nzDec(x.getActualCost()).subtract(nzDec(x.getTheoreticalCost())).doubleValue())
+                        .reversed())
+                .collect(Collectors.toList());
+        if (pool.isEmpty()) {
+            out.setSummary("当前可见菜品中暂无有效销量与成本行，无法做「理论实际成本差异」排行。");
+        } else {
+            AiDishProfitDishBrief top = pool.get(0);
+            String prefix = dishProfitAnswerScopeTimePrefix(out, state);
+            String head = prefix.isEmpty() ? "" : prefix;
+            BigDecimal diffBd = nzDec(top.getActualCost()).subtract(nzDec(top.getTheoreticalCost()));
+            String diffDesc;
+            if (diffBd.signum() > 0) {
+                diffDesc = String.format(Locale.CHINA, "实际比理论高约 %s 元", stripBdRound(diffBd, 2));
+            } else if (diffBd.signum() < 0) {
+                diffDesc = String.format(Locale.CHINA, "实际比理论低约 %s 元", stripBdRound(diffBd.abs(), 2));
+            } else {
+                diffDesc = "实际与理论一致";
+            }
+            String main = String.format(Locale.CHINA,
+                    "%s理论和实际差异最大的是「%s」。理论成本约 %s 元，实际出库成本约 %s 元，%s，综合毛利率约 %s。建议优先核对「%s」的出库核销和配方用量。",
+                    head,
+                    nz(top.getDishName()),
+                    nz(top.getTheoreticalCost()),
+                    nz(top.getActualCost()),
+                    diffDesc,
+                    nzRatePlain(top.getGrossProfitRate()),
+                    nz(top.getDishName()));
+            StringBuilder sb = new StringBuilder(main.trim());
+            if (pool.size() >= 2) {
+                sb.append("\n\n其次是");
+                int lim = Math.min(4, pool.size());
+                for (int i = 1; i < lim; i++) {
+                    AiDishProfitDishBrief x = pool.get(i);
+                    BigDecimal d = nzDec(x.getActualCost()).subtract(nzDec(x.getTheoreticalCost()));
+                    String seg;
+                    if (d.signum() > 0) {
+                        seg = String.format(Locale.CHINA, "%s，高约 %s 元", nz(x.getDishName()), stripBdRound(d, 2));
+                    } else if (d.signum() < 0) {
+                        seg = String.format(
+                                Locale.CHINA, "%s，低约 %s 元", nz(x.getDishName()), stripBdRound(d.abs(), 2));
+                    } else {
+                        seg = String.format(Locale.CHINA, "%s，差额接近 0", nz(x.getDishName()));
+                    }
+                    if (i > 1) {
+                        sb.append("；");
+                    } else {
+                        sb.append(" ");
+                    }
+                    sb.append(seg);
+                }
+                sb.append("。");
+            }
+            out.setSummary(sb.toString().trim());
+        }
+        clearDishListPanels(out);
+        out.setQueryScopeBanner(narrowStoreScopeBannerLine(state, out));
         out.setRecommendations(List.of());
     }
 
@@ -361,16 +1091,36 @@ public class DishProfitAgentNode implements AgentNode {
             List<AiDishProfitDishBrief> focusBriefs,
             List<AiDishProfitDishBrief> peerBriefs,
             AiRunState state) {
-        if (out == null || focusBriefs == null || focusBriefs.isEmpty()) {
+        if (out == null || state == null) {
             return;
         }
-        AiDishProfitDishBrief f = focusBriefs.get(0);
+        AiDishProfitDishBrief f = null;
+        if (singleDishMentioned(state)) {
+            String m = nz(effectiveMentionedDishNameForMetric(state));
+            f = findBriefByMention(focusBriefs, m);
+            if (f == null) {
+                f = findBriefByMention(peerBriefs, m);
+            }
+        }
+        if (f == null && focusBriefs != null && !focusBriefs.isEmpty()) {
+            f = focusBriefs.get(0);
+        }
+        if (f == null) {
+            if (singleDishMentioned(state)) {
+                String mention = nz(effectiveMentionedDishNameForMetric(state));
+                out.setSummary(buildSingleDishNotFoundSummary(out, state, mention));
+                clearDishListPanels(out);
+                out.setQueryScopeBanner(narrowStoreScopeBannerLine(state, out));
+                out.setRecommendations(List.of());
+            }
+            return;
+        }
         if (isCostDataIncomplete(f)) {
             out.setSummary(String.format(Locale.CHINA,
                     "「%s」成本数据不完整（缺 BOM/出库核销等），暂无法可靠解释毛利原因；请先补齐后再问。",
                     nz(f.getDishName())));
             clearDishListPanels(out);
-            out.setQueryScopeBanner("");
+            out.setQueryScopeBanner(narrowStoreScopeBannerLine(state, out));
             out.setRecommendations(List.of());
             return;
         }
@@ -378,6 +1128,7 @@ public class DishProfitAgentNode implements AgentNode {
                 .filter(x -> soldQtyGtZero(x.getSalesQty()) && !isCostDataIncomplete(x))
                 .collect(Collectors.toList());
         long peerSoldN = peerBriefs == null ? 0 : peerBriefs.stream().filter(x -> soldQtyGtZero(x.getSalesQty())).count();
+        int narrativeSoldDishN = narrativeSoldDishPeerCountForReason(state, peerSoldN);
         AiDishProfitDishBrief minMargin = pool.stream()
                 .min(Comparator.comparingDouble(DishProfitAgentNode::percentSortKeyAsc))
                 .orElse(f);
@@ -410,16 +1161,28 @@ public class DishProfitAgentNode implements AgentNode {
                     nz(f.getDishName()), scope, nzRatePlain(f.getGrossProfitRate()),
                     nz(f.getSalesAmount()), nz(f.getTheoreticalCost()), nz(f.getActualCost())));
         } else if (lowestAmong) {
-            sb.append(String.format(Locale.CHINA,
-                    "「%s」不是亏损菜；在%s可见的 %d 道有销量菜品里，其综合毛利率最低，约 %s。"
-                            + "销售额 %s 元，理论成本 %s 元，实际成本 %s 元。",
-                    nz(f.getDishName()),
-                    scope,
-                    Math.max(1, peerSoldN),
-                    nzRatePlain(f.getGrossProfitRate()),
-                    nz(f.getSalesAmount()),
-                    nz(f.getTheoreticalCost()),
-                    nz(f.getActualCost())));
+            if (narrativeSoldDishN >= 2) {
+                sb.append(String.format(Locale.CHINA,
+                        "「%s」不是亏损菜；在%s可见的 %d 道有销量菜品中，其综合毛利率最低，约 %s。"
+                                + "销售额 %s 元，理论成本 %s 元，实际成本 %s 元。",
+                        nz(f.getDishName()),
+                        scope,
+                        narrativeSoldDishN,
+                        nzRatePlain(f.getGrossProfitRate()),
+                        nz(f.getSalesAmount()),
+                        nz(f.getTheoreticalCost()),
+                        nz(f.getActualCost())));
+            } else {
+                sb.append(String.format(Locale.CHINA,
+                        "「%s」不是亏损菜；在%s可见有销量菜品中，其综合毛利率最低，约 %s。"
+                                + "销售额 %s 元，理论成本 %s 元，实际成本 %s 元。",
+                        nz(f.getDishName()),
+                        scope,
+                        nzRatePlain(f.getGrossProfitRate()),
+                        nz(f.getSalesAmount()),
+                        nz(f.getTheoreticalCost()),
+                        nz(f.getActualCost())));
+            }
         } else {
             sb.append(String.format(Locale.CHINA,
                     "「%s」不是亏损菜；在%s可见菜品中其综合毛利率约 %s，相对偏低。"
@@ -437,7 +1200,7 @@ public class DishProfitAgentNode implements AgentNode {
         sb.append(overUnder);
         out.setSummary(sb.toString().trim());
         clearDishListPanels(out);
-        out.setQueryScopeBanner("");
+        out.setQueryScopeBanner(narrowStoreScopeBannerLine(state, out));
         out.setRecommendations(List.of());
     }
 
@@ -490,11 +1253,261 @@ public class DishProfitAgentNode implements AgentNode {
         out.setAbnormalDishes(List.of());
     }
 
+    private static boolean isSingleDishBuildInsightMetricQuestion(AiRunState state) {
+        var qi = queryIntentFrom(state);
+        if (qi == null) {
+            return false;
+        }
+        String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail());
+        if (!AiQuerySemanticLexicon.STRUCTURED_DISH_THEORETICAL_COST.equals(wire)
+                && !AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(wire)
+                && !AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(wire)
+                && !AiQuerySemanticLexicon.STRUCTURED_DISH_COST_GAP.equals(wire)) {
+            return false;
+        }
+        return StringUtils.hasText(effectiveMentionedDishNameForMetric(state));
+    }
+
+    /**
+     * 单菜「理论/实际/毛利率/差额」问法：只吃 buildInsight 行字段，不展开排行榜与成本诊断话术。
+     */
+    private static void shrinkToSingleDishBuildInsightMetricPresentation(
+            AiDishProfitOverviewResult out,
+            List<AiDishProfitDishBrief> scopedBriefs,
+            List<AiDishProfitDishBrief> peerBriefs,
+            AiRunState state) {
+        if (out == null || state == null || !isSingleDishBuildInsightMetricQuestion(state)) {
+            return;
+        }
+        String mention = nz(effectiveMentionedDishNameForMetric(state));
+        AiDishProfitDishBrief f = findBriefByMention(scopedBriefs, mention);
+        if (f == null) {
+            f = findBriefByMention(peerBriefs, mention);
+        }
+        var qi = queryIntentFrom(state);
+        String wire = qi != null
+                ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail())
+                : null;
+        if (f == null) {
+            out.setSummary(buildSingleDishNotFoundSummary(out, state, mention));
+        } else if (isCostDataIncomplete(f)
+                && AiQuerySemanticLexicon.STRUCTURED_DISH_THEORETICAL_COST.equals(wire)) {
+            out.setSummary(String.format(Locale.CHINA,
+                    "「%s」成本数据不完整（缺 BOM/出库核销等），暂无法可靠回答理论成本；请先补齐后再问。",
+                    nz(f.getDishName())));
+        } else {
+            String lead = buildSingleDishMetricLeadClause(out, state);
+            String dn = nz(f.getDishName());
+            String sum;
+            if (AiQuerySemanticLexicon.STRUCTURED_DISH_THEORETICAL_COST.equals(wire)) {
+                sum = String.format(Locale.CHINA,
+                        "%s「%s」的理论成本约 %s 元。销售额 %s 元，实际出库成本约 %s 元。",
+                        lead, dn, nz(f.getTheoreticalCost()), nz(f.getSalesAmount()), nz(f.getActualCost()));
+            } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(wire)) {
+                sum = String.format(Locale.CHINA,
+                        "%s「%s」的实际出库成本约 %s 元。销售额 %s 元，理论成本约 %s 元。",
+                        lead, dn, nz(f.getActualCost()), nz(f.getSalesAmount()), nz(f.getTheoreticalCost()));
+            } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(wire)) {
+                sum = String.format(Locale.CHINA,
+                        "%s「%s」的综合毛利率约 %s。销售额 %s 元，理论成本约 %s 元，实际出库成本约 %s 元。",
+                        lead,
+                        dn,
+                        AiQuerySemanticLexicon.formatGrossMarginRateForNaturalLanguage(f.getGrossProfitRate()),
+                        nz(f.getSalesAmount()),
+                        nz(f.getTheoreticalCost()),
+                        nz(f.getActualCost()));
+            } else {
+                BigDecimal theory = nzDec(f.getTheoreticalCost());
+                BigDecimal actual = nzDec(f.getActualCost());
+                BigDecimal gap = actual.subtract(theory).setScale(2, RoundingMode.HALF_UP);
+                String gapClause;
+                int cmp = gap.signum();
+                if (cmp == 0) {
+                    gapClause = "理论与实际出库成本一致。";
+                } else if (cmp < 0) {
+                    gapClause = String.format(Locale.CHINA, "实际出库成本比理论成本低约 %s 元。", stripBd(gap.abs()));
+                } else {
+                    gapClause = String.format(Locale.CHINA,
+                            "实际出库成本比理论成本高约 %s 元，需要关注出库超耗或配方用量偏差。",
+                            stripBd(gap));
+                }
+                sum = String.format(Locale.CHINA,
+                        "%s「%s」理论成本约 %s 元，实际出库成本约 %s 元。%s销售额 %s 元。",
+                        lead, dn, nz(f.getTheoreticalCost()), nz(f.getActualCost()), gapClause, nz(f.getSalesAmount()));
+            }
+            out.setSummary(sum.trim());
+        }
+        clearDishListPanels(out);
+        out.setQueryScopeBanner(narrowStoreScopeBannerLine(state, out));
+        out.setRecommendations(List.of());
+    }
+
+    private static String buildSingleDishMetricLeadClause(AiDishProfitOverviewResult out, AiRunState state) {
+        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
+        String time = tw != null ? nz(tw.getDisplayTimeRange()) : "";
+        boolean group = out != null && (AiResolvedOrgScope.SCOPE_GROUP.equals(out.getScopeType())
+                || nz(out.getScopeName()).contains("集团"));
+        String store = firstSingleVisibleStoreLabel(out);
+        if (group) {
+            if (!time.isEmpty()) {
+                return time + "，集团范围内，";
+            }
+            return "集团范围内，";
+        }
+        if (!store.isEmpty()) {
+            if (!time.isEmpty()) {
+                return time + "，「" + store + "」范围内，";
+            }
+            return "「" + store + "」范围内，";
+        }
+        if (!time.isEmpty()) {
+            return time + "，";
+        }
+        return "";
+    }
+
+    private static AiDishProfitDishBrief findBriefByMention(List<AiDishProfitDishBrief> briefs, String mention) {
+        if (briefs == null || !StringUtils.hasText(mention)) {
+            return null;
+        }
+        return briefs.stream()
+                .filter(b -> dishNameMatchesMention(mention, b.getDishName()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static RowSnap findRowSnapByMention(List<Map<String, Object>> rows, String mention) {
+        if (rows == null || !StringUtils.hasText(mention)) {
+            return null;
+        }
+        return rows.stream()
+                .map(r -> new RowSnap(r, briefFromRow(r)))
+                .filter(rs -> dishNameMatchesMention(mention, rs.brief().getDishName()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static boolean attachSingleDishBuildInsightMetricAnswerPlanIfApplicable(
+            AiRunState state,
+            List<Map<String, Object>> dishRowsAllPeers,
+            List<Map<String, Object>> dishRowsScoped,
+            String wire,
+            String scopeLabel,
+            String timeLabel,
+            LinkedHashMap<String, Object> dbg,
+            AiResolvedQueryContext rctx) {
+        if (state == null || !isSingleDishBuildInsightMetricQuestion(state) || rctx == null) {
+            return false;
+        }
+        String mention = nz(effectiveMentionedDishNameForMetric(state));
+        if (mention.isEmpty()) {
+            return false;
+        }
+        if (!AiQuerySemanticLexicon.STRUCTURED_DISH_THEORETICAL_COST.equals(wire)
+                && !AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(wire)
+                && !AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(wire)
+                && !AiQuerySemanticLexicon.STRUCTURED_DISH_COST_GAP.equals(wire)) {
+            return false;
+        }
+        List<Map<String, Object>> pool = dishRowsScoped != null ? dishRowsScoped : dishRowsAllPeers;
+        RowSnap hit = findRowSnapByMention(pool, mention);
+        if (hit == null) {
+            hit = findRowSnapByMention(dishRowsAllPeers, mention);
+        }
+        if (hit == null) {
+            dbg.put("dishNotFoundInScope", true);
+            String planType;
+            if (AiQuerySemanticLexicon.STRUCTURED_DISH_THEORETICAL_COST.equals(wire)) {
+                planType = DishProfitAnswerPlan.TYPE_DISH_THEORETICAL_COST;
+            } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(wire)) {
+                planType = DishProfitAnswerPlan.TYPE_DISH_ACTUAL_OUTBOUND_COST;
+            } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(wire)) {
+                planType = DishProfitAnswerPlan.TYPE_DISH_PROFIT_RATE;
+            } else {
+                planType = DishProfitAnswerPlan.TYPE_DISH_COST_GAP;
+            }
+            if (DishProfitAnswerPlan.TYPE_DISH_COST_GAP.equals(planType)) {
+                putSingleDishCostGapHarnessDebug(dbg);
+            }
+            DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                    .planType(planType)
+                    .scopeLabel(scopeLabel)
+                    .timeLabel(timeLabel)
+                    .sortKey(null)
+                    .sortDirection(null)
+                    .topN(1)
+                    .focusRows(List.of())
+                    .secondaryRows(List.of())
+                    .debug(dbg)
+                    .build();
+            finishAttachDishProfitAnswerPlan(state, plan);
+            return true;
+        }
+        String planType;
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_THEORETICAL_COST.equals(wire)) {
+            planType = DishProfitAnswerPlan.TYPE_DISH_THEORETICAL_COST;
+        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(wire)) {
+            planType = DishProfitAnswerPlan.TYPE_DISH_ACTUAL_OUTBOUND_COST;
+        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(wire)) {
+            planType = DishProfitAnswerPlan.TYPE_DISH_PROFIT_RATE;
+        } else {
+            planType = DishProfitAnswerPlan.TYPE_DISH_COST_GAP;
+        }
+        LinkedHashMap<String, Object> focus;
+        if (DishProfitAnswerPlan.TYPE_DISH_COST_GAP.equals(planType)) {
+            putSingleDishCostGapHarnessDebug(dbg);
+            focus = insightRowToAnswerPlanRowWithDiff(hit.row(), hit.brief());
+        } else {
+            focus = insightRowToAnswerPlanRow(hit.row(), hit.brief());
+        }
+        DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                .planType(planType)
+                .scopeLabel(scopeLabel)
+                .timeLabel(timeLabel)
+                .sortKey(null)
+                .sortDirection(null)
+                .topN(1)
+                .focusRows(List.of(focus))
+                .secondaryRows(List.of())
+                .debug(dbg)
+                .build();
+        finishAttachDishProfitAnswerPlan(state, plan);
+        return true;
+    }
+
+    /** Harness Replay：单菜理论与实际差额口径与 focusRows.diffCostAmount 对齐 */
+    private static void putSingleDishCostGapHarnessDebug(LinkedHashMap<String, Object> dbg) {
+        if (dbg == null) {
+            return;
+        }
+        dbg.put("metricKey", "diffCostAmount");
+        dbg.put("metricDirection", "actual_minus_theory");
+    }
+
     private static boolean isActualOutboundCostOnlyQuestion(AiRunState state) {
+        if (isSingleDishBuildInsightMetricQuestion(state)) {
+            return false;
+        }
         AiResolvedQueryContext ctx = state != null ? state.getResolvedQueryContext() : null;
         var qi = ctx != null ? ctx.getQueryIntent() : null;
         return qi != null
                 && AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(qi.getStructuredIntentDetail());
+    }
+
+    /**
+     * DISH_PROFIT_REASON 叙事用「有销量菜品」口径数量：优先工具汇总（bis/salesDishCount/全量行数），
+     * 避免用收窄后的 peerBriefs 行数冒充全量。
+     */
+    private static int narrativeSoldDishPeerCountForReason(AiRunState state, long streamSoldCountFromPeers) {
+        Map<String, Object> data = toolEnvelopeData(state, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        int fromTool = dishRowCountHintFromToolData(data);
+        if (fromTool > 0) {
+            return fromTool;
+        }
+        if (streamSoldCountFromPeers > 0) {
+            return (int) Math.min(Integer.MAX_VALUE, streamSoldCountFromPeers);
+        }
+        return 0;
     }
 
     private static int dishRowCountHintFromToolData(Map<String, Object> data) {
@@ -571,24 +1584,40 @@ public class DishProfitAgentNode implements AgentNode {
 
     private static String[] deriveScopePresentation(AiRunState state) {
         if (BusinessToolExecutionNode.shouldRouteGroupWideDishInsight(state)) {
-            return new String[]{AiOrgScopeResolver.SCOPE_GROUP, "集团范围"};
+            return new String[]{AiResolvedOrgScope.SCOPE_GROUP, "集团范围"};
         }
-        AiOrgScope os = state.getAiOrgScope();
-        if (os != null && os.getScopeType() != null && !os.getScopeType().isBlank()) {
-            String t = os.getScopeType().trim();
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        if (rq != null && rq.getOrgScope() != null && StringUtils.hasText(rq.getOrgScope().getScopeType())) {
+            String t = rq.getOrgScope().getScopeType().trim();
             return new String[]{t, humanizeScopeType(t)};
         }
-        return new String[]{AiOrgScopeResolver.SCOPE_STORE, "门店范围"};
+        return new String[]{AiResolvedOrgScope.SCOPE_STORE, "门店范围"};
+    }
+
+    /**
+     * STORE 主查询且能识别唯一店名时，给 Composer/朗读用的单行范围说明（避免集团账号会话锚点误判为集团视角）。
+     */
+    private static String narrowStoreScopeBannerLine(AiRunState state, AiDishProfitOverviewResult out) {
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        AiResolvedDataScope ds = rq != null ? rq.getDataScope() : null;
+        if (ds == null || !AiResolvedDataScope.QUERY_SCOPE_KIND_STORE.equals(ds.getQueryScopeKind())) {
+            return "";
+        }
+        String name = firstSingleVisibleStoreLabel(out);
+        if (name.isEmpty()) {
+            return "";
+        }
+        return String.format(Locale.CHINA, "当前按「%s」单店范围查询。", name);
     }
 
     private static String humanizeScopeType(String t) {
-        if (AiOrgScopeResolver.SCOPE_GROUP.equals(t)) {
+        if (AiResolvedOrgScope.SCOPE_GROUP.equals(t)) {
             return "集团范围";
         }
-        if (AiOrgScopeResolver.SCOPE_REGION.equals(t)) {
+        if (AiResolvedOrgScope.SCOPE_REGION.equals(t)) {
             return "区域范围";
         }
-        if (AiOrgScopeResolver.SCOPE_STORE.equals(t)) {
+        if (AiResolvedOrgScope.SCOPE_STORE.equals(t)) {
             return "门店范围";
         }
         return "组织范围";
@@ -973,7 +2002,7 @@ public class DishProfitAgentNode implements AgentNode {
     }
 
     private static String nzRatePlain(String r) {
-        return r == null ? "暂不适用" : r;
+        return AiQuerySemanticLexicon.formatGrossMarginRateForNaturalLanguage(r);
     }
 
     private static LinkedHashMap<String, String> deriveRecommendations(PortfolioAgg agg, int abnormalCt, int n,

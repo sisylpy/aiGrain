@@ -23,6 +23,11 @@ public class AiHarnessReplayRoundResult {
 
     private Map<String, Object> resolvedQueryContextSummary = new LinkedHashMap<>();
 
+    /**
+     * 探索型 Replay 专用：从 {@link #resolvedQueryContextSummary} 抽取的扁平字段，便于审阅；常规断言模式为 null。
+     */
+    private Map<String, Object> probe;
+
     private boolean pass;
 
     private List<AiHarnessMismatch> failedFields = new ArrayList<>();

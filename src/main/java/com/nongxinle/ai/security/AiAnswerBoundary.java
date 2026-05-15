@@ -1,5 +1,12 @@
 package com.nongxinle.ai.security;
 
+import com.nongxinle.ai.context.AiResolvedOrgScope;
+import com.nongxinle.ai.context.AiResolvedQueryContext;
+import com.nongxinle.ai.context.AiResolvedQueryIntent;
+import com.nongxinle.ai.context.AiUserContext;
+import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.graph.business.CostInsightIntentConvergence;
+import com.nongxinle.ai.mapping.AiRoleMapper;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 
 import java.util.ArrayList;
@@ -7,6 +14,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+import org.springframework.util.StringUtils;
 
 /** 可读提示文案与 permissionDenied DTO 的组装。 */
 public final class AiAnswerBoundary {
@@ -26,6 +37,240 @@ public final class AiAnswerBoundary {
             "你可以查看自己职责范围内的门店/分销经营数据；若需跨店或集团视图，请联系管理员开通相应权限。";
 
     private AiAnswerBoundary() {
+    }
+
+    /**
+     * {@link AiPermissionDenied#getSubject()} 与 {@link AiBusinessToolIds} 对齐时视为该工具被拒绝，
+     * 诊断/Composer 不得再消费对应 AnswerPlan 或无权限结论。
+     */
+    public static boolean isToolPermissionDenied(List<AiPermissionDenied> denials, String toolId) {
+        if (denials == null || denials.isEmpty() || !StringUtils.hasText(toolId)) {
+            return false;
+        }
+        for (AiPermissionDenied d : denials) {
+            if (d != null && toolId.equals(d.getSubject())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * D-11：营业额查询链路被拒（{@link AiPermissions#VIEW_REVENUE} 或 {@link AiBusinessToolIds#REVENUE_QUERY}），
+     * Composer 禁止再用「金额为零 / 数据不足」类业务兜底冒充真实查询结果。
+     */
+    public static boolean isRevenuePermissionDenied(List<AiPermissionDenied> denials) {
+        if (denials == null || denials.isEmpty()) {
+            return false;
+        }
+        for (AiPermissionDenied d : denials) {
+            if (d == null) {
+                continue;
+            }
+            if (AiPermissions.VIEW_REVENUE.equals(d.getRequiredPermission())) {
+                return true;
+            }
+            if (AiBusinessToolIds.REVENUE_QUERY.equals(d.getSubject())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** {@link AiBusinessToolIds#DISH_PROFIT_ANALYSIS} 在 permissionDenials 中被拒绝（角色或权限缺口）。 */
+    public static boolean isDishProfitPermissionDenied(List<AiPermissionDenied> denials) {
+        return isToolPermissionDenied(denials, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+    }
+
+    /**
+     * D-11：菜品毛利链路被拒时的 Composer 正文（不含权限前缀）。
+     */
+    public static String dishProfitPermissionDeniedComposerBody() {
+        return "你当前账号没有查看菜品毛利分析的权限，系统无法在权限范围内生成菜品毛利或成本透视结论。\n\n"
+                + "请勿将「数据不足」「可用数据为零」「金额为 0」「核对月份」「核对门店归属」等表述当作真实查询结果。\n\n"
+                + "你可改用本人权限内的采购入库、出库/核销或库存相关问题继续提问（以实际权限为准）。";
+    }
+
+    /**
+     * 与 StubAnswerComposerNode 对齐：解析意图是否为营业额/营收概览。
+     */
+    public static boolean resolvedIntentLooksLikeRevenueOverview(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        if (StringUtils.hasText(rq.getEffectiveIntentCode())
+                && AiResolvedQueryIntent.REVENUE_OVERVIEW.equals(rq.getEffectiveIntentCode().trim())) {
+            return true;
+        }
+        if (StringUtils.hasText(rq.getEffectivePathCode())
+                && AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(rq.getEffectivePathCode().trim())) {
+            return true;
+        }
+        AiResolvedQueryIntent qi = rq.getQueryIntent();
+        if (qi == null) {
+            return false;
+        }
+        if (StringUtils.hasText(qi.getIntentCode())
+                && AiResolvedQueryIntent.REVENUE_OVERVIEW.equals(qi.getIntentCode().trim())) {
+            return true;
+        }
+        return StringUtils.hasText(qi.getPathCode())
+                && AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(qi.getPathCode().trim());
+    }
+
+    /** 解析意图是否为菜品毛利专线（与路由字段对齐）。 */
+    public static boolean resolvedIntentLooksLikeDishProfit(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        if (StringUtils.hasText(rq.getEffectiveIntentCode())
+                && AiResolvedQueryIntent.DISH_PROFIT.equals(rq.getEffectiveIntentCode().trim())) {
+            return true;
+        }
+        if (StringUtils.hasText(rq.getEffectivePathCode())
+                && AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(rq.getEffectivePathCode().trim())) {
+            return true;
+        }
+        AiResolvedQueryIntent qi = rq.getQueryIntent();
+        if (qi == null) {
+            return false;
+        }
+        if (StringUtils.hasText(qi.getIntentCode())
+                && AiResolvedQueryIntent.DISH_PROFIT.equals(qi.getIntentCode().trim())) {
+            return true;
+        }
+        return StringUtils.hasText(qi.getPathCode())
+                && AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(qi.getPathCode().trim());
+    }
+
+    /**
+     * D-11：核心业务工具被拒且无可用 AnswerPlan 时，Composer 仅输出权限说明（不走 LLM / 业务数值兜底）。
+     * 经营诊断 path 由 {@link #shouldRenderPermissionDowngradedBusinessDiagnosis(AiRunState)} 另行降级渲染。
+     *
+     * @return 非 null 时需作为全文正文（可与 head 前缀拼接）
+     */
+    public static String tryComposeCoreToolPermissionOnlyAnswer(AiRunState state) {
+        if (state == null || state.isBusinessDiagnosisPath()) {
+            return null;
+        }
+        List<AiPermissionDenied> denials = state.getPermissionDenials();
+
+        boolean plannerToolsEmpty = state.getDataPlanTools() == null || state.getDataPlanTools().isEmpty();
+
+        if (isRevenuePermissionDenied(denials)
+                && (plannerToolsEmpty || state.getRevenueAnswerPlan() == null)
+                && (resolvedIntentLooksLikeRevenueOverview(state) || state.isRevenueOverviewPath())) {
+            return revenuePermissionDeniedComposerBody(state);
+        }
+
+        boolean weakDishTooling = plannerToolsEmpty
+                || (state.getDishProfitAnswerPlan() == null && state.getDishProfitOverviewResult() == null);
+        if (isDishProfitPermissionDenied(denials)
+                && weakDishTooling
+                && (resolvedIntentLooksLikeDishProfit(state) || state.isDishProfitPath())) {
+            return dishProfitPermissionDeniedComposerBody();
+        }
+        return null;
+    }
+
+    private static boolean resolvedOrgScopeIsWarehouse(AiRunState state) {
+        if (state == null || state.getResolvedQueryContext() == null) {
+            return false;
+        }
+        AiResolvedOrgScope org = state.getResolvedQueryContext().getOrgScope();
+        return org != null && AiResolvedOrgScope.SCOPE_WAREHOUSE.equals(org.getScopeType());
+    }
+
+    /**
+     * 库房 / 采购 / 配送等非完整经营视角：具备诊断 Plan 时需降级渲染（禁止集团排行与营业额/菜品毛利口径）。
+     */
+    public static boolean isPartialBusinessDiagnosisPersona(AiUserContext ctx, AiResolvedOrgScope org) {
+        if (ctx == null || ctx.getRoleCode() == null) {
+            return false;
+        }
+        String rc = ctx.getRoleCode();
+        if (org != null && AiResolvedOrgScope.SCOPE_WAREHOUSE.equals(org.getScopeType())) {
+            return true;
+        }
+        if (AiRoleCodes.WAREHOUSE_MANAGER.equals(rc) || AiRoleCodes.REGION_WAREHOUSE.equals(rc)) {
+            return true;
+        }
+        if (CostInsightIntentConvergence.isProcurementCostConvergenceRole(rc)) {
+            return true;
+        }
+        return AiRoleCodes.DELIVERY_SUPPLIER.equals(rc) || AiRoleCodes.DELIVERY_DRIVER.equals(rc);
+    }
+
+    /**
+     * {@code business_diagnosis_path} 且 BusinessDiagnosisPlan 已挂载：对部分 persona 强制确定性降级正文。
+     */
+    public static boolean shouldRenderPermissionDowngradedBusinessDiagnosis(AiRunState state) {
+        if (state == null || !state.isBusinessDiagnosisPath() || state.getBusinessDiagnosisPlan() == null) {
+            return false;
+        }
+        AiUserContext ctx = state.getAiUserContext();
+        if (ctx == null || ctx.getRoleCode() == null) {
+            return false;
+        }
+        String rc = ctx.getRoleCode();
+        if (AiRoleMapper.isGroupWideOrgScope(rc) || AiRoleCodes.STORE_MANAGER.equals(rc)) {
+            return false;
+        }
+        AiResolvedOrgScope org = state.getResolvedQueryContext() != null
+                ? state.getResolvedQueryContext().getOrgScope()
+                : null;
+        if (!isPartialBusinessDiagnosisPersona(ctx, org)) {
+            return false;
+        }
+        Set<String> perms = ctx.getPermissions() == null ? Set.of() : Set.copyOf(ctx.getPermissions());
+        List<AiPermissionDenied> denials = state.getPermissionDenials();
+
+        boolean explicitRevenue = isToolPermissionDenied(denials, AiBusinessToolIds.REVENUE_QUERY)
+                || isRevenuePermissionDenied(denials);
+        boolean explicitDish = isToolPermissionDenied(denials, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        boolean personaNoRevenue = !perms.contains(AiPermissions.VIEW_REVENUE);
+        boolean personaNoDishPipeline = CostInsightIntentConvergence.isProcurementCostConvergenceRole(rc)
+                || AiRoleCodes.WAREHOUSE_MANAGER.equals(rc)
+                || AiRoleCodes.REGION_WAREHOUSE.equals(rc)
+                || AiRoleCodes.DELIVERY_SUPPLIER.equals(rc)
+                || AiRoleCodes.DELIVERY_DRIVER.equals(rc)
+                || resolvedOrgScopeIsWarehouse(state);
+
+        return explicitRevenue || explicitDish || personaNoRevenue || personaNoDishPipeline;
+    }
+
+    /**
+     * 营业额权限被拒时的 Composer 正文（不含 {@link #composeHumanPrefix}；二者由 StubAnswerComposerNode 拼装）。
+     * {@link #revenuePermissionDeniedComposerBody(AiRunState)} 的无状态等价：库房后续引导。
+     */
+    public static String revenuePermissionDeniedComposerBody() {
+        return revenuePermissionDeniedComposerBody(null);
+    }
+
+    /**
+     * 与 {@link StubAnswerComposerNode} 对齐：门店采购员使用采购视角后续引导，库房等仍使用库房引导。
+     */
+    public static String revenuePermissionDeniedComposerBody(AiRunState state) {
+        return "你当前账号没有查看营业额的权限，系统无法在权限范围内查询或汇总营收金额。\n\n"
+                + "请勿将下方可能出现的「无数据」「金额为 0」「核对月份或门店归属」等表述当作真实经营结论。\n\n"
+                + "如需查看营业额请在具备权限的岗位使用，或联系管理员开通「查看营业额」。"
+                + revenuePermissionDeniedFollowUpTail(state);
+    }
+
+    private static String revenuePermissionDeniedFollowUpTail(AiRunState state) {
+        if (state != null && state.getAiUserContext() != null
+                && AiRoleCodes.STORE_PURCHASER.equals(state.getAiUserContext().getRoleCode())) {
+            return "你可继续询问本门店采购入库、采购金额、供货单价、采购成本、核销汇总等问题（以实际权限为准）。";
+        }
+        return "库房端可继续询问与本库房相关的库存、出库/核销、采购入库及损耗等问题（以实际权限为准）。";
     }
 
     /** 拼装自然语言前缀，供 Composer 汇入最终答复。 */
@@ -68,6 +313,54 @@ public final class AiAnswerBoundary {
                         "你当前身份的门店/分销范围不匹配本次查询（%s）；请切换到本人负责的组织后再试。", subject))
                 .suggestedScope(SUGGEST_OWN_SCOPE)
                 .build();
+    }
+
+    /**
+     * D-11：语义 LLM 已点名的口述店名中，部分无法用可见门店根名称做 lexical 命中（如对店长并排点到权限外门店名）。
+     * 仅对已解析点名做匹配，不向 LLM 二次查询权限。
+     */
+    public static AiPermissionDenied forMentionedStoresOutsideVisibleScope(
+            List<String> outsideMentionHumanLabels, List<String> visibleStoreHumanLabels) {
+        Objects.requireNonNull(outsideMentionHumanLabels);
+        Objects.requireNonNull(visibleStoreHumanLabels);
+        String outs = phraseQuotedStoreNamesCn(outsideMentionHumanLabels);
+        String scopeTip = phraseVisibleStoresForComposerTip(visibleStoreHumanLabels);
+        String reason =
+                String.format("%s不在你的可查看范围内；本次仅按%s为你展示与分析。", outs, scopeTip);
+        return AiPermissionDenied.builder()
+                .subject("mentioned_store_visibility")
+                .reason(reason)
+                .suggestedScope(SUGGEST_OWN_SCOPE)
+                .build();
+    }
+
+    private static String phraseQuotedStoreNamesCn(List<String> names) {
+        if (names.size() == 1) {
+            return quoteBracket(names.get(0));
+        }
+        if (names.size() == 2) {
+            return quoteBracket(names.get(0)) + "与" + quoteBracket(names.get(1));
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < names.size(); i++) {
+            if (i > 0) {
+                sb.append("、");
+            }
+            sb.append(quoteBracket(names.get(i)));
+        }
+        return sb.toString();
+    }
+
+    private static String phraseVisibleStoresForComposerTip(List<String> names) {
+        if (names.size() == 1) {
+            return quoteBracket(names.get(0));
+        }
+        return phraseQuotedStoreNamesCn(names);
+    }
+
+    private static String quoteBracket(String raw) {
+        String t = raw == null ? "" : raw.trim();
+        return t.isEmpty() ? "" : "「" + t + "」";
     }
 
     public static String scopeConvergencePrefix(String note) {

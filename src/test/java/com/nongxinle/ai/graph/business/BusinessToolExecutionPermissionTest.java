@@ -1,7 +1,8 @@
 package com.nongxinle.ai.graph.business;
 
 import com.nongxinle.ai.context.AiDepartmentUserTestRows;
-import com.nongxinle.ai.context.AiOrgScopeResolver;
+import com.nongxinle.ai.context.AiResolvedOrgScope;
+import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContextResolver;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
@@ -39,7 +40,6 @@ class BusinessToolExecutionPermissionTest {
     void groupManager_executesEveryPlannedTool() {
         AiUserContextResolver ur = AiDepartmentUserTestRows.resolverReturning(
                 AiDepartmentUserTestRows.groupManager(1, 1, 2));
-        AiOrgScopeResolver or = new AiOrgScopeResolver();
 
         AiRunCreateRequest rq = new AiRunCreateRequest();
         rq.setUserId(1L);
@@ -47,6 +47,7 @@ class BusinessToolExecutionPermissionTest {
         rq.setDistributerId(2L);
         rq.setMessage("成本");
 
+        var uc = ur.resolve(rq);
         AiRunState state = AiRunState.builder()
                 .runId(100L)
                 .userId(rq.getUserId())
@@ -56,8 +57,15 @@ class BusinessToolExecutionPermissionTest {
                 .dataPlanTools(List.copyOf(AiBusinessToolIds.DEFAULT_COST_INSIGHT_TOOLS))
                 .statStartDate("2026-05-01")
                 .statEndDate("2026-05-10")
-                .aiUserContext(ur.resolve(rq))
-                .aiOrgScope(or.resolve(ur.resolve(rq), rq))
+                .aiUserContext(uc)
+                .resolvedQueryContext(AiResolvedQueryContext.builder()
+                        .orgScope(AiResolvedOrgScope.builder()
+                                .scopeType(AiResolvedOrgScope.SCOPE_GROUP)
+                                .distributerId(rq.getDistributerId())
+                                .requestDepartmentId(rq.getDepartmentId())
+                                .currentDepartmentId(uc.getDepartmentId())
+                                .build())
+                        .build())
                 .build();
 
         AtomicInteger executeCount = new AtomicInteger();
@@ -82,16 +90,15 @@ class BusinessToolExecutionPermissionTest {
     @Test
     void testStore902_departmentMismatch_skipsToolExecution() {
         AiUserContextResolver ur = AiDepartmentUserTestRows.resolverReturning(
-                AiDepartmentUserTestRows.storeManager(
-                        (int) AiUserContextResolver.TEST_STORE_MANAGER_UID, 100, 2));
-        AiOrgScopeResolver or = new AiOrgScopeResolver();
+                AiDepartmentUserTestRows.storeManager(AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK, 100, 2));
 
         AiRunCreateRequest rq = new AiRunCreateRequest();
-        rq.setUserId(AiUserContextResolver.TEST_STORE_MANAGER_UID);
+        rq.setUserId((long) AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK);
         rq.setDepartmentId(999L);
         rq.setDistributerId(2L);
         rq.setMessage("x");
 
+        var uc = ur.resolve(rq);
         AiRunState state = AiRunState.builder()
                 .runId(101L)
                 .userId(rq.getUserId())
@@ -101,8 +108,15 @@ class BusinessToolExecutionPermissionTest {
                 .dataPlanTools(List.of(AiBusinessToolIds.REVENUE_QUERY))
                 .statStartDate("2026-05-01")
                 .statEndDate("2026-05-10")
-                .aiUserContext(ur.resolve(rq))
-                .aiOrgScope(or.resolve(ur.resolve(rq), rq))
+                .aiUserContext(uc)
+                .resolvedQueryContext(AiResolvedQueryContext.builder()
+                        .orgScope(AiResolvedOrgScope.builder()
+                                .scopeType(AiResolvedOrgScope.SCOPE_STORE)
+                                .distributerId(2L)
+                                .requestDepartmentId(999L)
+                                .currentDepartmentId(100L)
+                                .build())
+                        .build())
                 .build();
 
         ToolRegistry registry = mock(ToolRegistry.class);

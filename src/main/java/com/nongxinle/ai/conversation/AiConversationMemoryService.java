@@ -97,11 +97,15 @@ public class AiConversationMemoryService {
                     userId, turn.getLastPathCode());
             lastTurnByUserFallback.put(userId, turn);
         }
-        log.info("[AiConversationMemory] remember userId={} conversationId={} path={} intent={} toolSummarySnippet={}",
+        log.info(
+                "[AiConversationMemory] remember userId={} conversationId={} path={} intent={} "
+                        + "lastMentionedDish={} lastStructured={} toolSummarySnippet={}",
                 userId,
                 conversationId,
                 turn.getLastPathCode(),
                 turn.getLastIntentCode(),
+                turn.getLastMentionedDishName(),
+                turn.getLastStructuredIntentDetail(),
                 turn.getLastToolSummary() == null ? null
                         : (turn.getLastToolSummary().length() > 120
                         ? turn.getLastToolSummary().substring(0, 120) + "…"

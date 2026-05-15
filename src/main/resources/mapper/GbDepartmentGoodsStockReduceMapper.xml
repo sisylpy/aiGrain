@@ -710,6 +710,48 @@
         LIMIT 10
     </select>
 
+    <!--
+        商品出库/核销次数排行：按 reduce 表行数计数；时间/部门/distributor 与 queryReduceAllTypesTotalForRetailDepartmentFathers 一致。
+        含 type1–4 全部行；附带 amount 为同期该商品 subtotal 合计（非排序主键）。
+    -->
+    <select id="queryStockOutboundTimesTopForRetailFathers" resultType="java.util.LinkedHashMap">
+        SELECT
+            r.gb_dgsr_gb_dis_goods_id AS disGoodsId,
+            dg.gb_dg_goods_name AS name,
+            CAST(COUNT(*) AS UNSIGNED) AS outboundTimes,
+            IFNULL(ROUND(SUM(r.gb_dgsr_subtotal), 1), 0) AS amount
+        FROM gb_department_goods_stock_reduce r
+        INNER JOIN gb_department gd ON gd.gb_department_id = r.gb_dgsr_gb_department_father_id
+        LEFT JOIN gb_distributer_goods dg ON dg.gb_distributer_goods_id = r.gb_dgsr_gb_dis_goods_id
+        <where>
+            gd.gb_department_type IN (1, 11)
+            <if test="params.departmentFatherIds != null and params.departmentFatherIds.size() &gt; 0">
+                AND r.gb_dgsr_gb_department_father_id IN
+                <foreach collection="params.departmentFatherIds" item="fid" open="(" separator="," close=")">
+                    #{fid}
+                </foreach>
+            </if>
+            <if test="params.disId != null">
+                AND r.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.startDate != null">
+                AND r.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                AND r.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+            <if test="params.disGoodsGreatId != null">
+                AND (
+                    r.gb_dgsr_gb_dis_goods_great_id = #{params.disGoodsGreatId}
+                    OR dg.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
+                )
+            </if>
+        </where>
+        GROUP BY r.gb_dgsr_gb_dis_goods_id, dg.gb_dg_goods_name
+        ORDER BY outboundTimes DESC
+        LIMIT 10
+    </select>
+
     <!-- 按日查询 subtotal 总和 -->
     <select id="queryGbPurchaseGoodsTopDay" resultType="java.util.Map">
         SELECT

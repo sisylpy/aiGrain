@@ -279,7 +279,8 @@ public class DishProfitAnalysisTool implements AiTool {
                     GbDepartmentGoodsStockReduceSupport.coerceDecimal(m.get("actualCostAmount")))
                     .reversed();
         } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_GAP_RANKING_MAX.equals(sw)) {
-            cmp = Comparator.comparing(DishProfitAnalysisTool::theoryActualGapAmount,
+            // 与 AnswerPlan / Harness 对齐：signed(actual - theory)，DESC = 实际高于理论最多优先
+            cmp = Comparator.comparing(DishProfitAnalysisTool::theoryActualGapSignedAmount,
                     Comparator.nullsLast(Comparator.naturalOrder())).reversed();
         } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_RANKING.equals(sw)) {
             cmp = Comparator.comparing((Map<String, Object> m) ->
@@ -307,10 +308,11 @@ public class DishProfitAnalysisTool implements AiTool {
         }
     }
 
-    private static BigDecimal theoryActualGapAmount(Map<String, Object> raw) {
+    /** 理论 vs 实际成本差额（signed）：actualCostAmount − theoryCostAmount */
+    private static BigDecimal theoryActualGapSignedAmount(Map<String, Object> raw) {
         BigDecimal a = GbDepartmentGoodsStockReduceSupport.coerceDecimal(raw.get("actualCostAmount"));
         BigDecimal t = GbDepartmentGoodsStockReduceSupport.coerceDecimal(raw.get("theoryCostAmount"));
-        return a.subtract(t).abs();
+        return a.subtract(t);
     }
 
     private static String nzPlain(BigDecimal v) {

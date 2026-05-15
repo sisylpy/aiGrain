@@ -68,6 +68,11 @@ public interface GbDepartmentGoodsStockReduceMapper extends BaseMapper<GbDepartm
     List<GbDistributerGoodsEntity> queryStockSubtotalTopTimes(@Param("params") Map<String, Object> map);
 
     /**
+     * 按出库/核销记录次数 Top 商品；条件与 {@link #queryReduceAllTypesTotalForRetailDepartmentFathers} 一致。
+     */
+    List<Map<String, Object>> queryStockOutboundTimesTopForRetailFathers(@Param("params") Map<String, Object> map);
+
+    /**
      * 按日查询支出
      */
     List<Map<String, Object>> queryGbPurchaseGoodsTopDay(@Param("params") Map<String, Object> map);

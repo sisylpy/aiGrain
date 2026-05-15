@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS gb_ai_conversation_turn_memory (
     gb_ai_ctm_focused_store_id BIGINT DEFAULT NULL,
     gb_ai_ctm_focused_store_name VARCHAR(512) DEFAULT NULL,
     gb_ai_ctm_mentioned_store VARCHAR(512) DEFAULT NULL COMMENT '上轮焦点/点名门店简述',
+    gb_ai_ctm_mentioned_dish_name VARCHAR(256) DEFAULT NULL COMMENT '菜品毛利单菜追问：点名菜名，多轮继承',
     gb_ai_ctm_focus_type VARCHAR(64) DEFAULT NULL,
     gb_ai_ctm_focus_name VARCHAR(512) DEFAULT NULL,
     gb_ai_ctm_effective_scope_source VARCHAR(128) DEFAULT NULL,

@@ -32,16 +32,40 @@ public final class AiBusinessToolIds {
             GROSS_MARGIN_CALCULATOR
     );
 
-    /** 经营概览：先看旧版看板聚合，再补菜品标价、采购、估算毛利率。 */
+    /**
+     * 经营概览：与子域 AnswerPlan 对齐时需先跑 {@link #REVENUE_QUERY} 与 {@link #PURCHASE_OVERVIEW}，
+     * 再结合旧版看板聚合、菜品标价、{@link #PURCHASE_QUERY}、毛利率估算。
+     */
     public static final List<String> DEFAULT_BUSINESS_OVERVIEW_TOOLS = List.of(
+            REVENUE_QUERY,
+            PURCHASE_OVERVIEW,
             BUSINESS_OVERVIEW_QUERY,
             DISH_SALES_QUERY,
             PURCHASE_QUERY,
             GROSS_MARGIN_CALCULATOR
     );
 
+    /**
+     * 经营概览 v2 MULTI_AGENT：仅用四专线业务工具挂载子域 AnswerPlan（不包含旧看板链路工具）。
+     */
+    public static final List<String> BUSINESS_OVERVIEW_MULTI_AGENT_DOMAIN_TOOLS = List.of(
+            REVENUE_QUERY,
+            PURCHASE_OVERVIEW,
+            STOCK_REDUCE_QUERY,
+            DISH_PROFIT_ANALYSIS
+    );
+
     /** 菜品毛利/经营洞察专用链（单列，勿与 {@link #DEFAULT_BUSINESS_OVERVIEW_TOOLS} 混排）。 */
     public static final List<String> DEFAULT_DISH_PROFIT_TOOLS = List.of(
+            DISH_PROFIT_ANALYSIS
+    );
+
+    /**
+     * 经营诊断 Harness：采购 + 出库/核销 + 菜品毛利（顺序固定；Planner 可按权限子集裁剪）。
+     */
+    public static final List<String> DEFAULT_BUSINESS_DIAGNOSIS_TOOLS = List.of(
+            PURCHASE_OVERVIEW,
+            STOCK_REDUCE_QUERY,
             DISH_PROFIT_ANALYSIS
     );
 

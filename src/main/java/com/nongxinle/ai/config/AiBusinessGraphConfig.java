@@ -3,6 +3,7 @@ package com.nongxinle.ai.config;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.graph.business.BusinessFollowUpIntentResolveNode;
 import com.nongxinle.ai.graph.business.BusinessDataPlannerNode;
+import com.nongxinle.ai.graph.business.BusinessDiagnosisPlanNode;
 import com.nongxinle.ai.graph.business.BusinessScopeIntersectNode;
 import com.nongxinle.ai.graph.business.BusinessTimeWindowNode;
 import com.nongxinle.ai.graph.business.BusinessToolExecutionNode;
@@ -32,6 +33,7 @@ public class AiBusinessGraphConfig {
             BusinessDataPlannerNode businessDataPlannerNode,
             BusinessToolExecutionNode businessToolExecutionNode,
             DishProfitAgentNode dishProfitAgentNode,
+            BusinessDiagnosisPlanNode businessDiagnosisPlanNode,
             CostDiagnosisAgentNode costDiagnosisAgentNode,
             BusinessOverviewAgentNode businessOverviewAgentNode,
             StubOutcomeReviewNode outcomeReviewNode,
@@ -45,6 +47,7 @@ public class AiBusinessGraphConfig {
                 businessDataPlannerNode,
                 businessToolExecutionNode,
                 dishProfitAgentNode,
+                businessDiagnosisPlanNode,
                 costDiagnosisAgentNode,
                 businessOverviewAgentNode,
                 outcomeReviewNode,

@@ -30,12 +30,13 @@ class GbAiDailyRevenueDashboardServiceGroupFlattenTest {
         agg.put("maxDailyGross", new BigDecimal("500"));
         agg.put("minDailyGrossPositive", new BigDecimal("100"));
 
-        Map<String, Object> out = svc.buildGroupWideIncomeFlattened(agg, 5, 2, "2026-05-01", "2026-05-10");
+        Map<String, Object> out = svc.buildGroupWideIncomeFlattened(agg, 5, 2, "2026-05-01", "2026-05-10", null);
 
         assertEquals(3, ((Number) out.get("统计天数")).intValue());
         assertEquals("不适用", out.get("盈亏状态").toString());
         String note = out.get("数据口径说明").toString();
         assertTrue(note.contains("集团汇总"));
+        assertTrue(note.contains("记账部门"), "null 入账提示应走「记账部门」兜底句，避免 distinctRecordingDepartments 当「家」");
         assertEquals(new BigDecimal("396"), new BigDecimal(out.get("日均营业额").toString()));
         assertEquals(new BigDecimal("7"), new BigDecimal(out.get("日均订单数").toString()));
     }

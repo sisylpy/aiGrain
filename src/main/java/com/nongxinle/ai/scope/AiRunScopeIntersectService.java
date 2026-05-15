@@ -1,11 +1,10 @@
 package com.nongxinle.ai.scope;
 
-import com.nongxinle.ai.context.AiOrgScope;
-import com.nongxinle.ai.context.AiOrgScopeResolver;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
 import com.nongxinle.ai.mapping.AiRoleMapper;
+import com.nongxinle.ai.resolver.AiResolvedQueryContextResolver;
 import com.nongxinle.ai.security.AiAnswerBoundary;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +27,7 @@ import java.util.stream.Collectors;
 public class AiRunScopeIntersectService {
 
     private final AiScopeResolver scopeResolver;
-    private final AiOrgScopeResolver orgScopeResolver;
+    private final AiResolvedQueryContextResolver resolvedQueryContextResolver;
 
     public void applyIntersection(AiRunState state, Map<Integer, List<Integer>> subtreeCache) {
         if (state == null || state.getAiUserContext() == null) {
@@ -58,7 +57,7 @@ public class AiRunScopeIntersectService {
             state.setScopeConvergenceNote(AiAnswerBoundary.scopeClampIntroductionForRole(ctx.getRoleCode()));
             log.info("[AI-RUN-SCOPE] userId={} role={} null request dept clamped to anchor={}",
                     ctx.getUserId(), ctx.getRoleCode(), anchor);
-            refreshOrgSnapshot(state);
+            refreshResolvedQuerySnapshot(state);
             return;
         }
 
@@ -72,7 +71,7 @@ public class AiRunScopeIntersectService {
             state.setScopeConvergenceNote(AiAnswerBoundary.scopeClampIntroductionForRole(ctx.getRoleCode()));
             log.info("[AI-RUN-SCOPE] userId={} role={} empty intersection requested={} anchor={}",
                     ctx.getUserId(), ctx.getRoleCode(), requestedRoot, anchor);
-            refreshOrgSnapshot(state);
+            refreshResolvedQuerySnapshot(state);
             return;
         }
 
@@ -87,7 +86,7 @@ public class AiRunScopeIntersectService {
             writeQueryScope(state, effective);
         }
 
-        refreshOrgSnapshot(state);
+        refreshResolvedQuerySnapshot(state);
     }
 
     /** 集团管理端：仅按 {@code distributerId} 枚举门店根（father_id=0），合并各门店子树写入 scope；不依赖请求 departmentId。 */
@@ -104,14 +103,14 @@ public class AiRunScopeIntersectService {
             log.warn("[AI-RUN-SCOPE] GROUP_WIDE missing distributerId userId={}",
                     ctx != null ? ctx.getUserId() : null);
             writeQueryScope(state, Set.of(), null);
-            refreshOrgSnapshot(state);
+            refreshResolvedQuerySnapshot(state);
             return;
         }
         List<Integer> storeRoots = scopeResolver.listStoreDepartmentIdsUnderDistributer(dis.intValue());
         if (storeRoots.isEmpty()) {
             log.warn("[AI-RUN-SCOPE] GROUP_WIDE disId={} no store roots (father_id=0)", dis);
             writeQueryScope(state, Set.of(), 0);
-            refreshOrgSnapshot(state);
+            refreshResolvedQuerySnapshot(state);
             return;
         }
         LinkedHashSet<Integer> union = new LinkedHashSet<>();
@@ -122,7 +121,7 @@ public class AiRunScopeIntersectService {
                 "[AI-RUN-SCOPE] GROUP_WIDE disId={} storeRootCount={} storeRootIds={} resolvedDeptNodeCount={}",
                 dis, storeRoots.size(), storeRoots, union.size());
         writeQueryScope(state, union, storeRoots.size());
-        refreshOrgSnapshot(state);
+        refreshResolvedQuerySnapshot(state);
     }
 
     private static void clampDistributorIfNeeded(AiRunState state, AiUserContext ctx) {
@@ -188,19 +187,7 @@ public class AiRunScopeIntersectService {
         state.setScope(qs);
     }
 
-    /** 使用收窄后的 dept/dis 重建 {@link AiOrgScope}，供后续 Guard／Trace 对齐。 */
-    private void refreshOrgSnapshot(AiRunState state) {
-        if (state.getAiUserContext() == null) {
-            return;
-        }
-        AiRunCreateRequest synthetic = new AiRunCreateRequest();
-        synthetic.setUserId(state.getUserId());
-        synthetic.setConversationId(state.getConversationId());
-        synthetic.setDepartmentId(state.getDepartmentId());
-        synthetic.setDistributerId(state.getDistributerId());
-        synthetic.setRoleCode(state.getAiUserContext().getRoleCode());
-        synthetic.setMessage(state.getNormalizedUserInput() != null ? state.getNormalizedUserInput() : "");
-        AiOrgScope refreshed = orgScopeResolver.resolve(state.getAiUserContext(), synthetic);
-        state.setAiOrgScope(refreshed);
+    private void refreshResolvedQuerySnapshot(AiRunState state) {
+        resolvedQueryContextResolver.patchResolvedQueryContextAfterRunIntersect(state);
     }
 }

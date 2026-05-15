@@ -4,12 +4,14 @@ import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolver;
-import com.nongxinle.ai.followup.FollowUpIntentResolveService;
+import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -34,7 +36,52 @@ public final class AiMultiTurnOrgScopePolicy {
             AiResolvedOrgScope baselineOrg,
             AiConversationTurnMemory previousTurn,
             String rawMessage) {
+        return applyInheritedEffectiveOrgScope(baselineOrg, previousTurn, rawMessage, null, null, null);
+    }
+
+    /**
+     * @param dishProfitReasonDishHint 可为 null；非空且为「点名 + 毛利原因」追问时，若菜名不在上轮 harness 菜榜 {@link AiConversationTurnMemory#getLastFocusName()}，
+     *                             则不打断为多轮门店收窄，回退为 baseline 集团可见口径重新查。
+     */
+    public static OrgScopeApplyOutcome applyInheritedEffectiveOrgScope(
+            AiResolvedOrgScope baselineOrg,
+            AiConversationTurnMemory previousTurn,
+            String rawMessage,
+            String dishProfitReasonDishHint) {
+        return applyInheritedEffectiveOrgScope(baselineOrg, previousTurn, rawMessage, dishProfitReasonDishHint, null, null);
+    }
+
+    /**
+     * @param structuredIntentDetailWire 当轮解析下发的 structuredIntentDetail（wire/canonical）；用于门店优先级排行等场景的收窄豁免。
+     */
+    public static OrgScopeApplyOutcome applyInheritedEffectiveOrgScope(
+            AiResolvedOrgScope baselineOrg,
+            AiConversationTurnMemory previousTurn,
+            String rawMessage,
+            String dishProfitReasonDishHint,
+            String structuredIntentDetailWire) {
+        return applyInheritedEffectiveOrgScope(
+                baselineOrg, previousTurn, rawMessage, dishProfitReasonDishHint, structuredIntentDetailWire, null);
+    }
+
+    /**
+     * @param semanticLlm 非空且声明点名门店时，本策略不收窄（交由语义门店映射处理）。
+     */
+    public static OrgScopeApplyOutcome applyInheritedEffectiveOrgScope(
+            AiResolvedOrgScope baselineOrg,
+            AiConversationTurnMemory previousTurn,
+            String rawMessage,
+            String dishProfitReasonDishHint,
+            String structuredIntentDetailWire,
+            AiQuerySemanticParseResult semanticLlm) {
         if (baselineOrg == null || previousTurn == null) {
+            return new OrgScopeApplyOutcome(baselineOrg, false);
+        }
+        if (AiQuerySemanticLexicon.isStorePriorityRankingStructuredDetail(structuredIntentDetailWire)) {
+            return new OrgScopeApplyOutcome(baselineOrg, false);
+        }
+        if (shouldSkipStoreNarrowingForUnlistedNamedDishProfitReason(
+                baselineOrg, previousTurn, rawMessage, dishProfitReasonDishHint, structuredIntentDetailWire)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
         List<Integer> prevIds = previousTurn.getLastVisibleStoreIds();
@@ -45,7 +92,10 @@ public final class AiMultiTurnOrgScopePolicy {
         if (messageDeclaresBroadGroupReset(rawMessage)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
-        if (hasExplicitUniqueStoreMention(rawMessage, baselineOrg)) {
+        if (semanticDeclaresStoreFocus(semanticLlm, baselineOrg)) {
+            return new OrgScopeApplyOutcome(baselineOrg, false);
+        }
+        if (shouldReleaseHarnessDualStoreContextFromPreviousTurn(previousTurn, semanticLlm)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
 
@@ -98,29 +148,52 @@ public final class AiMultiTurnOrgScopePolicy {
                 true);
     }
 
-    /** 当前句是否在可见门店列表中唯一命中一家店（本策略应让位给显式收窄）。 */
-    public static boolean hasExplicitUniqueStoreMention(String rawMessage, AiResolvedOrgScope groupLikeOrg) {
-        if (groupLikeOrg == null || !AiResolvedOrgScope.SCOPE_GROUP.equals(groupLikeOrg.getScopeType())) {
+    private static boolean shouldReleaseHarnessDualStoreContextFromPreviousTurn(
+            AiConversationTurnMemory previousTurn, AiQuerySemanticParseResult sem) {
+        if (previousTurn == null || sem == null || sem.isParseMissing()) {
             return false;
         }
-        List<AiStoreScopeDTO> stores = groupLikeOrg.getVisibleStores();
-        if (stores == null || stores.size() <= 1) {
+        if (!sem.effectiveMentionedStoreNames().isEmpty()) {
             return false;
         }
-        if (!StringUtils.hasText(rawMessage)) {
+        if ("INHERIT_PREVIOUS".equals(normalizeSemanticAction(sem.getScopeAction()))) {
             return false;
         }
-        String work = FollowUpIntentResolveService.stripKnownTemporalPhrases(rawMessage.trim());
-        if (!StringUtils.hasText(work)) {
-            work = rawMessage.trim();
+        List<String> harnessMs = previousTurn.getLastHarnessMultiStoreMatchedStores();
+        if (harnessMs == null || harnessMs.isEmpty()) {
+            harnessMs = AiConversationTurnMemory.readHarnessMultiStoreFromToolSummary(previousTurn.getLastToolSummary());
         }
-        work = work.replace(" ", "");
-        return AiFollowUpResolver.uniquelyMentionedStoreFromVisibleList(work, stores).isPresent();
+        if (harnessMs == null || harnessMs.size() < 2) {
+            return false;
+        }
+        List<Integer> prevIds = previousTurn.getLastVisibleStoreIds();
+        return prevIds != null && prevIds.size() >= 2;
+    }
+
+    private static String normalizeSemanticAction(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "";
+        }
+        return raw.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+    }
+
+    private static boolean semanticDeclaresStoreFocus(
+            AiQuerySemanticParseResult sem,
+            AiResolvedOrgScope groupLikeOrg) {
+        if (sem == null || sem.isParseMissing() || groupLikeOrg == null
+                || !AiResolvedOrgScope.SCOPE_GROUP.equals(groupLikeOrg.getScopeType())) {
+            return false;
+        }
+        if (!sem.effectiveMentionedStoreNames().isEmpty()) {
+            return true;
+        }
+        AiQuerySemanticParseResult.RequestedScopePart rs = sem.getRequestedScope();
+        return rs != null && StringUtils.hasText(rs.getMentionedStoreName());
     }
 
     /**
      * 用户显式要求回到集团/全量门店视角（如「全部门店呢」「集团呢」），
-     * 与 {@link AiFollowUpResolver} 中「店名+呢」收窄区分；需先于假店名片语匹配处理。
+     * 需先于其它范围策略处理。
      */
     public static boolean messageDeclaresBroadGroupReset(String norm) {
         if (!StringUtils.hasText(norm)) {
@@ -170,5 +243,66 @@ public final class AiMultiTurnOrgScopePolicy {
             return Optional.of("门店" + s.getStoreDepartmentId());
         }
         return Optional.empty();
+    }
+
+    /**
+     * 点名菜的毛利原因追问：若上轮门店范围真子集于集团可见、且菜名不在上轮 AnswerPlan/诊断 harness 写入的 {@link AiConversationTurnMemory#getLastFocusName()} 菜名录，
+     * 则不应继续套用上轮单店/少店范围（避免「AAA 上下文 + 另一道菜」误查）。
+     */
+    private static boolean shouldSkipStoreNarrowingForUnlistedNamedDishProfitReason(
+            AiResolvedOrgScope baselineOrg,
+            AiConversationTurnMemory previousTurn,
+            String rawMessage,
+            String dishHint,
+            String structuredIntentDetailWire) {
+        if (!StringUtils.hasText(rawMessage) || !StringUtils.hasText(dishHint) || previousTurn == null) {
+            return false;
+        }
+        String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(structuredIntentDetailWire);
+        if (!AiQuerySemanticLexicon.isDishLowProfitReasonStructuredWire(wire)) {
+            return false;
+        }
+        if (!AiResolvedOrgScope.SCOPE_GROUP.equals(baselineOrg.getScopeType())) {
+            return false;
+        }
+        List<Integer> prevIds = previousTurn.getLastVisibleStoreIds();
+        if (prevIds == null || prevIds.isEmpty()) {
+            return false;
+        }
+        List<AiStoreScopeDTO> allVisible = baselineOrg.getVisibleStores();
+        if (allVisible == null || allVisible.isEmpty()) {
+            return false;
+        }
+        long baseCount = allVisible.stream()
+                .filter(s -> s != null && s.getStoreDepartmentId() != null)
+                .count();
+        if (baseCount <= 1L || prevIds.size() >= baseCount) {
+            return false;
+        }
+        String roster = previousTurn.getLastFocusName();
+        if (!StringUtils.hasText(roster)) {
+            return true;
+        }
+        return !dishNameMatchesHarnessRoster(roster, dishHint);
+    }
+
+    private static boolean dishNameMatchesHarnessRoster(String rosterCsv, String dishHint) {
+        String hint = dishHint.replace(" ", "").trim();
+        if (hint.isEmpty()) {
+            return false;
+        }
+        for (String part : rosterCsv.split(",")) {
+            if (part == null) {
+                continue;
+            }
+            String p = part.replace(" ", "").trim();
+            if (p.isEmpty()) {
+                continue;
+            }
+            if (p.equals(hint) || hint.contains(p) || p.contains(hint)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -6,6 +6,7 @@ import com.nongxinle.ai.security.AiRoleCodes;
 import com.nongxinle.ai.mapping.AiRoleMapper;
 import com.nongxinle.entity.GbDepartmentUserEntity;
 import com.nongxinle.utils.GbConstants;
+import com.nongxinle.utils.GbConstants;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,18 +31,16 @@ class AiUserContextResolverTest {
 
     @Test
     void explicitFinanceManager_missingViewCostPermission() {
-        AiUserContextResolver resolver = new AiUserContextResolver(
-                org.mockito.Mockito.mock(com.nongxinle.service.GbDepartmentUserService.class),
-                org.mockito.Mockito.mock(com.nongxinle.mapper.GbDepartmentMapper.class));
+        AiUserContextResolver resolver =
+                AiDepartmentUserTestRows.resolverReturning(AiDepartmentUserTestRows.financeManager(701, 1, 2));
 
         AiRunCreateRequest req = new AiRunCreateRequest();
         req.setUserId(701L);
         req.setDepartmentId(1L);
-        req.setRoleCode(AiRoleCodes.FINANCE_MANAGER);
         req.setMessage("成本");
         AiUserContext ctx = resolver.resolve(req);
         assertThat(ctx.getRoleCode()).isEqualTo(AiRoleCodes.FINANCE_MANAGER);
-        assertThat(ctx.getSourceAdminRole()).isNull();
+        assertThat(ctx.getSourceAdminRole()).isEqualTo(GbConstants.DepartmentUserRole.FINANCE_MANAGER_AI_APP);
         assertThat(ctx.getPermissions()).contains(AiPermissions.VIEW_REVENUE).contains(AiPermissions.ACCESS_MARKETING_WORKSPACE)
                 .doesNotContain(AiPermissions.VIEW_COST);
     }
@@ -49,11 +48,11 @@ class AiUserContextResolverTest {
     @Test
     void storeManager_rowUsesDepartmentAsAnchor() {
         GbDepartmentUserEntity row = AiDepartmentUserTestRows.storeManager(
-                (int) AiUserContextResolver.TEST_STORE_MANAGER_UID, 100, 2);
+                AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK, 100, 2);
         AiUserContextResolver resolver = AiDepartmentUserTestRows.resolverReturning(row);
 
         AiRunCreateRequest req = new AiRunCreateRequest();
-        req.setUserId(AiUserContextResolver.TEST_STORE_MANAGER_UID);
+        req.setUserId((long) AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK);
         req.setDepartmentId(999L);
         req.setMessage("x");
         AiUserContext ctx = resolver.resolve(req);
@@ -79,14 +78,12 @@ class AiUserContextResolverTest {
 
     @Test
     void marketingManager_onlyWorkspaceCapability() {
-        AiUserContextResolver resolver = new AiUserContextResolver(
-                org.mockito.Mockito.mock(com.nongxinle.service.GbDepartmentUserService.class),
-                org.mockito.Mockito.mock(com.nongxinle.mapper.GbDepartmentMapper.class));
+        AiUserContextResolver resolver =
+                AiDepartmentUserTestRows.resolverReturning(AiDepartmentUserTestRows.marketingManager(881, 1, 2));
 
         AiRunCreateRequest req = new AiRunCreateRequest();
         req.setUserId(881L);
-        req.setDepartmentId(null);
-        req.setRoleCode(AiRoleCodes.MARKETING_MANAGER);
+        req.setDepartmentId(1L);
         req.setMessage("营销");
         AiUserContext ctx = resolver.resolve(req);
         assertThat(ctx.getPermissions()).containsExactly(AiPermissions.ACCESS_MARKETING_WORKSPACE);

@@ -1,12 +1,13 @@
 package com.nongxinle.ai.graph.business;
 
-import com.nongxinle.ai.context.AiOrgScopeResolver;
+import com.nongxinle.ai.context.AiDepartmentUserTestRows;
+import com.nongxinle.ai.context.AiResolvedOrgScope;
+import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContextResolver;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
-import com.nongxinle.ai.security.AiPermissions;
 import com.nongxinle.ai.security.AiPermissionGuard;
-import com.nongxinle.ai.security.AiRoleCodes;
+import com.nongxinle.ai.security.AiPermissions;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
 import org.junit.jupiter.api.Test;
@@ -34,20 +35,16 @@ class CostDiagnosisPermissionDeniedTest {
 
     @Test
     void financeManager_withoutViewCost_skipsDiagnosisStructure() {
-        AiUserContextResolver ur = new AiUserContextResolver(
-                org.mockito.Mockito.mock(com.nongxinle.service.GbDepartmentUserService.class),
-                org.mockito.Mockito.mock(com.nongxinle.mapper.GbDepartmentMapper.class));
-        AiOrgScopeResolver or = new AiOrgScopeResolver();
+        AiUserContextResolver ur =
+                AiDepartmentUserTestRows.resolverReturning(AiDepartmentUserTestRows.financeManager(771, 1, 2));
 
         AiRunCreateRequest rq = new AiRunCreateRequest();
         rq.setUserId(771L);
         rq.setDepartmentId(1L);
         rq.setDistributerId(2L);
-        rq.setRoleCode(AiRoleCodes.FINANCE_MANAGER);
         rq.setMessage("毛利");
 
         var uc = ur.resolve(rq);
-        var os = or.resolve(uc, rq);
 
         AiRunState state = AiRunState.builder()
                 .runId(505L)
@@ -57,7 +54,14 @@ class CostDiagnosisPermissionDeniedTest {
                 .costInsightPath(true)
                 .dataPlanTools(List.copyOf(AiBusinessToolIds.DEFAULT_COST_INSIGHT_TOOLS))
                 .aiUserContext(uc)
-                .aiOrgScope(os)
+                .resolvedQueryContext(AiResolvedQueryContext.builder()
+                        .orgScope(AiResolvedOrgScope.builder()
+                                .scopeType(AiResolvedOrgScope.SCOPE_DEPARTMENT)
+                                .distributerId(2L)
+                                .requestDepartmentId(1L)
+                                .currentDepartmentId(1L)
+                                .build())
+                        .build())
                 .build();
         preloadTools(state);
 

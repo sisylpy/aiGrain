@@ -30,6 +30,11 @@ public final class AiMultiTurnTimeWindowPolicy {
             tentativeExplicit.setInheritedFromPreviousTurn(false);
             return tentativeExplicit;
         }
+        // 语义 LLM 已给出显式窗（含 LAST_YEAR_SAME_PERIOD 等），应优先于「原样继承上一轮起止日」
+        if (mergedFromFollowUp != null && mergedFromFollowUp.isExplicitTimeMentioned()) {
+            mergedFromFollowUp.setInheritedFromPreviousTurn(false);
+            return mergedFromFollowUp;
+        }
         if (hasTurnMemoryDates(previousTurn)) {
             AiResolvedTimeWindow inherited = timeWindowFromPreviousTurn(previousTurn);
             if (inherited != null) {
@@ -80,6 +85,9 @@ public final class AiMultiTurnTimeWindowPolicy {
         if (finalTw.isInheritedFromPreviousTurn()) {
             return "INHERITED_PREVIOUS";
         }
+        if (finalTw.isExplicitTimeMentioned()) {
+            return "SEMANTIC_EXPLICIT";
+        }
         return "DEFAULT_MONTH_TO_DATE";
     }
 
@@ -122,6 +130,9 @@ public final class AiMultiTurnTimeWindowPolicy {
         }
         if (AiResolvedTimeWindow.ROLLING_7.equals(lab)) {
             return "最近7天";
+        }
+        if (AiResolvedTimeWindow.LAST_YEAR_SAME_PERIOD.equals(lab)) {
+            return "去年同期";
         }
         if (tw.getStartDate() != null && tw.getEndDate() != null) {
             return tw.getStartDate() + "～" + tw.getEndDate();

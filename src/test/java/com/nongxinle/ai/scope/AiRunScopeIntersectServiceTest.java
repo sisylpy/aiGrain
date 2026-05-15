@@ -1,11 +1,10 @@
 package com.nongxinle.ai.scope;
 
-import com.nongxinle.ai.context.AiOrgScope;
-import com.nongxinle.ai.context.AiOrgScopeResolver;
+import com.nongxinle.ai.context.AiDepartmentUserTestRows;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.context.AiUserContextResolver;
 import com.nongxinle.ai.core.AiRunState;
-import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
+import com.nongxinle.ai.resolver.AiResolvedQueryContextResolver;
 import com.nongxinle.ai.security.AiAnswerBoundary;
 import com.nongxinle.ai.security.AiRoleCodes;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,15 +30,14 @@ class AiRunScopeIntersectServiceTest {
     @Mock
     AiScopeResolver scopeResolver;
     @Mock
-    AiOrgScopeResolver orgScopeResolver;
+    AiResolvedQueryContextResolver resolvedQueryContextResolver;
 
     @InjectMocks
     AiRunScopeIntersectService sut;
 
     @BeforeEach
     void stubs() {
-        when(orgScopeResolver.resolve(any(), any(AiRunCreateRequest.class))).thenReturn(
-                AiOrgScope.builder().scopeType(AiOrgScopeResolver.SCOPE_GROUP).build());
+        doNothing().when(resolvedQueryContextResolver).patchResolvedQueryContextAfterRunIntersect(any());
         when(scopeResolver.departmentTypeCountsForIds(anyList())).thenReturn(Map.of());
     }
 
@@ -64,7 +63,7 @@ class AiRunScopeIntersectServiceTest {
         AiUserContext ctx = AiUserContext.builder()
                 .roleCode(AiRoleCodes.STORE_MANAGER)
                 .departmentId(100L)
-                .userId(AiUserContextResolver.TEST_STORE_MANAGER_UID)
+                .userId((long) AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK)
                 .distributerId(2L)
                 .build();
         AiRunState st = AiRunState.builder()

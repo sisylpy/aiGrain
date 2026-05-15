@@ -14,7 +14,8 @@ class AiMultiTurnTimeWindowPolicyTest {
 
     @Test
     void explicitInCurrentMessage_overridesPreviousTurn() {
-        AiResolvedTimeWindow explicit = AiResolvedTimeWindow.tryParseExplicitFromUserMessage("这个月采购多少", TODAY);
+        AiResolvedTimeWindow explicit =
+                AiResolvedTimeWindow.fromSemanticTimeType(AiResolvedTimeWindow.THIS_MONTH, TODAY, null);
         assertThat(explicit).isNotNull();
         var prev = AiConversationTurnMemory.builder()
                 .lastStartDate("2026-04-01")
@@ -51,6 +52,16 @@ class AiMultiTurnTimeWindowPolicyTest {
         assertThat(out.isInheritedFromPreviousTurn()).isFalse();
         assertThat(AiMultiTurnTimeWindowPolicy.resolveEffectiveTimeWindowSource(null, out))
                 .isEqualTo("DEFAULT_MONTH_TO_DATE");
+    }
+
+    @Test
+    void semanticLlmWindow_explicitMarked_usesSemanticExplicitSource() {
+        AiResolvedTimeWindow out =
+                AiResolvedTimeWindow.fromSemanticTimeType(AiResolvedTimeWindow.LAST_MONTH, TODAY, null);
+        assertThat(out).isNotNull();
+        assertThat(out.isExplicitTimeMentioned()).isTrue();
+        assertThat(AiMultiTurnTimeWindowPolicy.resolveEffectiveTimeWindowSource(null, out))
+                .isEqualTo("SEMANTIC_EXPLICIT");
     }
 
     @Test

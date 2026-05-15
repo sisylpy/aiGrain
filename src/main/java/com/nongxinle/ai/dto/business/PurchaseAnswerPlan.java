@@ -1,0 +1,60 @@
+package com.nongxinle.ai.dto.business;
+
+import com.alibaba.fastjson2.annotation.JSONField;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 采购 Harness：服务端生成的回答计划（Replay / Debug / Composer 同源）。
+ * <p>
+ * 排序与选行在构建阶段一次性完成；后续 Composer 只消费已有字段。
+ * </p>
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class PurchaseAnswerPlan {
+
+    public static final String TYPE_PURCHASE_OVERVIEW = "PURCHASE_OVERVIEW";
+    public static final String TYPE_PURCHASE_SELF_OVERVIEW = "PURCHASE_SELF_OVERVIEW";
+    public static final String TYPE_PURCHASE_SUPPLIER_OVERVIEW = "PURCHASE_SUPPLIER_OVERVIEW";
+    public static final String TYPE_PURCHASE_GOODS_AMOUNT_RANKING = "PURCHASE_GOODS_AMOUNT_RANKING";
+    public static final String TYPE_PURCHASE_GOODS_COUNT_RANKING = "PURCHASE_GOODS_COUNT_RANKING";
+    public static final String TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING = "PURCHASE_SUPPLIER_AMOUNT_RANKING";
+
+    /** 多店范围内：按门店采购金额对比/排序（数据来自采购 Tool 的门店覆盖行，不重跑 SQL）。 */
+    public static final String TYPE_PURCHASE_STORE_AMOUNT_RANKING = "PURCHASE_STORE_AMOUNT_RANKING";
+
+    /** JSON：{@code type}（与文档及前端对齐） */
+    @JSONField(name = "type")
+    private String planType;
+
+    private String scopeLabel;
+    private String timeLabel;
+
+    /**
+     * 对齐 Harness：{@link com.nongxinle.ai.conversation.AiQuerySemanticLexicon#SOURCE_SELF_PURCHASE} /
+     * {@code SUPPLIER_PURCHASE} / {@code ALL}
+     */
+    private String purchaseSourceType;
+
+    @Builder.Default
+    private Map<String, Object> summary = new LinkedHashMap<>();
+
+    @Builder.Default
+    private List<Map<String, Object>> focusRows = new ArrayList<>();
+
+    @Builder.Default
+    private List<Map<String, Object>> secondaryRows = new ArrayList<>();
+
+    @Builder.Default
+    private Map<String, Object> debug = new LinkedHashMap<>();
+}

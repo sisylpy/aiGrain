@@ -1,7 +1,8 @@
 package com.nongxinle.ai.graph.business;
 
 import com.nongxinle.ai.context.AiDepartmentUserTestRows;
-import com.nongxinle.ai.context.AiOrgScopeResolver;
+import com.nongxinle.ai.context.AiResolvedOrgScope;
+import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContextResolver;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.core.AiWorkspaceMode;
@@ -35,7 +36,6 @@ class BusinessOverviewAgentGroupScopeSmokeTest {
     void groupManager_rollUp_ok_overview_scope_is_group_and_banner_not_single_store_warning() {
         AiUserContextResolver ur = AiDepartmentUserTestRows.resolverReturning(
                 AiDepartmentUserTestRows.groupManager(801, 1, 88));
-        AiOrgScopeResolver or = new AiOrgScopeResolver();
 
         AiRunCreateRequest rq = new AiRunCreateRequest();
         rq.setUserId(801L);
@@ -56,7 +56,14 @@ class BusinessOverviewAgentGroupScopeSmokeTest {
                 .statStartDate("2026-05-01")
                 .statEndDate("2026-05-10")
                 .aiUserContext(uc)
-                .aiOrgScope(or.resolve(uc, rq))
+                .resolvedQueryContext(AiResolvedQueryContext.builder()
+                        .orgScope(AiResolvedOrgScope.builder()
+                                .scopeType(AiResolvedOrgScope.SCOPE_GROUP)
+                                .distributerId(88L)
+                                .requestDepartmentId(1L)
+                                .currentDepartmentId(uc.getDepartmentId())
+                                .build())
+                        .build())
                 .scope(AiQueryScope.builder()
                         .parentStoreCount(2)
                         .resolvedDepartmentIds(List.of(101, 102))
@@ -118,18 +125,16 @@ class BusinessOverviewAgentGroupScopeSmokeTest {
     @Test
     void storeRole_rollUpAbsent_overview_banner_is_storeSubtree() {
         AiUserContextResolver ur = AiDepartmentUserTestRows.resolverReturning(
-                AiDepartmentUserTestRows.storeManager(
-                        (int) AiUserContextResolver.TEST_STORE_MANAGER_UID, 100, 2));
-        AiOrgScopeResolver or = new AiOrgScopeResolver();
+                AiDepartmentUserTestRows.storeManager(AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK, 100, 2));
         AiRunCreateRequest rq = new AiRunCreateRequest();
-        rq.setUserId(AiUserContextResolver.TEST_STORE_MANAGER_UID);
+        rq.setUserId((long) AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK);
         rq.setDepartmentId(100L);
         rq.setDistributerId(2L);
         var uc = ur.resolve(rq);
 
         var base = AiRunState.builder()
                 .runId(10L)
-                .userId(AiUserContextResolver.TEST_STORE_MANAGER_UID)
+                .userId((long) AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK)
                 .departmentId(100L)
                 .distributerId(2L)
                 .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
@@ -138,7 +143,14 @@ class BusinessOverviewAgentGroupScopeSmokeTest {
                 .statStartDate("2026-05-01")
                 .statEndDate("2026-05-10")
                 .aiUserContext(uc)
-                .aiOrgScope(or.resolve(uc, rq));
+                .resolvedQueryContext(AiResolvedQueryContext.builder()
+                        .orgScope(AiResolvedOrgScope.builder()
+                                .scopeType(AiResolvedOrgScope.SCOPE_STORE)
+                                .distributerId(2L)
+                                .requestDepartmentId(100L)
+                                .currentDepartmentId(100L)
+                                .build())
+                        .build());
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("stats", Map.of(

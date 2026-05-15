@@ -50,6 +50,8 @@ public class GbAiConversationTurnMemoryEntity implements Serializable {
 
     private String gbAiCtmMentionedStore;
 
+    private String gbAiCtmMentionedDishName;
+
     private String gbAiCtmFocusType;
 
     private String gbAiCtmFocusName;

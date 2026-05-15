@@ -1,0 +1,2759 @@
+{
+    "code": 0,
+    "replay": {
+        "conversationId": 338,
+        "overallPass": null,
+        "frozenClockDate": "2026-05-15",
+        "caseId": "PROBE",
+        "exploreProbeReplay": true,
+        "harnessRootSummary": null,
+        "rounds": [
+            {
+                "roundIndex": 1,
+                "message": "\u8fd9\u4e2a\u6708\u51fa\u5e93\u91d1\u989d\u591a\u5c11\uff1f",
+                "runId": 1778835191101,
+                "conversationId": 338,
+                "resolvedQueryContextSummary": {
+                    "conversationId": 338,
+                    "runId": 1778835191101,
+                    "effectiveIntentCode": "STOCK_REDUCE_QUERY",
+                    "effectivePathCode": "stock_reduce_query_path",
+                    "intent": "STOCK_REDUCE_QUERY",
+                    "path": "stock_reduce_query_path",
+                    "effectiveTimeWindowSource": "SEMANTIC_EXPLICIT",
+                    "timeSource": "SEMANTIC_EXPLICIT",
+                    "effectiveIntentSource": "CURRENT_MESSAGE_EXPLICIT",
+                    "effectiveScopeSource": "INHERITED_PREVIOUS",
+                    "querySemanticLlm": {
+                        "parseMissing": false,
+                        "intent": "STOCK_REDUCE_QUERY",
+                        "confidence": 0.95,
+                        "time": {
+                            "timeType": "CURRENT_MONTH",
+                            "startDate": "2026-05-01",
+                            "endDate": "2026-05-15",
+                            "timeSource": "CURRENT_MESSAGE",
+                            "needInheritFromPrevious": false
+                        },
+                        "requestedScope": {
+                            "requestedScopeType": "GROUP",
+                            "mentionedStoreName": null,
+                            "mentionedStoreNames": null,
+                            "mentionedDepartmentName": null,
+                            "mentionedWarehouseName": null,
+                            "scopeSource": null,
+                            "needInheritFromPrevious": false
+                        },
+                        "metric": {
+                            "primaryMetric": "stock_reduce",
+                            "rankingType": null,
+                            "purchaseSourceType": null,
+                            "stockReduceType": "ALL"
+                        },
+                        "needClarification": false,
+                        "clarificationQuestion": null,
+                        "reason": null,
+                        "mentionedStoreNames": null
+                    },
+                    "needSemanticClarification": false,
+                    "semanticClarificationQuestion": null,
+                    "querySemanticEffectiveMentionedStoreNames": null,
+                    "semanticPrimaryVersion": "v2",
+                    "semanticFallbackUsed": false,
+                    "semanticFallbackReason": null,
+                    "semanticAdoptedFrom": "v2",
+                    "semanticAdoptedFields": [
+                        "intent",
+                        "confidence",
+                        "intentAction",
+                        "timeAction",
+                        "scopeAction",
+                        "metricAction",
+                        "time.timeType",
+                        "requestedScope"
+                    ],
+                    "semanticAdoptionRejectedFields": null,
+                    "semanticAdoptionRejectedReason": null,
+                    "semanticMetricNormalizedFrom": null,
+                    "semanticMetricNormalizedTo": null,
+                    "semanticV2AbstractIntentNormalizationNotes": null,
+                    "querySemanticV1": null,
+                    "querySemanticV2InputPreview": {
+                        "today": "2026-05-15",
+                        "visibleStores": [],
+                        "currentUserMessage": "\u8fd9\u4e2a\u6708\u51fa\u5e93\u91d1\u989d\u591a\u5c11\uff1f"
+                    },
+                    "querySemanticV2": {
+                        "timeAction": "NEW",
+                        "isFollowUp": false,
+                        "intentAction": "NEW",
+                        "needClarification": false,
+                        "confidence": 0.95,
+                        "orchestrationDecisionCandidate": {
+                            "taskMode": "ROUTED_AGENT",
+                            "selectedAgents": [
+                                "StockReduceAgent"
+                            ],
+                            "selectedTools": [
+                                "stock_reduce_query"
+                            ],
+                            "plannerRequired": false,
+                            "multiAgentRequired": false,
+                            "approvalRequired": false,
+                            "clarificationRequired": false,
+                            "confidence": 0.95,
+                            "reason": "\u5355\u7b14\u51fa\u5e93\u91d1\u989d\u67e5\u8be2\uff0c\u5355\u57df\u51fa\u5e93Agent"
+                        },
+                        "promptRegistryId": "semantic.query_parser.v2",
+                        "intent": "STOCK_REDUCE_QUERY",
+                        "metricAction": "NEW",
+                        "parseMissing": false,
+                        "metric": {
+                            "primaryMetric": "stock_reduce",
+                            "stockReduceType": "ALL"
+                        },
+                        "scopeAction": "NEW",
+                        "requestedScope": {
+                            "requestedScopeType": "GROUP",
+                            "needInheritFromPrevious": false
+                        },
+                        "time": {
+                            "timeType": "CURRENT_MONTH",
+                            "startDate": "2026-05-01",
+                            "endDate": "2026-05-15",
+                            "timeSource": "CURRENT_MESSAGE",
+                            "needInheritFromPrevious": false
+                        }
+                    },
+                    "querySemanticV2ParseMissing": false,
+                    "querySemanticV2Confidence": 0.95,
+                    "querySemanticV2TimeAction": "NEW",
+                    "querySemanticV2ScopeAction": "NEW",
+                    "querySemanticV2IntentAction": "NEW",
+                    "querySemanticV2MetricAction": "NEW",
+                    "querySemanticV2MentionedStoreNames": null,
+                    "querySemanticV2MentionedDishName": null,
+                    "querySemanticV2RawText": "{\"isFollowUp\":false,\"intentAction\":\"NEW\",\"timeAction\":\"NEW\",\"scopeAction\":\"NEW\",\"metricAction\":\"NEW\",\"intent\":\"STOCK_REDUCE_QUERY\",\"confidence\":0.95,\"time\":{\"timeType\":\"CURRENT_MONTH\",\"startDate\":\"2026-05-01\",\"endDate\":\"2026-05-15\",\"timeSource\":\"CURRENT_MESSAGE\",\"needInheritFromPrevious\":false},\"requestedScope\":{\"requestedScopeType\":\"GROUP\",\"mentionedStoreName\":null,\"mentionedStoreNames\":null,\"mentionedDepartmentName\":null,\"mentionedWarehouseName\":null,\"scopeSource\":null,\"needInheritFromPrevious\":false},\"metric\":{\"primaryMetric\":\"stock_reduce\",\"rankingType\":null,\"purchaseSourceType\":null,\"stockReduceType\":\"ALL\"},\"mentionedDishName\":null,\"needClarification\":false,\"clarificationQuestion\":null,\"reason\":null,\"orchestrationDecisionCandidate\":{\"taskMode\":\"ROUTED_AGENT\",\"selectedAgents\":[\"StockReduceAgent\"],\"selectedTools\":[\"stock_reduce_query\"],\"plannerRequired\":false,\"multiAgentRequired\":false,\"approvalRequired\":false,\"clarificationRequired\":false,\"clarificationQuestion\":null,\"confidence\":0.95,\"reason\":\"\u5355\u7b14\u51fa\u5e93\u91d1\u989d\u67e5\u8be2\uff0c\u5355\u57df\u51fa\u5e93Agent\"}}",
+                    "querySemanticV2ParseError": null,
+                    "orchestrationTaskMode": "ROUTED_AGENT",
+                    "orchestrationSelectedAgents": [
+                        "StockReduceAgent"
+                    ],
+                    "orchestrationSelectedTools": [
+                        "stock_reduce_query"
+                    ],
+                    "orchestrationPlannerRequired": false,
+                    "orchestrationMultiAgentRequired": false,
+                    "orchestrationApprovalRequired": false,
+                    "orchestrationClarificationRequired": false,
+                    "orchestrationClarificationQuestion": null,
+                    "orchestrationConfidence": 0.95,
+                    "orchestrationReason": "\u5355\u7b14\u51fa\u5e93\u91d1\u989d\u67e5\u8be2\uff0c\u5355\u57df\u51fa\u5e93Agent",
+                    "multiStoreScopeDetected": false,
+                    "multiStoreScopeApplied": false,
+                    "multiStoreScopeSource": null,
+                    "multiStoreMatchedStores": null,
+                    "singleStoreNarrowingBlocked": false,
+                    "startDate": "2026-05-01",
+                    "endDate": "2026-05-15",
+                    "timeLabel": "THIS_MONTH",
+                    "timeDisplayText": "\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09",
+                    "timeInheritedFromPrevious": false,
+                    "timeExplicitInMessage": true,
+                    "time": {
+                        "start": "2026-05-01",
+                        "end": "2026-05-15",
+                        "label": "THIS_MONTH",
+                        "displayText": "\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09"
+                    },
+                    "scopeType": "WAREHOUSE",
+                    "scopeLabel": "\u672c\u5e93\u623f\uff1aAAA",
+                    "visibleStores": [],
+                    "semanticMentionedStoreNames": [],
+                    "storeRootCandidates": [],
+                    "visibleStoreCandidates": [],
+                    "matchedStoreCandidate": null,
+                    "narrowingFailureReason": "SKIPPED_NOT_GROUP_SCOPE",
+                    "queryScopeKind": "DEPARTMENT",
+                    "queryStoreIds": [],
+                    "queryRealDepartmentIds": [
+                        1
+                    ],
+                    "queryDistributerId": null,
+                    "storeToDepartmentIds": {},
+                    "visibleStoreRootIds": [],
+                    "storeRootDepartmentIds": [],
+                    "childDepartmentIds": [],
+                    "expandedChildDepartmentIds": [],
+                    "expandedSqlDepartmentIds": [
+                        1
+                    ],
+                    "revenueSqlDepartmentIds": [
+                        1
+                    ],
+                    "purchaseSqlDepartmentIds": [
+                        1
+                    ],
+                    "stockSqlDepartmentIds": [
+                        1
+                    ],
+                    "dishProfitSqlDepartmentIds": [
+                        1
+                    ],
+                    "stockReduceSqlDepartmentIds": [
+                        1
+                    ],
+                    "visibleStoreIds": [],
+                    "visibleWarehouseIds": [
+                        1
+                    ],
+                    "explicitChildDepartmentIds": [],
+                    "queryScopeMode": "WAREHOUSE_DEPARTMENT",
+                    "queryLevel": "WAREHOUSE_DEPARTMENT",
+                    "storeToChildDepartmentIds": {},
+                    "departmentScopeModelNote": "\u4e3b\u67e5\u8be2\u7ef4\u5ea6\uff1aqueryScopeKind=STORE \u7528 queryStoreIds\uff08\u95e8\u5e97\u6839\uff09\uff1bDEPARTMENT \u7528 queryRealDepartmentIds\uff08\u4ec5\u771f\u5b9e\u90e8\u95e8\uff09\uff1bDISTRIBUTER \u7528 queryDistributerId\u3002\u4e1a\u52a1\u8868 department_id IN \u7528 expandedSqlDepartmentIds\uff08\u6839\u222a\u5b50\uff09\uff0c\u52ff\u4e0e\u95e8\u5e97\u5217\u8868\u6df7\u6dc6\u3002storeToDepartmentIds \u4ec5\u7ed3\u6784\u8bf4\u660e\u3002",
+                    "purchaseSourceType": null,
+                    "structuredIntentDetailWire": "ALL",
+                    "structuredIntentDetail": "ALL",
+                    "structuredIntentDetailCode": "ALL",
+                    "structuredIntentDetailPresent": true,
+                    "stockReduceType": "ALL",
+                    "dishProfitStructuredDetail": null,
+                    "mentionedDishName": null,
+                    "dishName": null,
+                    "dishProfitMetricType": "ALL",
+                    "mentionedStore": null,
+                    "followUp": false,
+                    "followUpType": "SEMANTIC_STRUCTURAL_MERGE",
+                    "previousTurnSummary": null,
+                    "dataPlanTools": [
+                        "stock_reduce_query"
+                    ],
+                    "usedToolId": "stock_reduce_query",
+                    "buildInsightUsed": false,
+                    "usedBuildInsight": false,
+                    "buildInsightRequest": null,
+                    "buildInsightInputStoreRootIds": null,
+                    "buildInsightInputDepartmentIdsAllowFilter": null,
+                    "dishesCount": null,
+                    "dishLineReturned": null,
+                    "salesDishCount": null,
+                    "riskLevel": null,
+                    "resolvedVisibleStoreRootIds": [],
+                    "resolvedEffectiveSqlDepartmentIds": [
+                        1
+                    ],
+                    "resolvedDishProfitSqlDepartmentIds": [
+                        1
+                    ],
+                    "departmentIdSemanticsHint": "\u95e8\u5e97\u5c55\u793a=visibleStores/queryStoreIds\uff1bdepartment_id IN=expandedSqlDepartmentIds\uff1b\u8bed\u4e49\u90e8\u95e8=queryRealDepartmentIds\uff08\u4ec5 DEPARTMENT \u53e3\u5f84\uff09",
+                    "dishProfitAnswerPlan": null,
+                    "dishProfitAnswerPlanPresent": false,
+                    "dishSalesAnswerPlan": null,
+                    "dishSalesAnswerPlanPresent": false,
+                    "purchaseAnswerPlan": null,
+                    "purchaseAnswerPlanPresent": false,
+                    "purchaseAnswerPlanType": null,
+                    "purchaseAnswerPlanSortKey": null,
+                    "purchaseAnswerPlanSortDirection": null,
+                    "purchaseAnswerPlanFocusRows": null,
+                    "purchaseAnswerPlanSecondaryRows": null,
+                    "purchaseAnswerPlanDebug": null,
+                    "stockReduceAnswerPlan": {
+                        "debug": {
+                            "attachAttempted": true,
+                            "expectedToolKey": "stock_reduce_query",
+                            "source": "StockReduceQueryTool",
+                            "sourceToolKey": "stock_reduce_query",
+                            "toolResultKeys": [
+                                "stock_reduce_query"
+                            ],
+                            "hasStockReduceToolResult": true,
+                            "dataClass": "java.util.LinkedHashMap",
+                            "foundDataPath": "envelope.data",
+                            "foundStockReduceOverview": true,
+                            "resolvedPlanType": "STOCK_REDUCE_OVERVIEW",
+                            "reduceType": "ALL",
+                            "structuredIntentDetailWire": "ALL"
+                        },
+                        "focusRows": [
+                            {
+                                "reduceType": "ALL",
+                                "label": "\u51fa\u5e93/\u6838\u9500\u5408\u8ba1\uff08type1+2+3+4\uff09",
+                                "amount": 0.0,
+                                "totalsBasis": "CALENDAR_NATURAL_DAY"
+                            }
+                        ],
+                        "reduceType": "ALL",
+                        "scopeLabel": "\u672c\u5e93\u623f\uff1aAAA",
+                        "secondaryRows": [
+                            {
+                                "reduceType": "TYPE1",
+                                "label": "\u751f\u4ea7\u8017\u7528\uff08type1\uff09",
+                                "amount": 0.0,
+                                "totalsBasis": "CALENDAR_NATURAL_DAY"
+                            },
+                            {
+                                "reduceType": "TYPE2",
+                                "label": "\u5e9f\u5f03\uff08type2\uff09",
+                                "amount": 0.0,
+                                "totalsBasis": "CALENDAR_NATURAL_DAY"
+                            },
+                            {
+                                "reduceType": "TYPE3",
+                                "label": "\u635f\u8017/\u62a5\u635f\uff08type3\uff09",
+                                "amount": 0.0,
+                                "totalsBasis": "CALENDAR_NATURAL_DAY"
+                            },
+                            {
+                                "reduceType": "TYPE4",
+                                "label": "\u9000\u8d27\uff08type4\uff09",
+                                "amount": 0.0,
+                                "totalsBasis": "CALENDAR_NATURAL_DAY"
+                            }
+                        ],
+                        "summary": {
+                            "grandTotalFourTypes": 0.0,
+                            "produceTotal": 0.0,
+                            "wasteTotal": 0.0,
+                            "lossTotal": 0.0,
+                            "returnTotal": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        },
+                        "timeLabel": "\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09",
+                        "type": "STOCK_REDUCE_OVERVIEW"
+                    },
+                    "stockReduceAnswerPlanPresent": true,
+                    "stockReduceAnswerPlanType": "STOCK_REDUCE_OVERVIEW",
+                    "stockReduceAnswerPlanSortKey": null,
+                    "stockReduceAnswerPlanSortDirection": null,
+                    "stockReduceAnswerPlanDebug": {
+                        "attachAttempted": true,
+                        "expectedToolKey": "stock_reduce_query",
+                        "source": "StockReduceQueryTool",
+                        "sourceToolKey": "stock_reduce_query",
+                        "toolResultKeys": [
+                            "stock_reduce_query"
+                        ],
+                        "hasStockReduceToolResult": true,
+                        "dataClass": "java.util.LinkedHashMap",
+                        "foundDataPath": "envelope.data",
+                        "foundStockReduceOverview": true,
+                        "resolvedPlanType": "STOCK_REDUCE_OVERVIEW",
+                        "reduceType": "ALL",
+                        "structuredIntentDetailWire": "ALL",
+                        "sortKey": null,
+                        "sortDirection": null
+                    },
+                    "stockReduceAnswerPlanFocusRows": [
+                        {
+                            "reduceType": "ALL",
+                            "label": "\u51fa\u5e93/\u6838\u9500\u5408\u8ba1\uff08type1+2+3+4\uff09",
+                            "amount": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        }
+                    ],
+                    "stockReduceAnswerPlanSecondaryRows": [
+                        {
+                            "reduceType": "TYPE1",
+                            "label": "\u751f\u4ea7\u8017\u7528\uff08type1\uff09",
+                            "amount": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        },
+                        {
+                            "reduceType": "TYPE2",
+                            "label": "\u5e9f\u5f03\uff08type2\uff09",
+                            "amount": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        },
+                        {
+                            "reduceType": "TYPE3",
+                            "label": "\u635f\u8017/\u62a5\u635f\uff08type3\uff09",
+                            "amount": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        },
+                        {
+                            "reduceType": "TYPE4",
+                            "label": "\u9000\u8d27\uff08type4\uff09",
+                            "amount": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        }
+                    ],
+                    "revenueAnswerPlan": null,
+                    "revenueAnswerPlanPresent": false,
+                    "revenueAnswerPlanType": null,
+                    "revenueAnswerPlanSortKey": null,
+                    "revenueAnswerPlanSortDirection": null,
+                    "revenueAnswerPlanFocusRows": null,
+                    "revenueAnswerPlanSecondaryRows": null,
+                    "revenueAnswerPlanDebug": null,
+                    "usedTools": [
+                        "stock_reduce_query"
+                    ],
+                    "diagnosisPlan": null,
+                    "diagnosisPlanPresent": false,
+                    "diagnosisPlanType": null,
+                    "businessDiagnosisPlan": null,
+                    "businessDiagnosisPlanType": null,
+                    "storePriorityRankingPlanType": null,
+                    "storePriorityRankingRowsLen": null,
+                    "storePriorityRankingTop1StoreName": null,
+                    "storePriorityRankingTop1PriorityRank": null,
+                    "diagnosisRiskLevel": null,
+                    "diagnosisDataCompleteness": null,
+                    "planSource": "stockReduceAnswerPlan",
+                    "businessOverviewMultiMaster": {
+                        "businessOverviewMultiAgentBatchAttempted": false,
+                        "businessOverviewMultiAgentBatchCompleted": false,
+                        "businessOverviewMultiAgentBatchUsableForDiagnosis": false,
+                        "businessOverviewMultiAgentAllDomainsSkipped": true,
+                        "businessOverviewMultiMasterEnabled": false,
+                        "businessOverviewMultiAgentAnyDomainSuccess": false
+                    },
+                    "masterAgentEnabled": false,
+                    "masterAgentUsed": false,
+                    "selectedAgents": [],
+                    "dispatchPlan": null,
+                    "agentResults": [],
+                    "agentResultStatus": null,
+                    "degraded": false,
+                    "failurePolicy": null,
+                    "fallbackUsed": false,
+                    "fallbackReason": "not_eligible_for_master_revenue_gate",
+                    "legacyRevenueSkipped": false,
+                    "masterRevenueToolResultKey": null,
+                    "masterRevenueToolResultSuccess": null,
+                    "revenueToolExecutedByMasterPath": false,
+                    "purchaseMasterAgentEnabled": false,
+                    "purchaseMasterAgentUsed": false,
+                    "purchaseSelectedAgents": [],
+                    "purchaseDispatchPlan": null,
+                    "purchaseAgentResults": [],
+                    "purchaseAgentResultStatus": null,
+                    "purchaseDegraded": false,
+                    "purchaseFailurePolicy": null,
+                    "purchaseFallbackUsed": false,
+                    "purchaseFallbackReason": "not_eligible_for_master_purchase_gate",
+                    "legacyPurchaseSkipped": false,
+                    "masterPurchaseToolResultKey": null,
+                    "masterPurchaseToolResultSuccess": null,
+                    "purchaseToolExecutedByMasterPath": false,
+                    "purchaseRequestResolutionDebug": null,
+                    "stockReduceMasterAgentEnabled": true,
+                    "stockReduceMasterAgentUsed": true,
+                    "stockReduceSelectedAgents": [
+                        "stock_reduce_query"
+                    ],
+                    "stockReduceDispatchPlan": {
+                        "dispatchId": "1a9037aa-2b94-4ef0-9418-504ca8bf514c",
+                        "intentCode": "STOCK_REDUCE_QUERY",
+                        "pathCode": "stock_reduce_query_path",
+                        "parallelAllowed": false,
+                        "steps": [
+                            {
+                                "agentName": "stock_reduce_query",
+                                "required": true,
+                                "timeoutMs": 120000,
+                                "failurePolicy": "FAIL_FAST",
+                                "order": 0
+                            }
+                        ]
+                    },
+                    "stockReduceAgentResults": [
+                        {
+                            "agentName": "stock_reduce_query",
+                            "status": "SUCCESS",
+                            "resultType": "STOCK_REDUCE_OVERVIEW",
+                            "degraded": false,
+                            "durationMs": 395,
+                            "traceId": "1778835191101-stock_reduce_query-6caa52e4-abcf-495e-a5a8-b4754939691c",
+                            "warnings": [],
+                            "errors": [],
+                            "revenueQueryToolSuccess": null,
+                            "purchaseOverviewToolSuccess": null,
+                            "stockReduceQueryToolSuccess": true,
+                            "dishProfitAnalysisToolSuccess": null
+                        }
+                    ],
+                    "stockReduceAgentResultStatus": "SUCCESS",
+                    "stockReduceDegraded": false,
+                    "stockReduceFailurePolicy": "FAIL_FAST",
+                    "stockReduceFallbackUsed": false,
+                    "stockReduceFallbackReason": null,
+                    "legacyStockReduceSkipped": true,
+                    "masterStockReduceToolResultKey": "stock_reduce_query",
+                    "masterStockReduceToolResultSuccess": true,
+                    "stockReduceToolExecutedByMasterPath": true,
+                    "stockReduceRequestResolutionDebug": {
+                        "startDateIso": "2026-05-01",
+                        "endDateIso": "2026-05-15",
+                        "stopDateIso": "2026-05-15",
+                        "timeWindowSource": "resolvedQueryContext.timeWindow.explicitDates",
+                        "structuredIntentDetailSource": "resolvedQueryContext.queryIntent.structuredIntentDetail",
+                        "stockReduceTypeSource": "resolvedQueryContext.querySemanticParse.metric.stockReduceType",
+                        "stockReduceSqlDepartmentIdsSource": "resolvedQueryContext.dataScope.sqlDepartmentIdsForDomain(stock_reduce)",
+                        "effectiveSqlDepartmentIdsSource": "resolvedQueryContext.dataScope.effectiveSqlDepartmentIds",
+                        "visibleStoreRootIdsSource": "resolvedQueryContext.dataScope.visibleStoreRootIds",
+                        "scopeTypeSource": "resolvedQueryContext.orgScope.scopeType",
+                        "scopeType": "WAREHOUSE",
+                        "queryScopeKind": "DEPARTMENT",
+                        "visibleStoreRootDepartmentIdsSource": "resolvedQueryContext.orgScope.visibleStores.storeDepartmentId",
+                        "departmentAnchorSource": "resolveBuildInsightDepartmentFatherId(loginDepartmentId)",
+                        "departmentFatherIdForScopedTools": 1,
+                        "departmentFatherIdForBuildInsight": 1
+                    },
+                    "dishProfitMasterAgentEnabled": false,
+                    "dishProfitMasterAgentUsed": false,
+                    "dishProfitSelectedAgents": [],
+                    "dishProfitDispatchPlan": null,
+                    "dishProfitAgentResults": [],
+                    "dishProfitAgentResultStatus": null,
+                    "dishProfitFallbackUsed": false,
+                    "dishProfitFallbackReason": "not_eligible_for_master_dish_profit_gate",
+                    "legacyDishProfitSkipped": false,
+                    "masterDishProfitToolResultKey": null,
+                    "masterDishProfitToolResultSuccess": null,
+                    "dishProfitToolExecutedByMasterPath": false,
+                    "dishProfitRequestResolutionDebug": null,
+                    "businessOverviewMultiAgentBatchCompleted": false,
+                    "businessOverviewMultiAgentAnyDomainSuccess": false,
+                    "businessOverviewMultiAgentBatchAttempted": false,
+                    "businessOverviewMultiAgentAllDomainsSkipped": true,
+                    "businessOverviewMultiAgentBatchUsableForDiagnosis": false,
+                    "compositeGateAllowed": false,
+                    "compositeGateReasonCode": "DOMAIN_SINGLE_INTENT_NOT_COMPOSITE",
+                    "compositeGateReason": "single-domain intent/path not eligible for composite",
+                    "compositeGateScopeType": "WAREHOUSE",
+                    "compositeGateRecommendedCaseKind": "NONE",
+                    "compositeGateFinalAnswerPlanType": null,
+                    "compositeGateDebug": {
+                        "productionEnabledEffective": true,
+                        "gateVersion": "C-53_SKELETON",
+                        "effectiveIntentCode": "STOCK_REDUCE_QUERY",
+                        "productionEnabledSource": "CONFIG",
+                        "effectivePathCode": "stock_reduce_query_path"
+                    },
+                    "compositeGateProductionEnabledSource": "CONFIG",
+                    "compositeGateProductionEnabledEffective": true,
+                    "compositeExecutionMode": null,
+                    "compositeExecuted": false,
+                    "compositeExecutionSuccess": false,
+                    "compositeFallbackRequired": false,
+                    "compositeFallbackReason": null,
+                    "compositePlannerOverallStatus": null,
+                    "compositePlannerDegradedSteps": null,
+                    "compositeFinalAnswerText": null,
+                    "compositeComposerVersion": null,
+                    "compositeAnswerPlanType": null,
+                    "compositeExecutionErrorCode": null,
+                    "compositeExecutionErrorMessage": null,
+                    "compositeShadowLatencyMs": null,
+                    "compositeShadowComparedWithLegacy": null,
+                    "compositeShadowLegacyAnswerPresent": null,
+                    "compositeShadowCompositeAnswerPresent": null,
+                    "compositeShadowFinalAnswerReplaced": null,
+                    "compositeShadowSkipped": null,
+                    "compositeShadowSkipReason": null,
+                    "compositeShadowThrottleHit": null,
+                    "compositeShadowWhitelistMatched": null,
+                    "finalAnswerText": "\u3010\u610f\u56fe\u8bf4\u660e\u3011\u4e0b\u9762\u6309\u4f60\u53ef\u67e5\u770b\u7684\u8303\u56f4\u6c47\u603b\u672c\u6708\u81f3\u4eca\u51fa\u5e93/\u6838\u9500\u91d1\u989d\uff08\u81ea\u7136\u65e5\uff0c\u7c7b\u578b1\u20134 \u4e4b\u548c\uff09\u3002\n\u3010\u65f6\u95f4\u8303\u56f4\u3011\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09\n\u672c\u5e93\u623f\uff1aAAA\uff1b\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09\uff0c\u672c\u671f\u51fa\u5e93/\u6838\u9500\u5408\u8ba1\u91d1\u989d\u7ea6 0 \u5143\u3002\u5176\u4e2d\u751f\u4ea7\u8017\u7528\uff08type1\uff09 0 \u5143\u3001\u5e9f\u5f03\uff08type2\uff09 0 \u5143\u3001\u635f\u8017/\u62a5\u635f\uff08type3\uff09 0 \u5143\u3001\u9000\u8d27\uff08type4\uff09 0 \u5143\u3002",
+                    "answerPreview": "\u3010\u610f\u56fe\u8bf4\u660e\u3011\u4e0b\u9762\u6309\u4f60\u53ef\u67e5\u770b\u7684\u8303\u56f4\u6c47\u603b\u672c\u6708\u81f3\u4eca\u51fa\u5e93/\u6838\u9500\u91d1\u989d\uff08\u81ea\u7136\u65e5\uff0c\u7c7b\u578b1\u20134 \u4e4b\u548c\uff09\u3002\n\u3010\u65f6\u95f4\u8303\u56f4\u3011\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09\n\u672c\u5e93\u623f\uff1aAAA\uff1b\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09\uff0c\u672c\u671f\u51fa\u5e93/\u6838\u9500\u5408\u8ba1\u91d1\u989d\u7ea6 0 \u5143\u3002\u5176\u4e2d\u751f\u4ea7\u8017\u7528\uff08type1\uff09 0 \u5143\u3001\u5e9f\u5f03\uff08type2\uff09 0 \u5143\u3001\u635f\u8017/\u62a5\u635f\uff08type3\uff09 0 \u5143\u3001\u9000\u8d27\uff08type4\uff09 0 \u5143\u3002",
+                    "consumedAnswerPlans": [
+                        "StockReduceAnswerPlan"
+                    ],
+                    "missingAnswerPlans": [],
+                    "harnessReplayPlanSource": "stockReduceAnswerPlan",
+                    "harnessReplayStockReduceAnswerPlanType": "STOCK_REDUCE_OVERVIEW",
+                    "harnessReplayStockReduceReduceType": "ALL",
+                    "needClarification": false,
+                    "clarificationQuestion": null,
+                    "businessDiagnosisPath": false,
+                    "businessOverviewPath": false,
+                    "revenueOverviewPath": false,
+                    "purchaseOverviewPath": false,
+                    "stockReduceQueryPath": true,
+                    "warehouseStockOverviewPath": false,
+                    "groupWarehouseStockOverview": false,
+                    "permissionDenials": null,
+                    "finalAnswerTextBlank": false,
+                    "couponCostInsightBlocked": false,
+                    "diagnosisPlanExists": false,
+                    "businessDiagnosisPlanExists": false
+                },
+                "probe": {
+                    "message": "\u8fd9\u4e2a\u6708\u51fa\u5e93\u91d1\u989d\u591a\u5c11\uff1f",
+                    "effectiveIntentCode": "STOCK_REDUCE_QUERY",
+                    "effectivePathCode": "stock_reduce_query_path",
+                    "structuredIntentDetailWire": "ALL",
+                    "timeSource": "SEMANTIC_EXPLICIT",
+                    "startDate": "2026-05-01",
+                    "endDate": "2026-05-15",
+                    "scopeType": "WAREHOUSE",
+                    "visibleStores": [],
+                    "orchestrationSelectedAgents": [
+                        "StockReduceAgent"
+                    ],
+                    "orchestrationSelectedTools": [
+                        "stock_reduce_query"
+                    ],
+                    "needSemanticClarification": false,
+                    "needClarification": false,
+                    "clarificationQuestion": null,
+                    "businessDiagnosisPath": false,
+                    "businessOverviewPath": false,
+                    "revenueOverviewPath": false,
+                    "purchaseOverviewPath": false,
+                    "stockReduceQueryPath": true,
+                    "warehouseStockOverviewPath": false,
+                    "groupWarehouseStockOverview": false,
+                    "permissionDenials": null,
+                    "finalAnswerTextBlank": false,
+                    "couponCostInsightBlocked": false,
+                    "diagnosisPlanExists": false,
+                    "businessDiagnosisPlanExists": false,
+                    "planSource": "stockReduceAnswerPlan",
+                    "harnessReplayPlanSource": "stockReduceAnswerPlan",
+                    "harnessReplayPurchaseAnswerPlanType": null,
+                    "harnessReplayPurchaseAnswerPlanTypeMeaningful": null,
+                    "harnessReplayPurchaseAnswerPlanProbePresent": null,
+                    "harnessReplayStockReduceAnswerPlanType": "STOCK_REDUCE_OVERVIEW",
+                    "harnessReplayStockReduceReduceType": "ALL",
+                    "harnessReplayDishProfitAnswerPlanType": null,
+                    "harnessReplayDishSalesAnswerPlanType": null,
+                    "harnessReplayDishSalesRankingRowCount": null,
+                    "harnessReplayDishSalesTopDishName": null,
+                    "harnessReplayDishSalesMetricType": null,
+                    "harnessReplayBusinessDiagnosisPlanType": null,
+                    "harnessReplayStorePriorityRankingPlanType": null,
+                    "harnessReplayStorePriorityRankingRowsLen": null,
+                    "harnessReplayStorePriorityRankingTop1StoreName": null,
+                    "harnessReplayStorePriorityRankingTop1PriorityRank": null,
+                    "businessStoreCompareEvidenceRowsLen": null,
+                    "harnessReplayStoreCompareEvidenceRowsLen": null,
+                    "businessStoreCompareTop1StoreName": null,
+                    "businessStoreCompareTop2StoreName": null,
+                    "compositeGateAllowed": false,
+                    "compositeGateReasonCode": "DOMAIN_SINGLE_INTENT_NOT_COMPOSITE",
+                    "dataPlanTools": [
+                        "stock_reduce_query"
+                    ],
+                    "finalAnswerText": "\u3010\u610f\u56fe\u8bf4\u660e\u3011\u4e0b\u9762\u6309\u4f60\u53ef\u67e5\u770b\u7684\u8303\u56f4\u6c47\u603b\u672c\u6708\u81f3\u4eca\u51fa\u5e93/\u6838\u9500\u91d1\u989d\uff08\u81ea\u7136\u65e5\uff0c\u7c7b\u578b1\u20134 \u4e4b\u548c\uff09\u3002\n\u3010\u65f6\u95f4\u8303\u56f4\u3011\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09\n\u672c\u5e93\u623f\uff1aAAA\uff1b\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09\uff0c\u672c\u671f\u51fa\u5e93/\u6838\u9500\u5408\u8ba1\u91d1\u989d\u7ea6 0 \u5143\u3002\u5176\u4e2d\u751f\u4ea7\u8017\u7528\uff08type1\uff09 0 \u5143\u3001\u5e9f\u5f03\uff08type2\uff09 0 \u5143\u3001\u635f\u8017/\u62a5\u635f\uff08type3\uff09 0 \u5143\u3001\u9000\u8d27\uff08type4\uff09 0 \u5143\u3002"
+                },
+                "pass": true,
+                "failedFields": []
+            },
+            {
+                "roundIndex": 2,
+                "message": "\u5e93\u5b58\u60c5\u51b5\u600e\u4e48\u6837\uff1f",
+                "runId": 1778835191102,
+                "conversationId": 338,
+                "resolvedQueryContextSummary": {
+                    "conversationId": 338,
+                    "runId": 1778835191102,
+                    "effectiveIntentCode": "WAREHOUSE_STOCK_OVERVIEW",
+                    "effectivePathCode": "warehouse_stock_overview_path",
+                    "intent": "WAREHOUSE_STOCK_OVERVIEW",
+                    "path": "warehouse_stock_overview_path",
+                    "effectiveTimeWindowSource": "INHERITED_PREVIOUS",
+                    "timeSource": "INHERITED_PREVIOUS",
+                    "effectiveIntentSource": "CURRENT_MESSAGE_EXPLICIT",
+                    "effectiveScopeSource": "INHERITED_PREVIOUS",
+                    "querySemanticLlm": {
+                        "parseMissing": false,
+                        "intent": "WAREHOUSE_STOCK_OVERVIEW",
+                        "confidence": 0.95,
+                        "time": {
+                            "timeType": "THIS_MONTH",
+                            "startDate": "2026-05-01",
+                            "endDate": "2026-05-15",
+                            "timeSource": "INHERITED_PREVIOUS",
+                            "needInheritFromPrevious": true
+                        },
+                        "requestedScope": {
+                            "requestedScopeType": "WAREHOUSE",
+                            "mentionedStoreName": null,
+                            "mentionedStoreNames": null,
+                            "mentionedDepartmentName": null,
+                            "mentionedWarehouseName": null,
+                            "scopeSource": "INHERITED_PREVIOUS",
+                            "needInheritFromPrevious": true
+                        },
+                        "metric": {
+                            "primaryMetric": "stock_balance",
+                            "rankingType": null,
+                            "purchaseSourceType": null,
+                            "stockReduceType": null
+                        },
+                        "needClarification": false,
+                        "clarificationQuestion": null,
+                        "reason": "\u7528\u6237\u95ee\u5e93\u5b58\u73b0\u91cf\uff0c\u5207\u6362\u4e3b\u7ebf\uff0c\u65f6\u95f4\u4e0e\u8303\u56f4\u7ee7\u627f\u4e0a\u4e00\u8f6e",
+                        "mentionedStoreNames": null
+                    },
+                    "needSemanticClarification": false,
+                    "semanticClarificationQuestion": null,
+                    "querySemanticEffectiveMentionedStoreNames": null,
+                    "semanticPrimaryVersion": "v2",
+                    "semanticFallbackUsed": false,
+                    "semanticFallbackReason": null,
+                    "semanticAdoptedFrom": "v2",
+                    "semanticAdoptedFields": [
+                        "intent",
+                        "confidence",
+                        "followUp",
+                        "intentAction",
+                        "timeAction",
+                        "scopeAction",
+                        "metricAction",
+                        "time.timeType",
+                        "requestedScope"
+                    ],
+                    "semanticAdoptionRejectedFields": null,
+                    "semanticAdoptionRejectedReason": null,
+                    "semanticMetricNormalizedFrom": null,
+                    "semanticMetricNormalizedTo": null,
+                    "semanticV2AbstractIntentNormalizationNotes": null,
+                    "querySemanticV1": null,
+                    "querySemanticV2InputPreview": {
+                        "previousTurn": {
+                            "intentCode": "STOCK_REDUCE_QUERY",
+                            "pathCode": "stock_reduce_query_path",
+                            "structuredIntentDetail": "ALL",
+                            "timeLabel": "THIS_MONTH",
+                            "startDate": "2026-05-01",
+                            "endDate": "2026-05-15",
+                            "scopeType": "WAREHOUSE"
+                        },
+                        "today": "2026-05-15",
+                        "visibleStores": [],
+                        "currentUserMessage": "\u5e93\u5b58\u60c5\u51b5\u600e\u4e48\u6837\uff1f"
+                    },
+                    "querySemanticV2": {
+                        "timeAction": "INHERIT_PREVIOUS",
+                        "reason": "\u7528\u6237\u95ee\u5e93\u5b58\u73b0\u91cf\uff0c\u5207\u6362\u4e3b\u7ebf\uff0c\u65f6\u95f4\u4e0e\u8303\u56f4\u7ee7\u627f\u4e0a\u4e00\u8f6e",
+                        "isFollowUp": true,
+                        "intentAction": "OVERRIDE",
+                        "needClarification": false,
+                        "confidence": 0.95,
+                        "orchestrationDecisionCandidate": {
+                            "taskMode": "ROUTED_AGENT",
+                            "selectedAgents": [
+                                "StockReduceAgent"
+                            ],
+                            "selectedTools": [
+                                "warehouse_stock_overview"
+                            ],
+                            "plannerRequired": false,
+                            "multiAgentRequired": false,
+                            "approvalRequired": false,
+                            "clarificationRequired": false,
+                            "confidence": 0.92,
+                            "reason": "\u5e93\u5b58\u73b0\u91cf\u5355\u57df\uff0c\u4f7f\u7528 warehouse_stock_overview \u5de5\u5177"
+                        },
+                        "promptRegistryId": "semantic.query_parser.v2",
+                        "intent": "WAREHOUSE_STOCK_OVERVIEW",
+                        "metricAction": "OVERRIDE",
+                        "parseMissing": false,
+                        "metric": {
+                            "primaryMetric": "stock_balance"
+                        },
+                        "scopeAction": "INHERIT_PREVIOUS",
+                        "requestedScope": {
+                            "requestedScopeType": "WAREHOUSE",
+                            "scopeSource": "INHERITED_PREVIOUS",
+                            "needInheritFromPrevious": true
+                        },
+                        "time": {
+                            "timeType": "THIS_MONTH",
+                            "startDate": "2026-05-01",
+                            "endDate": "2026-05-15",
+                            "timeSource": "INHERITED_PREVIOUS",
+                            "needInheritFromPrevious": true
+                        }
+                    },
+                    "querySemanticV2ParseMissing": false,
+                    "querySemanticV2Confidence": 0.95,
+                    "querySemanticV2TimeAction": "INHERIT_PREVIOUS",
+                    "querySemanticV2ScopeAction": "INHERIT_PREVIOUS",
+                    "querySemanticV2IntentAction": "OVERRIDE",
+                    "querySemanticV2MetricAction": "OVERRIDE",
+                    "querySemanticV2MentionedStoreNames": null,
+                    "querySemanticV2MentionedDishName": null,
+                    "querySemanticV2RawText": "{\n\"isFollowUp\":true,\"intentAction\":\"OVERRIDE\",\"timeAction\":\"INHERIT_PREVIOUS\",\"scopeAction\":\"INHERIT_PREVIOUS\",\"metricAction\":\"OVERRIDE\",\"intent\":\"WAREHOUSE_STOCK_OVERVIEW\",\"confidence\":0.95,\"time\":{\"timeType\":\"THIS_MONTH\",\"startDate\":\"2026-05-01\",\"endDate\":\"2026-05-15\",\"timeSource\":\"INHERITED_PREVIOUS\",\"needInheritFromPrevious\":true},\"requestedScope\":{\"requestedScopeType\":\"WAREHOUSE\",\"mentionedStoreName\":null,\"mentionedStoreNames\":null,\"mentionedDepartmentName\":null,\"mentionedWarehouseName\":null,\"scopeSource\":\"INHERITED_PREVIOUS\",\"needInheritFromPrevious\":true},\"metric\":{\"primaryMetric\":\"stock_balance\",\"rankingType\":null,\"purchaseSourceType\":null,\"stockReduceType\":null},\"mentionedDishName\":null,\"needClarification\":false,\"clarificationQuestion\":null,\"reason\":\"\u7528\u6237\u95ee\u5e93\u5b58\u73b0\u91cf\uff0c\u5207\u6362\u4e3b\u7ebf\uff0c\u65f6\u95f4\u4e0e\u8303\u56f4\u7ee7\u627f\u4e0a\u4e00\u8f6e\",\"orchestrationDecisionCandidate\":{\"taskMode\":\"ROUTED_AGENT\",\"selectedAgents\":[\"StockReduceAgent\"],\"selectedTools\":[\"warehouse_stock_overview\"],\"plannerRequired\":false,\"multiAgentRequired\":false,\"approvalRequired\":false,\"clarificationRequired\":false,\"clarificationQuestion\":null,\"confidence\":0.92,\"reason\":\"\u5e93\u5b58\u73b0\u91cf\u5355\u57df\uff0c\u4f7f\u7528 warehouse_stock_overview \u5de5\u5177\"}}",
+                    "querySemanticV2ParseError": null,
+                    "orchestrationTaskMode": "ROUTED_AGENT",
+                    "orchestrationSelectedAgents": [
+                        "StockReduceAgent"
+                    ],
+                    "orchestrationSelectedTools": [
+                        "warehouse_stock_overview"
+                    ],
+                    "orchestrationPlannerRequired": false,
+                    "orchestrationMultiAgentRequired": false,
+                    "orchestrationApprovalRequired": false,
+                    "orchestrationClarificationRequired": false,
+                    "orchestrationClarificationQuestion": null,
+                    "orchestrationConfidence": 0.92,
+                    "orchestrationReason": "\u5e93\u5b58\u73b0\u91cf\u5355\u57df\uff0c\u4f7f\u7528 warehouse_stock_overview \u5de5\u5177",
+                    "multiStoreScopeDetected": false,
+                    "multiStoreScopeApplied": false,
+                    "multiStoreScopeSource": null,
+                    "multiStoreMatchedStores": null,
+                    "singleStoreNarrowingBlocked": false,
+                    "startDate": "2026-05-01",
+                    "endDate": "2026-05-15",
+                    "timeLabel": "THIS_MONTH",
+                    "timeDisplayText": "\u7ee7\u627f\u4e0a\u4e00\u8f6e\u65f6\u95f4\u7a97",
+                    "timeInheritedFromPrevious": true,
+                    "timeExplicitInMessage": false,
+                    "time": {
+                        "start": "2026-05-01",
+                        "end": "2026-05-15",
+                        "label": "THIS_MONTH",
+                        "displayText": "\u7ee7\u627f\u4e0a\u4e00\u8f6e\u65f6\u95f4\u7a97"
+                    },
+                    "scopeType": "WAREHOUSE",
+                    "scopeLabel": "\u672c\u5e93\u623f\uff1aAAA",
+                    "visibleStores": [],
+                    "semanticMentionedStoreNames": [],
+                    "storeRootCandidates": [],
+                    "visibleStoreCandidates": [],
+                    "matchedStoreCandidate": null,
+                    "narrowingFailureReason": "SKIPPED_NOT_GROUP_SCOPE",
+                    "queryScopeKind": "DEPARTMENT",
+                    "queryStoreIds": [],
+                    "queryRealDepartmentIds": [
+                        1
+                    ],
+                    "queryDistributerId": null,
+                    "storeToDepartmentIds": {},
+                    "visibleStoreRootIds": [],
+                    "storeRootDepartmentIds": [],
+                    "childDepartmentIds": [],
+                    "expandedChildDepartmentIds": [],
+                    "expandedSqlDepartmentIds": [
+                        1
+                    ],
+                    "revenueSqlDepartmentIds": [
+                        1
+                    ],
+                    "purchaseSqlDepartmentIds": [
+                        1
+                    ],
+                    "stockSqlDepartmentIds": [
+                        1
+                    ],
+                    "dishProfitSqlDepartmentIds": [
+                        1
+                    ],
+                    "stockReduceSqlDepartmentIds": [
+                        1
+                    ],
+                    "visibleStoreIds": [],
+                    "visibleWarehouseIds": [
+                        1
+                    ],
+                    "explicitChildDepartmentIds": [],
+                    "queryScopeMode": "WAREHOUSE_DEPARTMENT",
+                    "queryLevel": "WAREHOUSE_DEPARTMENT",
+                    "storeToChildDepartmentIds": {},
+                    "departmentScopeModelNote": "\u4e3b\u67e5\u8be2\u7ef4\u5ea6\uff1aqueryScopeKind=STORE \u7528 queryStoreIds\uff08\u95e8\u5e97\u6839\uff09\uff1bDEPARTMENT \u7528 queryRealDepartmentIds\uff08\u4ec5\u771f\u5b9e\u90e8\u95e8\uff09\uff1bDISTRIBUTER \u7528 queryDistributerId\u3002\u4e1a\u52a1\u8868 department_id IN \u7528 expandedSqlDepartmentIds\uff08\u6839\u222a\u5b50\uff09\uff0c\u52ff\u4e0e\u95e8\u5e97\u5217\u8868\u6df7\u6dc6\u3002storeToDepartmentIds \u4ec5\u7ed3\u6784\u8bf4\u660e\u3002",
+                    "purchaseSourceType": null,
+                    "structuredIntentDetailWire": null,
+                    "structuredIntentDetail": null,
+                    "structuredIntentDetailCode": null,
+                    "structuredIntentDetailPresent": false,
+                    "stockReduceType": null,
+                    "dishProfitStructuredDetail": null,
+                    "mentionedDishName": null,
+                    "dishName": null,
+                    "dishProfitMetricType": null,
+                    "mentionedStore": null,
+                    "followUp": true,
+                    "followUpType": "SEMANTIC_STRUCTURAL_MERGE",
+                    "previousTurnSummary": {
+                        "lastIntentCode": "STOCK_REDUCE_QUERY",
+                        "lastPathCode": "stock_reduce_query_path",
+                        "lastStructuredIntentDetail": "ALL",
+                        "lastPurchaseSourceType": null,
+                        "lastStartDate": "2026-05-01",
+                        "lastEndDate": "2026-05-15",
+                        "lastTimeLabel": "THIS_MONTH",
+                        "lastScopeType": "WAREHOUSE",
+                        "lastMentionedDishName": null
+                    },
+                    "dataPlanTools": [
+                        "warehouse_stock_overview"
+                    ],
+                    "usedToolId": "warehouse_stock_overview",
+                    "buildInsightUsed": false,
+                    "usedBuildInsight": false,
+                    "buildInsightRequest": null,
+                    "buildInsightInputStoreRootIds": null,
+                    "buildInsightInputDepartmentIdsAllowFilter": null,
+                    "dishesCount": null,
+                    "dishLineReturned": null,
+                    "salesDishCount": null,
+                    "riskLevel": null,
+                    "resolvedVisibleStoreRootIds": [],
+                    "resolvedEffectiveSqlDepartmentIds": [
+                        1
+                    ],
+                    "resolvedDishProfitSqlDepartmentIds": [
+                        1
+                    ],
+                    "departmentIdSemanticsHint": "\u95e8\u5e97\u5c55\u793a=visibleStores/queryStoreIds\uff1bdepartment_id IN=expandedSqlDepartmentIds\uff1b\u8bed\u4e49\u90e8\u95e8=queryRealDepartmentIds\uff08\u4ec5 DEPARTMENT \u53e3\u5f84\uff09",
+                    "dishProfitAnswerPlan": null,
+                    "dishProfitAnswerPlanPresent": false,
+                    "dishSalesAnswerPlan": null,
+                    "dishSalesAnswerPlanPresent": false,
+                    "purchaseAnswerPlan": null,
+                    "purchaseAnswerPlanPresent": false,
+                    "purchaseAnswerPlanType": null,
+                    "purchaseAnswerPlanSortKey": null,
+                    "purchaseAnswerPlanSortDirection": null,
+                    "purchaseAnswerPlanFocusRows": null,
+                    "purchaseAnswerPlanSecondaryRows": null,
+                    "purchaseAnswerPlanDebug": null,
+                    "stockReduceAnswerPlan": null,
+                    "stockReduceAnswerPlanPresent": false,
+                    "stockReduceAnswerPlanType": null,
+                    "stockReduceAnswerPlanSortKey": null,
+                    "stockReduceAnswerPlanSortDirection": null,
+                    "stockReduceAnswerPlanFocusRows": null,
+                    "stockReduceAnswerPlanSecondaryRows": null,
+                    "stockReduceAnswerPlanDebug": null,
+                    "revenueAnswerPlan": null,
+                    "revenueAnswerPlanPresent": false,
+                    "revenueAnswerPlanType": null,
+                    "revenueAnswerPlanSortKey": null,
+                    "revenueAnswerPlanSortDirection": null,
+                    "revenueAnswerPlanFocusRows": null,
+                    "revenueAnswerPlanSecondaryRows": null,
+                    "revenueAnswerPlanDebug": null,
+                    "usedTools": [
+                        "warehouse_stock_overview"
+                    ],
+                    "diagnosisPlan": null,
+                    "diagnosisPlanPresent": false,
+                    "diagnosisPlanType": null,
+                    "businessDiagnosisPlan": null,
+                    "businessDiagnosisPlanType": null,
+                    "storePriorityRankingPlanType": null,
+                    "storePriorityRankingRowsLen": null,
+                    "storePriorityRankingTop1StoreName": null,
+                    "storePriorityRankingTop1PriorityRank": null,
+                    "diagnosisRiskLevel": null,
+                    "diagnosisDataCompleteness": null,
+                    "planSource": null,
+                    "businessOverviewMultiMaster": {
+                        "businessOverviewMultiAgentBatchAttempted": false,
+                        "businessOverviewMultiAgentBatchCompleted": false,
+                        "businessOverviewMultiAgentBatchUsableForDiagnosis": false,
+                        "businessOverviewMultiAgentAllDomainsSkipped": true,
+                        "businessOverviewMultiMasterEnabled": false,
+                        "businessOverviewMultiAgentAnyDomainSuccess": false
+                    },
+                    "masterAgentEnabled": false,
+                    "masterAgentUsed": false,
+                    "selectedAgents": [],
+                    "dispatchPlan": null,
+                    "agentResults": [],
+                    "agentResultStatus": null,
+                    "degraded": false,
+                    "failurePolicy": null,
+                    "fallbackUsed": false,
+                    "fallbackReason": "not_eligible_for_master_revenue_gate",
+                    "legacyRevenueSkipped": false,
+                    "masterRevenueToolResultKey": null,
+                    "masterRevenueToolResultSuccess": null,
+                    "revenueToolExecutedByMasterPath": false,
+                    "purchaseMasterAgentEnabled": false,
+                    "purchaseMasterAgentUsed": false,
+                    "purchaseSelectedAgents": [],
+                    "purchaseDispatchPlan": null,
+                    "purchaseAgentResults": [],
+                    "purchaseAgentResultStatus": null,
+                    "purchaseDegraded": false,
+                    "purchaseFailurePolicy": null,
+                    "purchaseFallbackUsed": false,
+                    "purchaseFallbackReason": "not_eligible_for_master_purchase_gate",
+                    "legacyPurchaseSkipped": false,
+                    "masterPurchaseToolResultKey": null,
+                    "masterPurchaseToolResultSuccess": null,
+                    "purchaseToolExecutedByMasterPath": false,
+                    "purchaseRequestResolutionDebug": null,
+                    "stockReduceMasterAgentEnabled": false,
+                    "stockReduceMasterAgentUsed": false,
+                    "stockReduceSelectedAgents": [],
+                    "stockReduceDispatchPlan": null,
+                    "stockReduceAgentResults": [],
+                    "stockReduceAgentResultStatus": null,
+                    "stockReduceDegraded": false,
+                    "stockReduceFailurePolicy": null,
+                    "stockReduceFallbackUsed": false,
+                    "stockReduceFallbackReason": "not_eligible_for_master_stock_reduce_gate",
+                    "legacyStockReduceSkipped": false,
+                    "masterStockReduceToolResultKey": null,
+                    "masterStockReduceToolResultSuccess": null,
+                    "stockReduceToolExecutedByMasterPath": false,
+                    "stockReduceRequestResolutionDebug": null,
+                    "dishProfitMasterAgentEnabled": false,
+                    "dishProfitMasterAgentUsed": false,
+                    "dishProfitSelectedAgents": [],
+                    "dishProfitDispatchPlan": null,
+                    "dishProfitAgentResults": [],
+                    "dishProfitAgentResultStatus": null,
+                    "dishProfitFallbackUsed": false,
+                    "dishProfitFallbackReason": "not_eligible_for_master_dish_profit_gate",
+                    "legacyDishProfitSkipped": false,
+                    "masterDishProfitToolResultKey": null,
+                    "masterDishProfitToolResultSuccess": null,
+                    "dishProfitToolExecutedByMasterPath": false,
+                    "dishProfitRequestResolutionDebug": null,
+                    "businessOverviewMultiAgentBatchCompleted": false,
+                    "businessOverviewMultiAgentAnyDomainSuccess": false,
+                    "businessOverviewMultiAgentBatchAttempted": false,
+                    "businessOverviewMultiAgentAllDomainsSkipped": true,
+                    "businessOverviewMultiAgentBatchUsableForDiagnosis": false,
+                    "compositeGateAllowed": false,
+                    "compositeGateReasonCode": "DOMAIN_SINGLE_INTENT_NOT_COMPOSITE",
+                    "compositeGateReason": "single-domain intent/path not eligible for composite",
+                    "compositeGateScopeType": "WAREHOUSE",
+                    "compositeGateRecommendedCaseKind": "NONE",
+                    "compositeGateFinalAnswerPlanType": null,
+                    "compositeGateDebug": {
+                        "productionEnabledEffective": true,
+                        "gateVersion": "C-53_SKELETON",
+                        "effectiveIntentCode": "WAREHOUSE_STOCK_OVERVIEW",
+                        "productionEnabledSource": "CONFIG",
+                        "effectivePathCode": "warehouse_stock_overview_path"
+                    },
+                    "compositeGateProductionEnabledSource": "CONFIG",
+                    "compositeGateProductionEnabledEffective": true,
+                    "compositeExecutionMode": null,
+                    "compositeExecuted": false,
+                    "compositeExecutionSuccess": false,
+                    "compositeFallbackRequired": false,
+                    "compositeFallbackReason": null,
+                    "compositePlannerOverallStatus": null,
+                    "compositePlannerDegradedSteps": null,
+                    "compositeFinalAnswerText": null,
+                    "compositeComposerVersion": null,
+                    "compositeAnswerPlanType": null,
+                    "compositeExecutionErrorCode": null,
+                    "compositeExecutionErrorMessage": null,
+                    "compositeShadowLatencyMs": null,
+                    "compositeShadowComparedWithLegacy": null,
+                    "compositeShadowLegacyAnswerPresent": null,
+                    "compositeShadowCompositeAnswerPresent": null,
+                    "compositeShadowFinalAnswerReplaced": null,
+                    "compositeShadowSkipped": null,
+                    "compositeShadowSkipReason": null,
+                    "compositeShadowThrottleHit": null,
+                    "compositeShadowWhitelistMatched": null,
+                    "finalAnswerText": "\u6309\u4e0a\u6587\u300c\u672c\u6708\u81f3\u4eca\u300d\u53e3\u5f84\u67e5\u8be2\uff1b\u672c\u53e5\u672a\u6307\u5b9a\u65b0\u7684\u65f6\u95f4\u548c\u95e8\u5e97\u3002\u82e5\u9700\u8c03\u6574\u8bf7\u76f4\u63a5\u8bf4\u660e\u3002\n\u3010\u67e5\u8be2\u8303\u56f4\u3011\u4f60\u5f53\u524d\u8d26\u53f7\u4e3a\u5e93\u623f\u7aef\uff0c\u4e0b\u9762\u6309\u4f60\u53ef\u67e5\u770b\u7684\u5e93\u623f/\u6240\u5c5e\u95e8\u5e97\u5e93\u5b58\u6c47\u603b\uff08\u4e0d\u6309\u96c6\u56e2\u5168\u90e8\u95e8\u5e97\uff09\u3002\n\u3010\u610f\u56fe\u8bf4\u660e\u3011\u4e0b\u9762\u6309\u5e93\u623f\u6743\u9650\u6c47\u603b\u5f53\u524d\u5e93\u5b58\u3001\u533a\u95f4\u5185\u5165\u5e93\u4e0e\u6838\u9500\uff08\u751f\u4ea7\u8017\u7528/\u5e9f\u5f03/\u635f\u8017/\u9000\u8d27\uff09\uff0c\u4e0d\u542b\u8425\u4e1a\u989d\u4e0e\u83dc\u54c1\u9500\u552e\u3002\n\u4ee5\u4e0b\u662f\u4f60\u5f53\u524d\u53ef\u67e5\u770b\u5e93\u623f/\u6240\u5c5e\u95e8\u5e97\uff1aAAA\u3002\u4e0b\u9762\u6309\u672c\u4eba\u6240\u5728\u5e93\u623f\uff08\u53ca\u6240\u5c5e\u95e8\u5e97\uff09\u5e93\u5b58\u6c47\u603b\u5206\u6790\u3002\n\n\u5f53\u524d\u5e93\u5b58\u5171\u6709 5 \u79cd\u5546\u54c1\u3001\u7ea6 9 \u4e2a\u6279\u6b21\u4ecd\u6709\u8d26\u9762\u5269\u4f59\uff1b\u5269\u4f59\u91d1\u989d\u7ea6 3191.00 \u5143\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 43.00 \u65a4\uff1b\u7edf\u8ba1\u533a\u95f4\u5185\u5165\u5e93\u7ea6 2976.00 \u5143\u3001\u5165\u5e93\u91cd\u91cf\u7ea6 20.00 \u65a4\uff1b\u6838\u9500\u4fa7\u51fa\u54c1\u7ea6 0.00 \u5143\uff0c\u635f\u8017 0.00\u3001\u62a5\u635f 0.00\u3001\u9000\u8d27 0.00\u3002\n\n---\n\n**\u4f4e\u5e93\u5b58 / \u9700\u8865\u8d27**\n\n\u65e0\u3002\n\n**\u5e93\u5b58\u504f\u9ad8 / \u5efa\u8bae\u4f18\u5148\u6d88\u8017**\n- \u6d77\u59295\u5ea6\u767d\u918b\uff08\u5269\u4f59\u91d1\u989d\u7ea6 2970.00 \u5143\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 18.00 \u65a4\uff09\u2014\u2014 \u5269\u4f59\u91d1\u989d\u76f8\u5bf9\u8f83\u9ad8\uff0c\u5efa\u8bae\u4f18\u5148\u6d88\u8017\u907f\u514d\u79ef\u538b\u3002\n\n**\u65e9\u5165\u5e93\u6279\u6b21 / \u5efa\u8bae\u76d8\u70b9**\n- \u725b\u810a\u9aa8\uff08\u6279\u6b21 2026-04-25\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 4.00 \u65a4\uff09\u2014\u2014 \u8be5\u6279\u6b21\u5165\u5e93\u65e9\u4e8e\u672c\u6b21\u7edf\u8ba1\u533a\u95f4\u8d77\u59cb\u4ecd\u6709\u5269\u4f59\uff0c\u5efa\u8bae\u76d8\u70b9\u8d27\u67b6\u662f\u5426\u4e0e\u8d26\u9762\u4e00\u81f4\u3002\n- \u6d77\u5929\u8349\u83c7\u8001\u62bd\uff08\u6279\u6b21 2026-04-25\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 6.00 \u65a4\uff09\u2014\u2014 \u8be5\u6279\u6b21\u5165\u5e93\u65e9\u4e8e\u672c\u6b21\u7edf\u8ba1\u533a\u95f4\u8d77\u59cb\u4ecd\u6709\u5269\u4f59\uff0c\u5efa\u8bae\u76d8\u70b9\u8d27\u67b6\u662f\u5426\u4e0e\u8d26\u9762\u4e00\u81f4\u3002\n- \u5927\u5a03\u5a03\u83dc\uff08\u6279\u6b21 2026-04-26\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 8.00 \u65a4\uff09\u2014\u2014 \u8be5\u6279\u6b21\u5165\u5e93\u65e9\u4e8e\u672c\u6b21\u7edf\u8ba1\u533a\u95f4\u8d77\u59cb\u4ecd\u6709\u5269\u4f59\uff0c\u5efa\u8bae\u76d8\u70b9\u8d27\u67b6\u662f\u5426\u4e0e\u8d26\u9762\u4e00\u81f4\u3002\n- \u4e0a\u6d77\u9752\uff08\u6279\u6b21 2026-04-26\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 5.00 \u65a4\uff09\u2014\u2014 \u8be5\u6279\u6b21\u5165\u5e93\u65e9\u4e8e\u672c\u6b21\u7edf\u8ba1\u533a\u95f4\u8d77\u59cb\u4ecd\u6709\u5269\u4f59\uff0c\u5efa\u8bae\u76d8\u70b9\u8d27\u67b6\u662f\u5426\u4e0e\u8d26\u9762\u4e00\u81f4\u3002",
+                    "answerPreview": "\u6309\u4e0a\u6587\u300c\u672c\u6708\u81f3\u4eca\u300d\u53e3\u5f84\u67e5\u8be2\uff1b\u672c\u53e5\u672a\u6307\u5b9a\u65b0\u7684\u65f6\u95f4\u548c\u95e8\u5e97\u3002\u82e5\u9700\u8c03\u6574\u8bf7\u76f4\u63a5\u8bf4\u660e\u3002\n\u3010\u67e5\u8be2\u8303\u56f4\u3011\u4f60\u5f53\u524d\u8d26\u53f7\u4e3a\u5e93\u623f\u7aef\uff0c\u4e0b\u9762\u6309\u4f60\u53ef\u67e5\u770b\u7684\u5e93\u623f/\u6240\u5c5e\u95e8\u5e97\u5e93\u5b58\u6c47\u603b\uff08\u4e0d\u6309\u96c6\u56e2\u5168\u90e8\u95e8\u5e97\uff09\u3002\n\u3010\u610f\u56fe\u8bf4\u660e\u3011\u4e0b\u9762\u6309\u5e93\u623f\u6743\u9650\u6c47\u603b\u5f53\u524d\u5e93\u5b58\u3001\u533a\u95f4\u5185\u5165\u5e93\u4e0e\u6838\u9500\uff08\u751f\u4ea7\u8017\u7528/\u5e9f\u5f03/\u635f\u8017/\u9000\u8d27\uff09\uff0c\u4e0d\u542b\u8425\u4e1a\u989d\u4e0e\u83dc\u54c1\u9500\u552e\u3002\n\u4ee5\u4e0b\u662f\u4f60\u5f53\u524d\u53ef\u67e5\u770b\u5e93\u623f/\u6240\u5c5e\u95e8\u5e97\uff1aAAA\u3002\u4e0b\u9762\u6309\u672c\u4eba\u6240\u5728\u5e93\u623f\uff08\u53ca\u6240\u5c5e\u95e8\u5e97\uff09\u5e93\u5b58\u6c47\u603b\u5206\u6790\u3002\n\n\u5f53\u524d\u5e93\u5b58\u5171\u6709 5 \u79cd\u5546\u54c1\u3001\u7ea6 9 \u4e2a\u6279\u6b21\u4ecd\u6709\u8d26\u9762\u5269\u4f59\uff1b\u5269\u4f59\u91d1\u989d\u7ea6 3191.00 \u5143\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 43.00 \u65a4\uff1b\u7edf\u8ba1\u533a\u95f4\u5185\u5165\u5e93\u7ea6 2976.00 \u5143\u3001\u5165\u5e93\u91cd\u91cf\u7ea6 20.00 \u65a4\uff1b\u6838\u9500\u4fa7\u51fa\u54c1\u7ea6 0.00 \u5143\uff0c\u635f\u8017 0.00\u3001\u62a5\u635f 0.00\u3001\u9000\u8d27 0.00\u3002\n\n---\n\n**\u4f4e\u5e93\u5b58 / \u9700\u8865\u8d27**\n\n\u65e0\u3002\n\n**\u5e93\u5b58\u504f\u9ad8 / \u5efa\u8bae\u4f18\u5148\u6d88\u8017**\n- \u6d77\u59295\u5ea6\u767d\u918b\uff08\u5269\u4f59\u91d1\u989d\u7ea6 2970.00 \u5143\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 18.00 \u65a4\uff09\u2014\u2014 \u5269\u4f59\u91d1\u989d\u76f8\u5bf9\u8f83\u9ad8\uff0c\u5efa\u8bae\u4f18\u5148\u6d88\u8017\u907f\u514d\u79ef\u538b\u3002\n\n**\u65e9\u5165\u5e93\u6279\u6b21 / \u5efa\u8bae\u76d8\u70b9**\n- \u725b\u810a\u9aa8\uff08\u6279\u6b21 2026-04-25\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 4.00 \u65a4\uff09\u2014\u2014 \u8be5\u6279\u6b21\u5165\u5e93\u65e9\u4e8e\u672c\u6b21\u7edf\u8ba1\u533a\u95f4\u8d77\u59cb\u4ecd\u6709\u5269\u4f59\uff0c\u5efa\u8bae\u76d8\u70b9",
+                    "consumedAnswerPlans": null,
+                    "missingAnswerPlans": null,
+                    "needClarification": false,
+                    "clarificationQuestion": null,
+                    "businessDiagnosisPath": false,
+                    "businessOverviewPath": false,
+                    "revenueOverviewPath": false,
+                    "purchaseOverviewPath": false,
+                    "stockReduceQueryPath": false,
+                    "warehouseStockOverviewPath": true,
+                    "groupWarehouseStockOverview": false,
+                    "permissionDenials": null,
+                    "finalAnswerTextBlank": false,
+                    "couponCostInsightBlocked": false,
+                    "diagnosisPlanExists": false,
+                    "businessDiagnosisPlanExists": false
+                },
+                "probe": {
+                    "message": "\u5e93\u5b58\u60c5\u51b5\u600e\u4e48\u6837\uff1f",
+                    "effectiveIntentCode": "WAREHOUSE_STOCK_OVERVIEW",
+                    "effectivePathCode": "warehouse_stock_overview_path",
+                    "structuredIntentDetailWire": null,
+                    "timeSource": "INHERITED_PREVIOUS",
+                    "startDate": "2026-05-01",
+                    "endDate": "2026-05-15",
+                    "scopeType": "WAREHOUSE",
+                    "visibleStores": [],
+                    "orchestrationSelectedAgents": [
+                        "StockReduceAgent"
+                    ],
+                    "orchestrationSelectedTools": [
+                        "warehouse_stock_overview"
+                    ],
+                    "needSemanticClarification": false,
+                    "needClarification": false,
+                    "clarificationQuestion": null,
+                    "businessDiagnosisPath": false,
+                    "businessOverviewPath": false,
+                    "revenueOverviewPath": false,
+                    "purchaseOverviewPath": false,
+                    "stockReduceQueryPath": false,
+                    "warehouseStockOverviewPath": true,
+                    "groupWarehouseStockOverview": false,
+                    "permissionDenials": null,
+                    "finalAnswerTextBlank": false,
+                    "couponCostInsightBlocked": false,
+                    "diagnosisPlanExists": false,
+                    "businessDiagnosisPlanExists": false,
+                    "planSource": null,
+                    "harnessReplayPlanSource": null,
+                    "harnessReplayPurchaseAnswerPlanType": null,
+                    "harnessReplayPurchaseAnswerPlanTypeMeaningful": null,
+                    "harnessReplayPurchaseAnswerPlanProbePresent": null,
+                    "harnessReplayStockReduceAnswerPlanType": null,
+                    "harnessReplayStockReduceReduceType": null,
+                    "harnessReplayDishProfitAnswerPlanType": null,
+                    "harnessReplayDishSalesAnswerPlanType": null,
+                    "harnessReplayDishSalesRankingRowCount": null,
+                    "harnessReplayDishSalesTopDishName": null,
+                    "harnessReplayDishSalesMetricType": null,
+                    "harnessReplayBusinessDiagnosisPlanType": null,
+                    "harnessReplayStorePriorityRankingPlanType": null,
+                    "harnessReplayStorePriorityRankingRowsLen": null,
+                    "harnessReplayStorePriorityRankingTop1StoreName": null,
+                    "harnessReplayStorePriorityRankingTop1PriorityRank": null,
+                    "businessStoreCompareEvidenceRowsLen": null,
+                    "harnessReplayStoreCompareEvidenceRowsLen": null,
+                    "businessStoreCompareTop1StoreName": null,
+                    "businessStoreCompareTop2StoreName": null,
+                    "compositeGateAllowed": false,
+                    "compositeGateReasonCode": "DOMAIN_SINGLE_INTENT_NOT_COMPOSITE",
+                    "dataPlanTools": [
+                        "warehouse_stock_overview"
+                    ],
+                    "finalAnswerText": "\u6309\u4e0a\u6587\u300c\u672c\u6708\u81f3\u4eca\u300d\u53e3\u5f84\u67e5\u8be2\uff1b\u672c\u53e5\u672a\u6307\u5b9a\u65b0\u7684\u65f6\u95f4\u548c\u95e8\u5e97\u3002\u82e5\u9700\u8c03\u6574\u8bf7\u76f4\u63a5\u8bf4\u660e\u3002\n\u3010\u67e5\u8be2\u8303\u56f4\u3011\u4f60\u5f53\u524d\u8d26\u53f7\u4e3a\u5e93\u623f\u7aef\uff0c\u4e0b\u9762\u6309\u4f60\u53ef\u67e5\u770b\u7684\u5e93\u623f/\u6240\u5c5e\u95e8\u5e97\u5e93\u5b58\u6c47\u603b\uff08\u4e0d\u6309\u96c6\u56e2\u5168\u90e8\u95e8\u5e97\uff09\u3002\n\u3010\u610f\u56fe\u8bf4\u660e\u3011\u4e0b\u9762\u6309\u5e93\u623f\u6743\u9650\u6c47\u603b\u5f53\u524d\u5e93\u5b58\u3001\u533a\u95f4\u5185\u5165\u5e93\u4e0e\u6838\u9500\uff08\u751f\u4ea7\u8017\u7528/\u5e9f\u5f03/\u635f\u8017/\u9000\u8d27\uff09\uff0c\u4e0d\u542b\u8425\u4e1a\u989d\u4e0e\u83dc\u54c1\u9500\u552e\u3002\n\u4ee5\u4e0b\u662f\u4f60\u5f53\u524d\u53ef\u67e5\u770b\u5e93\u623f/\u6240\u5c5e\u95e8\u5e97\uff1aAAA\u3002\u4e0b\u9762\u6309\u672c\u4eba\u6240\u5728\u5e93\u623f\uff08\u53ca\u6240\u5c5e\u95e8\u5e97\uff09\u5e93\u5b58\u6c47\u603b\u5206\u6790\u3002\n\n\u5f53\u524d\u5e93\u5b58\u5171\u6709 5 \u79cd\u5546\u54c1\u3001\u7ea6 9 \u4e2a\u6279\u6b21\u4ecd\u6709\u8d26\u9762\u5269\u4f59\uff1b\u5269\u4f59\u91d1\u989d\u7ea6 3191.00 \u5143\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 43.00 \u65a4\uff1b\u7edf\u8ba1\u533a\u95f4\u5185\u5165\u5e93\u7ea6 2976.00 \u5143\u3001\u5165\u5e93\u91cd\u91cf\u7ea6 20.00 \u65a4\uff1b\u6838\u9500\u4fa7\u51fa\u54c1\u7ea6 0.00 \u5143\uff0c\u635f\u8017 0.00\u3001\u62a5\u635f 0.00\u3001\u9000\u8d27 0.00\u3002\n\n---\n\n**\u4f4e\u5e93\u5b58 / \u9700\u8865\u8d27**\n\n\u65e0\u3002\n\n**\u5e93\u5b58\u504f\u9ad8 / \u5efa\u8bae\u4f18\u5148\u6d88\u8017**\n- \u6d77\u59295\u5ea6\u767d\u918b\uff08\u5269\u4f59\u91d1\u989d\u7ea6 2970.00 \u5143\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 18.00 \u65a4\uff09\u2014\u2014 \u5269\u4f59\u91d1\u989d\u76f8\u5bf9\u8f83\u9ad8\uff0c\u5efa\u8bae\u4f18\u5148\u6d88\u8017\u907f\u514d\u79ef\u538b\u3002\n\n**\u65e9\u5165\u5e93\u6279\u6b21 / \u5efa\u8bae\u76d8\u70b9**\n- \u725b\u810a\u9aa8\uff08\u6279\u6b21 2026-04-25\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 4.00 \u65a4\uff09\u2014\u2014 \u8be5\u6279\u6b21\u5165\u5e93\u65e9\u4e8e\u672c\u6b21\u7edf\u8ba1\u533a\u95f4\u8d77\u59cb\u4ecd\u6709\u5269\u4f59\uff0c\u5efa\u8bae\u76d8\u70b9\u8d27\u67b6\u662f\u5426\u4e0e\u8d26\u9762\u4e00\u81f4\u3002\n- \u6d77\u5929\u8349\u83c7\u8001\u62bd\uff08\u6279\u6b21 2026-04-25\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 6.00 \u65a4\uff09\u2014\u2014 \u8be5\u6279\u6b21\u5165\u5e93\u65e9\u4e8e\u672c\u6b21\u7edf\u8ba1\u533a\u95f4\u8d77\u59cb\u4ecd\u6709\u5269\u4f59\uff0c\u5efa\u8bae\u76d8\u70b9\u8d27\u67b6\u662f\u5426\u4e0e\u8d26\u9762\u4e00\u81f4\u3002\n- \u5927\u5a03\u5a03\u83dc\uff08\u6279\u6b21 2026-04-26\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 8.00 \u65a4\uff09\u2014\u2014 \u8be5\u6279\u6b21\u5165\u5e93\u65e9\u4e8e\u672c\u6b21\u7edf\u8ba1\u533a\u95f4\u8d77\u59cb\u4ecd\u6709\u5269\u4f59\uff0c\u5efa\u8bae\u76d8\u70b9\u8d27\u67b6\u662f\u5426\u4e0e\u8d26\u9762\u4e00\u81f4\u3002\n- \u4e0a\u6d77\u9752\uff08\u6279\u6b21 2026-04-26\uff0c\u5269\u4f59\u91cd\u91cf\u7ea6 5.00 \u65a4\uff09\u2014\u2014 \u8be5\u6279\u6b21\u5165\u5e93\u65e9\u4e8e\u672c\u6b21\u7edf\u8ba1\u533a\u95f4\u8d77\u59cb\u4ecd\u6709\u5269\u4f59\uff0c\u5efa\u8bae\u76d8\u70b9\u8d27\u67b6\u662f\u5426\u4e0e\u8d26\u9762\u4e00\u81f4\u3002"
+                },
+                "pass": true,
+                "failedFields": []
+            },
+            {
+                "roundIndex": 3,
+                "message": "\u8fd9\u4e2a\u6708\u8425\u4e1a\u989d\u591a\u5c11\uff1f",
+                "runId": 1778835191103,
+                "conversationId": 338,
+                "resolvedQueryContextSummary": {
+                    "conversationId": 338,
+                    "runId": 1778835191103,
+                    "effectiveIntentCode": "REVENUE_OVERVIEW",
+                    "effectivePathCode": "revenue_overview_path",
+                    "intent": "REVENUE_OVERVIEW",
+                    "path": "revenue_overview_path",
+                    "effectiveTimeWindowSource": "SEMANTIC_EXPLICIT",
+                    "timeSource": "SEMANTIC_EXPLICIT",
+                    "effectiveIntentSource": "CURRENT_MESSAGE_EXPLICIT",
+                    "effectiveScopeSource": "INHERITED_PREVIOUS",
+                    "querySemanticLlm": {
+                        "parseMissing": false,
+                        "intent": "REVENUE_OVERVIEW",
+                        "confidence": 0.95,
+                        "time": {
+                            "timeType": "CURRENT_MONTH",
+                            "startDate": "2026-05-01",
+                            "endDate": "2026-05-15",
+                            "timeSource": "CURRENT_MESSAGE",
+                            "needInheritFromPrevious": false
+                        },
+                        "requestedScope": {
+                            "requestedScopeType": "GROUP",
+                            "mentionedStoreName": null,
+                            "mentionedStoreNames": null,
+                            "mentionedDepartmentName": null,
+                            "mentionedWarehouseName": null,
+                            "scopeSource": "CURRENT_MESSAGE",
+                            "needInheritFromPrevious": false
+                        },
+                        "metric": {
+                            "primaryMetric": "revenue",
+                            "rankingType": null,
+                            "purchaseSourceType": null,
+                            "stockReduceType": null
+                        },
+                        "needClarification": false,
+                        "clarificationQuestion": null,
+                        "reason": "\u7528\u6237\u660e\u786e\u95ee\u2018\u8fd9\u4e2a\u6708\u8425\u4e1a\u989d\u2019\uff0c\u5207\u6362\u81f3\u8425\u4e1a\u989d\u4e13\u7ebf\uff0c\u65f6\u95f4\u7528\u672c\u6708\u81f3\u4eca",
+                        "mentionedStoreNames": null
+                    },
+                    "needSemanticClarification": false,
+                    "semanticClarificationQuestion": null,
+                    "querySemanticEffectiveMentionedStoreNames": null,
+                    "semanticPrimaryVersion": "v2",
+                    "semanticFallbackUsed": false,
+                    "semanticFallbackReason": null,
+                    "semanticAdoptedFrom": "v2",
+                    "semanticAdoptedFields": [
+                        "intent",
+                        "confidence",
+                        "intentAction",
+                        "timeAction",
+                        "scopeAction",
+                        "metricAction",
+                        "time.timeType",
+                        "requestedScope"
+                    ],
+                    "semanticAdoptionRejectedFields": null,
+                    "semanticAdoptionRejectedReason": null,
+                    "semanticMetricNormalizedFrom": null,
+                    "semanticMetricNormalizedTo": null,
+                    "semanticV2AbstractIntentNormalizationNotes": null,
+                    "querySemanticV1": null,
+                    "querySemanticV2InputPreview": {
+                        "previousTurn": {
+                            "intentCode": "WAREHOUSE_STOCK_OVERVIEW",
+                            "pathCode": "warehouse_stock_overview_path",
+                            "timeLabel": "THIS_MONTH",
+                            "startDate": "2026-05-01",
+                            "endDate": "2026-05-15",
+                            "scopeType": "WAREHOUSE"
+                        },
+                        "today": "2026-05-15",
+                        "visibleStores": [],
+                        "currentUserMessage": "\u8fd9\u4e2a\u6708\u8425\u4e1a\u989d\u591a\u5c11\uff1f"
+                    },
+                    "querySemanticV2": {
+                        "timeAction": "OVERRIDE",
+                        "reason": "\u7528\u6237\u660e\u786e\u95ee\u2018\u8fd9\u4e2a\u6708\u8425\u4e1a\u989d\u2019\uff0c\u5207\u6362\u81f3\u8425\u4e1a\u989d\u4e13\u7ebf\uff0c\u65f6\u95f4\u7528\u672c\u6708\u81f3\u4eca",
+                        "isFollowUp": false,
+                        "intentAction": "OVERRIDE",
+                        "needClarification": false,
+                        "confidence": 0.95,
+                        "orchestrationDecisionCandidate": {
+                            "taskMode": "ROUTED_AGENT",
+                            "selectedAgents": [
+                                "RevenueAgent"
+                            ],
+                            "selectedTools": [
+                                "revenue_query"
+                            ],
+                            "plannerRequired": false,
+                            "multiAgentRequired": false,
+                            "approvalRequired": false,
+                            "clarificationRequired": false,
+                            "confidence": 0.93,
+                            "reason": "\u5355\u7b14\u8425\u4e1a\u989d\u67e5\u8be2\uff0c\u5355\u57dfRevenue"
+                        },
+                        "promptRegistryId": "semantic.query_parser.v2",
+                        "intent": "REVENUE_OVERVIEW",
+                        "metricAction": "OVERRIDE",
+                        "parseMissing": false,
+                        "metric": {
+                            "primaryMetric": "revenue"
+                        },
+                        "scopeAction": "OVERRIDE",
+                        "requestedScope": {
+                            "requestedScopeType": "GROUP",
+                            "scopeSource": "CURRENT_MESSAGE",
+                            "needInheritFromPrevious": false
+                        },
+                        "time": {
+                            "timeType": "CURRENT_MONTH",
+                            "startDate": "2026-05-01",
+                            "endDate": "2026-05-15",
+                            "timeSource": "CURRENT_MESSAGE",
+                            "needInheritFromPrevious": false
+                        }
+                    },
+                    "querySemanticV2ParseMissing": false,
+                    "querySemanticV2Confidence": 0.95,
+                    "querySemanticV2TimeAction": "OVERRIDE",
+                    "querySemanticV2ScopeAction": "OVERRIDE",
+                    "querySemanticV2IntentAction": "OVERRIDE",
+                    "querySemanticV2MetricAction": "OVERRIDE",
+                    "querySemanticV2MentionedStoreNames": null,
+                    "querySemanticV2MentionedDishName": null,
+                    "querySemanticV2RawText": "{\"isFollowUp\":false,\"intentAction\":\"OVERRIDE\",\"timeAction\":\"OVERRIDE\",\"scopeAction\":\"OVERRIDE\",\"metricAction\":\"OVERRIDE\",\"intent\":\"REVENUE_OVERVIEW\",\"confidence\":0.95,\"time\":{\"timeType\":\"CURRENT_MONTH\",\"startDate\":\"2026-05-01\",\"endDate\":\"2026-05-15\",\"timeSource\":\"CURRENT_MESSAGE\",\"needInheritFromPrevious\":false},\"requestedScope\":{\"requestedScopeType\":\"GROUP\",\"mentionedStoreName\":null,\"mentionedStoreNames\":null,\"mentionedDepartmentName\":null,\"mentionedWarehouseName\":null,\"scopeSource\":\"CURRENT_MESSAGE\",\"needInheritFromPrevious\":false},\"metric\":{\"primaryMetric\":\"revenue\",\"rankingType\":null,\"purchaseSourceType\":null,\"stockReduceType\":null},\"mentionedDishName\":null,\"needClarification\":false,\"clarificationQuestion\":null,\"reason\":\"\u7528\u6237\u660e\u786e\u95ee\u2018\u8fd9\u4e2a\u6708\u8425\u4e1a\u989d\u2019\uff0c\u5207\u6362\u81f3\u8425\u4e1a\u989d\u4e13\u7ebf\uff0c\u65f6\u95f4\u7528\u672c\u6708\u81f3\u4eca\",\"orchestrationDecisionCandidate\":{\"taskMode\":\"ROUTED_AGENT\",\"selectedAgents\":[\"RevenueAgent\"],\"selectedTools\":[\"revenue_query\"],\"plannerRequired\":false,\"multiAgentRequired\":false,\"approvalRequired\":false,\"clarificationRequired\":false,\"clarificationQuestion\":null,\"confidence\":0.93,\"reason\":\"\u5355\u7b14\u8425\u4e1a\u989d\u67e5\u8be2\uff0c\u5355\u57dfRevenue\"}}",
+                    "querySemanticV2ParseError": null,
+                    "orchestrationTaskMode": "ROUTED_AGENT",
+                    "orchestrationSelectedAgents": [
+                        "RevenueAgent"
+                    ],
+                    "orchestrationSelectedTools": [
+                        "revenue_query"
+                    ],
+                    "orchestrationPlannerRequired": false,
+                    "orchestrationMultiAgentRequired": false,
+                    "orchestrationApprovalRequired": false,
+                    "orchestrationClarificationRequired": false,
+                    "orchestrationClarificationQuestion": null,
+                    "orchestrationConfidence": 0.93,
+                    "orchestrationReason": "\u5355\u7b14\u8425\u4e1a\u989d\u67e5\u8be2\uff0c\u5355\u57dfRevenue",
+                    "multiStoreScopeDetected": false,
+                    "multiStoreScopeApplied": false,
+                    "multiStoreScopeSource": null,
+                    "multiStoreMatchedStores": null,
+                    "singleStoreNarrowingBlocked": false,
+                    "startDate": "2026-05-01",
+                    "endDate": "2026-05-15",
+                    "timeLabel": "THIS_MONTH",
+                    "timeDisplayText": "\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09",
+                    "timeInheritedFromPrevious": false,
+                    "timeExplicitInMessage": true,
+                    "time": {
+                        "start": "2026-05-01",
+                        "end": "2026-05-15",
+                        "label": "THIS_MONTH",
+                        "displayText": "\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09"
+                    },
+                    "scopeType": "WAREHOUSE",
+                    "scopeLabel": "\u672c\u5e93\u623f\uff1aAAA",
+                    "visibleStores": [],
+                    "semanticMentionedStoreNames": [],
+                    "storeRootCandidates": [],
+                    "visibleStoreCandidates": [],
+                    "matchedStoreCandidate": null,
+                    "narrowingFailureReason": "SKIPPED_NOT_GROUP_SCOPE",
+                    "queryScopeKind": "DEPARTMENT",
+                    "queryStoreIds": [],
+                    "queryRealDepartmentIds": [
+                        1
+                    ],
+                    "queryDistributerId": null,
+                    "storeToDepartmentIds": {},
+                    "visibleStoreRootIds": [],
+                    "storeRootDepartmentIds": [],
+                    "childDepartmentIds": [],
+                    "expandedChildDepartmentIds": [],
+                    "expandedSqlDepartmentIds": [
+                        1
+                    ],
+                    "revenueSqlDepartmentIds": [
+                        1
+                    ],
+                    "purchaseSqlDepartmentIds": [
+                        1
+                    ],
+                    "stockSqlDepartmentIds": [
+                        1
+                    ],
+                    "dishProfitSqlDepartmentIds": [
+                        1
+                    ],
+                    "stockReduceSqlDepartmentIds": [
+                        1
+                    ],
+                    "visibleStoreIds": [],
+                    "visibleWarehouseIds": [
+                        1
+                    ],
+                    "explicitChildDepartmentIds": [],
+                    "queryScopeMode": "WAREHOUSE_DEPARTMENT",
+                    "queryLevel": "WAREHOUSE_DEPARTMENT",
+                    "storeToChildDepartmentIds": {},
+                    "departmentScopeModelNote": "\u4e3b\u67e5\u8be2\u7ef4\u5ea6\uff1aqueryScopeKind=STORE \u7528 queryStoreIds\uff08\u95e8\u5e97\u6839\uff09\uff1bDEPARTMENT \u7528 queryRealDepartmentIds\uff08\u4ec5\u771f\u5b9e\u90e8\u95e8\uff09\uff1bDISTRIBUTER \u7528 queryDistributerId\u3002\u4e1a\u52a1\u8868 department_id IN \u7528 expandedSqlDepartmentIds\uff08\u6839\u222a\u5b50\uff09\uff0c\u52ff\u4e0e\u95e8\u5e97\u5217\u8868\u6df7\u6dc6\u3002storeToDepartmentIds \u4ec5\u7ed3\u6784\u8bf4\u660e\u3002",
+                    "purchaseSourceType": null,
+                    "structuredIntentDetailWire": "revenue_overview_summary",
+                    "structuredIntentDetail": "REVENUE_OVERVIEW_SUMMARY",
+                    "structuredIntentDetailCode": "REVENUE_OVERVIEW_SUMMARY",
+                    "structuredIntentDetailPresent": true,
+                    "stockReduceType": null,
+                    "dishProfitStructuredDetail": null,
+                    "mentionedDishName": null,
+                    "dishName": null,
+                    "dishProfitMetricType": "REVENUE_OVERVIEW_SUMMARY",
+                    "mentionedStore": null,
+                    "followUp": false,
+                    "followUpType": "SEMANTIC_STRUCTURAL_MERGE",
+                    "previousTurnSummary": {
+                        "lastIntentCode": "WAREHOUSE_STOCK_OVERVIEW",
+                        "lastPathCode": "warehouse_stock_overview_path",
+                        "lastStructuredIntentDetail": null,
+                        "lastPurchaseSourceType": null,
+                        "lastStartDate": "2026-05-01",
+                        "lastEndDate": "2026-05-15",
+                        "lastTimeLabel": "THIS_MONTH",
+                        "lastScopeType": "WAREHOUSE",
+                        "lastMentionedDishName": null
+                    },
+                    "dataPlanTools": null,
+                    "usedToolId": null,
+                    "buildInsightUsed": false,
+                    "usedBuildInsight": false,
+                    "buildInsightRequest": null,
+                    "buildInsightInputStoreRootIds": null,
+                    "buildInsightInputDepartmentIdsAllowFilter": null,
+                    "dishesCount": null,
+                    "dishLineReturned": null,
+                    "salesDishCount": null,
+                    "riskLevel": null,
+                    "resolvedVisibleStoreRootIds": [],
+                    "resolvedEffectiveSqlDepartmentIds": [
+                        1
+                    ],
+                    "resolvedDishProfitSqlDepartmentIds": [
+                        1
+                    ],
+                    "departmentIdSemanticsHint": "\u95e8\u5e97\u5c55\u793a=visibleStores/queryStoreIds\uff1bdepartment_id IN=expandedSqlDepartmentIds\uff1b\u8bed\u4e49\u90e8\u95e8=queryRealDepartmentIds\uff08\u4ec5 DEPARTMENT \u53e3\u5f84\uff09",
+                    "dishProfitAnswerPlan": null,
+                    "dishProfitAnswerPlanPresent": false,
+                    "dishSalesAnswerPlan": null,
+                    "dishSalesAnswerPlanPresent": false,
+                    "purchaseAnswerPlan": null,
+                    "purchaseAnswerPlanPresent": false,
+                    "purchaseAnswerPlanType": null,
+                    "purchaseAnswerPlanSortKey": null,
+                    "purchaseAnswerPlanSortDirection": null,
+                    "purchaseAnswerPlanFocusRows": null,
+                    "purchaseAnswerPlanSecondaryRows": null,
+                    "purchaseAnswerPlanDebug": null,
+                    "stockReduceAnswerPlan": null,
+                    "stockReduceAnswerPlanPresent": false,
+                    "stockReduceAnswerPlanType": null,
+                    "stockReduceAnswerPlanSortKey": null,
+                    "stockReduceAnswerPlanSortDirection": null,
+                    "stockReduceAnswerPlanFocusRows": null,
+                    "stockReduceAnswerPlanSecondaryRows": null,
+                    "stockReduceAnswerPlanDebug": null,
+                    "revenueAnswerPlan": null,
+                    "revenueAnswerPlanPresent": false,
+                    "revenueAnswerPlanType": null,
+                    "revenueAnswerPlanSortKey": null,
+                    "revenueAnswerPlanSortDirection": null,
+                    "revenueAnswerPlanFocusRows": null,
+                    "revenueAnswerPlanSecondaryRows": null,
+                    "revenueAnswerPlanDebug": null,
+                    "usedTools": [],
+                    "diagnosisPlan": null,
+                    "diagnosisPlanPresent": false,
+                    "diagnosisPlanType": null,
+                    "businessDiagnosisPlan": null,
+                    "businessDiagnosisPlanType": null,
+                    "storePriorityRankingPlanType": null,
+                    "storePriorityRankingRowsLen": null,
+                    "storePriorityRankingTop1StoreName": null,
+                    "storePriorityRankingTop1PriorityRank": null,
+                    "diagnosisRiskLevel": null,
+                    "diagnosisDataCompleteness": null,
+                    "planSource": "revenueAnswerPlan",
+                    "businessOverviewMultiMaster": null,
+                    "masterAgentEnabled": null,
+                    "masterAgentUsed": null,
+                    "selectedAgents": null,
+                    "dispatchPlan": null,
+                    "agentResults": null,
+                    "agentResultStatus": null,
+                    "degraded": null,
+                    "failurePolicy": null,
+                    "fallbackUsed": null,
+                    "fallbackReason": null,
+                    "legacyRevenueSkipped": null,
+                    "masterRevenueToolResultKey": null,
+                    "masterRevenueToolResultSuccess": null,
+                    "revenueToolExecutedByMasterPath": null,
+                    "purchaseMasterAgentEnabled": null,
+                    "purchaseMasterAgentUsed": null,
+                    "purchaseSelectedAgents": null,
+                    "purchaseDispatchPlan": null,
+                    "purchaseAgentResults": null,
+                    "purchaseAgentResultStatus": null,
+                    "purchaseDegraded": null,
+                    "purchaseFailurePolicy": null,
+                    "purchaseFallbackUsed": null,
+                    "purchaseFallbackReason": null,
+                    "legacyPurchaseSkipped": null,
+                    "masterPurchaseToolResultKey": null,
+                    "masterPurchaseToolResultSuccess": null,
+                    "purchaseToolExecutedByMasterPath": null,
+                    "purchaseRequestResolutionDebug": null,
+                    "stockReduceMasterAgentEnabled": null,
+                    "stockReduceMasterAgentUsed": null,
+                    "stockReduceSelectedAgents": null,
+                    "stockReduceDispatchPlan": null,
+                    "stockReduceAgentResults": null,
+                    "stockReduceAgentResultStatus": null,
+                    "stockReduceDegraded": null,
+                    "stockReduceFailurePolicy": null,
+                    "stockReduceFallbackUsed": null,
+                    "stockReduceFallbackReason": null,
+                    "legacyStockReduceSkipped": null,
+                    "masterStockReduceToolResultKey": null,
+                    "masterStockReduceToolResultSuccess": null,
+                    "stockReduceToolExecutedByMasterPath": null,
+                    "stockReduceRequestResolutionDebug": null,
+                    "dishProfitMasterAgentEnabled": null,
+                    "dishProfitMasterAgentUsed": null,
+                    "dishProfitSelectedAgents": null,
+                    "dishProfitDispatchPlan": null,
+                    "dishProfitAgentResults": null,
+                    "dishProfitAgentResultStatus": null,
+                    "dishProfitFallbackUsed": null,
+                    "dishProfitFallbackReason": null,
+                    "legacyDishProfitSkipped": null,
+                    "masterDishProfitToolResultKey": null,
+                    "masterDishProfitToolResultSuccess": null,
+                    "dishProfitToolExecutedByMasterPath": null,
+                    "dishProfitRequestResolutionDebug": null,
+                    "businessOverviewMultiAgentBatchCompleted": null,
+                    "businessOverviewAllExpectedDomainsAttempted": null,
+                    "businessOverviewMultiAgentAnyDomainSuccess": null,
+                    "businessOverviewMultiAgentBatchAttempted": null,
+                    "businessOverviewMultiAgentAllDomainsSkipped": null,
+                    "businessOverviewMultiAgentBatchUsableForDiagnosis": null,
+                    "businessOverviewSuccessfulDomains": null,
+                    "compositeGateAllowed": false,
+                    "compositeGateReasonCode": "DOMAIN_SINGLE_INTENT_NOT_COMPOSITE",
+                    "compositeGateReason": "single-domain intent/path not eligible for composite",
+                    "compositeGateScopeType": "WAREHOUSE",
+                    "compositeGateRecommendedCaseKind": "NONE",
+                    "compositeGateFinalAnswerPlanType": null,
+                    "compositeGateDebug": {
+                        "productionEnabledEffective": true,
+                        "gateVersion": "C-53_SKELETON",
+                        "effectiveIntentCode": "REVENUE_OVERVIEW",
+                        "productionEnabledSource": "CONFIG",
+                        "effectivePathCode": "revenue_overview_path"
+                    },
+                    "compositeGateProductionEnabledSource": "CONFIG",
+                    "compositeGateProductionEnabledEffective": true,
+                    "compositeExecutionMode": null,
+                    "compositeExecuted": false,
+                    "compositeExecutionSuccess": false,
+                    "compositeFallbackRequired": false,
+                    "compositeFallbackReason": null,
+                    "compositePlannerOverallStatus": null,
+                    "compositePlannerDegradedSteps": null,
+                    "compositeFinalAnswerText": null,
+                    "compositeComposerVersion": null,
+                    "compositeAnswerPlanType": null,
+                    "compositeExecutionErrorCode": null,
+                    "compositeExecutionErrorMessage": null,
+                    "compositeShadowLatencyMs": null,
+                    "compositeShadowComparedWithLegacy": null,
+                    "compositeShadowLegacyAnswerPresent": null,
+                    "compositeShadowCompositeAnswerPresent": null,
+                    "compositeShadowFinalAnswerReplaced": null,
+                    "compositeShadowSkipped": null,
+                    "compositeShadowSkipReason": null,
+                    "compositeShadowThrottleHit": null,
+                    "compositeShadowWhitelistMatched": null,
+                    "finalAnswerText": "\u3010\u6743\u9650\u63d0\u793a\u3011\u672c\u6b21\u8fd0\u884c\u5b58\u5728\u529f\u80fd\u53d7\u9650\uff1a\n\u2022 \u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u4f7f\u7528\u300c\u8425\u4e1a\u989d\u67e5\u8be2\u300d\uff08\u9700\u8981\u6743\u9650\uff1a\u67e5\u770b\u8425\u4e1a\u989d\uff09\u3002\n\u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u67e5\u770b\u8425\u4e1a\u989d\u7684\u6743\u9650\uff0c\u7cfb\u7edf\u65e0\u6cd5\u5728\u6743\u9650\u8303\u56f4\u5185\u67e5\u8be2\u6216\u6c47\u603b\u8425\u6536\u91d1\u989d\u3002\n\n\u8bf7\u52ff\u5c06\u4e0b\u65b9\u53ef\u80fd\u51fa\u73b0\u7684\u300c\u65e0\u6570\u636e\u300d\u300c\u91d1\u989d\u4e3a 0\u300d\u300c\u6838\u5bf9\u6708\u4efd\u6216\u95e8\u5e97\u5f52\u5c5e\u300d\u7b49\u8868\u8ff0\u5f53\u4f5c\u771f\u5b9e\u7ecf\u8425\u7ed3\u8bba\u3002\n\n\u5982\u9700\u67e5\u770b\u8425\u4e1a\u989d\u8bf7\u5728\u5177\u5907\u6743\u9650\u7684\u5c97\u4f4d\u4f7f\u7528\uff0c\u6216\u8054\u7cfb\u7ba1\u7406\u5458\u5f00\u901a\u300c\u67e5\u770b\u8425\u4e1a\u989d\u300d\u3002\u5e93\u623f\u7aef\u53ef\u7ee7\u7eed\u8be2\u95ee\u4e0e\u672c\u5e93\u623f\u76f8\u5173\u7684\u5e93\u5b58\u3001\u51fa\u5e93/\u6838\u9500\u3001\u91c7\u8d2d\u5165\u5e93\u53ca\u635f\u8017\u7b49\u95ee\u9898\uff08\u4ee5\u5b9e\u9645\u6743\u9650\u4e3a\u51c6\uff09\u3002",
+                    "answerPreview": "\u3010\u6743\u9650\u63d0\u793a\u3011\u672c\u6b21\u8fd0\u884c\u5b58\u5728\u529f\u80fd\u53d7\u9650\uff1a\n\u2022 \u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u4f7f\u7528\u300c\u8425\u4e1a\u989d\u67e5\u8be2\u300d\uff08\u9700\u8981\u6743\u9650\uff1a\u67e5\u770b\u8425\u4e1a\u989d\uff09\u3002\n\u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u67e5\u770b\u8425\u4e1a\u989d\u7684\u6743\u9650\uff0c\u7cfb\u7edf\u65e0\u6cd5\u5728\u6743\u9650\u8303\u56f4\u5185\u67e5\u8be2\u6216\u6c47\u603b\u8425\u6536\u91d1\u989d\u3002\n\n\u8bf7\u52ff\u5c06\u4e0b\u65b9\u53ef\u80fd\u51fa\u73b0\u7684\u300c\u65e0\u6570\u636e\u300d\u300c\u91d1\u989d\u4e3a 0\u300d\u300c\u6838\u5bf9\u6708\u4efd\u6216\u95e8\u5e97\u5f52\u5c5e\u300d\u7b49\u8868\u8ff0\u5f53\u4f5c\u771f\u5b9e\u7ecf\u8425\u7ed3\u8bba\u3002\n\n\u5982\u9700\u67e5\u770b\u8425\u4e1a\u989d\u8bf7\u5728\u5177\u5907\u6743\u9650\u7684\u5c97\u4f4d\u4f7f\u7528\uff0c\u6216\u8054\u7cfb\u7ba1\u7406\u5458\u5f00\u901a\u300c\u67e5\u770b\u8425\u4e1a\u989d\u300d\u3002\u5e93\u623f\u7aef\u53ef\u7ee7\u7eed\u8be2\u95ee\u4e0e\u672c\u5e93\u623f\u76f8\u5173\u7684\u5e93\u5b58\u3001\u51fa\u5e93/\u6838\u9500\u3001\u91c7\u8d2d\u5165\u5e93\u53ca\u635f\u8017\u7b49\u95ee\u9898\uff08\u4ee5\u5b9e\u9645\u6743\u9650\u4e3a\u51c6\uff09\u3002",
+                    "consumedAnswerPlans": null,
+                    "missingAnswerPlans": null,
+                    "harnessReplayPlanSource": "revenueAnswerPlan",
+                    "harnessReplayRevenueAnswerPlanProbePresent": false,
+                    "needClarification": false,
+                    "clarificationQuestion": null,
+                    "businessDiagnosisPath": false,
+                    "businessOverviewPath": false,
+                    "revenueOverviewPath": false,
+                    "purchaseOverviewPath": false,
+                    "stockReduceQueryPath": false,
+                    "warehouseStockOverviewPath": false,
+                    "groupWarehouseStockOverview": false,
+                    "permissionDenials": [
+                        {
+                            "allowed": false,
+                            "reason": "\u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u4f7f\u7528\u300c\u8425\u4e1a\u989d\u67e5\u8be2\u300d\uff08\u9700\u8981\u6743\u9650\uff1a\u67e5\u770b\u8425\u4e1a\u989d\uff09\u3002",
+                            "suggestedScope": "\u4f60\u53ef\u4ee5\u67e5\u770b\u81ea\u5df1\u804c\u8d23\u8303\u56f4\u5185\u7684\u95e8\u5e97/\u5206\u9500\u7ecf\u8425\u6570\u636e\uff1b\u82e5\u9700\u8de8\u5e97\u6216\u96c6\u56e2\u89c6\u56fe\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u5f00\u901a\u76f8\u5e94\u6743\u9650\u3002",
+                            "requiredPermission": "VIEW_REVENUE",
+                            "subject": "revenue_query"
+                        }
+                    ],
+                    "finalAnswerTextBlank": false,
+                    "couponCostInsightBlocked": false,
+                    "diagnosisPlanExists": false,
+                    "businessDiagnosisPlanExists": false
+                },
+                "probe": {
+                    "message": "\u8fd9\u4e2a\u6708\u8425\u4e1a\u989d\u591a\u5c11\uff1f",
+                    "effectiveIntentCode": "REVENUE_OVERVIEW",
+                    "effectivePathCode": "revenue_overview_path",
+                    "structuredIntentDetailWire": "revenue_overview_summary",
+                    "timeSource": "SEMANTIC_EXPLICIT",
+                    "startDate": "2026-05-01",
+                    "endDate": "2026-05-15",
+                    "scopeType": "WAREHOUSE",
+                    "visibleStores": [],
+                    "orchestrationSelectedAgents": [
+                        "RevenueAgent"
+                    ],
+                    "orchestrationSelectedTools": [
+                        "revenue_query"
+                    ],
+                    "needSemanticClarification": false,
+                    "needClarification": false,
+                    "clarificationQuestion": null,
+                    "businessDiagnosisPath": false,
+                    "businessOverviewPath": false,
+                    "revenueOverviewPath": false,
+                    "purchaseOverviewPath": false,
+                    "stockReduceQueryPath": false,
+                    "warehouseStockOverviewPath": false,
+                    "groupWarehouseStockOverview": false,
+                    "permissionDenials": [
+                        {
+                            "allowed": false,
+                            "reason": "\u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u4f7f\u7528\u300c\u8425\u4e1a\u989d\u67e5\u8be2\u300d\uff08\u9700\u8981\u6743\u9650\uff1a\u67e5\u770b\u8425\u4e1a\u989d\uff09\u3002",
+                            "suggestedScope": "\u4f60\u53ef\u4ee5\u67e5\u770b\u81ea\u5df1\u804c\u8d23\u8303\u56f4\u5185\u7684\u95e8\u5e97/\u5206\u9500\u7ecf\u8425\u6570\u636e\uff1b\u82e5\u9700\u8de8\u5e97\u6216\u96c6\u56e2\u89c6\u56fe\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u5f00\u901a\u76f8\u5e94\u6743\u9650\u3002",
+                            "requiredPermission": "VIEW_REVENUE",
+                            "subject": "revenue_query"
+                        }
+                    ],
+                    "finalAnswerTextBlank": false,
+                    "couponCostInsightBlocked": false,
+                    "diagnosisPlanExists": false,
+                    "businessDiagnosisPlanExists": false,
+                    "planSource": "revenueAnswerPlan",
+                    "harnessReplayPlanSource": "revenueAnswerPlan",
+                    "harnessReplayPurchaseAnswerPlanType": null,
+                    "harnessReplayPurchaseAnswerPlanTypeMeaningful": null,
+                    "harnessReplayPurchaseAnswerPlanProbePresent": null,
+                    "harnessReplayStockReduceAnswerPlanType": null,
+                    "harnessReplayStockReduceReduceType": null,
+                    "harnessReplayDishProfitAnswerPlanType": null,
+                    "harnessReplayDishSalesAnswerPlanType": null,
+                    "harnessReplayDishSalesRankingRowCount": null,
+                    "harnessReplayDishSalesTopDishName": null,
+                    "harnessReplayDishSalesMetricType": null,
+                    "harnessReplayBusinessDiagnosisPlanType": null,
+                    "harnessReplayStorePriorityRankingPlanType": null,
+                    "harnessReplayStorePriorityRankingRowsLen": null,
+                    "harnessReplayStorePriorityRankingTop1StoreName": null,
+                    "harnessReplayStorePriorityRankingTop1PriorityRank": null,
+                    "businessStoreCompareEvidenceRowsLen": null,
+                    "harnessReplayStoreCompareEvidenceRowsLen": null,
+                    "businessStoreCompareTop1StoreName": null,
+                    "businessStoreCompareTop2StoreName": null,
+                    "compositeGateAllowed": false,
+                    "compositeGateReasonCode": "DOMAIN_SINGLE_INTENT_NOT_COMPOSITE",
+                    "dataPlanTools": [],
+                    "finalAnswerText": "\u3010\u6743\u9650\u63d0\u793a\u3011\u672c\u6b21\u8fd0\u884c\u5b58\u5728\u529f\u80fd\u53d7\u9650\uff1a\n\u2022 \u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u4f7f\u7528\u300c\u8425\u4e1a\u989d\u67e5\u8be2\u300d\uff08\u9700\u8981\u6743\u9650\uff1a\u67e5\u770b\u8425\u4e1a\u989d\uff09\u3002\n\u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u67e5\u770b\u8425\u4e1a\u989d\u7684\u6743\u9650\uff0c\u7cfb\u7edf\u65e0\u6cd5\u5728\u6743\u9650\u8303\u56f4\u5185\u67e5\u8be2\u6216\u6c47\u603b\u8425\u6536\u91d1\u989d\u3002\n\n\u8bf7\u52ff\u5c06\u4e0b\u65b9\u53ef\u80fd\u51fa\u73b0\u7684\u300c\u65e0\u6570\u636e\u300d\u300c\u91d1\u989d\u4e3a 0\u300d\u300c\u6838\u5bf9\u6708\u4efd\u6216\u95e8\u5e97\u5f52\u5c5e\u300d\u7b49\u8868\u8ff0\u5f53\u4f5c\u771f\u5b9e\u7ecf\u8425\u7ed3\u8bba\u3002\n\n\u5982\u9700\u67e5\u770b\u8425\u4e1a\u989d\u8bf7\u5728\u5177\u5907\u6743\u9650\u7684\u5c97\u4f4d\u4f7f\u7528\uff0c\u6216\u8054\u7cfb\u7ba1\u7406\u5458\u5f00\u901a\u300c\u67e5\u770b\u8425\u4e1a\u989d\u300d\u3002\u5e93\u623f\u7aef\u53ef\u7ee7\u7eed\u8be2\u95ee\u4e0e\u672c\u5e93\u623f\u76f8\u5173\u7684\u5e93\u5b58\u3001\u51fa\u5e93/\u6838\u9500\u3001\u91c7\u8d2d\u5165\u5e93\u53ca\u635f\u8017\u7b49\u95ee\u9898\uff08\u4ee5\u5b9e\u9645\u6743\u9650\u4e3a\u51c6\uff09\u3002"
+                },
+                "pass": true,
+                "failedFields": []
+            },
+            {
+                "roundIndex": 4,
+                "message": "\u54ea\u4e2a\u95e8\u5e97\u95ee\u9898\u6700\u5927\uff1f",
+                "runId": 1778835191104,
+                "conversationId": 338,
+                "resolvedQueryContextSummary": {
+                    "conversationId": 338,
+                    "runId": 1778835191104,
+                    "effectiveIntentCode": "BUSINESS_DIAGNOSIS",
+                    "effectivePathCode": "business_diagnosis_path",
+                    "intent": "BUSINESS_DIAGNOSIS",
+                    "path": "business_diagnosis_path",
+                    "effectiveTimeWindowSource": "INHERITED_PREVIOUS",
+                    "timeSource": "INHERITED_PREVIOUS",
+                    "effectiveIntentSource": "CURRENT_MESSAGE_EXPLICIT",
+                    "effectiveScopeSource": "INHERITED_PREVIOUS",
+                    "querySemanticLlm": {
+                        "parseMissing": false,
+                        "intent": "BUSINESS_DIAGNOSIS",
+                        "confidence": 0.9,
+                        "time": {
+                            "timeType": "THIS_MONTH",
+                            "startDate": "2026-05-01",
+                            "endDate": "2026-05-15",
+                            "timeSource": "INHERITED_PREVIOUS",
+                            "needInheritFromPrevious": true
+                        },
+                        "requestedScope": {
+                            "requestedScopeType": "GROUP",
+                            "mentionedStoreName": null,
+                            "mentionedStoreNames": null,
+                            "mentionedDepartmentName": null,
+                            "mentionedWarehouseName": null,
+                            "scopeSource": "CURRENT_MESSAGE",
+                            "needInheritFromPrevious": false
+                        },
+                        "metric": {
+                            "primaryMetric": "operation_risk",
+                            "rankingType": "store_priority_ranking",
+                            "purchaseSourceType": null,
+                            "stockReduceType": null
+                        },
+                        "needClarification": false,
+                        "clarificationQuestion": null,
+                        "reason": "\u591a\u5e97\u7efc\u5408\u98ce\u9669\u4f18\u5148\u6392\u5e8f\uff0c\u65f6\u95f4\u7ee7\u627f\u4e0a\u8f6e\u672c\u6708\u81f3\u4eca",
+                        "mentionedStoreNames": null
+                    },
+                    "needSemanticClarification": false,
+                    "semanticClarificationQuestion": null,
+                    "querySemanticEffectiveMentionedStoreNames": null,
+                    "semanticPrimaryVersion": "v2",
+                    "semanticFallbackUsed": false,
+                    "semanticFallbackReason": null,
+                    "semanticAdoptedFrom": "v2",
+                    "semanticAdoptedFields": [
+                        "intent",
+                        "confidence",
+                        "followUp",
+                        "intentAction",
+                        "timeAction",
+                        "scopeAction",
+                        "metricAction",
+                        "time.timeType",
+                        "requestedScope",
+                        "metric.rankingType"
+                    ],
+                    "semanticAdoptionRejectedFields": null,
+                    "semanticAdoptionRejectedReason": null,
+                    "semanticMetricNormalizedFrom": null,
+                    "semanticMetricNormalizedTo": null,
+                    "semanticV2AbstractIntentNormalizationNotes": null,
+                    "querySemanticV1": null,
+                    "querySemanticV2InputPreview": {
+                        "previousTurn": {
+                            "intentCode": "REVENUE_OVERVIEW",
+                            "pathCode": "revenue_overview_path",
+                            "structuredIntentDetail": "revenue_overview_summary",
+                            "timeLabel": "THIS_MONTH",
+                            "startDate": "2026-05-01",
+                            "endDate": "2026-05-15",
+                            "scopeType": "WAREHOUSE"
+                        },
+                        "today": "2026-05-15",
+                        "visibleStores": [],
+                        "currentUserMessage": "\u54ea\u4e2a\u95e8\u5e97\u95ee\u9898\u6700\u5927\uff1f"
+                    },
+                    "querySemanticV2": {
+                        "timeAction": "INHERIT_PREVIOUS",
+                        "reason": "\u591a\u5e97\u7efc\u5408\u98ce\u9669\u4f18\u5148\u6392\u5e8f\uff0c\u65f6\u95f4\u7ee7\u627f\u4e0a\u8f6e\u672c\u6708\u81f3\u4eca",
+                        "isFollowUp": true,
+                        "intentAction": "OVERRIDE",
+                        "needClarification": false,
+                        "confidence": 0.9,
+                        "orchestrationDecisionCandidate": {
+                            "taskMode": "MULTI_AGENT",
+                            "selectedAgents": [
+                                "RevenueAgent",
+                                "PurchaseAgent",
+                                "StockReduceAgent",
+                                "DishProfitAgent"
+                            ],
+                            "selectedTools": [
+                                "revenue_query",
+                                "purchase_overview",
+                                "stock_reduce_query",
+                                "dish_profit_analysis"
+                            ],
+                            "plannerRequired": false,
+                            "multiAgentRequired": true,
+                            "approvalRequired": false,
+                            "clarificationRequired": false,
+                            "confidence": 0.88,
+                            "reason": "\u95e8\u5e97\u4f18\u5148\u6392\u884c\u987b\u56db\u57df\u5de5\u5177\u62c9\u6570"
+                        },
+                        "promptRegistryId": "semantic.query_parser.v2",
+                        "intent": "BUSINESS_DIAGNOSIS",
+                        "metricAction": "OVERRIDE",
+                        "parseMissing": false,
+                        "metric": {
+                            "primaryMetric": "operation_risk",
+                            "rankingType": "store_priority_ranking"
+                        },
+                        "scopeAction": "OVERRIDE",
+                        "requestedScope": {
+                            "requestedScopeType": "GROUP",
+                            "scopeSource": "CURRENT_MESSAGE",
+                            "needInheritFromPrevious": false
+                        },
+                        "time": {
+                            "timeType": "THIS_MONTH",
+                            "startDate": "2026-05-01",
+                            "endDate": "2026-05-15",
+                            "timeSource": "INHERITED_PREVIOUS",
+                            "needInheritFromPrevious": true
+                        }
+                    },
+                    "querySemanticV2ParseMissing": false,
+                    "querySemanticV2Confidence": 0.9,
+                    "querySemanticV2TimeAction": "INHERIT_PREVIOUS",
+                    "querySemanticV2ScopeAction": "OVERRIDE",
+                    "querySemanticV2IntentAction": "OVERRIDE",
+                    "querySemanticV2MetricAction": "OVERRIDE",
+                    "querySemanticV2MentionedStoreNames": null,
+                    "querySemanticV2MentionedDishName": null,
+                    "querySemanticV2RawText": "{\"isFollowUp\":true,\"intentAction\":\"OVERRIDE\",\"timeAction\":\"INHERIT_PREVIOUS\",\"scopeAction\":\"OVERRIDE\",\"metricAction\":\"OVERRIDE\",\"intent\":\"BUSINESS_DIAGNOSIS\",\"confidence\":0.9,\"time\":{\"timeType\":\"THIS_MONTH\",\"startDate\":\"2026-05-01\",\"endDate\":\"2026-05-15\",\"timeSource\":\"INHERITED_PREVIOUS\",\"needInheritFromPrevious\":true},\"requestedScope\":{\"requestedScopeType\":\"GROUP\",\"mentionedStoreName\":null,\"mentionedStoreNames\":null,\"mentionedDepartmentName\":null,\"mentionedWarehouseName\":null,\"scopeSource\":\"CURRENT_MESSAGE\",\"needInheritFromPrevious\":false},\"metric\":{\"primaryMetric\":\"operation_risk\",\"rankingType\":\"store_priority_ranking\",\"purchaseSourceType\":null,\"stockReduceType\":null},\"mentionedDishName\":null,\"needClarification\":false,\"clarificationQuestion\":null,\"reason\":\"\u591a\u5e97\u7efc\u5408\u98ce\u9669\u4f18\u5148\u6392\u5e8f\uff0c\u65f6\u95f4\u7ee7\u627f\u4e0a\u8f6e\u672c\u6708\u81f3\u4eca\",\"orchestrationDecisionCandidate\":{\"taskMode\":\"MULTI_AGENT\",\"selectedAgents\":[\"RevenueAgent\",\"PurchaseAgent\",\"StockReduceAgent\",\"DishProfitAgent\"],\"selectedTools\":[\"revenue_query\",\"purchase_overview\",\"stock_reduce_query\",\"dish_profit_analysis\"],\"plannerRequired\":false,\"multiAgentRequired\":true,\"approvalRequired\":false,\"clarificationRequired\":false,\"clarificationQuestion\":null,\"confidence\":0.88,\"reason\":\"\u95e8\u5e97\u4f18\u5148\u6392\u884c\u987b\u56db\u57df\u5de5\u5177\u62c9\u6570\"}}",
+                    "querySemanticV2ParseError": null,
+                    "orchestrationTaskMode": "MULTI_AGENT",
+                    "orchestrationSelectedAgents": [
+                        "RevenueAgent",
+                        "PurchaseAgent",
+                        "StockReduceAgent",
+                        "DishProfitAgent"
+                    ],
+                    "orchestrationSelectedTools": [
+                        "revenue_query",
+                        "purchase_overview",
+                        "stock_reduce_query",
+                        "dish_profit_analysis"
+                    ],
+                    "orchestrationPlannerRequired": false,
+                    "orchestrationMultiAgentRequired": true,
+                    "orchestrationApprovalRequired": false,
+                    "orchestrationClarificationRequired": false,
+                    "orchestrationClarificationQuestion": null,
+                    "orchestrationConfidence": 0.88,
+                    "orchestrationReason": "\u95e8\u5e97\u4f18\u5148\u6392\u884c\u987b\u56db\u57df\u5de5\u5177\u62c9\u6570",
+                    "multiStoreScopeDetected": false,
+                    "multiStoreScopeApplied": false,
+                    "multiStoreScopeSource": null,
+                    "multiStoreMatchedStores": null,
+                    "singleStoreNarrowingBlocked": false,
+                    "startDate": "2026-05-01",
+                    "endDate": "2026-05-15",
+                    "timeLabel": "THIS_MONTH",
+                    "timeDisplayText": "\u7ee7\u627f\u4e0a\u4e00\u8f6e\u65f6\u95f4\u7a97",
+                    "timeInheritedFromPrevious": true,
+                    "timeExplicitInMessage": false,
+                    "time": {
+                        "start": "2026-05-01",
+                        "end": "2026-05-15",
+                        "label": "THIS_MONTH",
+                        "displayText": "\u7ee7\u627f\u4e0a\u4e00\u8f6e\u65f6\u95f4\u7a97"
+                    },
+                    "scopeType": "WAREHOUSE",
+                    "scopeLabel": "\u672c\u5e93\u623f\uff1aAAA",
+                    "visibleStores": [],
+                    "semanticMentionedStoreNames": [],
+                    "storeRootCandidates": [],
+                    "visibleStoreCandidates": [],
+                    "matchedStoreCandidate": null,
+                    "narrowingFailureReason": "SKIPPED_NOT_GROUP_SCOPE",
+                    "queryScopeKind": "DEPARTMENT",
+                    "queryStoreIds": [],
+                    "queryRealDepartmentIds": [
+                        1
+                    ],
+                    "queryDistributerId": null,
+                    "storeToDepartmentIds": {},
+                    "visibleStoreRootIds": [],
+                    "storeRootDepartmentIds": [],
+                    "childDepartmentIds": [],
+                    "expandedChildDepartmentIds": [],
+                    "expandedSqlDepartmentIds": [
+                        1
+                    ],
+                    "revenueSqlDepartmentIds": [
+                        1
+                    ],
+                    "purchaseSqlDepartmentIds": [
+                        1
+                    ],
+                    "stockSqlDepartmentIds": [
+                        1
+                    ],
+                    "dishProfitSqlDepartmentIds": [
+                        1
+                    ],
+                    "stockReduceSqlDepartmentIds": [
+                        1
+                    ],
+                    "visibleStoreIds": [],
+                    "visibleWarehouseIds": [
+                        1
+                    ],
+                    "explicitChildDepartmentIds": [],
+                    "queryScopeMode": "WAREHOUSE_DEPARTMENT",
+                    "queryLevel": "WAREHOUSE_DEPARTMENT",
+                    "storeToChildDepartmentIds": {},
+                    "departmentScopeModelNote": "\u4e3b\u67e5\u8be2\u7ef4\u5ea6\uff1aqueryScopeKind=STORE \u7528 queryStoreIds\uff08\u95e8\u5e97\u6839\uff09\uff1bDEPARTMENT \u7528 queryRealDepartmentIds\uff08\u4ec5\u771f\u5b9e\u90e8\u95e8\uff09\uff1bDISTRIBUTER \u7528 queryDistributerId\u3002\u4e1a\u52a1\u8868 department_id IN \u7528 expandedSqlDepartmentIds\uff08\u6839\u222a\u5b50\uff09\uff0c\u52ff\u4e0e\u95e8\u5e97\u5217\u8868\u6df7\u6dc6\u3002storeToDepartmentIds \u4ec5\u7ed3\u6784\u8bf4\u660e\u3002",
+                    "purchaseSourceType": null,
+                    "structuredIntentDetailWire": "store_priority_ranking",
+                    "structuredIntentDetail": "STORE_PRIORITY_RANKING",
+                    "structuredIntentDetailCode": "STORE_PRIORITY_RANKING",
+                    "structuredIntentDetailPresent": true,
+                    "stockReduceType": null,
+                    "dishProfitStructuredDetail": null,
+                    "mentionedDishName": null,
+                    "dishName": null,
+                    "dishProfitMetricType": "STORE_PRIORITY_RANKING",
+                    "mentionedStore": null,
+                    "followUp": true,
+                    "followUpType": "SEMANTIC_STRUCTURAL_MERGE",
+                    "previousTurnSummary": {
+                        "lastIntentCode": "REVENUE_OVERVIEW",
+                        "lastPathCode": "revenue_overview_path",
+                        "lastStructuredIntentDetail": "revenue_overview_summary",
+                        "lastPurchaseSourceType": null,
+                        "lastStartDate": "2026-05-01",
+                        "lastEndDate": "2026-05-15",
+                        "lastTimeLabel": "THIS_MONTH",
+                        "lastScopeType": "WAREHOUSE",
+                        "lastMentionedDishName": null
+                    },
+                    "dataPlanTools": [
+                        "purchase_overview",
+                        "stock_reduce_query"
+                    ],
+                    "usedToolId": "purchase_overview",
+                    "buildInsightUsed": false,
+                    "usedBuildInsight": false,
+                    "buildInsightRequest": null,
+                    "buildInsightInputStoreRootIds": null,
+                    "buildInsightInputDepartmentIdsAllowFilter": null,
+                    "dishesCount": null,
+                    "dishLineReturned": null,
+                    "salesDishCount": null,
+                    "riskLevel": null,
+                    "resolvedVisibleStoreRootIds": [],
+                    "resolvedEffectiveSqlDepartmentIds": [
+                        1
+                    ],
+                    "resolvedDishProfitSqlDepartmentIds": [
+                        1
+                    ],
+                    "departmentIdSemanticsHint": "\u95e8\u5e97\u5c55\u793a=visibleStores/queryStoreIds\uff1bdepartment_id IN=expandedSqlDepartmentIds\uff1b\u8bed\u4e49\u90e8\u95e8=queryRealDepartmentIds\uff08\u4ec5 DEPARTMENT \u53e3\u5f84\uff09",
+                    "dishProfitAnswerPlan": null,
+                    "dishProfitAnswerPlanPresent": false,
+                    "dishSalesAnswerPlan": null,
+                    "dishSalesAnswerPlanPresent": false,
+                    "purchaseAnswerPlan": {
+                        "debug": {
+                            "structuredIntentDetailWire": "store_priority_ranking",
+                            "resolvedPlanType": "PURCHASE_OVERVIEW",
+                            "source": "PurchaseOverviewTool"
+                        },
+                        "focusRows": [
+                            {
+                                "totalPurchaseAmount": "2976.0",
+                                "purchaseOrderCount": 2
+                            }
+                        ],
+                        "purchaseSourceType": "ALL",
+                        "scopeLabel": "\u4e0b\u9762\u6309\u4f60\u5f53\u524d\u53ef\u67e5\u770b\u7684\u5e93\u623f/\u6240\u5c5e\u95e8\u5e97\u5165\u5e93\u6570\u636e\u5206\u6790\u3002",
+                        "secondaryRows": [],
+                        "summary": {
+                            "totalAmount": 2976.0,
+                            "totalCount": 2,
+                            "selfPurchaseAmount": 2976.0,
+                            "supplierPurchaseAmount": 0.0,
+                            "selfPurchaseLineCount": 2,
+                            "supplierPurchaseLineCount": 0
+                        },
+                        "timeLabel": "\u7ee7\u627f\u4e0a\u4e00\u8f6e\u65f6\u95f4\u7a97",
+                        "type": "PURCHASE_OVERVIEW"
+                    },
+                    "purchaseAnswerPlanPresent": true,
+                    "purchaseAnswerPlanType": "PURCHASE_OVERVIEW",
+                    "purchaseAnswerPlanSortKey": null,
+                    "purchaseAnswerPlanSortDirection": null,
+                    "purchaseAnswerPlanDebug": {
+                        "structuredIntentDetailWire": "store_priority_ranking",
+                        "resolvedPlanType": "PURCHASE_OVERVIEW",
+                        "source": "PurchaseOverviewTool"
+                    },
+                    "purchaseAnswerPlanFocusRows": [
+                        {
+                            "totalPurchaseAmount": "2976.0",
+                            "purchaseOrderCount": 2
+                        }
+                    ],
+                    "purchaseAnswerPlanSecondaryRows": [],
+                    "stockReduceAnswerPlan": {
+                        "debug": {
+                            "attachAttempted": true,
+                            "expectedToolKey": "stock_reduce_query",
+                            "source": "StockReduceQueryTool",
+                            "sourceToolKey": "stock_reduce_query",
+                            "toolResultKeys": [
+                                "purchase_overview",
+                                "stock_reduce_query"
+                            ],
+                            "hasStockReduceToolResult": true,
+                            "dataClass": "java.util.LinkedHashMap",
+                            "foundDataPath": "envelope.data",
+                            "foundStockReduceOverview": true,
+                            "resolvedPlanType": "STOCK_REDUCE_OVERVIEW",
+                            "reduceType": "ALL",
+                            "structuredIntentDetailWire": "store_priority_ranking"
+                        },
+                        "focusRows": [
+                            {
+                                "reduceType": "ALL",
+                                "label": "\u51fa\u5e93/\u6838\u9500\u5408\u8ba1\uff08type1+2+3+4\uff09",
+                                "amount": 0.0,
+                                "totalsBasis": "CALENDAR_NATURAL_DAY"
+                            }
+                        ],
+                        "reduceType": "ALL",
+                        "scopeLabel": "\u672c\u5e93\u623f\uff1aAAA",
+                        "secondaryRows": [
+                            {
+                                "reduceType": "TYPE1",
+                                "label": "\u751f\u4ea7\u8017\u7528\uff08type1\uff09",
+                                "amount": 0.0,
+                                "totalsBasis": "CALENDAR_NATURAL_DAY"
+                            },
+                            {
+                                "reduceType": "TYPE2",
+                                "label": "\u5e9f\u5f03\uff08type2\uff09",
+                                "amount": 0.0,
+                                "totalsBasis": "CALENDAR_NATURAL_DAY"
+                            },
+                            {
+                                "reduceType": "TYPE3",
+                                "label": "\u635f\u8017/\u62a5\u635f\uff08type3\uff09",
+                                "amount": 0.0,
+                                "totalsBasis": "CALENDAR_NATURAL_DAY"
+                            },
+                            {
+                                "reduceType": "TYPE4",
+                                "label": "\u9000\u8d27\uff08type4\uff09",
+                                "amount": 0.0,
+                                "totalsBasis": "CALENDAR_NATURAL_DAY"
+                            }
+                        ],
+                        "summary": {
+                            "grandTotalFourTypes": 0.0,
+                            "produceTotal": 0.0,
+                            "wasteTotal": 0.0,
+                            "lossTotal": 0.0,
+                            "returnTotal": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        },
+                        "timeLabel": "\u7ee7\u627f\u4e0a\u4e00\u8f6e\u65f6\u95f4\u7a97",
+                        "type": "STOCK_REDUCE_OVERVIEW"
+                    },
+                    "stockReduceAnswerPlanPresent": true,
+                    "stockReduceAnswerPlanType": "STOCK_REDUCE_OVERVIEW",
+                    "stockReduceAnswerPlanSortKey": null,
+                    "stockReduceAnswerPlanSortDirection": null,
+                    "stockReduceAnswerPlanDebug": {
+                        "attachAttempted": true,
+                        "expectedToolKey": "stock_reduce_query",
+                        "source": "StockReduceQueryTool",
+                        "sourceToolKey": "stock_reduce_query",
+                        "toolResultKeys": [
+                            "purchase_overview",
+                            "stock_reduce_query"
+                        ],
+                        "hasStockReduceToolResult": true,
+                        "dataClass": "java.util.LinkedHashMap",
+                        "foundDataPath": "envelope.data",
+                        "foundStockReduceOverview": true,
+                        "resolvedPlanType": "STOCK_REDUCE_OVERVIEW",
+                        "reduceType": "ALL",
+                        "structuredIntentDetailWire": "store_priority_ranking",
+                        "sortKey": null,
+                        "sortDirection": null
+                    },
+                    "stockReduceAnswerPlanFocusRows": [
+                        {
+                            "reduceType": "ALL",
+                            "label": "\u51fa\u5e93/\u6838\u9500\u5408\u8ba1\uff08type1+2+3+4\uff09",
+                            "amount": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        }
+                    ],
+                    "stockReduceAnswerPlanSecondaryRows": [
+                        {
+                            "reduceType": "TYPE1",
+                            "label": "\u751f\u4ea7\u8017\u7528\uff08type1\uff09",
+                            "amount": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        },
+                        {
+                            "reduceType": "TYPE2",
+                            "label": "\u5e9f\u5f03\uff08type2\uff09",
+                            "amount": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        },
+                        {
+                            "reduceType": "TYPE3",
+                            "label": "\u635f\u8017/\u62a5\u635f\uff08type3\uff09",
+                            "amount": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        },
+                        {
+                            "reduceType": "TYPE4",
+                            "label": "\u9000\u8d27\uff08type4\uff09",
+                            "amount": 0.0,
+                            "totalsBasis": "CALENDAR_NATURAL_DAY"
+                        }
+                    ],
+                    "revenueAnswerPlan": {
+                        "debug": {
+                            "attachAttempted": true,
+                            "expectedToolKey": "revenue_query",
+                            "source": "RevenueQueryTool",
+                            "sourceToolKey": "revenue_query",
+                            "toolResultKeys": [
+                                "purchase_overview",
+                                "stock_reduce_query"
+                            ],
+                            "hasRevenueToolResult": false,
+                            "failureReason": "missing_tool_result",
+                            "failureDetail": "toolResults[revenue_query] is null",
+                            "resolvedPlanType": "REVENUE_OVERVIEW",
+                            "focusRowsSize": 0,
+                            "secondaryRowsSize": 0
+                        },
+                        "focusRows": [],
+                        "revenueChannel": "ALL",
+                        "secondaryRows": [],
+                        "summary": {},
+                        "timeLabel": "\u7ee7\u627f\u4e0a\u4e00\u8f6e\u65f6\u95f4\u7a97",
+                        "type": "REVENUE_OVERVIEW"
+                    },
+                    "revenueAnswerPlanPresent": true,
+                    "revenueAnswerPlanType": "REVENUE_OVERVIEW",
+                    "revenueAnswerPlanSortKey": null,
+                    "revenueAnswerPlanSortDirection": null,
+                    "revenueAnswerPlanDebug": {
+                        "attachAttempted": true,
+                        "expectedToolKey": "revenue_query",
+                        "source": "RevenueQueryTool",
+                        "sourceToolKey": "revenue_query",
+                        "toolResultKeys": [
+                            "purchase_overview",
+                            "stock_reduce_query"
+                        ],
+                        "hasRevenueToolResult": false,
+                        "dataClass": null,
+                        "failureReason": "missing_tool_result",
+                        "failureDetail": "toolResults[revenue_query] is null",
+                        "resolvedPlanType": "REVENUE_OVERVIEW",
+                        "focusRowsSize": 0,
+                        "secondaryRowsSize": 0
+                    },
+                    "revenueAnswerPlanFocusRows": [],
+                    "revenueAnswerPlanSecondaryRows": [],
+                    "usedTools": [
+                        "purchase_overview",
+                        "stock_reduce_query"
+                    ],
+                    "diagnosisPlan": {
+                        "actionSuggestions": [],
+                        "debug": {
+                            "consumedAnswerPlans": [
+                                "PurchaseAnswerPlan:PURCHASE_OVERVIEW",
+                                "StockReduceAnswerPlan:STOCK_REDUCE_OVERVIEW"
+                            ],
+                            "missingAnswerPlans": [
+                                "DishProfitAnswerPlan",
+                                "DailyRevenueAnswerPlan"
+                            ],
+                            "fallbackUsed": false,
+                            "permissionExcludedAnswerPlanSubjects": [
+                                "revenue_query",
+                                "dish_profit_analysis"
+                            ],
+                            "attachSurface": "business_diagnosis_path",
+                            "storeCompareEvidenceEmptyReason": "warehouse_scope_no_multi_store_compare",
+                            "storeCompareEvidenceRows": 0,
+                            "diagnosisAgentV1": "BusinessDiagnosisAgentV1.enrich",
+                            "diagnosisV1IncompleteEvidenceDomains": [
+                                "DishProfitAnswerPlan",
+                                "DailyRevenueAnswerPlan"
+                            ]
+                        },
+                        "diagnosisLevel": "NORMAL",
+                        "diagnosisType": "OVERALL_BUSINESS_DIAGNOSIS_V1",
+                        "evidenceItems": [],
+                        "evidenceRows": [
+                            {
+                                "sourcePlan": "PurchaseAnswerPlan",
+                                "planType": "PURCHASE_OVERVIEW",
+                                "label": "__planAttached",
+                                "value": true
+                            },
+                            {
+                                "sourcePlan": "PurchaseAnswerPlan",
+                                "planType": "PURCHASE_OVERVIEW",
+                                "label": "totalAmount",
+                                "value": 2976.0
+                            },
+                            {
+                                "sourcePlan": "PurchaseAnswerPlan",
+                                "planType": "PURCHASE_OVERVIEW",
+                                "label": "totalCount",
+                                "value": 2
+                            },
+                            {
+                                "sourcePlan": "PurchaseAnswerPlan",
+                                "planType": "PURCHASE_OVERVIEW",
+                                "label": "selfPurchaseAmount",
+                                "value": 2976.0
+                            },
+                            {
+                                "sourcePlan": "PurchaseAnswerPlan",
+                                "planType": "PURCHASE_OVERVIEW",
+                                "label": "supplierPurchaseAmount",
+                                "value": 0.0
+                            },
+                            {
+                                "sourcePlan": "PurchaseAnswerPlan",
+                                "planType": "PURCHASE_OVERVIEW",
+                                "label": "selfPurchaseLineCount",
+                                "value": 2
+                            },
+                            {
+                                "sourcePlan": "StockReduceAnswerPlan",
+                                "planType": "STOCK_REDUCE_OVERVIEW",
+                                "label": "__planAttached",
+                                "value": true
+                            },
+                            {
+                                "sourcePlan": "StockReduceAnswerPlan",
+                                "planType": "STOCK_REDUCE_OVERVIEW",
+                                "label": "grandTotalFourTypes",
+                                "value": 0.0
+                            },
+                            {
+                                "sourcePlan": "StockReduceAnswerPlan",
+                                "planType": "STOCK_REDUCE_OVERVIEW",
+                                "label": "produceTotal",
+                                "value": 0.0
+                            },
+                            {
+                                "sourcePlan": "StockReduceAnswerPlan",
+                                "planType": "STOCK_REDUCE_OVERVIEW",
+                                "label": "wasteTotal",
+                                "value": 0.0
+                            },
+                            {
+                                "sourcePlan": "StockReduceAnswerPlan",
+                                "planType": "STOCK_REDUCE_OVERVIEW",
+                                "label": "lossTotal",
+                                "value": 0.0
+                            },
+                            {
+                                "sourcePlan": "StockReduceAnswerPlan",
+                                "planType": "STOCK_REDUCE_OVERVIEW",
+                                "label": "returnTotal",
+                                "value": 0.0
+                            }
+                        ],
+                        "focusFindings": [
+                            {
+                                "findingType": "NO_MAJOR_FINDING",
+                                "title": "\u672a\u53d1\u73b0\u5f3a\u4fe1\u53f7",
+                                "detail": "\u5728\u5df2\u6302\u8f7d\u7684\u8425\u4e1a\u989d\u3001\u91c7\u8d2d\u3001\u51fa\u5e93\u4e0e\u83dc\u54c1\u8ba1\u5212\u4e2d\uff0c\u672a\u53d1\u73b0\u6ee1\u8db3\u5f53\u524d\u786e\u5b9a\u6027\u9608\u503c\u7684\u7ed3\u6784\u6027\u98ce\u9669\uff1b\u53ef\u80fd\u4e0e\u6570\u636e\u7f3a\u5931\u6216\u975e\u6392\u884c\u53e3\u5f84\u6709\u5173\u3002",
+                                "severity": "LOW",
+                                "evidenceSource": "MULTI_DOMAIN",
+                                "relatedMetric": "rules_v1_no_trigger",
+                                "suggestedAction": "\u4fdd\u6301\u5e38\u89c4\u590d\u76d8\uff1a\u5173\u6ce8\u635f\u8017\u3001\u5907\u8d27\u4e0e\u6bdb\u5229\u5c3e\u90e8\u83dc\u54c1\u3002"
+                            }
+                        ],
+                        "missingSections": [
+                            "dishProfit",
+                            "revenue"
+                        ],
+                        "overallJudgement": "\u6682\u65e0\u660e\u663e\u591a\u57df\u7ed3\u6784\u6027\u5f02\u5e38\uff08\u5728\u5df2\u6302\u8f7d\u5b50\u57df AnswerPlan \u8303\u56f4\u5185\uff09\uff1b\u4ecd\u5efa\u8bae\u6301\u7eed\u5173\u6ce8\u635f\u8017\u3001\u5907\u8d27\u4e0e\u6ede\u9500\u83dc\u7ed3\u6784\u3002",
+                        "riskLevel": "LOW",
+                        "riskRows": [],
+                        "scopeLabel": "\u4e0b\u9762\u6309\u4f60\u5f53\u524d\u53ef\u67e5\u770b\u7684\u5e93\u623f/\u6240\u5c5e\u95e8\u5e97\u5165\u5e93\u6570\u636e\u5206\u6790\u3002",
+                        "storeCompareEvidence": [],
+                        "summary": "\u672c\u8f6e\u7efc\u5408\u7ecf\u8425\u8bca\u65ad\uff08AnswerPlan \u805a\u5408\uff0c\u672a\u91cd\u7b97\uff09\uff1a\u5df2\u6302\u8f7d 2 \u4efd\u5b50\u57df\u8ba1\u5212\uff1b\u672a\u6302\u8f7d\uff1aDishProfitAnswerPlan\u3001DailyRevenueAnswerPlan\u3002\u8be6\u7ec6\u8bc1\u636e\u89c1 evidenceRows\u3002",
+                        "timeLabel": "\u7ee7\u627f\u4e0a\u4e00\u8f6e\u65f6\u95f4\u7a97",
+                        "type": "OVERALL_BUSINESS_DIAGNOSIS",
+                        "warnings": [
+                            "\u4ee5\u4e0b\u5b50\u57df AnswerPlan \u672c\u8f6e\u672a\u6302\u8f7d\uff0c\u8bca\u65ad\u4ec5\u5728\u5df2\u6302\u8f7d\u57df\u4e0a\u7ee7\u7eed\uff1aDishProfitAnswerPlan\u3001DailyRevenueAnswerPlan",
+                            "section_failed:revenue_query:PERMISSION_DENIED:permission_denied_revenue_query",
+                            "section_failed:dish_profit_analysis:PERMISSION_DENIED:permission_denied_dish_profit_analysis",
+                            "overview_multi_missing:revenue:dataPlanTools \u672a\u542b revenue_query\uff08\u6743\u9650\u88c1\u526a\u6216\u975e Multi \u7f16\u6392\uff09",
+                            "overview_multi_missing:dishProfit:dataPlanTools \u672a\u542b dish_profit_analysis\uff08\u6743\u9650\u88c1\u526a\uff09"
+                        ]
+                    },
+                    "diagnosisPlanPresent": true,
+                    "diagnosisPlanType": "OVERALL_BUSINESS_DIAGNOSIS",
+                    "businessDiagnosisPlan": {
+                        "actionItems": [
+                            "\u672c\u671f\u51fa\u5e93/\u6838\u9500\u56db\u7c7b\u5408\u8ba1\u4e3a 0\uff1a\u786e\u8ba4\u662f\u5426\u65e0\u8017\u7528\uff0c\u8fd8\u662f\u6838\u9500\u6d41\u6c34\u672a\u53ca\u65f6\u540c\u6b65\u3002",
+                            "\u5bf9\u7167\u8bca\u65ad\u4e2d\u7684\u65f6\u95f4\u7a97\u4e0e\u95e8\u5e97\u8303\u56f4\uff0c\u4e0e\u540e\u53f0\u62a5\u8868\u53e3\u5f84\u6838\u5bf9\u4e00\u81f4\u3002",
+                            "\u5c06\u5f02\u5e38\u83dc\u54c1\u4e0e\u91c7\u8d2d\u3001\u51fa\u5e93\u5cf0\u503c\u65e5\u671f\u5bf9\u9f50\u590d\u67e5\u3002"
+                        ],
+                        "dataCompleteness": {
+                            "dishProfit": "SKIPPED",
+                            "purchase": "OK",
+                            "revenue": "SKIPPED",
+                            "stockReduce": "OK"
+                        },
+                        "debug": {},
+                        "debugRef": {
+                            "purchaseSnapshotId": "purchase_overview|2026-05-01..2026-05-15|ok",
+                            "stockReduceSnapshotId": "stock_reduce_query|2026-05-01..2026-05-15|ok"
+                        },
+                        "focusTargets": {
+                            "costCategories": [],
+                            "dishes": [],
+                            "stores": []
+                        },
+                        "mainFindings": [
+                            "\u7edf\u8ba1\u5468\u671f\u5185\u751f\u4ea7\u8017\u7528\u3001\u5e9f\u5f03\u3001\u635f\u8017\u3001\u9000\u8d27\u56db\u7c7b\u6838\u9500\u91d1\u989d\u5408\u8ba1\u4e3a 0\u3002"
+                        ],
+                        "overallSummary": {
+                            "dataSufficient": true,
+                            "headline": "\u91c7\u8d2d\u7ea6 2976 \u5143\uff1b\u51fa\u5e93/\u6838\u9500\u56db\u7c7b\u5408\u8ba1\u7ea6 0.0 \u5143",
+                            "normalized": true
+                        },
+                        "riskItems": [],
+                        "riskLevel": "INFO",
+                        "scopeLabel": "\u672c\u5e93\u623f\uff1aAAA",
+                        "sourceResultSummary": {
+                            "dishProfit": {
+                                "riskSignals": []
+                            },
+                            "purchase": {
+                                "riskSignals": [],
+                                "selfPurchaseAmount": 2976.0,
+                                "totalAmount": 2976.0
+                            },
+                            "stockReduce": {
+                                "lossAmount": 0.0,
+                                "produceAmount": 0.0,
+                                "returnAmount": 0.0,
+                                "riskSignals": [],
+                                "totalAmount": 0.0,
+                                "wasteAmount": 0.0
+                            }
+                        },
+                        "sourceTools": [
+                            "purchase_overview",
+                            "stock_reduce_query",
+                            "dish_profit_analysis"
+                        ],
+                        "timeLabel": "\u672c\u6708\u81f3\u4eca\uff082026-05-01\uff5e2026-05-15\uff09",
+                        "type": "BUSINESS_DIAGNOSIS",
+                        "usedTools": [
+                            "purchase_overview",
+                            "stock_reduce_query"
+                        ]
+                    },
+                    "businessDiagnosisPlanType": "BUSINESS_DIAGNOSIS",
+                    "storePriorityRankingPlanType": null,
+                    "storePriorityRankingRowsLen": null,
+                    "storePriorityRankingTop1StoreName": null,
+                    "storePriorityRankingTop1PriorityRank": null,
+                    "diagnosisRiskLevel": "INFO",
+                    "diagnosisDataCompleteness": {
+                        "purchase": "OK",
+                        "stockReduce": "OK",
+                        "dishProfit": "SKIPPED",
+                        "revenue": "SKIPPED"
+                    },
+                    "planSource": "diagnosisPlan",
+                    "businessOverviewMultiMaster": {
+                        "businessOverviewMultiAgentBatchAttempted": true,
+                        "businessOverviewMultiAgentBatchLoopFinished": true,
+                        "businessOverviewMultiAgentBatchUsableForDiagnosis": true,
+                        "harnessOrchestratedSurfaceIntent": "BUSINESS_DIAGNOSIS",
+                        "businessOverviewMultiAgentAllDomainsSkipped": false,
+                        "businessOverviewDispatchPlan": {
+                            "dispatchId": "8d604afd-72ff-4db3-9daa-911f43856b52",
+                            "intentCode": "BUSINESS_DIAGNOSIS",
+                            "pathCode": "business_diagnosis_path",
+                            "parallelAllowed": false,
+                            "steps": [
+                                {
+                                    "agentName": "revenue_overview",
+                                    "required": false,
+                                    "timeoutMs": 120000,
+                                    "failurePolicy": "DEGRADE",
+                                    "order": 0
+                                },
+                                {
+                                    "agentName": "purchase_overview",
+                                    "required": false,
+                                    "timeoutMs": 120000,
+                                    "failurePolicy": "DEGRADE",
+                                    "order": 1
+                                },
+                                {
+                                    "agentName": "stock_reduce_query",
+                                    "required": false,
+                                    "timeoutMs": 120000,
+                                    "failurePolicy": "DEGRADE",
+                                    "order": 2
+                                },
+                                {
+                                    "agentName": "dish_profit_analysis",
+                                    "required": false,
+                                    "timeoutMs": 120000,
+                                    "failurePolicy": "DEGRADE",
+                                    "order": 3
+                                }
+                            ]
+                        },
+                        "businessOverviewExpectedDomainOrder": [
+                            "revenue",
+                            "purchase",
+                            "stockReduce",
+                            "dishProfit"
+                        ],
+                        "businessOverviewOrchestrationWarnings": [
+                            "section_failed:revenue_query:PERMISSION_DENIED:permission_denied_revenue_query",
+                            "section_failed:dish_profit_analysis:PERMISSION_DENIED:permission_denied_dish_profit_analysis"
+                        ],
+                        "businessOverviewAgentResults": [
+                            {
+                                "order": 1,
+                                "phase": "EXECUTED",
+                                "domainKey": "revenue",
+                                "toolId": "revenue_query",
+                                "agentName": "revenue_overview",
+                                "status": "PERMISSION_DENIED",
+                                "toolSuccess": false,
+                                "answerPlanPresent": false,
+                                "warnings": [],
+                                "errors": [
+                                    "permission_denied_revenue_query"
+                                ],
+                                "durationMs": 181,
+                                "traceId": "1778835191104-revenue_overview-7a94ae97-ef39-4584-94b0-f2ff58fa51bd"
+                            },
+                            {
+                                "order": 2,
+                                "phase": "EXECUTED",
+                                "domainKey": "purchase",
+                                "toolId": "purchase_overview",
+                                "agentName": "purchase_overview",
+                                "status": "SUCCESS",
+                                "toolSuccess": true,
+                                "answerPlanPresent": true,
+                                "warnings": [],
+                                "errors": [],
+                                "durationMs": 1690,
+                                "traceId": "1778835191104-purchase_overview-d96ba31d-bcfd-48f3-b28e-52c68a09f246"
+                            },
+                            {
+                                "order": 3,
+                                "phase": "EXECUTED",
+                                "domainKey": "stockReduce",
+                                "toolId": "stock_reduce_query",
+                                "agentName": "stock_reduce_query",
+                                "status": "SUCCESS",
+                                "toolSuccess": true,
+                                "answerPlanPresent": true,
+                                "warnings": [],
+                                "errors": [],
+                                "durationMs": 351,
+                                "traceId": "1778835191104-stock_reduce_query-6382825b-f81a-43d3-9e19-72f5df8098e8"
+                            },
+                            {
+                                "order": 4,
+                                "phase": "EXECUTED",
+                                "domainKey": "dishProfit",
+                                "toolId": "dish_profit_analysis",
+                                "agentName": "dish_profit_analysis",
+                                "status": "PERMISSION_DENIED",
+                                "toolSuccess": false,
+                                "answerPlanPresent": false,
+                                "warnings": [],
+                                "errors": [
+                                    "permission_denied_dish_profit_analysis"
+                                ],
+                                "durationMs": 175,
+                                "traceId": "1778835191104-dish_profit_analysis-5ca27e67-509b-4373-b1dc-9a08419d122e"
+                            }
+                        ],
+                        "businessOverviewEnvelopeSummary": [
+                            {
+                                "agentName": "revenue_overview",
+                                "status": "PERMISSION_DENIED",
+                                "degraded": false,
+                                "durationMs": 181,
+                                "traceId": "1778835191104-revenue_overview-7a94ae97-ef39-4584-94b0-f2ff58fa51bd",
+                                "warnings": [],
+                                "errors": [
+                                    "permission_denied_revenue_query"
+                                ],
+                                "revenueQueryToolSuccess": false
+                            },
+                            {
+                                "agentName": "purchase_overview",
+                                "status": "SUCCESS",
+                                "resultType": "PURCHASE_OVERVIEW",
+                                "degraded": false,
+                                "durationMs": 1690,
+                                "traceId": "1778835191104-purchase_overview-d96ba31d-bcfd-48f3-b28e-52c68a09f246",
+                                "warnings": [],
+                                "errors": [],
+                                "purchaseOverviewToolSuccess": true
+                            },
+                            {
+                                "agentName": "stock_reduce_query",
+                                "status": "SUCCESS",
+                                "resultType": "STOCK_REDUCE_OVERVIEW",
+                                "degraded": false,
+                                "durationMs": 351,
+                                "traceId": "1778835191104-stock_reduce_query-6382825b-f81a-43d3-9e19-72f5df8098e8",
+                                "warnings": [],
+                                "errors": [],
+                                "stockReduceQueryToolSuccess": true
+                            },
+                            {
+                                "agentName": "dish_profit_analysis",
+                                "status": "PERMISSION_DENIED",
+                                "degraded": false,
+                                "durationMs": 175,
+                                "traceId": "1778835191104-dish_profit_analysis-5ca27e67-509b-4373-b1dc-9a08419d122e",
+                                "warnings": [],
+                                "errors": [
+                                    "permission_denied_dish_profit_analysis"
+                                ],
+                                "dishProfitAnalysisToolSuccess": false
+                            }
+                        ],
+                        "harnessOriginalEffectiveIntent": "BUSINESS_DIAGNOSIS",
+                        "businessOverviewDomainsAttempted": [
+                            "revenue",
+                            "purchase",
+                            "stockReduce",
+                            "dishProfit"
+                        ],
+                        "harnessOriginalEffectivePath": "business_diagnosis_path",
+                        "businessOverviewFailedDomains": [
+                            "revenue",
+                            "dishProfit"
+                        ],
+                        "businessOverviewMultiAgentAllExpectedDomainsExecuted": true,
+                        "businessOverviewMultiAgentBatchCompleted": true,
+                        "harnessOrchestratedSurfacePath": "business_diagnosis_path",
+                        "harnessOrchestratedPurposeIntent": "BUSINESS_DIAGNOSIS",
+                        "businessOverviewAgentResultStatus": "attemptedDomains=4 successful=2 failed=2 expectedSteps=4",
+                        "businessOverviewSuccessfulDomains": [
+                            "purchase",
+                            "stockReduce"
+                        ],
+                        "businessOverviewAllExpectedDomainsAttempted": true,
+                        "businessOverviewMultiMasterEnabled": true,
+                        "businessOverviewMultiAgentAnyDomainSuccess": true,
+                        "businessOverviewSelectedAgents": [
+                            "revenue_overview",
+                            "purchase_overview",
+                            "stock_reduce_query",
+                            "dish_profit_analysis"
+                        ]
+                    },
+                    "masterAgentEnabled": false,
+                    "masterAgentUsed": false,
+                    "selectedAgents": [],
+                    "dispatchPlan": null,
+                    "agentResults": [],
+                    "agentResultStatus": null,
+                    "degraded": false,
+                    "failurePolicy": null,
+                    "fallbackUsed": false,
+                    "fallbackReason": "not_eligible_for_master_revenue_gate",
+                    "legacyRevenueSkipped": false,
+                    "masterRevenueToolResultKey": null,
+                    "masterRevenueToolResultSuccess": null,
+                    "revenueToolExecutedByMasterPath": false,
+                    "purchaseMasterAgentEnabled": false,
+                    "purchaseMasterAgentUsed": false,
+                    "purchaseSelectedAgents": [],
+                    "purchaseDispatchPlan": null,
+                    "purchaseAgentResults": [],
+                    "purchaseAgentResultStatus": null,
+                    "purchaseDegraded": false,
+                    "purchaseFailurePolicy": null,
+                    "purchaseFallbackUsed": false,
+                    "purchaseFallbackReason": "not_eligible_for_master_purchase_gate",
+                    "legacyPurchaseSkipped": false,
+                    "masterPurchaseToolResultKey": null,
+                    "masterPurchaseToolResultSuccess": null,
+                    "purchaseToolExecutedByMasterPath": false,
+                    "purchaseRequestResolutionDebug": null,
+                    "stockReduceMasterAgentEnabled": false,
+                    "stockReduceMasterAgentUsed": false,
+                    "stockReduceSelectedAgents": [],
+                    "stockReduceDispatchPlan": null,
+                    "stockReduceAgentResults": [],
+                    "stockReduceAgentResultStatus": null,
+                    "stockReduceDegraded": false,
+                    "stockReduceFailurePolicy": null,
+                    "stockReduceFallbackUsed": false,
+                    "stockReduceFallbackReason": "not_eligible_for_master_stock_reduce_gate",
+                    "legacyStockReduceSkipped": false,
+                    "masterStockReduceToolResultKey": null,
+                    "masterStockReduceToolResultSuccess": null,
+                    "stockReduceToolExecutedByMasterPath": false,
+                    "stockReduceRequestResolutionDebug": null,
+                    "dishProfitMasterAgentEnabled": false,
+                    "dishProfitMasterAgentUsed": false,
+                    "dishProfitSelectedAgents": [],
+                    "dishProfitDispatchPlan": null,
+                    "dishProfitAgentResults": [],
+                    "dishProfitAgentResultStatus": null,
+                    "dishProfitFallbackUsed": false,
+                    "dishProfitFallbackReason": "not_eligible_for_master_dish_profit_gate",
+                    "legacyDishProfitSkipped": false,
+                    "masterDishProfitToolResultKey": null,
+                    "masterDishProfitToolResultSuccess": null,
+                    "dishProfitToolExecutedByMasterPath": false,
+                    "dishProfitRequestResolutionDebug": null,
+                    "businessOverviewMultiAgentBatchCompleted": true,
+                    "businessOverviewAllExpectedDomainsAttempted": true,
+                    "businessOverviewMultiAgentAnyDomainSuccess": true,
+                    "businessOverviewMultiAgentBatchAttempted": true,
+                    "businessOverviewMultiAgentAllDomainsSkipped": false,
+                    "businessOverviewMultiAgentBatchUsableForDiagnosis": true,
+                    "businessOverviewSuccessfulDomains": [
+                        "purchase",
+                        "stockReduce"
+                    ],
+                    "compositeGateAllowed": false,
+                    "compositeGateReasonCode": "RANKING_OR_DEEP_DIVE_NOT_COMPOSITE",
+                    "compositeGateReason": "structuredIntentDetail is ranking or deep-dive wire",
+                    "compositeGateScopeType": "WAREHOUSE",
+                    "compositeGateRecommendedCaseKind": "NONE",
+                    "compositeGateFinalAnswerPlanType": null,
+                    "compositeGateDebug": {
+                        "productionEnabledEffective": true,
+                        "gateVersion": "C-53_SKELETON",
+                        "effectiveIntentCode": "BUSINESS_DIAGNOSIS",
+                        "productionEnabledSource": "CONFIG",
+                        "effectivePathCode": "business_diagnosis_path"
+                    },
+                    "compositeGateProductionEnabledSource": "CONFIG",
+                    "compositeGateProductionEnabledEffective": true,
+                    "compositeExecutionMode": null,
+                    "compositeExecuted": false,
+                    "compositeExecutionSuccess": false,
+                    "compositeFallbackRequired": false,
+                    "compositeFallbackReason": null,
+                    "compositePlannerOverallStatus": null,
+                    "compositePlannerDegradedSteps": null,
+                    "compositeFinalAnswerText": null,
+                    "compositeComposerVersion": null,
+                    "compositeAnswerPlanType": null,
+                    "compositeExecutionErrorCode": null,
+                    "compositeExecutionErrorMessage": null,
+                    "compositeShadowLatencyMs": null,
+                    "compositeShadowComparedWithLegacy": null,
+                    "compositeShadowLegacyAnswerPresent": null,
+                    "compositeShadowCompositeAnswerPresent": null,
+                    "compositeShadowFinalAnswerReplaced": null,
+                    "compositeShadowSkipped": null,
+                    "compositeShadowSkipReason": null,
+                    "compositeShadowThrottleHit": null,
+                    "compositeShadowWhitelistMatched": null,
+                    "finalAnswerText": "\u6309\u4e0a\u6587\u300c\u672c\u6708\u81f3\u4eca\u300d\u53e3\u5f84\u67e5\u8be2\uff1b\u672c\u53e5\u672a\u6307\u5b9a\u65b0\u7684\u65f6\u95f4\u548c\u95e8\u5e97\u3002\u82e5\u9700\u8c03\u6574\u8bf7\u76f4\u63a5\u8bf4\u660e\u3002\n\u3010\u610f\u56fe\u8bf4\u660e\u3011\u5f53\u524d\u8d26\u53f7\u4e3a\u5e93\u623f\u7aef\uff0c\u53ea\u80fd\u67e5\u770b\u672c\u5e93\u623f\u53ca\u6240\u5c5e\u95e8\u5e97\u6743\u9650\u8303\u56f4\u5185\u7684\u5e93\u5b58\u3001\u51fa\u5e93/\u6838\u9500\u4e0e\u91c7\u8d2d\u5165\u5e93\u4fe1\u53f7\uff1b\u672a\u6388\u6743\u67e5\u770b\u8425\u4e1a\u989d\u4e0e\u83dc\u54c1\u6bdb\u5229\uff0c\u4ea6\u4e0d\u505a\u96c6\u56e2\u6216\u591a\u95e8\u5e97\u7efc\u5408\u7ecf\u8425\u6392\u540d\u3002\n\u3010\u6743\u9650\u63d0\u793a\u3011\u672c\u6b21\u8fd0\u884c\u5b58\u5728\u529f\u80fd\u53d7\u9650\uff1a\n\u2022 \u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u4f7f\u7528\u300c\u8425\u4e1a\u989d\u67e5\u8be2\u300d\uff08\u9700\u8981\u6743\u9650\uff1a\u67e5\u770b\u8425\u4e1a\u989d\uff09\u3002\n\u2022 \u4f60\u5f53\u524d\u8d26\u53f7\u4e0d\u80fd\u67e5\u770b\u83dc\u54c1\u6bdb\u5229\uff0c\u4f46\u53ef\u4ee5\u67e5\u770b\u5e93\u5b58\u51fa\u5165\u5e93\u548c\u635f\u8017\u60c5\u51b5\u3002\n\u3010\u6743\u9650\u964d\u7ea7\u00b7\u5e93\u623f\u89c6\u89d2\u3011\n\u5f53\u524d\u8d26\u53f7\u4e0d\u5305\u542b\u8425\u4e1a\u989d\u6216\u83dc\u54c1\u6bdb\u5229\u6743\u9650\uff1b\u53ea\u80fd\u67e5\u770b AAA \u6743\u9650\u8303\u56f4\u5185\u7684\u5e93\u5b58\u3001\u51fa\u5e93/\u6838\u9500\u4e0e\u91c7\u8d2d\u5165\u5e93\u4fa7\u7ed3\u6784\u5316\u6458\u8981\u3002\n\u4ee5\u4e0b\u4e0d\u4f5c\u4e3a\u5168\u96c6\u56e2\u6216\u591a\u95e8\u5e97\u7efc\u5408\u7ecf\u8425\u6392\u540d\u4f9d\u636e\u3002\n\n\u3010\u5e93\u623f\u4fa7\u98ce\u9669\u6458\u8981\u3011\n- \u91c7\u8d2d\u5165\u5e93\u5408\u8ba1\u7ea6 2976 \u5143\uff08\u6765\u81ea\u91c7\u8d2d\u6982\u89c8\u5de5\u5177\uff09\n- \u51fa\u5e93/\u6838\u9500\u56db\u7c7b\u5408\u8ba1\u7ea6 0.0 \u5143\uff08\u6765\u81ea\u6838\u9500/\u51fa\u5e93\u6c47\u603b\u5de5\u5177\uff09\n- \u7edf\u8ba1\u5468\u671f\u5185\u751f\u4ea7\u8017\u7528\u3001\u5e9f\u5f03\u3001\u635f\u8017\u3001\u9000\u8d27\u56db\u7c7b\u6838\u9500\u91d1\u989d\u5408\u8ba1\u4e3a 0\u3002\n\n\u82e5\u9700\u8425\u4e1a\u989d\u6216\u83dc\u54c1\u6bdb\u5229\u89c6\u89d2\uff0c\u8bf7\u5728\u5177\u5907\u76f8\u5e94\u6743\u9650\u7684\u5c97\u4f4d\u4e0b\u63d0\u95ee\u3002",
+                    "answerPreview": "\u6309\u4e0a\u6587\u300c\u672c\u6708\u81f3\u4eca\u300d\u53e3\u5f84\u67e5\u8be2\uff1b\u672c\u53e5\u672a\u6307\u5b9a\u65b0\u7684\u65f6\u95f4\u548c\u95e8\u5e97\u3002\u82e5\u9700\u8c03\u6574\u8bf7\u76f4\u63a5\u8bf4\u660e\u3002\n\u3010\u610f\u56fe\u8bf4\u660e\u3011\u5f53\u524d\u8d26\u53f7\u4e3a\u5e93\u623f\u7aef\uff0c\u53ea\u80fd\u67e5\u770b\u672c\u5e93\u623f\u53ca\u6240\u5c5e\u95e8\u5e97\u6743\u9650\u8303\u56f4\u5185\u7684\u5e93\u5b58\u3001\u51fa\u5e93/\u6838\u9500\u4e0e\u91c7\u8d2d\u5165\u5e93\u4fe1\u53f7\uff1b\u672a\u6388\u6743\u67e5\u770b\u8425\u4e1a\u989d\u4e0e\u83dc\u54c1\u6bdb\u5229\uff0c\u4ea6\u4e0d\u505a\u96c6\u56e2\u6216\u591a\u95e8\u5e97\u7efc\u5408\u7ecf\u8425\u6392\u540d\u3002\n\u3010\u6743\u9650\u63d0\u793a\u3011\u672c\u6b21\u8fd0\u884c\u5b58\u5728\u529f\u80fd\u53d7\u9650\uff1a\n\u2022 \u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u4f7f\u7528\u300c\u8425\u4e1a\u989d\u67e5\u8be2\u300d\uff08\u9700\u8981\u6743\u9650\uff1a\u67e5\u770b\u8425\u4e1a\u989d\uff09\u3002\n\u2022 \u4f60\u5f53\u524d\u8d26\u53f7\u4e0d\u80fd\u67e5\u770b\u83dc\u54c1\u6bdb\u5229\uff0c\u4f46\u53ef\u4ee5\u67e5\u770b\u5e93\u5b58\u51fa\u5165\u5e93\u548c\u635f\u8017\u60c5\u51b5\u3002\n\u3010\u6743\u9650\u964d\u7ea7\u00b7\u5e93\u623f\u89c6\u89d2\u3011\n\u5f53\u524d\u8d26\u53f7\u4e0d\u5305\u542b\u8425\u4e1a\u989d\u6216\u83dc\u54c1\u6bdb\u5229\u6743\u9650\uff1b\u53ea\u80fd\u67e5\u770b AAA \u6743\u9650\u8303\u56f4\u5185\u7684\u5e93\u5b58\u3001\u51fa\u5e93/\u6838\u9500\u4e0e\u91c7\u8d2d\u5165\u5e93\u4fa7\u7ed3\u6784\u5316\u6458\u8981\u3002\n\u4ee5\u4e0b\u4e0d\u4f5c\u4e3a\u5168\u96c6\u56e2\u6216\u591a\u95e8\u5e97\u7efc\u5408\u7ecf\u8425\u6392\u540d\u4f9d\u636e\u3002\n\n\u3010\u5e93\u623f\u4fa7\u98ce\u9669\u6458\u8981\u3011\n- \u91c7\u8d2d\u5165\u5e93\u5408\u8ba1\u7ea6 2976 \u5143\uff08\u6765\u81ea\u91c7\u8d2d\u6982\u89c8\u5de5\u5177\uff09\n- \u51fa\u5e93/\u6838\u9500\u56db\u7c7b\u5408\u8ba1\u7ea6 0.0 \u5143\uff08\u6765\u81ea\u6838\u9500/\u51fa\u5e93\u6c47\u603b\u5de5\u5177\uff09\n- \u7edf\u8ba1\u5468\u671f\u5185\u751f\u4ea7\u8017\u7528\u3001\u5e9f\u5f03\u3001\u635f\u8017\u3001\u9000\u8d27\u56db\u7c7b\u6838\u9500\u91d1\u989d\u5408\u8ba1\u4e3a 0\u3002\n\n\u82e5\u9700\u8425\u4e1a\u989d\u6216\u83dc\u54c1\u6bdb\u5229\u89c6\u89d2\uff0c\u8bf7\u5728\u5177\u5907\u76f8\u5e94\u6743\u9650\u7684\u5c97\u4f4d\u4e0b\u63d0\u95ee\u3002",
+                    "consumedAnswerPlans": [
+                        "PurchaseAnswerPlan:PURCHASE_OVERVIEW",
+                        "StockReduceAnswerPlan:STOCK_REDUCE_OVERVIEW"
+                    ],
+                    "missingAnswerPlans": [
+                        "DishProfitAnswerPlan",
+                        "DailyRevenueAnswerPlan"
+                    ],
+                    "harnessReplayPlanSource": "diagnosisPlan",
+                    "harnessReplayRevenueAnswerPlanProbePresent": true,
+                    "harnessReplayRevenueAnswerPlanType": "REVENUE_OVERVIEW",
+                    "harnessReplayBusinessDiagnosisPlanType": "BUSINESS_DIAGNOSIS",
+                    "needClarification": false,
+                    "clarificationQuestion": null,
+                    "businessDiagnosisPath": true,
+                    "businessOverviewPath": false,
+                    "revenueOverviewPath": false,
+                    "purchaseOverviewPath": true,
+                    "stockReduceQueryPath": true,
+                    "warehouseStockOverviewPath": false,
+                    "groupWarehouseStockOverview": false,
+                    "permissionDenials": [
+                        {
+                            "allowed": false,
+                            "reason": "\u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u4f7f\u7528\u300c\u8425\u4e1a\u989d\u67e5\u8be2\u300d\uff08\u9700\u8981\u6743\u9650\uff1a\u67e5\u770b\u8425\u4e1a\u989d\uff09\u3002",
+                            "suggestedScope": "\u4f60\u53ef\u4ee5\u67e5\u770b\u81ea\u5df1\u804c\u8d23\u8303\u56f4\u5185\u7684\u95e8\u5e97/\u5206\u9500\u7ecf\u8425\u6570\u636e\uff1b\u82e5\u9700\u8de8\u5e97\u6216\u96c6\u56e2\u89c6\u56fe\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u5f00\u901a\u76f8\u5e94\u6743\u9650\u3002",
+                            "requiredPermission": "VIEW_REVENUE",
+                            "subject": "revenue_query"
+                        },
+                        {
+                            "allowed": false,
+                            "reason": "\u4f60\u5f53\u524d\u8d26\u53f7\u4e0d\u80fd\u67e5\u770b\u83dc\u54c1\u6bdb\u5229\uff0c\u4f46\u53ef\u4ee5\u67e5\u770b\u5e93\u5b58\u51fa\u5165\u5e93\u548c\u635f\u8017\u60c5\u51b5\u3002",
+                            "suggestedScope": "\u53ef\u8be2\u95ee\u5f53\u524d\u5e93\u5b58\u7ed3\u4f59\u3001\u533a\u95f4\u5185\u5165\u5e93\u6216\u5728\u5e93\u6279\u6b21\u4e0e\u6838\u9500\u5206\u578b\u6c47\u603b\u3002",
+                            "subject": "dish_profit_analysis"
+                        }
+                    ],
+                    "finalAnswerTextBlank": false,
+                    "couponCostInsightBlocked": false,
+                    "diagnosisPlanExists": true,
+                    "businessDiagnosisPlanExists": true
+                },
+                "probe": {
+                    "message": "\u54ea\u4e2a\u95e8\u5e97\u95ee\u9898\u6700\u5927\uff1f",
+                    "effectiveIntentCode": "BUSINESS_DIAGNOSIS",
+                    "effectivePathCode": "business_diagnosis_path",
+                    "structuredIntentDetailWire": "store_priority_ranking",
+                    "timeSource": "INHERITED_PREVIOUS",
+                    "startDate": "2026-05-01",
+                    "endDate": "2026-05-15",
+                    "scopeType": "WAREHOUSE",
+                    "visibleStores": [],
+                    "orchestrationSelectedAgents": [
+                        "RevenueAgent",
+                        "PurchaseAgent",
+                        "StockReduceAgent",
+                        "DishProfitAgent"
+                    ],
+                    "orchestrationSelectedTools": [
+                        "revenue_query",
+                        "purchase_overview",
+                        "stock_reduce_query",
+                        "dish_profit_analysis"
+                    ],
+                    "needSemanticClarification": false,
+                    "needClarification": false,
+                    "clarificationQuestion": null,
+                    "businessDiagnosisPath": true,
+                    "businessOverviewPath": false,
+                    "revenueOverviewPath": false,
+                    "purchaseOverviewPath": true,
+                    "stockReduceQueryPath": true,
+                    "warehouseStockOverviewPath": false,
+                    "groupWarehouseStockOverview": false,
+                    "permissionDenials": [
+                        {
+                            "allowed": false,
+                            "reason": "\u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u4f7f\u7528\u300c\u8425\u4e1a\u989d\u67e5\u8be2\u300d\uff08\u9700\u8981\u6743\u9650\uff1a\u67e5\u770b\u8425\u4e1a\u989d\uff09\u3002",
+                            "suggestedScope": "\u4f60\u53ef\u4ee5\u67e5\u770b\u81ea\u5df1\u804c\u8d23\u8303\u56f4\u5185\u7684\u95e8\u5e97/\u5206\u9500\u7ecf\u8425\u6570\u636e\uff1b\u82e5\u9700\u8de8\u5e97\u6216\u96c6\u56e2\u89c6\u56fe\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u5f00\u901a\u76f8\u5e94\u6743\u9650\u3002",
+                            "requiredPermission": "VIEW_REVENUE",
+                            "subject": "revenue_query"
+                        },
+                        {
+                            "allowed": false,
+                            "reason": "\u4f60\u5f53\u524d\u8d26\u53f7\u4e0d\u80fd\u67e5\u770b\u83dc\u54c1\u6bdb\u5229\uff0c\u4f46\u53ef\u4ee5\u67e5\u770b\u5e93\u5b58\u51fa\u5165\u5e93\u548c\u635f\u8017\u60c5\u51b5\u3002",
+                            "suggestedScope": "\u53ef\u8be2\u95ee\u5f53\u524d\u5e93\u5b58\u7ed3\u4f59\u3001\u533a\u95f4\u5185\u5165\u5e93\u6216\u5728\u5e93\u6279\u6b21\u4e0e\u6838\u9500\u5206\u578b\u6c47\u603b\u3002",
+                            "subject": "dish_profit_analysis"
+                        }
+                    ],
+                    "finalAnswerTextBlank": false,
+                    "couponCostInsightBlocked": false,
+                    "diagnosisPlanExists": true,
+                    "businessDiagnosisPlanExists": true,
+                    "planSource": "diagnosisPlan",
+                    "harnessReplayPlanSource": "diagnosisPlan",
+                    "harnessReplayPurchaseAnswerPlanType": null,
+                    "harnessReplayPurchaseAnswerPlanTypeMeaningful": null,
+                    "harnessReplayPurchaseAnswerPlanProbePresent": null,
+                    "harnessReplayStockReduceAnswerPlanType": null,
+                    "harnessReplayStockReduceReduceType": null,
+                    "harnessReplayDishProfitAnswerPlanType": null,
+                    "harnessReplayDishSalesAnswerPlanType": null,
+                    "harnessReplayDishSalesRankingRowCount": null,
+                    "harnessReplayDishSalesTopDishName": null,
+                    "harnessReplayDishSalesMetricType": null,
+                    "harnessReplayBusinessDiagnosisPlanType": "BUSINESS_DIAGNOSIS",
+                    "harnessReplayStorePriorityRankingPlanType": null,
+                    "harnessReplayStorePriorityRankingRowsLen": null,
+                    "harnessReplayStorePriorityRankingTop1StoreName": null,
+                    "harnessReplayStorePriorityRankingTop1PriorityRank": null,
+                    "businessStoreCompareEvidenceRowsLen": null,
+                    "harnessReplayStoreCompareEvidenceRowsLen": null,
+                    "businessStoreCompareTop1StoreName": null,
+                    "businessStoreCompareTop2StoreName": null,
+                    "compositeGateAllowed": false,
+                    "compositeGateReasonCode": "RANKING_OR_DEEP_DIVE_NOT_COMPOSITE",
+                    "dataPlanTools": [
+                        "purchase_overview",
+                        "stock_reduce_query"
+                    ],
+                    "finalAnswerText": "\u6309\u4e0a\u6587\u300c\u672c\u6708\u81f3\u4eca\u300d\u53e3\u5f84\u67e5\u8be2\uff1b\u672c\u53e5\u672a\u6307\u5b9a\u65b0\u7684\u65f6\u95f4\u548c\u95e8\u5e97\u3002\u82e5\u9700\u8c03\u6574\u8bf7\u76f4\u63a5\u8bf4\u660e\u3002\n\u3010\u610f\u56fe\u8bf4\u660e\u3011\u5f53\u524d\u8d26\u53f7\u4e3a\u5e93\u623f\u7aef\uff0c\u53ea\u80fd\u67e5\u770b\u672c\u5e93\u623f\u53ca\u6240\u5c5e\u95e8\u5e97\u6743\u9650\u8303\u56f4\u5185\u7684\u5e93\u5b58\u3001\u51fa\u5e93/\u6838\u9500\u4e0e\u91c7\u8d2d\u5165\u5e93\u4fe1\u53f7\uff1b\u672a\u6388\u6743\u67e5\u770b\u8425\u4e1a\u989d\u4e0e\u83dc\u54c1\u6bdb\u5229\uff0c\u4ea6\u4e0d\u505a\u96c6\u56e2\u6216\u591a\u95e8\u5e97\u7efc\u5408\u7ecf\u8425\u6392\u540d\u3002\n\u3010\u6743\u9650\u63d0\u793a\u3011\u672c\u6b21\u8fd0\u884c\u5b58\u5728\u529f\u80fd\u53d7\u9650\uff1a\n\u2022 \u4f60\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u4f7f\u7528\u300c\u8425\u4e1a\u989d\u67e5\u8be2\u300d\uff08\u9700\u8981\u6743\u9650\uff1a\u67e5\u770b\u8425\u4e1a\u989d\uff09\u3002\n\u2022 \u4f60\u5f53\u524d\u8d26\u53f7\u4e0d\u80fd\u67e5\u770b\u83dc\u54c1\u6bdb\u5229\uff0c\u4f46\u53ef\u4ee5\u67e5\u770b\u5e93\u5b58\u51fa\u5165\u5e93\u548c\u635f\u8017\u60c5\u51b5\u3002\n\u3010\u6743\u9650\u964d\u7ea7\u00b7\u5e93\u623f\u89c6\u89d2\u3011\n\u5f53\u524d\u8d26\u53f7\u4e0d\u5305\u542b\u8425\u4e1a\u989d\u6216\u83dc\u54c1\u6bdb\u5229\u6743\u9650\uff1b\u53ea\u80fd\u67e5\u770b AAA \u6743\u9650\u8303\u56f4\u5185\u7684\u5e93\u5b58\u3001\u51fa\u5e93/\u6838\u9500\u4e0e\u91c7\u8d2d\u5165\u5e93\u4fa7\u7ed3\u6784\u5316\u6458\u8981\u3002\n\u4ee5\u4e0b\u4e0d\u4f5c\u4e3a\u5168\u96c6\u56e2\u6216\u591a\u95e8\u5e97\u7efc\u5408\u7ecf\u8425\u6392\u540d\u4f9d\u636e\u3002\n\n\u3010\u5e93\u623f\u4fa7\u98ce\u9669\u6458\u8981\u3011\n- \u91c7\u8d2d\u5165\u5e93\u5408\u8ba1\u7ea6 2976 \u5143\uff08\u6765\u81ea\u91c7\u8d2d\u6982\u89c8\u5de5\u5177\uff09\n- \u51fa\u5e93/\u6838\u9500\u56db\u7c7b\u5408\u8ba1\u7ea6 0.0 \u5143\uff08\u6765\u81ea\u6838\u9500/\u51fa\u5e93\u6c47\u603b\u5de5\u5177\uff09\n- \u7edf\u8ba1\u5468\u671f\u5185\u751f\u4ea7\u8017\u7528\u3001\u5e9f\u5f03\u3001\u635f\u8017\u3001\u9000\u8d27\u56db\u7c7b\u6838\u9500\u91d1\u989d\u5408\u8ba1\u4e3a 0\u3002\n\n\u82e5\u9700\u8425\u4e1a\u989d\u6216\u83dc\u54c1\u6bdb\u5229\u89c6\u89d2\uff0c\u8bf7\u5728\u5177\u5907\u76f8\u5e94\u6743\u9650\u7684\u5c97\u4f4d\u4e0b\u63d0\u95ee\u3002"
+                },
+                "pass": true,
+                "failedFields": []
+            }
+        ]
+    }
+}

@@ -115,10 +115,43 @@ public class AiRunController {
                 harnessDebug.put("expandedSqlDepartmentIds", summary.get("expandedSqlDepartmentIds"));
                 harnessDebug.put("visibleStoreRootIds", summary.get("visibleStoreRootIds"));
                 harnessDebug.put("childDepartmentIds", summary.get("childDepartmentIds"));
-                harnessDebug.put("effectiveSqlDepartmentIds", summary.get("effectiveSqlDepartmentIds"));
                 harnessDebug.put("dishProfitSqlDepartmentIds", summary.get("dishProfitSqlDepartmentIds"));
                 harnessDebug.put("departmentScopeModelNote", summary.get("departmentScopeModelNote"));
+                harnessDebug.put("dishProfitAnswerPlan", summary.get("dishProfitAnswerPlan"));
+                harnessDebug.put("dishProfitAnswerPlanPresent", summary.get("dishProfitAnswerPlanPresent"));
+                harnessDebug.put("purchaseAnswerPlan", summary.get("purchaseAnswerPlan"));
+                harnessDebug.put("purchaseAnswerPlanPresent", summary.get("purchaseAnswerPlanPresent"));
+                harnessDebug.put("purchaseAnswerPlanType", summary.get("purchaseAnswerPlanType"));
+                harnessDebug.put("purchaseAnswerPlanSortKey", summary.get("purchaseAnswerPlanSortKey"));
+                harnessDebug.put("purchaseAnswerPlanSortDirection", summary.get("purchaseAnswerPlanSortDirection"));
+                harnessDebug.put("purchaseAnswerPlanFocusRows", summary.get("purchaseAnswerPlanFocusRows"));
+                harnessDebug.put("purchaseAnswerPlanSecondaryRows", summary.get("purchaseAnswerPlanSecondaryRows"));
+                harnessDebug.put("purchaseAnswerPlanDebug", summary.get("purchaseAnswerPlanDebug"));
+                harnessDebug.put("usedTools", summary.get("usedTools"));
+                harnessDebug.put("diagnosisPlan", summary.get("diagnosisPlan"));
+                harnessDebug.put("diagnosisPlanPresent", summary.get("diagnosisPlanPresent"));
+                harnessDebug.put("diagnosisPlanType", summary.get("diagnosisPlanType"));
+                harnessDebug.put("businessDiagnosisPlan", summary.get("businessDiagnosisPlan"));
+                harnessDebug.put("diagnosisRiskLevel", summary.get("diagnosisRiskLevel"));
+                harnessDebug.put("diagnosisDataCompleteness", summary.get("diagnosisDataCompleteness"));
+                harnessDebug.put("effectiveTimeWindowSource", summary.get("effectiveTimeWindowSource"));
+                harnessDebug.put("multiStoreScopeDetected", summary.get("multiStoreScopeDetected"));
+                harnessDebug.put("multiStoreScopeApplied", summary.get("multiStoreScopeApplied"));
+                harnessDebug.put("multiStoreScopeSource", summary.get("multiStoreScopeSource"));
+                harnessDebug.put("multiStoreMatchedStores", summary.get("multiStoreMatchedStores"));
+                harnessDebug.put("singleStoreNarrowingBlocked", summary.get("singleStoreNarrowingBlocked"));
+                harnessDebug.put("querySemanticEffectiveMentionedStoreNames",
+                        summary.get("querySemanticEffectiveMentionedStoreNames"));
+                Object rawQSem = summary.get("querySemanticLlm");
+                if (rawQSem instanceof Map<?, ?> mq) {
+                    harnessDebug.put("querySemanticLlm_mentionedStoreNames", mq.get("mentionedStoreNames"));
+                }
             }
+            harnessDebug.put("composerPromptId", session.getState() != null
+                    ? session.getState().getComposerPromptRegistryId() : null);
+            AiResolvedQueryContext rqPm = session.getState() != null
+                    ? session.getState().getResolvedQueryContext() : null;
+            harnessDebug.put("semanticPromptId", rqPm != null ? rqPm.getSemanticPromptRegistryId() : null);
         }
         boolean stateNonNull = session.getState() != null;
         boolean rqNonNull = stateNonNull && session.getState().getResolvedQueryContext() != null;

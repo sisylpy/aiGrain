@@ -1,8 +1,11 @@
 package com.nongxinle.ai.graph.business;
 
+import com.nongxinle.ai.composer.payload.AnswerComposerPayloadFactory;
+import com.nongxinle.ai.composer.renderer.DeterministicAnswerRenderer;
 import com.nongxinle.ai.context.AiDepartmentUserTestRows;
+import com.nongxinle.ai.context.AiResolvedOrgScope;
+import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContext;
-import com.nongxinle.ai.context.AiOrgScopeResolver;
 import com.nongxinle.ai.context.AiUserContextResolver;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.core.AiWorkspaceMode;
@@ -10,12 +13,15 @@ import com.nongxinle.ai.dto.business.AiGroupOverviewStoreBrief;
 import com.nongxinle.ai.dto.business.AiBusinessOverviewResult;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
 import com.nongxinle.ai.scope.AiQueryScope;
+import com.nongxinle.ai.prompt.AiPromptRegistry;
+import com.nongxinle.ai.prompt.AiPromptService;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.io.DefaultResourceLoader;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -34,11 +40,14 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
     @Mock
     AiSseEventPublisher publisher;
 
+    private static AiPromptService testPromptService() {
+        return new AiPromptService(new DefaultResourceLoader(), new AiPromptRegistry());
+    }
+
     @Test
     void groupManager_monthOverview_blankLlm_answerUsesGroupScopePlainNumbersNoSciNotation() {
         AiUserContextResolver ur = AiDepartmentUserTestRows.resolverReturning(
                 AiDepartmentUserTestRows.groupManager(91001, 1, 88));
-        AiOrgScopeResolver or = new AiOrgScopeResolver();
         AiRunCreateRequest rq = new AiRunCreateRequest();
         rq.setUserId(91001L);
         rq.setDepartmentId(1L);
@@ -87,7 +96,7 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
                 .statStartDate("2026-05-01")
                 .statEndDate("2026-05-10")
                 .aiUserContext(uc)
-                .aiOrgScope(or.resolve(uc, rq))
+                .resolvedQueryContext(groupResolved(uc, rq))
                 .scope(AiQueryScope.builder()
                         .parentStoreCount(1)
                         .resolvedDepartmentIds(List.of(101))
@@ -108,7 +117,8 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
                         && new BigDecimal(m.get("value").toString()).compareTo(new BigDecimal("854")) == 0))
                 .isTrue();
 
-        StubAnswerComposerNode composer = new StubAnswerComposerNode((s, u) -> "", publisher);
+        StubAnswerComposerNode composer = new StubAnswerComposerNode((s, u) -> "", publisher, testPromptService(), new AnswerComposerPayloadFactory(),
+                DeterministicAnswerRenderer.createStandalone());
         composer.run(st);
 
         String answer = st.getFinalAnswerText();
@@ -135,7 +145,6 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
     void groupManager_whenToolListsIssueStores_answerContainsNamedPriorityBlock() {
         AiUserContextResolver ur = AiDepartmentUserTestRows.resolverReturning(
                 AiDepartmentUserTestRows.groupManager(91002, 1, 88));
-        AiOrgScopeResolver or = new AiOrgScopeResolver();
         AiRunCreateRequest rq = new AiRunCreateRequest();
         rq.setUserId(91002L);
         rq.setDepartmentId(1L);
@@ -171,7 +180,7 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
         boEnv.put("success", Boolean.TRUE);
         boEnv.put("data", data);
 
-        AiRunState st = baseRunState(uc, or, rq, boEnv);
+        AiRunState st = baseRunState(uc, rq, boEnv);
 
         new BusinessOverviewAgentNode(publisher).run(st);
 
@@ -180,7 +189,8 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
         assertThat(ov.getPriorityStoresBrief()).contains("朝阳店");
         assertThat(ov.getOverviewScope()).containsKeys("dataMissingStores", "attentionStores", "coveredStores", "visibleStores");
 
-        StubAnswerComposerNode composer = new StubAnswerComposerNode((s, u) -> "", publisher);
+        StubAnswerComposerNode composer = new StubAnswerComposerNode((s, u) -> "", publisher, testPromptService(), new AnswerComposerPayloadFactory(),
+                DeterministicAnswerRenderer.createStandalone());
         composer.run(st);
 
         String answer = st.getFinalAnswerText();
@@ -193,7 +203,6 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
     void groupManager_whenNoIssueStores_priorityBriefIsNoIssuesCopy_notLegacyPhrase() {
         AiUserContextResolver ur = AiDepartmentUserTestRows.resolverReturning(
                 AiDepartmentUserTestRows.groupManager(91003, 1, 88));
-        AiOrgScopeResolver or = new AiOrgScopeResolver();
         AiRunCreateRequest rq = new AiRunCreateRequest();
         rq.setUserId(91003L);
         rq.setDepartmentId(1L);
@@ -221,14 +230,15 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
         boEnv.put("success", Boolean.TRUE);
         boEnv.put("data", data);
 
-        AiRunState st = baseRunState(uc, or, rq, boEnv);
+        AiRunState st = baseRunState(uc, rq, boEnv);
 
         new BusinessOverviewAgentNode(publisher).run(st);
 
         assertThat(st.getBusinessOverviewResult().getPriorityStoresBrief())
                 .isEqualTo(AiGroupOverviewStoreBrief.noIssuesLine());
 
-        StubAnswerComposerNode composer = new StubAnswerComposerNode((s, u) -> "", publisher);
+        StubAnswerComposerNode composer = new StubAnswerComposerNode((s, u) -> "", publisher, testPromptService(), new AnswerComposerPayloadFactory(),
+                DeterministicAnswerRenderer.createStandalone());
         composer.run(st);
 
         String answer = st.getFinalAnswerText();
@@ -265,8 +275,18 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
         return stats;
     }
 
+    private static AiResolvedQueryContext groupResolved(AiUserContext uc, AiRunCreateRequest rq) {
+        return AiResolvedQueryContext.builder()
+                .orgScope(AiResolvedOrgScope.builder()
+                        .scopeType(AiResolvedOrgScope.SCOPE_GROUP)
+                        .distributerId(rq.getDistributerId())
+                        .requestDepartmentId(rq.getDepartmentId())
+                        .currentDepartmentId(uc.getDepartmentId())
+                        .build())
+                .build();
+    }
+
     private static AiRunState baseRunState(AiUserContext uc,
-            AiOrgScopeResolver or,
             AiRunCreateRequest rq,
             LinkedHashMap<String, Object> boEnv) {
         return AiRunState.builder()
@@ -281,7 +301,7 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
                 .statStartDate("2026-05-01")
                 .statEndDate("2026-05-10")
                 .aiUserContext(uc)
-                .aiOrgScope(or.resolve(uc, rq))
+                .resolvedQueryContext(groupResolved(uc, rq))
                 .scope(AiQueryScope.builder()
                         .parentStoreCount(2)
                         .resolvedDepartmentIds(List.of(101, 102))

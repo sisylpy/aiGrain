@@ -7,12 +7,12 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.followup.FollowUpIntentResolveService;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.core.AiWorkspaceMode;
 import com.nongxinle.ai.mapping.AiRoleMapper;
 import com.nongxinle.ai.security.AiAnswerBoundary;
+import com.nongxinle.ai.security.AiPermissionGuard;
 import com.nongxinle.ai.security.AiPermissions;
 import com.nongxinle.ai.security.AiRoleCodes;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
@@ -25,43 +25,14 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Component
 @RequiredArgsConstructor
 public class BusinessDataPlannerNode implements AgentNode {
 
     private final AiSseEventPublisher publisher;
-
-    /** 「鱼香肉丝毛利」类单菜问法（排除同时含「菜品」类泛词时的重复匹配） */
-    private static final Pattern SINGLE_DISH_MARGIN = Pattern.compile("[\\u4e00-\\u9fa5]{2,18}(毛利率|毛利)");
-
-    /** 「本月毛利」等泛时间前缀走成本主线，不走菜品毛利透视（参见 {@link #singleDishMarginHasNamedDishCue}）。 */
-    private static final Set<String> GENERIC_MARGIN_TIME_PREFIXES = Set.of(
-            "本月", "上月", "这个月", "上个月", "本周", "这周", "近期", "最近", "本年", "今年");
-
-    /** 经营概览：显式话术（与子串匹配）；成本优先于本条。 */
-    private static final String[] BUSINESS_OVERVIEW_PHRASES = {
-            "这个月经营怎么样",
-            "本月经营怎么样",
-            "这个月生意怎么样",
-            "本月生意怎么样",
-            "最近生意怎么样",
-            "本月营业情况怎么样",
-            "本月经营情况怎么样",
-            "经营情况怎么样",
-            // 以下为历史触达话术保留
-            "最近经营情况怎么样",
-            "这个月营业额怎么样",
-            "帮我看一下本月经营",
-            "帮我看下本月经营",
-            "看下本月经营",
-            "看一下本月经营",
-    };
 
     @Override
     public String name() {
@@ -86,79 +57,33 @@ public class BusinessDataPlannerNode implements AgentNode {
 
         var rCtx = state.getResolvedQueryContext();
         var rqi = rCtx != null ? rCtx.getQueryIntent() : null;
-        var prevTurn = rCtx != null ? rCtx.getPreviousTurn() : null;
-        var followUpRes = rCtx != null ? rCtx.getFollowUpResolution() : null;
+        boolean semanticClarifies = rCtx != null && rCtx.isNeedSemanticClarification();
+        String effPath =
+                !semanticClarifies && rCtx != null && StringUtils.hasText(rCtx.getEffectivePathCode())
+                        ? rCtx.getEffectivePathCode().trim()
+                        : (!semanticClarifies && rqi != null && StringUtils.hasText(rqi.getPathCode())
+                                ? rqi.getPathCode().trim()
+                                : null);
 
         boolean resolvedPurchaseOverview =
-                rqi != null && AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(rqi.getPathCode());
-        if (!resolvedPurchaseOverview && prevTurn != null
-                && AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(prevTurn.getLastPathCode())
-                && !FollowUpIntentResolveService.currentMessageDeclaresDomainPath(q)
-                && (FollowUpIntentResolveService.isShortTemporalFollowUp(q)
-                || (followUpRes != null && followUpRes.isFollowUp()
-                && "TIME_SHIFT".equals(followUpRes.getFollowUpType())))) {
-            patchPurchaseIntentFromPreviousTurn(rqi, prevTurn);
-            resolvedPurchaseOverview = true;
-        }
-
-        boolean resolvedDishProfit = rqi != null && AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(rqi.getPathCode());
-        if (!resolvedDishProfit && rqi != null && prevTurn != null
-                && AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(prevTurn.getLastPathCode())
-                && !FollowUpIntentResolveService.currentMessageDeclaresDomainPath(q)
-                && AiQuerySemanticLexicon.dishProfitStructuredIntentFromUtterance(q)) {
-            patchDishProfitIntentFromPreviousTurn(rqi, prevTurn, q);
-            resolvedDishProfit = true;
-        }
+                inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(effPath);
+        boolean resolvedDishProfit =
+                inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(effPath);
+        /** D-8 Phase 1：菜品销量/销售额专线；底层工具仍复用 {@link AiBusinessToolIds#DISH_PROFIT_ANALYSIS}。 */
+        boolean resolvedDishSalesQuery =
+                inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(effPath);
         boolean resolvedBusinessOverview =
-                rqi != null && AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(rqi.getPathCode());
-        if (!resolvedBusinessOverview && prevTurn != null
-                && AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(prevTurn.getLastPathCode())
-                && !FollowUpIntentResolveService.currentMessageDeclaresDomainPath(q)
-                && (FollowUpIntentResolveService.isShortTemporalFollowUp(q)
-                || (followUpRes != null && followUpRes.isFollowUp()
-                && "TIME_SHIFT".equals(followUpRes.getFollowUpType())))) {
-            patchBusinessOverviewFromPreviousTurn(rqi, prevTurn);
-            resolvedBusinessOverview = true;
-        }
+                inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(effPath);
         boolean resolvedWarehouse =
-                rqi != null && AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(rqi.getPathCode());
+                inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(effPath);
+        boolean resolvedStockReduce =
+                inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(effPath);
+        boolean resolvedRevenueOverview =
+                inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(effPath);
+        boolean resolvedBusinessDiagnosis =
+                inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(effPath);
 
         resetCostIntentFlags(state);
-
-        boolean resolvedStockReduce =
-                rqi != null && AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(rqi.getPathCode());
-        if (!resolvedStockReduce && prevTurn != null
-                && AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(prevTurn.getLastPathCode())
-                && !FollowUpIntentResolveService.currentMessageDeclaresDomainPath(q)
-                && (FollowUpIntentResolveService.isShortTemporalFollowUp(q)
-                || (followUpRes != null && followUpRes.isFollowUp()
-                && "TIME_SHIFT".equals(followUpRes.getFollowUpType())))) {
-            patchStockReduceIntentFromPreviousTurn(rqi, prevTurn);
-            resolvedStockReduce = true;
-        }
-
-        if (inBusinessChat && FollowUpIntentResolveService.isShortTemporalFollowUp(q)) {
-            String curPath = rqi != null ? rqi.getPathCode() : null;
-            // isShortTemporalFollowUp 对「这个月自采金额是多少」也为 true（句中含时间词），
-            // 不能以「没有上一轮」为由误判为追问缺上下文；仅当当前轮根本解不出 path 时才澄清。
-            if (!StringUtils.hasText(curPath)) {
-                boolean standaloneDomainCue = looksLikePurchaseOverviewOnly(q)
-                        || AiQuerySemanticLexicon.looksPurchaseDomainShortQuestion(q)
-                        || looksLikeDishProfitInsight(q)
-                        || looksLikeBusinessOverview(q)
-                        || looksLikeWarehouseStockOverviewQuestion(q)
-                        || AiResolvedQueryIntent.messageDeclaresStandaloneStockReduce(q)
-                        || looksLikeCostInsight(q);
-                if (!standaloneDomainCue) {
-                    boolean prevHasPath = prevTurn != null
-                            && StringUtils.hasText(prevTurn.getLastPathCode());
-                    state.setNeedClarification(true);
-                    state.setClarificationQuestion(prevHasPath
-                            ? "暂时没能接续上一轮的查询类型，请把要查的内容用一句话说全（需带业务口径，例如自采金额、采购或经营）。"
-                            : "上次聊的是哪一类数据？请用完整一句话说明，例如「上个月自采金额是多少」或「上月经营情况」。");
-                }
-            }
-        }
 
         if (state.isNeedClarification()) {
             state.setCouponCostInsightBlocked(false);
@@ -172,6 +97,10 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setDishProfitPath(false);
             state.setStockReduceQueryPath(false);
             state.setGroupStockReduceQuery(false);
+            state.setBusinessDiagnosisPath(false);
+            state.setBusinessDiagnosisPlan(null);
+            state.setRevenueOverviewPath(false);
+            state.setRevenueAnswerPlan(null);
             state.setDataPlanTools(new ArrayList<>());
             Map<String, Object> payloadCl = new LinkedHashMap<>();
             payloadCl.put("needClarification", true);
@@ -184,21 +113,53 @@ public class BusinessDataPlannerNode implements AgentNode {
             return state;
         }
 
-        boolean dishProfitIntent = inBusinessChat && (resolvedDishProfit || looksLikeDishProfitInsight(q));
-        boolean stockReduceStandaloneIntent = !dishProfitIntent && inBusinessChat
-                && (resolvedStockReduce || AiResolvedQueryIntent.messageDeclaresStandaloneStockReduce(q));
-        boolean purchaseOverviewOnlyIntent = !dishProfitIntent && !stockReduceStandaloneIntent && inBusinessChat
-                && (resolvedPurchaseOverview || looksLikePurchaseOverviewOnly(q)
-                || AiQuerySemanticLexicon.looksPurchaseDomainShortQuestion(q));
-        boolean rawCostIntent = !dishProfitIntent && !stockReduceStandaloneIntent && !purchaseOverviewOnlyIntent
-                && inBusinessChat && looksLikeCostInsight(q);
-        boolean stockOverviewIntent = !dishProfitIntent && !stockReduceStandaloneIntent && !rawCostIntent
-                && !purchaseOverviewOnlyIntent
-                && inBusinessChat && (resolvedWarehouse || looksLikeWarehouseStockOverviewQuestion(q));
-        boolean overviewIntent = !dishProfitIntent && !stockReduceStandaloneIntent && !rawCostIntent
-                && !stockOverviewIntent
-                && !purchaseOverviewOnlyIntent && inBusinessChat
-                && (resolvedBusinessOverview || looksLikeBusinessOverview(q));
+        boolean resolvedCostDiagnosis =
+                inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_COST_DIAGNOSIS.equals(effPath);
+
+        boolean dishProfitIntent = resolvedDishProfit || resolvedDishSalesQuery;
+        boolean businessDiagnosisIntent = resolvedBusinessDiagnosis;
+        boolean stockReduceStandaloneIntent =
+                !dishProfitIntent && !businessDiagnosisIntent && inBusinessChat && resolvedStockReduce;
+        boolean revenueStandaloneIntent =
+                !dishProfitIntent
+                        && !businessDiagnosisIntent
+                        && !stockReduceStandaloneIntent
+                        && inBusinessChat
+                        && resolvedRevenueOverview;
+        boolean purchaseOverviewOnlyIntent =
+                !dishProfitIntent
+                        && !businessDiagnosisIntent
+                        && !stockReduceStandaloneIntent
+                        && !revenueStandaloneIntent
+                        && inBusinessChat
+                        && resolvedPurchaseOverview;
+        boolean rawCostIntent =
+                !dishProfitIntent
+                        && !businessDiagnosisIntent
+                        && !stockReduceStandaloneIntent
+                        && !revenueStandaloneIntent
+                        && !purchaseOverviewOnlyIntent
+                        && inBusinessChat
+                        && resolvedCostDiagnosis;
+        boolean stockOverviewIntent =
+                !dishProfitIntent
+                        && !businessDiagnosisIntent
+                        && !stockReduceStandaloneIntent
+                        && !revenueStandaloneIntent
+                        && !purchaseOverviewOnlyIntent
+                        && !rawCostIntent
+                        && inBusinessChat
+                        && resolvedWarehouse;
+        boolean overviewIntent =
+                !dishProfitIntent
+                        && !businessDiagnosisIntent
+                        && !stockReduceStandaloneIntent
+                        && !rawCostIntent
+                        && !stockOverviewIntent
+                        && !purchaseOverviewOnlyIntent
+                        && !revenueStandaloneIntent
+                        && inBusinessChat
+                        && resolvedBusinessOverview;
 
         List<String> plan;
 
@@ -213,8 +174,18 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setDishProfitPath(false);
             state.setStockReduceQueryPath(false);
             state.setGroupStockReduceQuery(false);
+            state.setBusinessDiagnosisPath(false);
+            state.setBusinessDiagnosisPlan(null);
+            state.setRevenueOverviewPath(false);
+            state.setRevenueAnswerPlan(null);
             state.setDataPlanTools(new ArrayList<>());
             plan = List.of();
+        } else if (businessDiagnosisIntent) {
+            applyBusinessDiagnosisBranch(state);
+            if (state.isBusinessDiagnosisPath()) {
+                syncResolvedQueryContextToBusinessDiagnosis(state);
+            }
+            plan = state.getDataPlanTools();
         } else if (dishProfitIntent) {
             state.setCostInsightPath(false);
             state.setPurchaseCostInsightPath(false);
@@ -224,13 +195,19 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setGroupPurchaseOverview(false);
             state.setStockReduceQueryPath(false);
             state.setGroupStockReduceQuery(false);
+            state.setBusinessDiagnosisPath(false);
             state.setCouponCostInsightBlocked(false);
             state.setBusinessOverviewPath(false);
+            state.setRevenueOverviewPath(false);
+            state.setRevenueAnswerPlan(null);
             state.setDishProfitPath(true);
             plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_DISH_PROFIT_TOOLS);
             state.setDataPlanTools(plan);
         } else if (stockReduceStandaloneIntent) {
             applyStockReduceQuestionBranch(state);
+            plan = state.getDataPlanTools();
+        } else if (revenueStandaloneIntent) {
+            applyRevenueOverviewQuestionBranch(state);
             plan = state.getDataPlanTools();
         } else if (purchaseOverviewOnlyIntent) {
             applyPurchaseOverviewQuestionBranch(state);
@@ -257,7 +234,16 @@ public class BusinessDataPlannerNode implements AgentNode {
                 plan = state.getDataPlanTools();
             } else if (overviewIntent) {
                 state.setBusinessOverviewPath(true);
-                plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_BUSINESS_OVERVIEW_TOOLS);
+                if (resolvedContextOrchestrationMultiAgentOverview(rCtx)) {
+                    List<String> mt = buildBusinessOverviewMultiAgentToolsPermissionFiltered(ctx);
+                    if (mt.isEmpty()) {
+                        plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_BUSINESS_OVERVIEW_TOOLS);
+                    } else {
+                        plan = new ArrayList<>(mt);
+                    }
+                } else {
+                    plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_BUSINESS_OVERVIEW_TOOLS);
+                }
                 state.setDataPlanTools(plan);
             } else {
                 plan = List.of();
@@ -281,8 +267,10 @@ public class BusinessDataPlannerNode implements AgentNode {
         payload.put("couponCostInsightBlocked", state.isCouponCostInsightBlocked());
         payload.put("businessOverviewPath", overview);
         payload.put("dishProfitPath", state.isDishProfitPath());
+        payload.put("businessDiagnosisPath", state.isBusinessDiagnosisPath());
         payload.put("stockReduceQueryPath", state.isStockReduceQueryPath());
         payload.put("groupStockReduceQuery", state.isGroupStockReduceQuery());
+        payload.put("revenueOverviewPath", state.isRevenueOverviewPath());
         payload.put("tools", plan == null ? List.of() : plan);
         if (state.getIntentConvergence() != null && !state.getIntentConvergence().isEmpty()) {
             payload.put("intentConvergence", state.getIntentConvergence());
@@ -291,6 +279,8 @@ public class BusinessDataPlannerNode implements AgentNode {
         String displayText;
         if (state.isCouponCostInsightBlocked()) {
             displayText = "成本分析对该账号不可用，已跳过数据拉取";
+        } else if (state.isBusinessDiagnosisPath()) {
+            displayText = "已编排「经营诊断」链路 " + plan.size() + " 个数据来源（采购·出库/核销·菜品毛利）";
         } else if (state.isDishProfitPath()) {
             displayText = "已编排「菜品毛利透视」链路 " + plan.size() + " 个数据来源";
         } else if (state.isWarehouseStockOverviewPath()) {
@@ -310,6 +300,8 @@ public class BusinessDataPlannerNode implements AgentNode {
             } else {
                 displayText = "已编排「出库/核销」基础查询链路 " + plan.size() + " 个数据来源";
             }
+        } else if (state.isRevenueOverviewPath()) {
+            displayText = "已编排「日营业额/营收」链路 " + plan.size() + " 个数据来源";
         } else if (state.isPurchaseCostInsightPath() && state.isGroupPurchaseOverview()) {
             displayText = "集团账号：采购问句已按集团下属门店采购范围汇总，已编排 " + plan.size() + " 个数据来源";
         } else if (state.isPurchaseCostInsightPath()) {
@@ -345,38 +337,35 @@ public class BusinessDataPlannerNode implements AgentNode {
                 && "PURCHASE_OVERVIEW".equals(ic.get("to"));
     }
 
-    /** 时间追问兜底：解析阶段若未合并成功，从 TurnMemory 恢复采购 path / 子意图 / 来源，避免只更新时间不落工具链。 */
-    private static void patchPurchaseIntentFromPreviousTurn(AiResolvedQueryIntent rqi, AiConversationTurnMemory prev) {
-        if (rqi == null || prev == null) {
+    /**
+     * Planner 已切到经营诊断编排后，将 Harness / Replay 可见的 path、intent 与解析意图对齐（避免仍显示 business_overview）。
+     */
+    private static void syncResolvedQueryContextToBusinessDiagnosis(AiRunState state) {
+        AiResolvedQueryContext ctx = state != null ? state.getResolvedQueryContext() : null;
+        if (ctx == null) {
             return;
         }
-        rqi.setPathCode(AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW);
-        rqi.setIntentCode(AiResolvedQueryIntent.PURCHASE_OVERVIEW);
-        if (org.springframework.util.StringUtils.hasText(prev.getLastStructuredIntentDetail())) {
-            rqi.setStructuredIntentDetail(prev.getLastStructuredIntentDetail());
+        AiResolvedQueryIntent qi = ctx.getQueryIntent();
+        if (qi == null) {
+            qi = AiResolvedQueryIntent.builder().build();
+            ctx.setQueryIntent(qi);
         }
-        if (org.springframework.util.StringUtils.hasText(prev.getLastPurchaseSourceType())) {
-            rqi.setPurchaseSourceType(prev.getLastPurchaseSourceType());
+        qi.setPathCode(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS);
+        qi.setIntentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS);
+        if (qi.getStructuredIntentDetail() == null || qi.getStructuredIntentDetail().isBlank()) {
+            qi.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_BUSINESS_DIAGNOSIS_SUMMARY);
         }
-        rqi.setInheritedFromPreviousTurn(true);
+        ctx.setEffectivePathCode(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS);
+        ctx.setEffectiveIntentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS);
     }
 
-    /** 时间追问兜底：与采购 patch 对称，避免「上个月呢？」仅命中时间短句但 path 未并入时落入 DataPlanner 澄清。 */
-    private static void patchBusinessOverviewFromPreviousTurn(AiResolvedQueryIntent rqi, AiConversationTurnMemory prev) {
+    private static void patchBusinessDiagnosisFromPreviousTurn(AiResolvedQueryIntent rqi, AiConversationTurnMemory prev,
+            String rawUserInput) {
         if (rqi == null || prev == null) {
             return;
         }
-        rqi.setPathCode(AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW);
-        rqi.setIntentCode(AiResolvedQueryIntent.BUSINESS_OVERVIEW);
-        rqi.setInheritedFromPreviousTurn(true);
-    }
-
-    private static void patchStockReduceIntentFromPreviousTurn(AiResolvedQueryIntent rqi, AiConversationTurnMemory prev) {
-        if (rqi == null || prev == null) {
-            return;
-        }
-        rqi.setPathCode(AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY);
-        rqi.setIntentCode(AiResolvedQueryIntent.STOCK_REDUCE_QUERY);
+        rqi.setPathCode(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS);
+        rqi.setIntentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS);
         if (StringUtils.hasText(prev.getLastStructuredIntentDetail())) {
             rqi.setStructuredIntentDetail(prev.getLastStructuredIntentDetail());
         }
@@ -385,13 +374,17 @@ public class BusinessDataPlannerNode implements AgentNode {
 
     /** 与采购 patch 对称：「出库成本多少」等子口径若解析阶段未并入 path，从 TurnMemory 续上菜品毛利链。 */
     private static void patchDishProfitIntentFromPreviousTurn(
-            AiResolvedQueryIntent rqi, AiConversationTurnMemory prev, String normalizedQuestion) {
+            AiResolvedQueryIntent rqi, AiConversationTurnMemory prev,
+            @SuppressWarnings("unused") String normalizedQuestion) {
         if (rqi == null || prev == null) {
             return;
         }
         rqi.setPathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT);
         rqi.setIntentCode(AiResolvedQueryIntent.DISH_PROFIT);
-        AiQuerySemanticLexicon.mergeDishProfitCuesInto(rqi, normalizedQuestion != null ? normalizedQuestion : "");
+        if (!StringUtils.hasText(rqi.getStructuredIntentDetail())
+                && StringUtils.hasText(prev.getLastStructuredIntentDetail())) {
+            rqi.setStructuredIntentDetail(prev.getLastStructuredIntentDetail());
+        }
         rqi.setInheritedFromPreviousTurn(true);
     }
 
@@ -418,9 +411,193 @@ public class BusinessDataPlannerNode implements AgentNode {
         state.setIntentConvergence(null);
         state.setWarehouseOverview(null);
         state.setPurchaseOverview(null);
+        state.setPurchaseAnswerPlan(null);
+        state.setStockReduceAnswerPlan(null);
         state.setPurchaseOverviewPath(false);
         state.setGroupPurchaseOverview(false);
         state.setDishProfitPath(false);
+        state.setBusinessDiagnosisPath(false);
+        state.setBusinessDiagnosisPlan(null);
+        state.setRevenueOverviewPath(false);
+        state.setRevenueAnswerPlan(null);
+    }
+
+    /**
+     * 经营诊断：采购 + 出库/核销 + 菜品毛利 + 营业额（{@link AiPermissions#VIEW_REVENUE} 时追加
+     * {@link AiBusinessToolIds#REVENUE_QUERY}，供 {@link DiagnosisPlan} 挂载 {@link com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan}）；
+     * 同一 {@link AiResolvedQueryContext}；权限可裁剪子集。
+     */
+    private static void applyBusinessDiagnosisBranch(AiRunState state) {
+        state.setCostInsightPath(false);
+        state.setBusinessOverviewPath(false);
+        state.setDishProfitPath(false);
+        state.setCouponCostInsightBlocked(false);
+        state.setWarehouseStockOverviewPath(false);
+        state.setGroupWarehouseStockOverview(false);
+        state.setBusinessDiagnosisPath(true);
+
+        state.setPurchaseCostInsightPath(false);
+        state.setPurchaseOverviewPath(false);
+        state.setGroupPurchaseOverview(false);
+        state.setStockReduceQueryPath(false);
+        state.setGroupStockReduceQuery(false);
+        state.setRevenueOverviewPath(false);
+        state.setRevenueAnswerPlan(null);
+        state.setDataPlanTools(new ArrayList<>());
+
+        AiUserContext ctx = state.getAiUserContext();
+        if (ctx == null) {
+            state.setBusinessDiagnosisPath(false);
+            return;
+        }
+        Set<String> perms = ctx.getPermissions() == null ? Set.of() : Set.copyOf(ctx.getPermissions());
+        boolean mayPurchase = perms.contains(AiPermissions.VIEW_PURCHASE)
+                || ((AiRoleCodes.WAREHOUSE_MANAGER.equals(ctx.getRoleCode())
+                || AiRoleCodes.REGION_WAREHOUSE.equals(ctx.getRoleCode()))
+                && perms.contains(AiPermissions.VIEW_STOCK));
+        boolean mayStock = perms.contains(AiPermissions.VIEW_STOCK);
+        boolean mayDish = mayDishProfitToolForDiagnosis(ctx, perms);
+        boolean mayRevenue = perms.contains(AiPermissions.VIEW_REVENUE);
+
+        List<String> tools = new ArrayList<>();
+        if (mayPurchase) {
+            tools.add(AiBusinessToolIds.PURCHASE_OVERVIEW);
+        }
+        if (mayStock) {
+            tools.add(AiBusinessToolIds.STOCK_REDUCE_QUERY);
+        }
+        if (mayDish) {
+            tools.add(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        }
+        if (mayRevenue) {
+            tools.add(AiBusinessToolIds.REVENUE_QUERY);
+        }
+        if (tools.isEmpty()) {
+            state.getPermissionDenials().add(AiAnswerBoundary.forMissingToolPermission(
+                    AiBusinessToolIds.PURCHASE_OVERVIEW, AiPermissions.VIEW_PURCHASE));
+            state.setBusinessDiagnosisPath(false);
+            return;
+        }
+
+        String roleCode = ctx.getRoleCode();
+        String ts = AiTimeWindowTextFormatter.forAnswer(state).getTimeSubjectText();
+        if (AiRoleMapper.isGroupWideOrgScope(roleCode)) {
+            if (resolvedOrgIsSingleEffectiveStore(state)) {
+                Map<String, String> ic = new LinkedHashMap<>();
+                ic.put("from", "BUSINESS_DIAGNOSIS");
+                ic.put("to", "STORE_BUSINESS_DIAGNOSIS");
+                ic.put("reason", "集团账号但本句收窄为单一门店：诊断仅汇总该门店");
+                state.setIntentConvergence(ic);
+                state.setCostIntentConvergenceNote("本句已点名或收窄为单一门店，经营诊断仅按该门店权限范围汇总（采购、出库/核销"
+                        + (mayDish ? "、菜品毛利" : "")
+                        + (mayRevenue ? "、营业额" : "") + "）。");
+                state.setGroupPurchaseOverview(false);
+                state.setGroupStockReduceQuery(false);
+                state.setPurchaseOverviewPath(mayPurchase);
+                state.setPurchaseCostInsightPath(mayPurchase);
+                state.setStockReduceQueryPath(mayStock);
+                state.setDataPlanTools(new ArrayList<>(tools));
+                applyWarehouseBusinessDiagnosisScopeNote(state);
+                return;
+            }
+            Map<String, String> ic = new LinkedHashMap<>();
+            ic.put("from", "BUSINESS_DIAGNOSIS");
+            ic.put("to", "GROUP_BUSINESS_DIAGNOSIS");
+            ic.put("reason", "集团管理账号：按 visibleStores 门店合并汇总经营诊断");
+            state.setIntentConvergence(ic);
+            state.setCostIntentConvergenceNote("下面按集团权限范围内门店合并做经营诊断（"
+                    + ts + "；含采购、出库/核销" + (mayDish ? "、菜品毛利" : "")
+                    + (mayRevenue ? "、营业额" : "") + "）。");
+            state.setGroupPurchaseOverview(mayPurchase);
+            state.setGroupStockReduceQuery(mayStock);
+            state.setPurchaseOverviewPath(mayPurchase);
+            state.setPurchaseCostInsightPath(mayPurchase);
+            state.setStockReduceQueryPath(mayStock);
+            state.setDataPlanTools(new ArrayList<>(tools));
+            applyWarehouseBusinessDiagnosisScopeNote(state);
+            return;
+        }
+
+        state.setGroupPurchaseOverview(false);
+        state.setGroupStockReduceQuery(false);
+        state.setPurchaseOverviewPath(mayPurchase);
+        state.setPurchaseCostInsightPath(mayPurchase);
+        state.setStockReduceQueryPath(mayStock);
+        state.setCostIntentConvergenceNote("按当前门店/部门权限汇总经营诊断（" + ts + "）。");
+        state.setDataPlanTools(new ArrayList<>(tools));
+        applyWarehouseBusinessDiagnosisScopeNote(state);
+    }
+
+    /** D-11：库房 Scope 下的经营诊断意图说明边界（不做集团多门店经营排名话术）。 */
+    private static void applyWarehouseBusinessDiagnosisScopeNote(AiRunState state) {
+        if (state == null || !state.isBusinessDiagnosisPath()) {
+            return;
+        }
+        AiResolvedOrgScope org = state.getResolvedQueryContext() != null
+                ? state.getResolvedQueryContext().getOrgScope()
+                : null;
+        if (org == null || !AiResolvedOrgScope.SCOPE_WAREHOUSE.equals(org.getScopeType())) {
+            return;
+        }
+        state.setCostIntentConvergenceNote(
+                "当前账号为库房端，只能查看本库房及所属门店权限范围内的库存、出库/核销与采购入库信号；未授权查看营业额与菜品毛利，亦不做集团或多门店综合经营排名。");
+    }
+
+    private static boolean resolvedContextOrchestrationMultiAgentOverview(AiResolvedQueryContext rq) {
+        if (rq == null) {
+            return false;
+        }
+        String tm = rq.getOrchestrationTaskMode();
+        if (tm != null && "MULTI_AGENT".equalsIgnoreCase(tm.trim())) {
+            return true;
+        }
+        return Boolean.TRUE.equals(rq.getOrchestrationMultiAgentRequired());
+    }
+
+    /**
+     * 固定四域能力与顺序（对齐 {@link AiBusinessToolIds#BUSINESS_OVERVIEW_MULTI_AGENT_DOMAIN_TOOLS}）；仅权限裁剪，
+     * 不根据用户原文删减域。
+     */
+    private static List<String> buildBusinessOverviewMultiAgentToolsPermissionFiltered(AiUserContext ctx) {
+        if (ctx == null) {
+            return List.of();
+        }
+        Set<String> perms = ctx.getPermissions() == null ? Set.of() : Set.copyOf(ctx.getPermissions());
+        boolean mayPurchase = perms.contains(AiPermissions.VIEW_PURCHASE)
+                || ((AiRoleCodes.WAREHOUSE_MANAGER.equals(ctx.getRoleCode())
+                || AiRoleCodes.REGION_WAREHOUSE.equals(ctx.getRoleCode()))
+                && perms.contains(AiPermissions.VIEW_STOCK));
+        boolean mayStock = perms.contains(AiPermissions.VIEW_STOCK);
+        boolean mayDish = mayDishProfitToolForDiagnosis(ctx, perms);
+        boolean mayRevenue = perms.contains(AiPermissions.VIEW_REVENUE);
+        List<String> tools = new ArrayList<>();
+        if (mayRevenue) {
+            tools.add(AiBusinessToolIds.REVENUE_QUERY);
+        }
+        if (mayPurchase) {
+            tools.add(AiBusinessToolIds.PURCHASE_OVERVIEW);
+        }
+        if (mayStock) {
+            tools.add(AiBusinessToolIds.STOCK_REDUCE_QUERY);
+        }
+        if (mayDish) {
+            tools.add(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        }
+        return tools;
+    }
+
+    private static boolean mayDishProfitToolForDiagnosis(AiUserContext ctx, Set<String> perms) {
+        if (ctx == null) {
+            return false;
+        }
+        String rc = ctx.getRoleCode();
+        if (CostInsightIntentConvergence.isProcurementCostConvergenceRole(rc)) {
+            return false;
+        }
+        if (AiRoleCodes.WAREHOUSE_MANAGER.equals(rc) || AiRoleCodes.REGION_WAREHOUSE.equals(rc)) {
+            return false;
+        }
+        return perms.contains(AiPermissions.VIEW_DISH_SALES) && perms.contains(AiPermissions.VIEW_COST);
     }
 
     /** 出库/核销基础查询专线（单日历自然口；与成本主链内嵌 {@link AiBusinessToolIds#STOCK_REDUCE_QUERY} 区分）。 */
@@ -436,6 +613,8 @@ public class BusinessDataPlannerNode implements AgentNode {
         state.setGroupPurchaseOverview(false);
         state.setStockReduceQueryPath(false);
         state.setGroupStockReduceQuery(false);
+        state.setRevenueOverviewPath(false);
+        state.setRevenueAnswerPlan(null);
         state.setDataPlanTools(new ArrayList<>());
 
         AiUserContext ctx = state.getAiUserContext();
@@ -506,6 +685,8 @@ public class BusinessDataPlannerNode implements AgentNode {
         state.setGroupPurchaseOverview(false);
         state.setStockReduceQueryPath(false);
         state.setGroupStockReduceQuery(false);
+        state.setRevenueOverviewPath(false);
+        state.setRevenueAnswerPlan(null);
         state.setDataPlanTools(new ArrayList<>());
 
         AiUserContext ctx = state.getAiUserContext();
@@ -588,24 +769,43 @@ public class BusinessDataPlannerNode implements AgentNode {
         state.setDataPlanTools(new ArrayList<>(tools));
     }
 
-    /**
-     * 「这个月采购怎么样」类问句：优先于成本主链；排除含成本/毛利/核销/出库等更广诊断话术。
-     */
-    private static boolean looksLikePurchaseOverviewOnly(String q) {
-        if (q == null || q.isBlank()) {
-            return false;
+    /** 日营业额 / 营收专线：仅 {@link AiBusinessToolIds#REVENUE_QUERY}，与成本主链内嵌营收 Tool 区分；
+     * {@link DailyRevenueAnswerPlanBuilder} 在 {@link AiRunState#isRevenueOverviewPath()} 或经营诊断 path 上挂载。 */
+    private static void applyRevenueOverviewQuestionBranch(AiRunState state) {
+        state.setCostInsightPath(false);
+        state.setPurchaseCostInsightPath(false);
+        state.setBusinessOverviewPath(false);
+        state.setDishProfitPath(false);
+        state.setCouponCostInsightBlocked(false);
+        state.setWarehouseStockOverviewPath(false);
+        state.setGroupWarehouseStockOverview(false);
+        state.setPurchaseOverviewPath(false);
+        state.setGroupPurchaseOverview(false);
+        state.setStockReduceQueryPath(false);
+        state.setGroupStockReduceQuery(false);
+        state.setBusinessDiagnosisPath(false);
+        state.setBusinessDiagnosisPlan(null);
+        state.setDataPlanTools(new ArrayList<>());
+
+        AiUserContext ctx = state.getAiUserContext();
+        if (ctx == null) {
+            return;
         }
-        String s = q.replace(" ", "");
-        boolean purchaseCue = s.contains("采购") || s.contains("进货") || s.contains("订货");
-        if (!purchaseCue) {
-            return false;
+        Set<String> perms = ctx.getPermissions() == null ? Set.of() : Set.copyOf(ctx.getPermissions());
+        if (!perms.contains(AiPermissions.VIEW_REVENUE)) {
+            state.getPermissionDenials().add(AiAnswerBoundary.forMissingToolPermission(
+                    AiBusinessToolIds.REVENUE_QUERY, AiPermissions.VIEW_REVENUE));
+            return;
         }
-        if (s.contains("成本") || s.contains("毛利") || s.contains("损耗")
-                || s.contains("核销") || s.contains("出库")) {
-            return false;
-        }
-        return s.contains("怎么样") || s.contains("多少") || s.contains("如何")
-                || s.contains("情况") || s.contains("分析") || s.contains("概况");
+
+        Map<String, String> ic = new LinkedHashMap<>();
+        ic.put("from", "REVENUE_INQUIRY");
+        ic.put("to", "REVENUE_OVERVIEW");
+        ic.put("reason", "独占日营业额/营收查询链路");
+        state.setIntentConvergence(ic);
+        state.setCostIntentConvergenceNote(null);
+        state.setRevenueOverviewPath(true);
+        state.setDataPlanTools(new ArrayList<>(List.of(AiBusinessToolIds.REVENUE_QUERY)));
     }
 
     private static void applyPurchaseOverviewQuestionBranch(AiRunState state) {
@@ -620,6 +820,8 @@ public class BusinessDataPlannerNode implements AgentNode {
         state.setGroupPurchaseOverview(false);
         state.setStockReduceQueryPath(false);
         state.setGroupStockReduceQuery(false);
+        state.setRevenueOverviewPath(false);
+        state.setRevenueAnswerPlan(null);
         state.setDataPlanTools(new ArrayList<>());
 
         AiUserContext ctx = state.getAiUserContext();
@@ -638,22 +840,9 @@ public class BusinessDataPlannerNode implements AgentNode {
         }
 
         String roleCode = ctx.getRoleCode();
-        List<String> tools;
-        if (CostInsightIntentConvergence.isProcurementCostConvergenceRole(roleCode)) {
-            tools = new ArrayList<>(CostInsightIntentConvergence.buildPurchaseCostInsightTools(perms));
-        } else {
-            tools = new ArrayList<>();
-            tools.add(AiBusinessToolIds.PURCHASE_OVERVIEW);
-            if (perms.contains(AiPermissions.VIEW_STOCK)) {
-                tools.add(AiBusinessToolIds.STOCK_REDUCE_QUERY);
-            }
-        }
-
-        if (tools.isEmpty()) {
-            state.getPermissionDenials().add(AiAnswerBoundary.forMissingToolPermission(
-                    "purchase_overview", AiPermissions.VIEW_PURCHASE));
-            return;
-        }
+        // purchase_overview_path：专线仅编排 PURCHASE_OVERVIEW（Master gate 要求计划唯一工具；
+        // 出库/核销另走 stock_reduce_query_path / 采购成本洞察分支）。
+        List<String> tools = new ArrayList<>(List.of(AiBusinessToolIds.PURCHASE_OVERVIEW));
 
         if (AiRoleMapper.isGroupWideOrgScope(roleCode)) {
             if (resolvedOrgIsSingleEffectiveStore(state)) {
@@ -734,20 +923,6 @@ public class BusinessDataPlannerNode implements AgentNode {
         return vs != null && vs.size() == 1
                 && vs.get(0) != null
                 && vs.get(0).getStoreDepartmentId() != null;
-    }
-
-    private static boolean looksLikeWarehouseStockOverviewQuestion(String q) {
-        if (q == null || q.isBlank()) {
-            return false;
-        }
-        String s = q.replace(" ", "");
-        if (!s.contains("库存")) {
-            return false;
-        }
-        return s.contains("怎么样") || s.contains("如何") || s.contains("好不好") || s.contains("还行")
-                || s.contains("多少") || s.contains("情况") || s.contains("概况") || s.contains("状态")
-                || s.contains("还剩") || s.contains("还多") || s.contains("怎样") || s.contains("咋样")
-                || s.contains("正常吗") || s.contains("行吗");
     }
 
     private static boolean isBusinessToWarehouseStockConvergence(AiRunState state) {
@@ -834,6 +1009,50 @@ public class BusinessDataPlannerNode implements AgentNode {
         state.setScopeConvergenceNote(cur == null || cur.isBlank() ? noteLine : cur + "\n" + noteLine);
     }
 
+    /**
+     * 全量成本诊断链（非采购角色收敛）：与 {@link AiBusinessToolIds#DEFAULT_COST_INSIGHT_TOOLS} 对齐。
+     * 有登录上下文时按权限裁剪；无上下文时沿用完整序（Replay/Harness）。
+     */
+    private static void applyFullCostInsightPath(AiRunState state) {
+        state.setCouponCostInsightBlocked(false);
+        state.setCostInsightPath(true);
+        state.setPurchaseCostInsightPath(false);
+        state.setBusinessOverviewPath(false);
+        state.setDishProfitPath(false);
+        state.setWarehouseStockOverviewPath(false);
+        state.setGroupWarehouseStockOverview(false);
+        state.setPurchaseOverviewPath(false);
+        state.setGroupPurchaseOverview(false);
+        state.setStockReduceQueryPath(false);
+        state.setGroupStockReduceQuery(false);
+        state.setRevenueOverviewPath(false);
+        state.setRevenueAnswerPlan(null);
+        state.setBusinessDiagnosisPath(false);
+        state.setBusinessDiagnosisPlan(null);
+
+        AiUserContext ctx = state.getAiUserContext();
+        if (ctx != null) {
+            Set<String> perms = ctx.getPermissions() == null ? Set.of() : Set.copyOf(ctx.getPermissions());
+            List<String> tools = new ArrayList<>();
+            for (String toolId : AiBusinessToolIds.DEFAULT_COST_INSIGHT_TOOLS) {
+                String req = AiPermissionGuard.requiredPermissionForTool(toolId);
+                if (req == null || perms.contains(req)) {
+                    tools.add(toolId);
+                }
+            }
+            if (tools.isEmpty()) {
+                state.setCostInsightPath(false);
+                state.setDataPlanTools(new ArrayList<>());
+                state.getPermissionDenials().add(AiAnswerBoundary.forMissingToolPermission(
+                        AiBusinessToolIds.REVENUE_QUERY, AiPermissions.VIEW_REVENUE));
+                return;
+            }
+            state.setDataPlanTools(new ArrayList<>(tools));
+            return;
+        }
+        state.setDataPlanTools(new ArrayList<>(AiBusinessToolIds.DEFAULT_COST_INSIGHT_TOOLS));
+    }
+
     private void applyCostIntentBranch(AiRunState state, String q) {
         AiUserContext ctx = state.getAiUserContext();
         if (ctx == null) {
@@ -851,6 +1070,8 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setWarehouseStockOverviewPath(false);
             state.setStockReduceQueryPath(false);
             state.setGroupStockReduceQuery(false);
+            state.setRevenueOverviewPath(false);
+            state.setRevenueAnswerPlan(null);
             state.setCouponCostInsightBlocked(true);
             state.setDataPlanTools(new ArrayList<>());
             state.getPermissionDenials().add(AiAnswerBoundary.forCouponOperatorCostInsight());
@@ -870,6 +1091,8 @@ public class BusinessDataPlannerNode implements AgentNode {
                 state.setWarehouseStockOverviewPath(false);
                 state.setStockReduceQueryPath(false);
                 state.setGroupStockReduceQuery(false);
+                state.setRevenueOverviewPath(false);
+                state.setRevenueAnswerPlan(null);
                 state.setDataPlanTools(new ArrayList<>());
                 state.getPermissionDenials().add(AiAnswerBoundary.forMissingToolPermission(
                         "purchase_cost_analysis", AiPermissions.VIEW_PURCHASE));
@@ -882,6 +1105,8 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setWarehouseStockOverviewPath(false);
             state.setStockReduceQueryPath(false);
             state.setGroupStockReduceQuery(false);
+            state.setRevenueOverviewPath(false);
+            state.setRevenueAnswerPlan(null);
             state.setDataPlanTools(new ArrayList<>(tools));
             state.setCostIntentConvergenceNote(
                     "你当前账号是采购角色，不能查看完整经营成本和毛利分析。我可以从采购视角帮你分析" + costTimeSubject
@@ -895,127 +1120,6 @@ public class BusinessDataPlannerNode implements AgentNode {
             mergeScopeConvergenceNote(state,
                     "你当前账号只能查看本门店数据。下面是本门店" + costTimeSubject + "的成本情况。");
         }
-    }
-
-    private static void applyFullCostInsightPath(AiRunState state) {
-        state.setCostInsightPath(true);
-        state.setPurchaseCostInsightPath(false);
-        state.setPurchaseOverviewPath(false);
-        state.setGroupPurchaseOverview(false);
-        state.setWarehouseStockOverviewPath(false);
-        state.setStockReduceQueryPath(false);
-        state.setGroupStockReduceQuery(false);
-        state.setCouponCostInsightBlocked(false);
-        state.setDataPlanTools(new ArrayList<>(AiBusinessToolIds.DEFAULT_COST_INSIGHT_TOOLS));
-    }
-
-    /**
-     * 菜品毛利/经营透视问法；优先于 {@link #looksLikeCostInsight}，避免泛泛「毛利」吃进成本主线。
-     */
-    private static boolean looksLikeDishProfitInsight(String q) {
-        if (q == null || q.isEmpty()) {
-            return false;
-        }
-        String s = q.replace(" ", "");
-        // 水煮鱼毛利 / ××毛利率怎么样（排除「本月毛利」等整体经营毛利泛问）
-        if (SINGLE_DISH_MARGIN.matcher(s).find()) {
-            return singleDishMarginHasNamedDishCue(s);
-        }
-        if (s.contains("菜品")) {
-            if (s.contains("毛利") || s.contains("毛利率") || s.contains("利润")) {
-                return true;
-            }
-            if (s.contains("赚钱") || s.contains("不赚钱") || s.contains("亏本") || s.contains("亏钱")) {
-                return true;
-            }
-            if (s.contains("分析")) {
-                return true;
-            }
-        }
-        boolean dishQuestion = s.contains("哪些菜") || s.contains("什么菜") || s.contains("哪道菜") || s.contains("哪个菜");
-        if (dishQuestion && (s.contains("赚钱") || s.contains("毛利") || s.contains("利润") || s.contains("不赚钱")
-                || s.contains("亏钱") || s.contains("亏本"))) {
-            return true;
-        }
-        boolean profitCue = s.contains("利润") || s.contains("盈利") || s.contains("盈亏");
-        if (profitCue) {
-            if (s.contains("采购") || s.contains("进货") || s.contains("订货")
-                    || s.contains("供货商") || s.contains("供应商") || s.contains("入库")) {
-                return false;
-            }
-            return s.contains("怎么样") || s.contains("如何") || s.contains("多少") || s.contains("呢") || s.contains("情况");
-        }
-        if (s.contains("毛利") && (s.contains("怎么样") || s.contains("如何") || s.contains("多少") || s.contains("呢"))) {
-            if (s.contains("采购") || s.contains("进货") || s.contains("订货")
-                    || s.contains("供货商") || s.contains("供应商") || s.contains("入库")) {
-                return false;
-            }
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * {@link #SINGLE_DISH_MARGIN} 也会命中「本月毛利」：前缀仅为时间泛词时视为整体毛利问法，交给成本链。
-     */
-    private static boolean singleDishMarginHasNamedDishCue(String s) {
-        Matcher sm = SINGLE_DISH_MARGIN.matcher(s);
-        while (sm.find()) {
-            String full = sm.group(0);
-            String before = full.replaceFirst("(毛利率|毛利)$", "");
-            if (!GENERIC_MARGIN_TIME_PREFIXES.contains(before)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** 命中则走成本主链；纯出库/结构化核销分型、出库专线已先分流（勿把「损耗多少」等误判为成本洞察）。 */
-    private static boolean looksLikeCostInsight(String q) {
-        if (q == null || q.isEmpty()) {
-            return false;
-        }
-        String c = q.replace(" ", "");
-        if (AiQuerySemanticLexicon.mapsToStructuredStockReduceDetailCue(q)) {
-            return false;
-        }
-        // 生产成本/制作成本类：出库 type1 专线，不是泛成本诊断
-        if (c.contains("生产成本") || c.contains("成本耗用") || c.contains("生产耗用")
-                || c.contains("制作成本") || c.contains("制作消耗") || c.contains("做菜成本")
-                || c.contains("菜品制作消耗") || c.contains("正常制作消耗")) {
-            return false;
-        }
-        return q.contains("成本")
-                || q.contains("毛利")
-                || q.contains("采购")
-                || q.contains("食材");
-    }
-
-    private static boolean looksLikeBusinessOverview(String q) {
-        if (q.isEmpty()) {
-            return false;
-        }
-        String compact = q.replace(" ", "").toLowerCase(Locale.ROOT);
-        for (String p : BUSINESS_OVERVIEW_PHRASES) {
-            if (compact.contains(p.replace(" ", ""))) {
-                return true;
-            }
-        }
-        // 宽泛：营业额/流水/经营状况/概况 + 「怎么样」「如何」（成本关键词已排除）
-        if ((compact.contains("营业额") || compact.contains("流水") || compact.contains("经营状况")
-                || compact.contains("经营概况")) && (compact.contains("怎么样") || compact.contains("如何"))) {
-            return !looksLikeCostInsight(q);
-        }
-        // 「经营怎么样 / 经营状况怎么样 / …」（成本关键词已排除）
-        if ((compact.contains("经营怎么样") || compact.contains("经营状况怎么样")
-                || compact.contains("经营情况怎么样") || compact.contains("营业情况怎么样"))
-                && (compact.contains("怎么样") || compact.contains("如何"))) {
-            return !looksLikeCostInsight(q);
-        }
-        if ((compact.contains("生意怎么样") || compact.contains("生意如何")) && !looksLikeCostInsight(q)) {
-            return true;
-        }
-        return false;
     }
 
     /** 组织口径由上一轮继承（本句未点名新店/新范围）时，不向用户写「本句已点名具体门店」。 */

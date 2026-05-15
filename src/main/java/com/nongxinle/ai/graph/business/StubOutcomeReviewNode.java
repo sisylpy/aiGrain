@@ -1,5 +1,6 @@
 package com.nongxinle.ai.graph.business;
 
+import com.nongxinle.ai.agent.business.MasterBusinessAgent;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
@@ -13,6 +14,7 @@ import java.util.Map;
 public class StubOutcomeReviewNode implements AgentNode {
 
     private final AiSseEventPublisher publisher;
+    private final MasterBusinessAgent masterBusinessAgent;
 
     @Override
     public String name() {
@@ -32,6 +34,9 @@ public class StubOutcomeReviewNode implements AgentNode {
                 "displayText", "正在审核输出…"
         ));
         state.setOutcomeReviewStub(Map.of("passed", true, "score", 85));
+        masterBusinessAgent.refreshBusinessOverviewMultiAgentPlanIfApplicable(state);
+        DiagnosisPlanBuilder.attachIfApplicable(state);
+        BusinessDiagnosisPlanBuilder.reconcileBusinessDiagnosisRevenueCompleteness(state);
         publisher.publish(rid, "review_finished", Map.of(
                 "agent", "OutcomeReviewAgent",
                 "displayText", "审核完成",

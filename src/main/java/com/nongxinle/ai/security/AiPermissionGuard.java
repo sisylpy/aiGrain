@@ -1,9 +1,11 @@
 package com.nongxinle.ai.security;
 
-import com.nongxinle.ai.context.AiOrgScope;
+import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.mapping.AiRoleMapper;
+import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
+import com.nongxinle.ai.resolver.AiResolvedQueryContextResolver;
 import com.nongxinle.ai.scope.AiQueryScope;
 import com.nongxinle.ai.graph.business.CostInsightIntentConvergence;
 import com.nongxinle.ai.tool.ToolRequest;
@@ -124,33 +126,70 @@ public class AiPermissionGuard {
 
     private static boolean requestWithinOrgScope(AiRunState state) {
         AiUserContext ctx = state.getAiUserContext();
-        AiOrgScope scope = state.getAiOrgScope();
-        if (ctx == null || scope == null) {
+        if (ctx == null) {
             return true;
         }
         String role = ctx.getRoleCode();
         if (AiRoleMapper.isGroupWideOrgScope(role)) {
             return true;
         }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null || rq.getOrgScope() == null) {
+            return true;
+        }
+
         Long reqDept = state.getDepartmentId();
         Long reqDis = state.getDistributerId();
 
-        Long anchorDept = scope.getDepartmentId();
+        Long anchorDept = permissionAnchorDepartmentId(ctx, reqDept);
         if (anchorDept != null && reqDept != null && !Objects.equals(anchorDept, reqDept)) {
             return false;
         }
-        if (scope.getDistributerId() != null && reqDis != null
-                && !Objects.equals(scope.getDistributerId(), reqDis)) {
+
+        AiRunCreateRequest syn = new AiRunCreateRequest();
+        syn.setDepartmentId(reqDept);
+        syn.setDistributerId(reqDis);
+        Long mergedDis = AiResolvedQueryContextResolver.mergedDistributerId(syn, ctx);
+        if (mergedDis != null && reqDis != null && !Objects.equals(mergedDis, reqDis)) {
             return false;
         }
-        List<Long> allowed = scope.getStoreIds();
+
+        List<Long> allowed = ctx.getAllowedStoreIds();
         if (!CollectionUtils.isEmpty(allowed) && reqDept != null && !allowed.contains(reqDept)) {
             return false;
         }
         return true;
     }
 
-    static String requiredPermissionForTool(String toolId) {
+    /**
+     * Run 级权限锚点部门：集团管理端可用请求部门；门店/区域等角色固定为登录 ctx 部门。
+     */
+    private static Long permissionAnchorDepartmentId(AiUserContext ctx, Long reqDept) {
+        if (ctx == null || ctx.getRoleCode() == null) {
+            return null;
+        }
+        return switch (ctx.getRoleCode()) {
+            case AiRoleCodes.GROUP_MANAGER -> reqDept != null ? reqDept : ctx.getDepartmentId();
+            case AiRoleCodes.REGION_MANAGER,
+                 AiRoleCodes.REGION_PURCHASER,
+                 AiRoleCodes.REGION_WAREHOUSE -> ctx.getDepartmentId();
+            case AiRoleCodes.STORE_MANAGER,
+                 AiRoleCodes.STORE_PURCHASER,
+                 AiRoleCodes.STORE_ORDER,
+                 AiRoleCodes.WINDOW_ORDER -> ctx.getDepartmentId();
+            case AiRoleCodes.GROUP_PURCHASER -> ctx.getDepartmentId();
+            case AiRoleCodes.WAREHOUSE_MANAGER,
+                 AiRoleCodes.WAREHOUSE_PURCHASER,
+                 AiRoleCodes.CENTRAL_KITCHEN_MANAGER,
+                 AiRoleCodes.CENTRAL_KITCHEN_PURCHASER -> ctx.getDepartmentId();
+            case AiRoleCodes.COUPON_OPERATOR -> ctx.getDepartmentId();
+            case AiRoleCodes.DELIVERY_SUPPLIER,
+                 AiRoleCodes.DELIVERY_DRIVER -> ctx.getDepartmentId();
+            default -> ctx.getDepartmentId();
+        };
+    }
+
+    public static String requiredPermissionForTool(String toolId) {
         if (toolId == null) {
             return null;
         }

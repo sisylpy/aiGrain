@@ -1,0 +1,1 @@
+{"userId": 4, "departmentId": 1, "scopeMode": "STORE", "distributerId": 2, "caseId": "PROBE", "ignoreExpectations": true, "replayMode": "GRAPH_RUN", "strictStoreSqlMatch": false, "frozenClockDate": "2026-05-15", "messages": ["这个月营业额多少？", "AAA 和汀兰餐厅哪个经营更好，主要原因是什么？", "哪个门店问题最大？"]}

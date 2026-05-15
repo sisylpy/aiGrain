@@ -156,8 +156,9 @@ public class BusinessOverviewQueryTool implements AiTool {
                         .build();
             }
 
+            int storeRootsWithRevenue = countStoreRootsWithRecordedRevenue(retailAnchors, start, stop);
             Map<String, Object> statsCn = gbAiDailyRevenueDashboardService.buildGroupWideIncomeFlattened(
-                    agg, retailAnchors.size(), parentStoreCountHint, start, stop);
+                    agg, retailAnchors.size(), parentStoreCountHint, start, stop, storeRootsWithRevenue);
 
             GbAiGroupOverviewStoreIssuesService.BuiltGroupOverviewStoreIssues snap = null;
             if (AiRoleMapper.isGroupWideOrgScope(aiRoleCode)) {
@@ -435,6 +436,27 @@ public class BusinessOverviewQueryTool implements AiTool {
             }
         }
         return out;
+    }
+
+    /**
+     * 与门店排行/单店 stats 同源：按<strong>门店根</strong>在区间内是否有合计营业额，仅供「数据口径说明」写「几家门店」；
+     * 不得误用 {@code distinctRecordingDepartments}（展开后的记账部门数）。
+     */
+    private int countStoreRootsWithRecordedRevenue(List<Integer> retailAnchors, String start, String stop) {
+        if (retailAnchors == null || retailAnchors.isEmpty()) {
+            return 0;
+        }
+        int n = 0;
+        for (Integer a : retailAnchors) {
+            if (a == null || a <= 0) {
+                continue;
+            }
+            Map<String, Object> st = gbAiDailyRevenueService.getStatsByDepartmentId(a.longValue(), start, stop);
+            if (decimalFromAgg(st != null ? st.get("total_revenue") : null).signum() > 0) {
+                n++;
+            }
+        }
+        return n;
     }
 
     private static int toPositiveInt(Object v) {

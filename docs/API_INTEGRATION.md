@@ -15,6 +15,8 @@
 - **SSE 信封**：扁平 JSON（见下节「扁平信封」），顶层含 `event`、`runId`、`timestamp`、`status`、`displayText`，按需 `agent`、`tool`、`data` 等；**不要**解析旧的 `{ type, payload }` 形态。
 - **成本诊断 UI**：**仅**在 **`purchaseCostInsightPath` / `couponCostInsightBlocked` 均未命中**且 **`CostDiagnosisAgent`** 已产出结构化结果时，使用 SSE **`answer_delta`** 的 **`data.costDiagnosis`**（稳定契约见下文）；采购视角或优惠券拒答链路**无此卡片**。**不要**依赖 **`GET /api/ai/runs/{runId}`** 的 **`answerPreview`**。
 - **菜品毛利 UI**：命中 **`dish_profit_path`**（如「菜品毛利怎么样」「水煮鱼毛利怎么样」「哪些菜赚钱」）且 **`DishProfitAgent`** 已产出结构化结果时，使用 **`answer_delta.data.dishProfitOverview`**（与 **`AiDishProfitOverviewResult`** 一致，契约见下文「`dishProfitOverview`」）；正文仍为 **`data.text`**。
+- **采购视角 AnswerPlan（2026-05-12 收口）**：走 **`purchase_overview_path` / `purchaseCostInsightPath`**、`purchase_overview` 已执行且 **`PurchaseAnswerPlanBuilder`** 成功挂载时，**`answer_delta.data`** 可含 **`purchaseAnswerPlan`**（字段名 **`type`** 对应 Java `planType`，见下文专节）。**`StubAnswerComposerNode`** 在 **`purchaseAnswerPlan.focusRows != null`** 时 **优先按该计划宣读** **`focusRows` / `secondaryRows`**（不重排、不重算）；工具快照 **`purchaseOverview`** 与旧 Composer 摘要 **不再主导** 核心数字。**整机前台验收** 由负责人在业务环境完成；仓库内 IDE Agent **无需代跑** 前台测试。
+- **营收 AnswerPlan（2026-05-12 收口）**：走 **`revenue_overview_path`**、**`revenue_query`** 成功且 **`DailyRevenueAnswerPlanBuilder`** 挂载计划时，**`answer_delta.data`** 可含 **`revenueAnswerPlan`**（字段名 **`type`** 对应 Java **`planType`**，见下文「`revenueAnswerPlan`」专节）。**`resolvedQueryContextSummary`** 同源透出 **`revenueAnswerPlan*`** 扁平摘要字段供 Harness Debug / Replay。**`StubAnswerComposerNode`** 在营收 path 且计划可用时 **优先宣读 AnswerPlan**。外卖「平台」问法无分列明细时的降级口径见 **`docs/ai/revenue-answer-plan.md`** §4.2、§11。
 - **经营概览 UI**：命中 **经营概览链**（如「这个月生意怎么样」「本月经营情况怎么样」，`business_overview_path`）且 **`BusinessOverviewAgent`** 已产出结构化结果时，使用 **`answer_delta.data.businessOverview`**（与 `AiBusinessOverviewResult` 一致，契约见下文「`businessOverview`」）；正文仍以 **`data.text`** 为准，须引用 Tool 口径数字、禁止空泛编造。
 - **超时**：整机 Run 当前常见 **50s+**（仅占位数据时约 **55～60s**）；**真实主键** 下若 **`dish_sales_query` 占主导**，常见 **~90s+**。联调请把 **EventSource / fetch 的 read 超时** 调到 **≥120s**；性能优化见 `docs/TODO_MULTI_AGENT.md` backlog，**非本阶段必做**。
 - **跨域（CORS）**：前端在 **`http://localhost:5173`**（或其它本机 dev 端口）、API 在 **`http://localhost:8090`** 时属于**跨源**；`POST` + `application/json` 会先发 **OPTIONS** 预检。后端通过 **`WebMvcConfig` 中注册的 `CorsFilter`** 放行本地源（含显式 **`http://localhost:5173`** / **`http://127.0.0.1:5173`** 与本机端口通配），并 **`Access-Control-Allow-Credentials: true`**，以兼容 `fetch`/SSE 使用 **`credentials:'include'`**（否则浏览器会因凭据模式报 CORS 失败，即使 HTTP 状态为 200）。避免仅依赖 `WebMvcConfigurer#addCorsMappings` 时预检仍为 **403**。若 OPTIONS 仍为 403：**重启后端**使 Filter 生效，并在 Network 核对响应体是否仍为 CORS 拒绝。
@@ -158,6 +160,10 @@ curl -Ns "http://localhost:8090/api/ai/runs/<runId>/events"
 | `GET` | `/api/ai/runs/{runId}/events` | **SSE** 订阅该 Run 事件流 |
 | `POST` | `/api/ai/runs/{runId}/stop` | 协作式取消（节点轮询 `cancelled`） |
 
+### `GET /api/ai/runs/{runId}` · MasterBusinessAgent Debug（2026-05-13）
+
+四条单领域专线（营收 / 采购 / 出库核销 / 菜品毛利）已接入 **`MasterBusinessAgent`**。联调开启 **`ai.harness.debug-context-enabled=true`** 且 **`harnessDebug.resolvedQueryContextPresent=true`** 时，**`harnessDebug.resolvedQueryContextSummary`**（经 **`AiHarnessResolvedContextSummarizer`**）可合并 **`AiRunState#masterBusinessAgentDebug`** 的扁平字段（各专线 **`fallback`**、**`legacy*Skipped`**、**`*ToolExecutedByMasterPath`**、**`narrow*`**、子 Agent **Envelope** 成功标记等 — **键名以运行时 Summarizer 为准**，**非稳定对外契约**）。设计与专线一览：**`docs/ai/master-business-agent-design.md`** · **「当前已接入的 DomainAgent」**。语义层回归：**`docs/AI_HARNESS_REPLAY_CASES.md`** · **`V2_SEMANTIC_MAINLINE_CORE_10`**；**完整 Graph / Master 时序**仍以 **`POST /api/ai/runs`** 验证。
+
 ### `POST /api/ai/runs`
 
 **Request Body（JSON）**
@@ -231,7 +237,7 @@ curl -s -X POST http://localhost:8090/api/ai/runs/1778339369299/stop \
 | `displayText` | 是 | 给人看的进度/结果短描述 |
 | `agent` | 否 | 展示用智能体名（非 Spring Bean 名） |
 | `tool` | 否 | 工具名（若有） |
-| `data` | 否 | 结构化附加负载。**`answer_delta` 中必选 `text`（与根级 `text` 兼容副本）**；若走成本主线，可含 **`costDiagnosis`**；若走经营概览链，可含 **`businessOverview`**（与 `BusinessOverviewAgent` 输出一致）；若走 **`dish_profit_path`**，可含 **`dishProfitOverview`**（`AiDishProfitOverviewResult`，camelCase）；若走 **`purchase_overview_path` / `purchaseCostInsightPath`** 且 Composer 已写入快照，可含 **`purchaseOverview`**（与 **`PurchaseOverviewTool`** 产出的 `purchaseOverview` 对象同源，`camelCase`）。 |
+| `data` | 否 | 结构化附加负载。**`answer_delta` 中必选 `text`（与根级 `text` 兼容副本）**；若走成本主线，可含 **`costDiagnosis`**；若走经营概览链，可含 **`businessOverview`**（与 `BusinessOverviewAgent` 输出一致）；若走 **`dish_profit_path`**，可含 **`dishProfitOverview`**（`AiDishProfitOverviewResult`，camelCase）；若走 **`purchase_overview_path` / `purchaseCostInsightPath`** 且 Composer 已写入快照，可含 **`purchaseOverview`**（与 **`PurchaseOverviewTool`** 产出的 `purchaseOverview` 对象同源，`camelCase`）；**同一帧还可含 `purchaseAnswerPlan`**（采购回答计划，见下文「`purchaseAnswerPlan`」节；与 Debug/Replay 同源）；若走 **`revenue_overview_path`** 且 Builder 已挂载，可含 **`revenueAnswerPlan`**（日营业额回答计划，见下文「`revenueAnswerPlan`」节；与 **`resolvedQueryContextSummary.revenueAnswerPlan`** 同源）。 |
 | 其它 | — | 各事件可附带 `message`、`type`、`workspaceMode`、`text` 等；前端应容错未知字段 |
 
 **示例**
@@ -271,7 +277,9 @@ es.addEventListener('answer_delta', (e) => {
   const overviewCard = envelope.data?.businessOverview; // 经营概览卡片，可选
   const dishProfitCard = envelope.data?.dishProfitOverview; // 菜品毛利卡片，可选
   const purchaseCard = envelope.data?.purchaseOverview; // 采购入库概览快照，可选（purchase_overview / 采购视角）
-  // 渲染 body / costCard / overviewCard / dishProfitCard / purchaseCard …
+  const purchasePlan = envelope.data?.purchaseAnswerPlan; // 采购回答计划（Harness/Debug 同源），可选
+  const revenuePlan = envelope.data?.revenueAnswerPlan; // 营收回答计划（Harness/Debug 同源），可选
+  // 渲染 body / costCard / overviewCard / dishProfitCard / purchaseCard / purchasePlan / revenuePlan …
 });
 es.addEventListener('run_finished', () => {
   es.close();
@@ -450,12 +458,12 @@ es.addEventListener('run_finished', () => {
 | `goodsPurchaseAmountTop` | `array<object>` | 同上合并规则下的 **采购金额 Top**：`goodsName`、`purchaseSubtotal`（string，元）。 |
 | `topGoods` | `array<object>` | 兼容保留：Top 商品 `kind`（`by_times` / `by_amount` ）、`goodsName`、`purchaseTimes` 或 `purchaseSubtotal`（与上两项同源数据，格局可能交错）。 |
 | `topSuppliers` | `array<object>` | Top 供货商：`supplierId`、`supplierName`（有则库内真名；否则 **`未维护供货商名称`** 或 **`供货商ID {id}（名称未维护）`**）、`totalPurchaseAmount`、`purchaseLineCount`。 |
-
-**口径**：总笔数、总金额、采购方式拆分、商品 Top、供货商 Top 与 **`purDepIds`**（由集团 **`visibleStores` → 门店根 → `expandStoreRootsToDailyRevenueScopeIds`**）同一套筛选；采购方式与旧版 `GbAiChatServiceImpl#appendPurchaseSupplyMixSummary` 一致：**`gb_DPG_purchase_type`=5 或（=1 且 `gb_DPG_purchase_nx_supplier_id` 为正）**计为「供货商采购」；**type=1 且 nx 为 null 或 -1** 计为「自采」；其余 `purchase_type` 为「其它方式」；退货类型 9 已排除。AI 答复**不再提供** `totalPurchaseWeight`：采购数量单位混杂（斤/瓶/箱等），总重量统一「斤」易误导。
 | `priceChangeItems` | `array<object>` | 价格波动项：`goodsName`、`minPrice`、`maxPrice`、`priceFluctuationPercent`。 |
 | `highAmountItems` | `array<object>` | 高金额采购项：`goodsName`、`purchaseSubtotal`。 |
 | `purchaseWithoutSalesItems` | `array` | 预留，当前多为空数组。 |
 | `recommendations` | `array<string>` | 简短建议列表。 |
+
+**口径**：总笔数、总金额、采购方式拆分、商品 Top、供货商 Top 与 **`purDepIds`**（由集团 **`visibleStores` → 门店根 → `expandStoreRootsToDailyRevenueScopeIds`**）同一套筛选；采购方式与旧版 `GbAiChatServiceImpl#appendPurchaseSupplyMixSummary` 一致：**`gb_DPG_purchase_type`=5 或（=1 且 `gb_DPG_purchase_nx_supplier_id` 为正）**计为「供货商采购」；**type=1 且 nx 为 null 或 -1** 计为「自采」；其余 `purchase_type` 为「其它方式」；退货类型 9 已排除。AI 答复**不再提供** `totalPurchaseWeight`：采购数量单位混杂（斤/瓶/箱等），总重量统一「斤」易误导。
 
 ### 示例（形态示意）
 
@@ -499,6 +507,100 @@ es.addEventListener('run_finished', () => {
 ```
 
 （`storeCoverageSummary` 在「各家均有采购」时为「…均有采购入库数据。」；全无时为「…本期均无采购入库记录。」；字段值以运行为准。）
+
+---
+
+## `answer_delta.data.purchaseAnswerPlan`（采购 AnswerPlan；Harness/Debug 同源）
+
+当 **`purchase_overview_path`** 或 **`purchaseCostInsightPath`** 完成 **`purchase_overview`** 工具执行，且 **`PurchaseAnswerPlanBuilder`** 成功产出计划时，SSE **`answer_delta.data`** 除 **`purchaseOverview`** 外可额外携带 **`purchaseAnswerPlan`**（Fastjson 序列化 **`PurchaseAnswerPlan`**，camelCase；字段 **`type`** 对应 Java **`planType`**）。该负载与 **`AiRunService`** / Harness Replay 所见结构一致，便于前端卡片或调试面板与后端口径对齐。
+
+### 语义（与 Composer 收口一致，2026-05-12）
+
+- **`focusRows` / `secondaryRows`**：由 Builder **一次性**确定顺序与要点；**`StubAnswerComposerNode`** 在 **`focusRows != null`** 时 **优先**按两行集合宣读正文（**不重排、不重算**）。工具快照 **`purchaseOverview`** 中的 Top 列表与旧 **`purchaseCostFallback`** / 摘要 **不再主导** 用户可见的核心数字（仅在计划缺失或无法用计划表达时回退）。
+- **机型协作**：采购链路 **整机前台验收** 由负责人在业务环境完成；本仓库 IDE Agent（含 Cursor）**不要求** 代为执行前台联调或手动验收流程。
+
+### `planType`（`type` 枚举值）
+
+| `type` | 含义 |
+|--------|------|
+| `PURCHASE_OVERVIEW` | 采购入库总览（金额、笔数、方式拆分等）。 |
+| `PURCHASE_SELF_OVERVIEW` | 自采口径概览。 |
+| `PURCHASE_SUPPLIER_OVERVIEW` | 供货商采购口径概览。 |
+| `PURCHASE_GOODS_AMOUNT_RANKING` | 商品采购金额排行 / 「金额最高」类问句。 |
+| `PURCHASE_GOODS_COUNT_RANKING` | 商品采购次数排行 / 「次数最多」类问句。 |
+| `PURCHASE_SUPPLIER_AMOUNT_RANKING` | 供货商采购金额排行。 |
+
+其它字段（**`scopeLabel`**、**`timeLabel`**、**`purchaseSourceType`**、**`summary`**、**`debug`**）以运行时与 **`docs/ai/purchase-answer-plan.md`** 为准。
+
+### 示例（形态示意）
+
+```json
+{
+  "type": "PURCHASE_GOODS_AMOUNT_RANKING",
+  "scopeLabel": "集团范围",
+  "timeLabel": "本期",
+  "purchaseSourceType": "ALL",
+  "summary": null,
+  "focusRows": [
+    { "rank": 1, "title": "鲜三黄鸡", "metricsText": "采购金额 2970.0 元" }
+  ],
+  "secondaryRows": [],
+  "debug": {}
+}
+```
+
+---
+
+## `answer_delta.data.revenueAnswerPlan`（日营业额 / 营收 AnswerPlan；Harness/Debug 同源）
+
+当 **`revenue_overview_path`** 完成 **`revenue_query`**（**`RevenueQueryTool`**）且 **`DailyRevenueAnswerPlanBuilder`** 成功产出计划时，SSE **`answer_delta.data`** 可携带 **`revenueAnswerPlan`**（Fastjson 序列化 **`DailyRevenueAnswerPlan`**，camelCase；字段 **`type`** 对应 Java **`planType`**）。该负载与 **`AiHarnessResolvedContextSummarizer`** 写入的 **`resolvedQueryContextSummary.revenueAnswerPlan`**、Harness Replay **同源**。前台 Debug **`planSource`** 解析为 **`revenueAnswerPlan`**（与采购 **`purchaseAnswerPlan`** 并列）。
+
+### 语义（与 Composer 收口一致）
+
+- **`focusRows` / `secondaryRows`**：由 Builder **一次性**排好序与角色（如 **`overview`**、**`takeout_total`**、**`channel_breakdown_*`**、**`daily_rank_pick`**、**`store_rank_top`**）；**`StubAnswerComposerNode`** 在营收 path 且计划可用时 **优先宣读**，**不重算营业额、不重排行**。
+- **`scopeLabel` / `timeLabel` / `revenueChannel` / `summary` / `debug`**：辅助展示与 Replay；金额类 **须与 Tool / `rawStats` 一致**，详见 **`docs/ai/revenue-answer-plan.md`** §3～§4.1。
+- **降级说明**：外卖仅有渠道合计、无美团/饿了么等分列时，**`planType`** 仍为 **`REVENUE_TAKEOUT_OVERVIEW`**（或渠道拆分用 **`REVENUE_CHANNEL_BREAKDOWN`**），**`debug.explainTakeoutChannelAggregateOnly`** 等可为 **`true`**；**禁止**编造平台排行。
+
+### `planType`（`type` 枚举值）
+
+与 **`DailyRevenueAnswerPlan`** 常量一致（**`REVENUE_PLATFORM_RANKING`** 为预留，现行问法降级见 **`revenue-answer-plan.md`** §4.2）：
+
+| `type` | 含义 |
+|--------|------|
+| `REVENUE_OVERVIEW` | 营业额总览。 |
+| `REVENUE_DINE_IN_OVERVIEW` | 堂食营业额。 |
+| `REVENUE_TAKEOUT_OVERVIEW` | 外卖渠道合计（含「哪个外卖平台最高」类降级）。 |
+| `REVENUE_ORDER_COUNT_OVERVIEW` | 订单数。 |
+| `REVENUE_CUSTOMER_COUNT_OVERVIEW` | 顾客数。 |
+| `REVENUE_AVERAGE_ORDER_VALUE` | 客单价。 |
+| `REVENUE_DAILY_AMOUNT_RANKING` | 单日营业额最高 / 最低（**`sortDirection`**：`DESC` / `ASC`）。 |
+| `REVENUE_STORE_AMOUNT_RANKING` | 门店营业额排行。 |
+| `REVENUE_CHANNEL_BREAKDOWN` | 堂食 + 外卖拆分。 |
+| `REVENUE_PLATFORM_RANKING` | **预留**（待平台分列数据源）。 |
+
+### `resolvedQueryContextSummary` 镜像字段（Debug / GET）
+
+与 Summarizer 实现一致时可包含：**`revenueAnswerPlan`**、**`revenueAnswerPlanPresent`**、**`revenueAnswerPlanType`**、**`revenueAnswerPlanFocusRows`**、**`revenueAnswerPlanSecondaryRows`**、**`revenueAnswerPlanDebug`**、**`revenueAnswerPlanSortKey`**、**`revenueAnswerPlanSortDirection`**。失败或未挂载时 **`revenueAnswerPlanPresent === false`**，并可能带 attach 诊断（见 **`revenue-answer-plan.md`** §5.1）。**MasterBusinessAgent 四条专线**（2026-05-13 起）：另含采购 / 出库 / 菜品毛利 / 营收相关的 **`revenue*`**、**`purchase*`**、**`stockReduce*`**、**`dishProfit*`**、**`*MasterAgent*`**、**`*Fallback*`**、**`legacy*Skipped`** 等扁平键（完整列表以 **`AiHarnessResolvedContextSummarizer`** 与 **`docs/ai/master-business-agent-design.md`** 为准）。
+
+### 示例（形态示意）
+
+```json
+{
+  "type": "REVENUE_CHANNEL_BREAKDOWN",
+  "scopeLabel": "单店范围",
+  "timeLabel": "本月",
+  "revenueChannel": "MIXED_BREAKDOWN",
+  "summary": {},
+  "focusRows": [
+    { "role": "channel_breakdown_total", "totalRevenue": 90000, "days": 30 }
+  ],
+  "secondaryRows": [
+    { "role": "channel_row", "channel": "DINE_IN", "label": "堂食", "revenueAmount": 50000 },
+    { "role": "channel_row", "channel": "TAKEOUT", "label": "外卖", "revenueAmount": 40000 }
+  ],
+  "debug": { "sortKey": "revenueAmount", "sortDirection": "DESC" }
+}
+```
 
 ---
 

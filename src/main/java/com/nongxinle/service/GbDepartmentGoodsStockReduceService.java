@@ -91,6 +91,11 @@ public interface GbDepartmentGoodsStockReduceService extends IService<GbDepartme
     List<GbDistributerGoodsEntity> queryStockSubtotalTopTimes(Map<String, Object> map);
 
     /**
+     * 按出库/核销次数 Top 商品（与 {@link #queryReduceAllTypesTotalForRetailDepartmentFathers} 同口径范围）。
+     */
+    List<Map<String, Object>> queryStockOutboundTimesTopForRetailFathers(Map<String, Object> map);
+
+    /**
      * 按日查询支出
      */
     List<Map<String, Object>> queryGbPurchaseGoodsTopDay(Map<String, Object> map);

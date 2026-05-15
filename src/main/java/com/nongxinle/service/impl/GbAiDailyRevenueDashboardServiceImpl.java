@@ -459,10 +459,11 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
 
     @Override
     public Map<String, Object> buildGroupWideIncomeFlattened(Map<String, Object> groupAggRow,
-            int visibleDeptNodeCount,
+            int visibleStoreRootCount,
             Integer parentStoreCountHint,
             String startDate,
-            String endDate) {
+            String endDate,
+            Integer storeRootsWithRecordedRevenue) {
         String qStart = (startDate != null && !startDate.isBlank()) ? startDate.trim() : null;
         String qEnd = (endDate != null && !endDate.isBlank()) ? endDate.trim() : null;
         Map<String, Object> result = new LinkedHashMap<>();
@@ -504,7 +505,8 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         if (qEnd != null) {
             result.put("统计结束日期", qEnd);
         }
-        result.put("数据口径说明", groupScopeNote(visibleDeptNodeCount, parentStoreCountHint, groupAggRow));
+        result.put("数据口径说明",
+                groupScopeNote(visibleStoreRootCount, parentStoreCountHint, groupAggRow, storeRootsWithRecordedRevenue));
         result.put("日均营业额", formatStatNumber(avgDailyRevenue));
         result.put("总营业额", formatStatNumber(totalGross));
         result.put("日均订单数", formatStatNumber(avgOrderCount));
@@ -535,17 +537,42 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         return result;
     }
 
-    private static String groupScopeNote(int visibleDeptNodeCount, Integer parentStoreHint, Map<String, Object> agg) {
-        int withRows = toPositiveInt(agg.get("distinctRecordingDepartments"));
-        int missing = Math.max(0, visibleDeptNodeCount - withRows);
-        String storePart = (parentStoreHint != null && parentStoreHint > 0)
-                ? ("可见范围内约 " + parentStoreHint + " 家门店")
-                : ("可见范围内约 " + visibleDeptNodeCount + " 个组织单元");
-        String tail = missing > 0
-                ? ("；约 " + missing + " 家本期暂无日营收或未纳入本条汇总")
-                : "";
-        return "集团汇总：" + storePart + "；本期约 " + withRows + " 家有日营收入账" + tail
-                + "。统计天数为有营业额的自然日数（非简单日历跨度）。";
+    /**
+     * 入账「家」数须按<strong>门店根</strong>计；{@code agg.distinctRecordingDepartments} 为展开后的记账部门 id 数，
+     * 不得直接当「家」写入正文（会与 visibleStores / coverage 冲突）。
+     */
+    private static String groupScopeNote(int visibleStoreRootCount, Integer parentStoreHint,
+            Map<String, Object> agg, Integer storeRootsWithRecordedRevenue) {
+        boolean useStoreAnchors =
+                storeRootsWithRecordedRevenue != null && storeRootsWithRecordedRevenue >= 0 && visibleStoreRootCount > 0;
+        String storePart;
+        if (visibleStoreRootCount > 0) {
+            storePart = "可见范围内 " + visibleStoreRootCount + " 家门店";
+        } else if (parentStoreHint != null && parentStoreHint > 0) {
+            storePart = "可见范围内约 " + parentStoreHint + " 家门店（门店根暂未解析时的范围提示）";
+        } else {
+            storePart = "可见范围内的组织单元";
+        }
+
+        String mid;
+        if (useStoreAnchors) {
+            int capped = Math.min(visibleStoreRootCount, Math.max(0, storeRootsWithRecordedRevenue));
+            int missingStores = Math.max(0, visibleStoreRootCount - capped);
+            if (missingStores <= 0) {
+                // 与上文「X 家均有日营收」等 coverage 对齐，省略重复入账句
+                mid = "";
+            } else {
+                mid = "；本期 " + capped + " 家门店根部有日营收入账，"
+                        + missingStores + " 家暂无日营收或未纳入本条汇总（按门店根口径）";
+            }
+        } else {
+            int withRowsDept = toPositiveInt(agg.get("distinctRecordingDepartments"));
+            int missing = Math.max(0, visibleStoreRootCount - withRowsDept);
+            String tail = missing > 0 ? ("；约 " + missing + " 家本期暂无日营收或未纳入本条汇总") : "";
+            mid = "；本期记账部门在行内约 " + withRowsDept + " 个有日营业额记录（含直属子部门，非门店家数）" + tail;
+        }
+
+        return "集团汇总：" + storePart + mid + "。统计天数为有营业额的自然日数（非简单日历跨度）。";
     }
 
     private static int toPositiveInt(Object v) {

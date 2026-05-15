@@ -1,0 +1,1 @@
+{"userId": 2, "departmentId": 3, "scopeMode": "STORE", "distributerId": 2, "caseId": "PROBE", "ignoreExpectations": true, "replayMode": "GRAPH_RUN", "strictStoreSqlMatch": false, "frozenClockDate": "2026-05-15", "messages": ["这个月采购金额多少？", "这个月营业额多少？", "哪个门店问题最大？"]}

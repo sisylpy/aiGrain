@@ -23,8 +23,7 @@ public class AiRunCreateRequest {
 
     /**
      * 可选。正式环境以 {@code gb_department_user.gb_du_admin} 经 {@link com.nongxinle.ai.mapping.AiRoleMapper}
-     * 推导 {@code roleCode}；仅过渡期保留合成角色 {@code FINANCE_MANAGER} / {@code MARKETING_MANAGER}（单测等）。
-     * 详见 {@code docs/PERMISSION_MODEL.md}。
+     * 推导角色；服务端不以请求体 {@code roleCode} 覆盖库表 admin。
      */
     private String roleCode;
 

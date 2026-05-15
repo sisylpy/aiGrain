@@ -4,6 +4,9 @@ import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.dto.business.BusinessDiagnosisPlan;
+import com.alibaba.fastjson2.JSON;
+import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,8 +14,10 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.util.StringUtils;
 
 /**
@@ -41,6 +46,7 @@ public class AiConversationTurnMemory {
     private Long lastFocusedStoreId;
     private String lastFocusedStoreName;
     private String lastFocusType;
+    /** AnswerPlan/经营诊断 harness 出现过的菜名（逗号分隔），多轮点名菜与门店收窄对齐用；与 {@link #lastFocusType} 独立。 */
     private String lastFocusName;
 
     /** 上一轮 Run 结束时 {@link AiResolvedQueryContext#getEffectiveScopeSource()}，便于多轮收窄诊断 */
@@ -56,6 +62,12 @@ public class AiConversationTurnMemory {
     private String lastMentionedStore;
     /** 菜品毛利追问：点名的菜名，用于多轮「实际成本呢」继承。 */
     private String lastMentionedDishName;
+
+    /**
+     * Harness / 解析多店对比对齐出的店名（≥2）；持久化时嵌入 {@link #lastToolSummary} 前缀
+     * {@code harness_ms_json=[...]|}。
+     */
+    private List<String> lastHarnessMultiStoreMatchedStores;
 
     public static AiConversationTurnMemory fromCompletedState(AiRunState state) {
         if (state == null) {
@@ -103,6 +115,20 @@ public class AiConversationTurnMemory {
             effectiveQ = ctx.getNormalizedQuestion();
         }
 
+        String dishForMemory = trimSummary(ctx != null ? ctx.getMentionedDishName() : null);
+        if (!StringUtils.hasText(dishForMemory) && ctx != null) {
+            var qiRank = ctx.getQueryIntent();
+            String sw = qiRank != null
+                    ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qiRank.getStructuredIntentDetail())
+                    : null;
+            if (AiQuerySemanticLexicon.isDishProfitRankingStructuredDetail(sw)) {
+                AiConversationTurnMemory p = ctx.getPreviousTurn();
+                if (p != null && StringUtils.hasText(p.getLastMentionedDishName())) {
+                    dishForMemory = trimSummary(p.getLastMentionedDishName());
+                }
+            }
+        }
+
         return AiConversationTurnMemory.builder()
                 .conversationId(state.getConversationId())
                 .previousRunId(state.getRunId())
@@ -119,14 +145,15 @@ public class AiConversationTurnMemory {
                         ? ctx.getOrgScope().getCurrentStoreDepartmentId() : null)
                 .lastFocusedStoreName(resolveFocusedStoreName(ctx != null ? ctx.getOrgScope() : null))
                 .lastFocusType(null)
-                .lastFocusName(null)
+                .lastFocusName(trimSummary(buildHarnessDishRosterSnapshot(state)))
                 .lastEffectiveScopeSource(ctx != null ? ctx.getEffectiveScopeSource() : null)
                 .lastEffectiveQuestion(effectiveQ != null ? effectiveQ.trim() : null)
                 .lastAnswerSummary(trimSummary(state.getFinalAnswerText()))
                 .lastToolSummary(trimToolSummary(
                         maybePrefixPurchaseAllSourceCarryStats(state, summarizeToolChain(state))))
                 .lastMentionedStore(trimSummary(resolveMentionedStoreDisplay(ctx)))
-                .lastMentionedDishName(trimSummary(ctx != null ? ctx.getMentionedDishName() : null))
+                .lastMentionedDishName(dishForMemory)
+                .lastHarnessMultiStoreMatchedStores(copyHarnessStoreList(ctx.getHarnessMultiStoreMatchedStores()))
                 .build();
     }
 
@@ -188,6 +215,7 @@ public class AiConversationTurnMemory {
                 .lastToolSummary("harness_replay:resolver_only")
                 .lastMentionedStore(trimSummary(resolveHarnessMentioned(ctx)))
                 .lastMentionedDishName(trimSummary(ctx.getMentionedDishName()))
+                .lastHarnessMultiStoreMatchedStores(copyHarnessStoreList(ctx.getHarnessMultiStoreMatchedStores()))
                 .build();
     }
 
@@ -345,6 +373,39 @@ public class AiConversationTurnMemory {
         return s != null ? s.getStoreName() : null;
     }
 
+    public static String embedHarnessMultiStoreInToolSummary(String existing, List<String> names) {
+        if (names == null || names.isEmpty()) {
+            return existing;
+        }
+        String json = JSON.toJSONString(names);
+        return "harness_ms_json=" + json + "|" + (existing != null ? existing : "");
+    }
+
+    public static List<String> readHarnessMultiStoreFromToolSummary(String toolSummary) {
+        if (!StringUtils.hasText(toolSummary) || !toolSummary.startsWith("harness_ms_json=")) {
+            return null;
+        }
+        int pipe = toolSummary.indexOf('|');
+        int prefixLen = "harness_ms_json=".length();
+        if (pipe <= prefixLen) {
+            return null;
+        }
+        try {
+            String json = toolSummary.substring(prefixLen, pipe);
+            List<String> list = JSON.parseArray(json, String.class);
+            return list == null || list.isEmpty() ? null : list;
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private static List<String> copyHarnessStoreList(List<String> in) {
+        if (in == null || in.isEmpty()) {
+            return null;
+        }
+        return new ArrayList<>(in);
+    }
+
     private static String trimSummary(String t) {
         if (t == null) {
             return null;
@@ -354,6 +415,9 @@ public class AiConversationTurnMemory {
     }
 
     private static String fallbackPathFromFlags(AiRunState state) {
+        if (state.isBusinessDiagnosisPath()) {
+            return com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS;
+        }
         if (state.isDishProfitPath()) {
             return com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_DISH_PROFIT;
         }
@@ -365,6 +429,9 @@ public class AiConversationTurnMemory {
         }
         if (state.isStockReduceQueryPath()) {
             return com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY;
+        }
+        if (state.isRevenueOverviewPath()) {
+            return com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW;
         }
         if (state.isPurchaseOverviewPath()) {
             return com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW;
@@ -380,6 +447,8 @@ public class AiConversationTurnMemory {
             return null;
         }
         return switch (path) {
+            case com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS ->
+                    com.nongxinle.ai.context.AiResolvedQueryIntent.BUSINESS_DIAGNOSIS;
             case com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_DISH_PROFIT ->
                     com.nongxinle.ai.context.AiResolvedQueryIntent.DISH_PROFIT;
             case com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW ->
@@ -388,12 +457,72 @@ public class AiConversationTurnMemory {
                     com.nongxinle.ai.context.AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW;
             case com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY ->
                     com.nongxinle.ai.context.AiResolvedQueryIntent.STOCK_REDUCE_QUERY;
+            case com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW ->
+                    com.nongxinle.ai.context.AiResolvedQueryIntent.REVENUE_OVERVIEW;
             case com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW ->
                     com.nongxinle.ai.context.AiResolvedQueryIntent.PURCHASE_OVERVIEW;
             case com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_COST_DIAGNOSIS ->
                     com.nongxinle.ai.context.AiResolvedQueryIntent.COST_DIAGNOSIS;
             default -> null;
         };
+    }
+
+    private static final int MAX_HARNESS_DISH_ROSTER_CHARS = 512;
+
+    private static String buildHarnessDishRosterSnapshot(AiRunState state) {
+        if (state == null) {
+            return null;
+        }
+        Set<String> names = new LinkedHashSet<>();
+        collectDishNamesFromAnswerPlan(state.getDishProfitAnswerPlan(), names);
+        BusinessDiagnosisPlan bd = state.getBusinessDiagnosisPlan();
+        if (bd != null) {
+            if (bd.getFocusTargets() != null && bd.getFocusTargets().getDishes() != null) {
+                for (String d : bd.getFocusTargets().getDishes()) {
+                    if (StringUtils.hasText(d)) {
+                        names.add(d.trim());
+                    }
+                }
+            }
+            if (bd.getSourceResultSummary() != null && bd.getSourceResultSummary().getDishProfit() != null) {
+                String low = bd.getSourceResultSummary().getDishProfit().getLowestMarginDish();
+                if (StringUtils.hasText(low)) {
+                    names.add(low.trim());
+                }
+            }
+        }
+        if (names.isEmpty()) {
+            return null;
+        }
+        String joined = String.join(",", names);
+        if (joined.length() > MAX_HARNESS_DISH_ROSTER_CHARS) {
+            return joined.substring(0, MAX_HARNESS_DISH_ROSTER_CHARS);
+        }
+        return joined;
+    }
+
+    private static void collectDishNamesFromAnswerPlan(DishProfitAnswerPlan ap, Set<String> out) {
+        if (ap == null || out == null) {
+            return;
+        }
+        appendAnswerPlanRowDishNames(ap.getFocusRows(), out);
+        appendAnswerPlanRowDishNames(ap.getSecondaryRows(), out);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void appendAnswerPlanRowDishNames(List<?> rows, Set<String> out) {
+        if (rows == null) {
+            return;
+        }
+        for (Object row : rows) {
+            if (!(row instanceof Map)) {
+                continue;
+            }
+            Object dn = ((Map<String, Object>) row).get("dishName");
+            if (dn != null && StringUtils.hasText(dn.toString())) {
+                out.add(dn.toString().trim());
+            }
+        }
     }
 
     /** 用于范围追问：当前可见门店「名称」列表（去空） */

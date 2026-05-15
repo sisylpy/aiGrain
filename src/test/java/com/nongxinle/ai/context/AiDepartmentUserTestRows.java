@@ -1,13 +1,19 @@
 package com.nongxinle.ai.context;
 
 import com.nongxinle.entity.GbDepartmentEntity;
+import com.nongxinle.entity.GbDepartmentUserEntity;
 import com.nongxinle.mapper.GbDepartmentMapper;
+import com.nongxinle.service.GbDepartmentUserService;
+import com.nongxinle.utils.GbConstants;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /** 单测：拼装 {@link GbDepartmentUserEntity} stub 与带 mock 的 {@link AiUserContextResolver}。 */
 public final class AiDepartmentUserTestRows {
+
+    /** 与历史单测约定的门店店长 {@code gb_department_user} 主键（departmentId 常为 100）。 */
+    public static final int STORE_MANAGER_TEST_USER_PK = 902;
 
     private AiDepartmentUserTestRows() {
     }
@@ -18,6 +24,14 @@ public final class AiDepartmentUserTestRows {
 
     public static GbDepartmentUserEntity storeManager(int userPk, int deptId, int distributerId) {
         return baseRow(userPk, GbConstants.DepartmentUserRole.STORE_MANAGER_APP, deptId, distributerId);
+    }
+
+    public static GbDepartmentUserEntity financeManager(int userPk, int deptId, int distributerId) {
+        return baseRow(userPk, GbConstants.DepartmentUserRole.FINANCE_MANAGER_AI_APP, deptId, distributerId);
+    }
+
+    public static GbDepartmentUserEntity marketingManager(int userPk, int deptId, int distributerId) {
+        return baseRow(userPk, GbConstants.DepartmentUserRole.MARKETING_MANAGER_AI_APP, deptId, distributerId);
     }
 
     public static GbDepartmentUserEntity storePurchaser(int userPk, int deptId, int distributerId) {

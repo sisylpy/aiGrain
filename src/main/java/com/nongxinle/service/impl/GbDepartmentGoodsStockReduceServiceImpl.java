@@ -186,6 +186,12 @@ public class GbDepartmentGoodsStockReduceServiceImpl extends ServiceImpl<GbDepar
     }
 
     @Override
+    public List<Map<String, Object>> queryStockOutboundTimesTopForRetailFathers(Map<String, Object> map) {
+        List<Map<String, Object>> list = gbDepartmentGoodsStockReduceMapper.queryStockOutboundTimesTopForRetailFathers(map);
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
     public List<Map<String, Object>> queryGbPurchaseGoodsTopDay(Map<String, Object> map) {
         return gbDepartmentGoodsStockReduceMapper.queryGbPurchaseGoodsTopDay(map);
     }

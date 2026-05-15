@@ -9,27 +9,17 @@ import com.nongxinle.mapper.GbDepartmentMapper;
 import com.nongxinle.service.GbDepartmentUserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 装配 {@link AiUserContext}：默认从 {@code gb_department_user} 按主键读取
- * {@code gb_du_admin}，经 {@link AiRoleMapper} 映射为可读 {@code roleCode}。
- * <p>
- * 仅当前端传递 {@linkplain AiRoleCodes#FINANCE_MANAGER} /
- * {@linkplain AiRoleCodes#MARKETING_MANAGER} 等为「过渡期 / 单测合成角色」，
- * 可跳过数据库（不走 admin）。
+ * 装配 {@link AiUserContext}：从 {@code gb_department_user} 按主键读取 {@code gb_du_admin}，
+ * 经 {@link AiRoleMapper} 映射为可读 {@code roleCode}。
  */
 @Component
 @RequiredArgsConstructor
 public class AiUserContextResolver {
-
-    /** 单测锚点 pk：请与 mock 的行数据一致（如门店 dept=100）。 */
-    public static final long TEST_STORE_MANAGER_UID = 902L;
-
-    public static final long TEST_REGION_MANAGER_UID = 903L;
 
     private final GbDepartmentUserService departmentUserService;
     private final GbDepartmentMapper gbDepartmentMapper;
@@ -37,10 +27,6 @@ public class AiUserContextResolver {
     public AiUserContext resolve(AiRunCreateRequest req) {
         if (req == null || req.getUserId() == null) {
             throw new IllegalArgumentException("AiRunCreateRequest.userId required for AiUserContext");
-        }
-        String trimmedRole = normalizeRole(req.getRoleCode());
-        if (AiRoleCodes.isLegacySyntheticRoleCode(trimmedRole)) {
-            return resolveLegacySynthetic(req, trimmedRole);
         }
 
         long uidLong = req.getUserId();
@@ -59,35 +45,6 @@ public class AiUserContextResolver {
         }
         AiRoleMapper.AiRoleDefinition def = AiRoleMapper.requireAdmin(admin);
         return buildFromGbRow(row, def);
-    }
-
-    /** 过渡期：显式 FINANCE_MANAGER / MARKETING_MANAGER，不读取 DB。 */
-    private AiUserContext resolveLegacySynthetic(AiRunCreateRequest req, String roleCode) {
-        Long dept = req.getDepartmentId();
-        Long dis = req.getDistributerId();
-        Long uid = req.getUserId();
-        Long storeRoot = normalizeToStoreRootDepartmentId(dept);
-        List<Long> stores = storeRoot != null && !AiRoleMapper.isGroupWideOrgScope(roleCode)
-                ? new ArrayList<>(List.of(storeRoot))
-                : new ArrayList<>();
-
-        String name = AiRoleCodes.FINANCE_MANAGER.equals(roleCode)
-                ? "财务(过渡期合成)"
-                : "营销运营(过渡期合成)";
-        return AiUserContext.builder()
-                .userId(uid)
-                .sourceAdminRole(null)
-                .roleCode(roleCode)
-                .roleName(name)
-                .departmentFatherId(null)
-                .departmentId(dept)
-                .storeId(storeRoot != null ? storeRoot : dept)
-                .distributerId(dis)
-                .regionId(null)
-                .groupId(null)
-                .allowedStoreIds(stores)
-                .permissions(new ArrayList<>(AiRoleMapper.permissionsForAiRole(roleCode)))
-                .build();
     }
 
     private AiUserContext buildFromGbRow(GbDepartmentUserEntity row, AiRoleMapper.AiRoleDefinition def) {
@@ -156,12 +113,5 @@ public class AiUserContextResolver {
             case AiRoleCodes.REGION_MANAGER, AiRoleCodes.REGION_PURCHASER, AiRoleCodes.REGION_WAREHOUSE -> deptId;
             default -> null;
         };
-    }
-
-    private static String normalizeRole(String roleCode) {
-        if (!StringUtils.hasText(roleCode)) {
-            return null;
-        }
-        return roleCode.trim();
     }
 }

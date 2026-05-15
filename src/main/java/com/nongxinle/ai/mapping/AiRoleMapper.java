@@ -74,6 +74,12 @@ public final class AiRoleMapper {
         m.put(GbConstants.DepartmentUserRole.REGION_WAREHOUSE_APP,
                 new AiRoleDefinition(GbConstants.DepartmentUserRole.REGION_WAREHOUSE_APP,
                         AiRoleCodes.REGION_WAREHOUSE, "区域库房"));
+        m.put(GbConstants.DepartmentUserRole.FINANCE_MANAGER_AI_APP,
+                new AiRoleDefinition(GbConstants.DepartmentUserRole.FINANCE_MANAGER_AI_APP,
+                        AiRoleCodes.FINANCE_MANAGER, "财务端"));
+        m.put(GbConstants.DepartmentUserRole.MARKETING_MANAGER_AI_APP,
+                new AiRoleDefinition(GbConstants.DepartmentUserRole.MARKETING_MANAGER_AI_APP,
+                        AiRoleCodes.MARKETING_MANAGER, "营销运营端"));
         BY_ADMIN = Collections.unmodifiableMap(m);
     }
 
@@ -164,7 +170,6 @@ public final class AiRoleMapper {
                     Set.of(AiPermissions.VIEW_STOCK, AiPermissions.VIEW_PURCHASE,
                             AiPermissions.ACCESS_BUSINESS_WORKSPACE,
                             AiPermissions.ACCESS_REPORT_WORKSPACE)),
-            /** 仅供单测/过渡期 */
             entry(AiRoleCodes.FINANCE_MANAGER, buildFinanceManagerSynthetic()),
             entry(AiRoleCodes.MARKETING_MANAGER,
                     Set.of(AiPermissions.ACCESS_MARKETING_WORKSPACE)));
