@@ -10,11 +10,12 @@ import com.nongxinle.ai.platform.dto.StopRunOutcome;
 import com.nongxinle.ai.resolver.AiResolvedQueryContextResolver;
 import com.nongxinle.ai.core.AiGraphRunner;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.core.AiWorkspaceMode;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
 import com.nongxinle.ai.platform.dto.AiRunStartResult;
 import com.nongxinle.ai.scope.AiConversationScopeMode;
 import com.nongxinle.entity.GbAiConversationEntity;
-import com.nongxinle.service.GbAiChatService;
+import com.nongxinle.ai.conversation.AiConversationCoreService;
 import com.nongxinle.ai.planner.BusinessDiagnosisCompositeExecutionMode;
 import com.nongxinle.ai.planner.BusinessDiagnosisCompositeExecutionResult;
 import com.nongxinle.ai.planner.BusinessDiagnosisCompositeExecutionService;
@@ -25,7 +26,7 @@ import com.nongxinle.ai.planner.ShadowPolicy;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.trace.AiAgentTraceService;
 import com.nongxinle.ai.followup.AiFollowUpConversationMemory;
-import com.nongxinle.ai.followup.FollowUpIntentResolveService;
+import com.nongxinle.ai.followup.AiFollowUpIntentSnapshotSupport;
 import com.nongxinle.ai.followup.AiFollowUpIntentSnapshot;
 import com.nongxinle.ai.harness.AiHarnessResolvedContextSummarizer;
 import com.nongxinle.ai.trace.AiRunSession;
@@ -33,6 +34,7 @@ import com.nongxinle.ai.trace.AiRunSessionRegistry;
 import com.nongxinle.ai.conversation.AiConversationMemoryService;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
+import com.nongxinle.service.GbAiWorkflowRunService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -51,6 +53,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Service
@@ -66,7 +69,9 @@ public class AiRunService {
     private final AiFollowUpConversationMemory followUpConversationMemory;
     private final AiResolvedQueryContextResolver resolvedQueryContextResolver;
     private final AiConversationMemoryService conversationMemoryService;
-    private final GbAiChatService gbAiChatService;
+    private final AiConversationCoreService conversationCoreService;
+    private final AiRunMessagePersistenceService runMessagePersistence;
+    private final GbAiWorkflowRunService gbAiWorkflowRunService;
 
     /** C-58：仅 Harness {@code GRAPH_RUN} 在满足条件时跑 Composite PlannerExecutor（不替换主链路终稿）。 */
     private final BusinessDiagnosisCompositeExecutionService businessDiagnosisCompositeExecutionService;
@@ -98,15 +103,16 @@ public class AiRunService {
             throw new IllegalArgumentException("message required");
         }
 
+        GbAiConversationEntity conv;
         if (req.getConversationId() == null) {
             AiConversationScopeMode mode = inferAgentRunScopeMode(req);
-            GbAiConversationEntity conv = gbAiChatService.createNewConversationForAgentRun(
+            conv = conversationCoreService.createNewConversationForAgentRun(
                     req.getDepartmentId(), req.getDistributerId(), mode, req.getUserId(), 0);
             req.setConversationId(conv.getGbAiConversationId());
             log.info("[AiRunService] created conversationId={} userId={} mode={}",
                     conv.getGbAiConversationId(), req.getUserId(), mode);
         } else {
-            gbAiChatService.requireConversationOwnedByUser(req.getConversationId(), req.getUserId());
+            conv = conversationCoreService.requireConversationOwnedByUser(req.getConversationId(), req.getUserId());
         }
 
         long runId = sessionRegistry.nextRunId();
@@ -120,6 +126,14 @@ public class AiRunService {
 
         logResolvedQueryContext(runId, req.getConversationId(), resolved);
         logHarnessTurnMemory(runId, req.getConversationId(), resolved);
+
+        // 用户消息正文固定用请求原始字段（不归一化、不替换为 normalizedUserInput）
+        runMessagePersistence.persistUserMessageForRun(
+                conv.getGbAiConversationId(),
+                req.getUserId(),
+                conv.getGbAiConversationType() != null ? conv.getGbAiConversationType() : 0,
+                runId,
+                req.getMessage());
 
         AiRunSession session = new AiRunSession(runId, state);
         sessionRegistry.register(session);
@@ -145,12 +159,14 @@ public class AiRunService {
         }
         return AiRunState.builder()
                 .runId(runId)
+                .advisorId(req.getAdvisorId())
                 .conversationId(req.getConversationId())
                 .userId(req.getUserId())
                 .departmentId(req.getDepartmentId())
                 .distributerId(req.getDistributerId())
                 .aiUserContext(uc)
                 .resolvedQueryContext(resolved)
+                .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
                 .userRole(uc.getRoleCode())
                 .rawUserInput(req.getMessage())
                 .normalizedUserInput(normalizedInput)
@@ -229,7 +245,7 @@ public class AiRunService {
         if (today == null) {
             throw new IllegalArgumentException("today required");
         }
-        gbAiChatService.requireConversationOwnedByUser(req.getConversationId(), req.getUserId());
+        conversationCoreService.requireConversationOwnedByUser(req.getConversationId(), req.getUserId());
 
         var uc = userContextResolver.resolve(req);
         AiResolvedQueryContext resolved = resolvedQueryContextResolver.resolve(runId, req, uc, today);
@@ -269,7 +285,7 @@ public class AiRunService {
                 conversationMemoryService.rememberCompletedTurn(
                         ended.getUserId(), ended.getConversationId(), turnMemory);
             }
-            AiFollowUpIntentSnapshot snap = FollowUpIntentResolveService.snapshotFromCompletedState(ended);
+            AiFollowUpIntentSnapshot snap = AiFollowUpIntentSnapshotSupport.snapshotFromCompletedState(ended);
             if (snap != null && ended.getUserId() != null) {
                 followUpConversationMemory.remember(ended.getUserId(), ended.getConversationId(), snap);
             }
@@ -474,6 +490,7 @@ public class AiRunService {
         envelopePutCompositeGateAndExecution(session.getState(), runStarted);
         eventPublisher.publish(runId, "run_started", runStarted);
         traceService.insertRunStarting(runId, session.getState());
+        AtomicReference<String> terminalErrorMessage = new AtomicReference<>(null);
         try {
             endedState = graphRunner.runBusinessGraph(session.getState());
             if (!endedState.isCancelled()) {
@@ -552,14 +569,6 @@ public class AiRunService {
             } else {
                 data.put("diagnosisPlanPresent", false);
             }
-            if (endedState.getBusinessDiagnosisPlan() != null) {
-                try {
-                    data.put("businessDiagnosisPlan",
-                            JSON.parseObject(JSON.toJSONString(endedState.getBusinessDiagnosisPlan())));
-                } catch (Exception ignore) {
-                    data.put("businessDiagnosisPlanWarning", "serialize_failed");
-                }
-            }
             if (harnessDebugContextEnabled && endedState.getResolvedQueryContext() != null) {
                 try {
                     data.put("resolvedQueryContextSummary", AiHarnessResolvedContextSummarizer.summarize(
@@ -580,13 +589,29 @@ public class AiRunService {
             eventPublisher.publish(runId, "answer_delta", delta);
 
             session.setStatus(endedState.isCancelled() ? AiRunStatus.CANCELLED : AiRunStatus.COMPLETED);
+
+            String assistantContent;
+            String assistantStatusName;
+            if (endedState.isCancelled()) {
+                assistantContent = AiRunMessagePersistenceService.ASSISTANT_CANCELLED_FALLBACK;
+                assistantStatusName = AiRunStatus.CANCELLED.name();
+            } else {
+                assistantContent = answerText;
+                assistantStatusName = AiRunStatus.COMPLETED.name();
+            }
+            try {
+                persistRunTerminalAssistantHistory(endedState, runId, assistantContent, assistantStatusName);
+            } catch (Exception persistEx) {
+                log.warn("[AiRunService] persist assistant history failed runId={}: {}", runId, persistEx.toString());
+            }
+
             if (!endedState.isCancelled()) {
                 AiConversationTurnMemory turnMemory = AiConversationTurnMemory.fromCompletedState(endedState);
                 if (turnMemory != null && endedState.getUserId() != null) {
                     conversationMemoryService.rememberCompletedTurn(
                             endedState.getUserId(), endedState.getConversationId(), turnMemory);
                 }
-                AiFollowUpIntentSnapshot snap = FollowUpIntentResolveService.snapshotFromCompletedState(endedState);
+                AiFollowUpIntentSnapshot snap = AiFollowUpIntentSnapshotSupport.snapshotFromCompletedState(endedState);
                 if (snap != null && endedState.getUserId() != null) {
                     followUpConversationMemory.remember(endedState.getUserId(), endedState.getConversationId(), snap);
                 }
@@ -595,7 +620,17 @@ public class AiRunService {
             log.warn("[AiRunService] runId={} failed: {}", runId, e.toString(), e);
             session.setStatus(AiRunStatus.FAILED);
             String msg = e.getMessage() == null ? "unknown_error" : e.getMessage();
+            terminalErrorMessage.set(msg);
             eventPublisher.publishError(runId, msg, msg, e.getClass().getSimpleName(), e.getClass().getSimpleName(), null);
+            try {
+                persistRunTerminalAssistantHistory(
+                        session.getState(),
+                        runId,
+                        AiRunMessagePersistenceService.ASSISTANT_FAILURE_FALLBACK,
+                        AiRunStatus.FAILED.name());
+            } catch (Exception persistEx) {
+                log.warn("[AiRunService] persist FAILED assistant history runId={}: {}", runId, persistEx.toString());
+            }
         } finally {
             String workspaceMode = endedState.getWorkspaceMode() == null ? null : endedState.getWorkspaceMode().name();
             traceService.updateRunFinished(
@@ -605,6 +640,15 @@ public class AiRunService {
                     System.currentTimeMillis() - t0,
                     workspaceMode
             );
+            try {
+                gbAiWorkflowRunService.markTerminalByHarnessRunId(
+                        runId,
+                        session.getStatus(),
+                        endedState != null ? endedState.getFinalAnswerText() : null,
+                        terminalErrorMessage.get());
+            } catch (Exception wfEx) {
+                log.warn("[AiRunService] workflow_run terminal update failed runId={}: {}", runId, wfEx.toString(), wfEx);
+            }
             Map<String, Object> fin = new HashMap<>();
             fin.put("status", sseStatusForFrontend(session.getStatus()));
             fin.put("displayText", runFinishedDisplayText(session.getStatus()));
@@ -614,6 +658,28 @@ public class AiRunService {
             eventPublisher.publish(runId, "run_finished", fin);
             session.completeEmitters();
         }
+    }
+
+    /**
+     * 写入本轮 assistant 消息（幂等 upsert）并刷新会话指针；与 SSE / Graph 解耦。
+     */
+    private void persistRunTerminalAssistantHistory(AiRunState state, long runId, String content, String assistantStatusName) {
+        if (state == null || state.getConversationId() == null || state.getUserId() == null) {
+            return;
+        }
+        Integer messageType = runMessagePersistence.resolveConversationMessageType(state.getConversationId());
+        Long assistantMessageId = runMessagePersistence.persistAssistantMessageForRun(
+                state.getConversationId(),
+                state.getUserId(),
+                messageType,
+                runId,
+                content,
+                assistantStatusName);
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        String effIntent = rq != null ? rq.getEffectiveIntentCode() : null;
+        String effPath = rq != null ? rq.getEffectivePathCode() : null;
+        runMessagePersistence.updateConversationAfterRunMessage(
+                state.getConversationId(), runId, assistantMessageId, effIntent, effPath);
     }
 
     /**
@@ -849,6 +915,11 @@ public class AiRunService {
         envelope.put("structuredIntentDetailCode", sum.get("structuredIntentDetailCode"));
         envelope.put("structuredIntentDetailPresent", sum.get("structuredIntentDetailPresent"));
         envelope.put("purchaseSourceType", sum.get("purchaseSourceType"));
+        envelope.put("supplierAnalysisAgentUsed", sum.get("supplierAnalysisAgentUsed"));
+        envelope.put("supplierAnalysisAgentStatus", sum.get("supplierAnalysisAgentStatus"));
+        envelope.put("supplierAnalysisPlanType", sum.get("supplierAnalysisPlanType"));
+        envelope.put("purchaseSelectedAgents", sum.get("purchaseSelectedAgents"));
+        envelope.put("masterBusinessAgentDebug", sum.get("masterBusinessAgentDebug"));
         envelope.put("stockReduceType", sum.get("stockReduceType"));
         envelope.put("dishProfitStructuredDetail", sum.get("dishProfitStructuredDetail"));
         envelope.put("mentionedDishName", sum.get("mentionedDishName"));
@@ -888,10 +959,17 @@ public class AiRunService {
         envelope.put("diagnosisPlan", sum.get("diagnosisPlan"));
         envelope.put("diagnosisPlanPresent", sum.get("diagnosisPlanPresent"));
         envelope.put("diagnosisPlanType", sum.get("diagnosisPlanType"));
-        envelope.put("businessDiagnosisPlan", sum.get("businessDiagnosisPlan"));
         envelope.put("diagnosisRiskLevel", sum.get("diagnosisRiskLevel"));
         envelope.put("diagnosisDataCompleteness", sum.get("diagnosisDataCompleteness"));
         envelope.put("planSource", sum.get("planSource"));
+        envelope.put("warehouseStockAgentUsed", sum.get("warehouseStockAgentUsed"));
+        envelope.put("warehouseStockAgentStatus", sum.get("warehouseStockAgentStatus"));
+        envelope.put("warehouseStockOverviewToolSuccess", sum.get("warehouseStockOverviewToolSuccess"));
+        envelope.put("warehouseStockPlanType", sum.get("warehouseStockPlanType"));
+        envelope.put("warehouseStockResultCount", sum.get("warehouseStockResultCount"));
+        envelope.put("warehouseStockOverviewPath", sum.get("warehouseStockOverviewPath"));
+        envelope.put("groupWarehouseStockOverview", sum.get("groupWarehouseStockOverview"));
+        envelope.put("consumedAnswerPlans", sum.get("consumedAnswerPlans"));
         envelope.put("compositeGateAllowed", sum.get("compositeGateAllowed"));
         envelope.put("compositeGateReasonCode", sum.get("compositeGateReasonCode"));
         envelope.put("compositeGateReason", sum.get("compositeGateReason"));

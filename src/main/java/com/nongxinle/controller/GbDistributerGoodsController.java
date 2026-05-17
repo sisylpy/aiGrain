@@ -45,8 +45,6 @@ public class GbDistributerGoodsController {
 
 
 
-
-
     @RequestMapping(value = "/changeGbGoodsFresh", method = RequestMethod.POST)
     @ResponseBody
     public R changeGbGoodsFresh(@RequestBody GbDistributerGoodsEntity gbGoods) {
@@ -159,12 +157,12 @@ public class GbDistributerGoodsController {
 
 
 
-    //
-//	/**
-//	 * 批发商商品详细
-//	 * @param disGoodsId 批发商商品id
-//	 * @return 含有客户的商品
-//	 */
+
+	/**
+	 * 批发商商品详细
+	 * @param disGoodsId 批发商商品id
+	 * @return 含有客户的商品
+	 */
     @RequestMapping(value = "/gbDisGetGoodsDetail/{disGoodsId}")
     @ResponseBody
     public R gbDisGetGoodsDetail(@PathVariable Integer disGoodsId) {

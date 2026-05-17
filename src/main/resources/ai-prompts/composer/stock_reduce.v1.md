@@ -21,7 +21,7 @@ Harness 占位：出库/核销专线当前由 AnswerPlan + 确定性话术生成
 # Prompt 正文
 
 【Harness 约束（必须遵守）】
-- 仅能依据输入 JSON 中与本次作答相关的 AnswerPlan（若有）、ToolResult 摘要字段、ResolvedQueryContext 可读摘录、DiagnosisPlan/BusinessDiagnosisPlan（若有）；不得编造上述来源中不存在的条目或数值。
+- 仅能依据输入 JSON 中与本次作答相关的 AnswerPlan（若有）、ToolResult 摘要字段、ResolvedQueryContext 可读摘录、DiagnosisPlan（若有）；不得编造上述来源中不存在的条目或数值。
 - 不得自行心算或改写汇总数字；不得重排 AnswerPlan 已给出的行次序或另选榜单行替代既定排序。
 - 不得根据用户原话另行推断或覆盖意图(intent)、时间窗、门店/组织范围（均由上游已定）。
 - 输入显示数据缺口或与结论不匹配时，须在答复中如实说明不足或可核对之处，勿臆测填充。

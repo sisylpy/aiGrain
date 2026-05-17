@@ -5,7 +5,7 @@
 # AI Run 权限模型（第一版 · 代码配置）
 
 > **事实来源**：业务用户主数据表 **`gb_department_user`**，字段 **`gb_du_admin`**（与 `GbConstants.DepartmentUserRole` 常量一致）。  
-> **AI 层原则**：数字 `admin` **不**在 Tool/日志/文档中直接当主键使用；统一经 **`com.nongxinle.ai.mapping.AiRoleMapper`** 映射为可读 **`roleCode`**，再绑定 **`AiPermissions`**，最后由 **`AiPermissionGuard`** / **`AiWorkspaceAccessGuard`** 校验。  
+> **AI 层原则**：数字 `admin` **不**在 Tool/日志/文档中直接当主键使用；统一经 **`com.nongxinle.ai.mapping.AiRoleMapper`** 映射为可读 **`roleCode`**，再绑定 **`AiPermissions`**，最后由 **`AiPermissionGuard`** 在 Tool / 专线 Agent 前校验。旧 **`AiWorkspaceAccessGuard`**（关键词工作台路由）已删除，见 **`docs/legacy-reference/workspace-keyword-route-and-guard.md`**。  
 > **`AiUserContext`**：`sourceAdminRole` 存原始 **`admin`**，`roleCode` / `roleName` 为映射结果；`departmentId`/`distributerId`/`departmentFatherId` 来自 `gb_department_user` 挂靠列。
 
 ---
@@ -109,14 +109,9 @@
 
 ---
 
-## 5. Workspace 入口（路由后）
+## 5. Workspace 入口（权限码保留 · 关键词路由已删）
 
-| `workspaceMode`（路由命中） | 所需 permission |
-|-----------------------------|----------------|
-| `MARKETING_GROWTH` | `ACCESS_MARKETING_WORKSPACE` |
-
-缺失时：**`AiWorkspaceAccessGuard`** 降级 **`BUSINESS_CHAT`**，SSE **`WORKSPACE_ACCESS_DENIED`**（见 **`docs/SSE_BACKEND_EVENT_CONTRACT.md`** §6）。  
-报表类工作台（`ACCESS_REPORT_WORKSPACE`）待 Router 接上后复用同一模式。
+**`ACCESS_MARKETING_WORKSPACE`**、**`MARKETING_GROWTH`** 等仍可作为 **`AiPermissions` / `AiUserContext`** 的一部分用于未来产品入口，但 **Runtime 已不再通过 `WorkspaceRouterService` 从用户话术解析 `workspaceMode`**（该类与 **`AiWorkspaceAccessGuard`** 已删除）。历史 **`WORKSPACE_ACCESS_DENIED`** 信封见 **`docs/SSE_BACKEND_EVENT_CONTRACT.md`** §6 与 **`docs/legacy-reference/workspace-keyword-route-and-guard.md`**。
 
 ---
 

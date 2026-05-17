@@ -1,5 +1,7 @@
 package com.nongxinle.ai.harness;
 
+import com.nongxinle.ai.agent.business.BusinessAgentNames;
+import com.nongxinle.ai.agent.business.BusinessDiagnosisAgentV1;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
@@ -15,12 +17,12 @@ import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.resolver.AiMultiTurnTimeWindowPolicy;
 import com.nongxinle.ai.harness.replay.AiHarnessReplayContextProbes;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.AiQuerySemanticTimeLexicon;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
-import com.nongxinle.ai.dto.business.BusinessDiagnosisPlan;
 import com.nongxinle.ai.dto.business.BusinessDiagnosisCompositeComposeResult;
 import com.nongxinle.ai.planner.BusinessDiagnosisCompositeExecutionMode;
 import com.nongxinle.ai.planner.BusinessDiagnosisCompositeExecutionResult;
@@ -55,6 +57,17 @@ public final class AiHarnessResolvedContextSummarizer {
             "businessOverviewSuccessfulDomains",
     };
 
+    /**
+     * 经营概览 MULTI vs CLASSIC 稳定调试契约（与 {@code BusinessOverviewExecutionDebugContract} 写入的 masterDebug 键一致）。
+     */
+    private static final String[] BUSINESS_OVERVIEW_EXECUTION_CONTRACT_KEYS = {
+            "businessOverviewExecutionMode",
+            "classicBusinessOverviewEligible",
+            "classicBusinessOverviewSkipped",
+            "classicBusinessOverviewSkippedReason",
+            "multiBusinessOverviewEligible",
+    };
+
     private AiHarnessResolvedContextSummarizer() {
     }
 
@@ -73,6 +86,7 @@ public final class AiHarnessResolvedContextSummarizer {
         }
         out.put("conversationId", cid);
         out.put("runId", ctx.getRunId());
+        out.put("advisorId", state != null ? state.getAdvisorId() : null);
         out.put("effectiveIntentCode", blankToNull(ctx.getEffectiveIntentCode()));
         out.put("effectivePathCode", blankToNull(ctx.getEffectivePathCode()));
         out.put("intent", blankToNull(ctx.getEffectiveIntentCode()));
@@ -133,6 +147,12 @@ public final class AiHarnessResolvedContextSummarizer {
         out.put("querySemanticV2MentionedDishName", blankToNull(ctx.getQuerySemanticV2MentionedDishName()));
         out.put("querySemanticV2RawText", blankToNull(ctx.getQuerySemanticV2RawText()));
         out.put("querySemanticV2ParseError", blankToNull(ctx.getQuerySemanticV2ParseError()));
+
+        // ── Scope Merge Debug：LLM 原始语义 + 合并过程追踪 ──
+        appendScopeMergeDebugFields(out, ctx);
+
+        // ── Time Merge Debug：LLM 原始时间 + 合并过程追踪 ──
+        appendTimeMergeDebugFields(out, ctx);
 
         out.put("orchestrationTaskMode", blankToNull(ctx.getOrchestrationTaskMode()));
         out.put(
@@ -287,9 +307,12 @@ public final class AiHarnessResolvedContextSummarizer {
         String sidCode = AiQuerySemanticLexicon.toStructuredIntentDetailDebugCode(sidWire);
         // 调试/UI：structuredIntentDetail 为人类可读枚举名（如 SUPPLIER_AMOUNT_RANKING）；wire 放 structuredIntentDetailWire 供 Harness 比对。
         String sidDisplay = sidCode != null ? sidCode : sidWire;
-        // 供货商排行回合故意不把 purchaseSourceType 放进查询意图（全口径挑出真实供货商 Top）；调试面板若为 null 易显示成「未返回」，这里显式标 ALL。
-        if (pst == null && "SUPPLIER_AMOUNT_RANKING".equals(sidCode)) {
-            pst = AiQuerySemanticLexicon.SOURCE_ALL;
+        // 供货商金额排行：queryIntent 可能未带 purchaseSourceType（或仍为 ALL），Debug 与采购 Tool 语义对齐为 SUPPLIER_PURCHASE。
+        if (AiQuerySemanticLexicon.isSupplierAmountRankingDetail(sidWire)
+                || "SUPPLIER_AMOUNT_RANKING".equals(sidCode)) {
+            if (!StringUtils.hasText(pst) || AiQuerySemanticLexicon.SOURCE_ALL.equalsIgnoreCase(pst)) {
+                pst = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE;
+            }
         }
         out.put("purchaseSourceType", pst);
         out.put("structuredIntentDetailWire", sidWire);
@@ -452,9 +475,6 @@ public final class AiHarnessResolvedContextSummarizer {
             out.put("diagnosisPlan", null);
             out.put("diagnosisPlanPresent", false);
             out.put("diagnosisPlanType", null);
-            out.put("businessDiagnosisPlan", null);
-            out.put("businessDiagnosisPlanType", null);
-            applyStorePriorityRankingSummaryFields(out, null);
             out.put("diagnosisRiskLevel", null);
             out.put("diagnosisDataCompleteness", null);
             out.put("businessStoreCompareEvidenceRowsLen", null);
@@ -588,6 +608,7 @@ public final class AiHarnessResolvedContextSummarizer {
             out.put("purchaseAnswerPlanSecondaryRows", null);
             out.put("purchaseAnswerPlanDebug", null);
         }
+        reconcileHarnessPurchaseSourceType(out, state);
         StockReduceAnswerPlan srap = state.getStockReduceAnswerPlan();
         if (srap != null) {
             try {
@@ -689,33 +710,20 @@ public final class AiHarnessResolvedContextSummarizer {
             out.put("diagnosisPlanType", null);
         }
         applyBusinessStoreCompareEvidenceHarnessSummaryFields(out, state);
-        if (state.getBusinessDiagnosisPlan() != null) {
-            try {
-                BusinessDiagnosisPlan bdp = state.getBusinessDiagnosisPlan();
-                out.put("businessDiagnosisPlan", JSON.parseObject(JSON.toJSONString(bdp)));
-                out.put("businessDiagnosisPlanType", blankToNull(bdp.getPlanType()));
-                applyStorePriorityRankingSummaryFields(out, bdp.getStorePriorityRanking());
-                out.put("diagnosisRiskLevel", bdp.getRiskLevel());
-                out.put("diagnosisDataCompleteness", bdp.getDataCompleteness());
-            } catch (Exception ex) {
-                out.put("businessDiagnosisPlan", null);
-                out.put("businessDiagnosisPlanWarning", "serialize_failed");
-                out.put("businessDiagnosisPlanType", null);
-                applyStorePriorityRankingSummaryFields(out, null);
-                out.put("diagnosisRiskLevel", null);
-                out.put("diagnosisDataCompleteness", null);
-            }
-        } else {
-            out.put("businessDiagnosisPlan", null);
-            out.put("businessDiagnosisPlanType", null);
-            applyStorePriorityRankingSummaryFields(out, null);
-            out.put("diagnosisRiskLevel", null);
-            out.put("diagnosisDataCompleteness", null);
-        }
+        // diagnosisRiskLevel / diagnosisDataCompleteness 从新版 DiagnosisPlan 读取
+        DiagnosisPlan dp = state.getDiagnosisPlan();
+        out.put("diagnosisRiskLevel", dp != null ? blankToNull(dp.getRiskLevel()) : null);
+        out.put("diagnosisDataCompleteness", null); // 新版 DiagnosisPlan 无此字段
+
+        mirrorDiagnosisStorePriorityHarnessFields(out, dp);
 
         String pathEff = rqExe != null ? blankToNull(rqExe.getEffectivePathCode()) : null;
         String planSourceResolved = null;
-        if (state.getDiagnosisPlan() != null) {
+        // BUSINESS_DIAGNOSIS 场景：diagnosisPlan 为 primary plan，禁用 purchaseAnswerPlan 抢占主位置
+        // 优先用 state.isBusinessDiagnosisPath()（由 BusinessDataPlannerNode 可靠设置）兜底
+        if (AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(pathEff) || state.isBusinessDiagnosisPath()) {
+            planSourceResolved = state.getDiagnosisPlan() != null ? "diagnosisPlan" : "N/A";
+        } else if (state.getDiagnosisPlan() != null) {
             planSourceResolved = "diagnosisPlan";
         } else if (AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(pathEff)) {
             planSourceResolved = "revenueAnswerPlan";
@@ -723,6 +731,9 @@ public final class AiHarnessResolvedContextSummarizer {
             planSourceResolved = "stockReduceAnswerPlan";
         } else if (AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(pathEff)) {
             planSourceResolved = "purchaseAnswerPlan";
+        } else if (AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(pathEff)
+                || state.isWarehouseStockOverviewPath()) {
+            planSourceResolved = "WarehouseStockAgent";
         } else if (AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(pathEff)) {
             planSourceResolved = AiHarnessReplayContextProbes.HARNESS_PLAN_SOURCE_DISH_SALES_REUSES_DISH_PROFIT_TOOL;
         } else if (AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(pathEff)) {
@@ -755,7 +766,6 @@ public final class AiHarnessResolvedContextSummarizer {
         out.put("finalAnswerTextBlank", null);
         out.put("couponCostInsightBlocked", null);
         out.put("diagnosisPlanExists", null);
-        out.put("businessDiagnosisPlanExists", null);
     }
 
     private static void appendHarnessReplayGraphRunStateProbes(LinkedHashMap<String, Object> out, AiRunState state) {
@@ -793,7 +803,6 @@ public final class AiHarnessResolvedContextSummarizer {
         out.put("finalAnswerTextBlank", Boolean.valueOf(!StringUtils.hasText(fat)));
         out.put("couponCostInsightBlocked", Boolean.valueOf(state.isCouponCostInsightBlocked()));
         out.put("diagnosisPlanExists", Boolean.valueOf(state.getDiagnosisPlan() != null));
-        out.put("businessDiagnosisPlanExists", Boolean.valueOf(state.getBusinessDiagnosisPlan() != null));
     }
 
     private static final int ANSWER_PREVIEW_MAX_LEN = 500;
@@ -853,6 +862,9 @@ public final class AiHarnessResolvedContextSummarizer {
         if (!dishSalesPrimary && state.getDishSalesAnswerPlan() != null) {
             acc.add("DishSalesAnswerPlan");
         }
+        if (warehouseStockOverviewEligibleForConsumedProbe(state)) {
+            acc.add("WarehouseStockOverview");
+        }
         if (acc.isEmpty()) {
             out.put("consumedAnswerPlans", null);
             out.put("missingAnswerPlans", null);
@@ -872,6 +884,24 @@ public final class AiHarnessResolvedContextSummarizer {
         String effPath = rq.getEffectivePathCode() == null ? null : rq.getEffectivePathCode().trim();
         return AiResolvedQueryIntent.DISH_SALES_QUERY.equals(effIntent)
                 || AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(effPath);
+    }
+
+    /**
+     * 库存概览专线：存在 {@code warehouseOverview} 快照或工具信封中已有 {@code warehouse_stock_overview} 结果时，
+     * 将 {@code consumedAnswerPlans} 与 MultiAgent 摘要风格对齐。
+     */
+    private static boolean warehouseStockOverviewEligibleForConsumedProbe(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        if (state.getWarehouseOverview() != null && !state.getWarehouseOverview().isEmpty()) {
+            return true;
+        }
+        if (state.getToolResults() == null || state.getToolResults().isEmpty()) {
+            return false;
+        }
+        Object raw = state.getToolResults().get(AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
+        return raw instanceof Map<?, ?> && !((Map<?, ?>) raw).isEmpty();
     }
 
     private static List<String> stringListFromDebugList(Object raw) {
@@ -909,6 +939,9 @@ public final class AiHarnessResolvedContextSummarizer {
         out.put("revenueToolExecutedByMasterPath", null);
         out.put("purchaseMasterAgentEnabled", null);
         out.put("purchaseMasterAgentUsed", null);
+        out.put("supplierAnalysisAgentUsed", null);
+        out.put("supplierAnalysisAgentStatus", null);
+        out.put("supplierAnalysisPlanType", null);
         out.put("purchaseSelectedAgents", null);
         out.put("purchaseDispatchPlan", null);
         out.put("purchaseAgentResults", null);
@@ -937,6 +970,20 @@ public final class AiHarnessResolvedContextSummarizer {
         out.put("masterStockReduceToolResultSuccess", null);
         out.put("stockReduceToolExecutedByMasterPath", null);
         out.put("stockReduceRequestResolutionDebug", null);
+        out.put("warehouseMasterAgentEnabled", null);
+        out.put("warehouseDispatchPlan", null);
+        out.put("warehouseSelectedAgents", null);
+        out.put("warehouseAgentResults", null);
+        out.put("warehouseAgentResultStatus", null);
+        out.put("warehouseMasterAgentUsed", null);
+        out.put("warehouseToolExecutedByMasterPath", null);
+        out.put("masterWarehouseToolResultSuccess", null);
+        out.put("warehouseFallbackReason", null);
+        out.put("warehouseStockAgentUsed", null);
+        out.put("warehouseStockAgentStatus", null);
+        out.put("warehouseStockOverviewToolSuccess", null);
+        out.put("warehouseStockPlanType", null);
+        out.put("warehouseStockResultCount", null);
         out.put("dishProfitMasterAgentEnabled", null);
         out.put("dishProfitMasterAgentUsed", null);
         out.put("dishProfitSelectedAgents", null);
@@ -959,6 +1006,7 @@ public final class AiHarnessResolvedContextSummarizer {
         out.put("compositeGateDebug", null);
         out.put("compositeGateProductionEnabledSource", null);
         out.put("compositeGateProductionEnabledEffective", null);
+        out.put("masterBusinessAgentDebug", null);
         putCompositeHarnessExecutionFieldDefaults(out);
     }
 
@@ -1007,6 +1055,9 @@ public final class AiHarnessResolvedContextSummarizer {
         String[] purchaseKeys = {
                 "purchaseMasterAgentEnabled",
                 "purchaseMasterAgentUsed",
+                "supplierAnalysisAgentUsed",
+                "supplierAnalysisAgentStatus",
+                "supplierAnalysisPlanType",
                 "purchaseSelectedAgents",
                 "purchaseDispatchPlan",
                 "purchaseAgentResults",
@@ -1038,6 +1089,22 @@ public final class AiHarnessResolvedContextSummarizer {
                 "stockReduceToolExecutedByMasterPath",
                 "stockReduceRequestResolutionDebug",
         };
+        String[] warehouseKeys = {
+                "warehouseMasterAgentEnabled",
+                "warehouseDispatchPlan",
+                "warehouseSelectedAgents",
+                "warehouseAgentResults",
+                "warehouseAgentResultStatus",
+                "warehouseMasterAgentUsed",
+                "warehouseToolExecutedByMasterPath",
+                "masterWarehouseToolResultSuccess",
+                "warehouseFallbackReason",
+                "warehouseStockAgentUsed",
+                "warehouseStockAgentStatus",
+                "warehouseStockOverviewToolSuccess",
+                "warehouseStockPlanType",
+                "warehouseStockResultCount",
+        };
         String[] dishProfitKeys = {
                 "dishProfitMasterAgentEnabled",
                 "dishProfitMasterAgentUsed",
@@ -1064,12 +1131,19 @@ public final class AiHarnessResolvedContextSummarizer {
             for (String k : stockReduceKeys) {
                 out.put(k, null);
             }
+            for (String k : warehouseKeys) {
+                out.put(k, null);
+            }
             for (String k : dishProfitKeys) {
                 out.put(k, null);
             }
             for (String k : BUSINESS_OVERVIEW_MULTI_ORCHESTRATION_FLAT_FALLBACK_KEYS) {
                 out.put(k, null);
             }
+            mirrorBusinessOverviewExecutionContractKeysDefaults(out);
+            out.put("masterBusinessAgentDebug", null);
+            fillSupplierAnalysisHarnessFieldsFromMaster(out, state);
+            fillWarehouseStockHarnessFieldsFromMaster(out, state);
             return;
         }
         Object boNest = md.get("businessOverviewMultiMaster");
@@ -1088,10 +1162,210 @@ public final class AiHarnessResolvedContextSummarizer {
         for (String k : stockReduceKeys) {
             out.put(k, md.get(k));
         }
+        for (String k : warehouseKeys) {
+            out.put(k, md.get(k));
+        }
         for (String k : dishProfitKeys) {
             out.put(k, md.get(k));
         }
         fillFlatBusinessOverviewOrchestrationFieldsFromNestedMultiMaster(out);
+        mirrorBusinessOverviewExecutionContractKeys(out, md);
+        try {
+            out.put(
+                    "masterBusinessAgentDebug",
+                    md == null || md.isEmpty() ? null : JSON.parseObject(JSON.toJSONString(md), Map.class));
+        } catch (Exception ex) {
+            out.put("masterBusinessAgentDebug", null);
+            out.put("masterBusinessAgentDebugWarning", "serialize_failed");
+        }
+        fillSupplierAnalysisHarnessFieldsFromMaster(out, state);
+        fillWarehouseStockHarnessFieldsFromMaster(out, state);
+    }
+
+    /**
+     * 采购 AnswerPlan 已证明供货商金额排行时，将摘要中的 purchaseSourceType 与计划对齐（避免仍为 ALL）。
+     */
+    private static void reconcileHarnessPurchaseSourceType(LinkedHashMap<String, Object> out, AiRunState state) {
+        if (out == null || state == null) {
+            return;
+        }
+        PurchaseAnswerPlan pap = state.getPurchaseAnswerPlan();
+        if (pap == null) {
+            return;
+        }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING.equals(pap.getPlanType())) {
+            out.put("purchaseSourceType", AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE);
+            return;
+        }
+        String pst = pap.getPurchaseSourceType();
+        if (pst != null
+                && !pst.isBlank()
+                && AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equalsIgnoreCase(pst.trim())) {
+            out.put("purchaseSourceType", AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE);
+        }
+    }
+
+    /** Master debug 偶发缺键时，用 purchaseSelectedAgents / AnswerPlan 兜底摊平 supplier_analysis 契约字段。 */
+    private static void fillSupplierAnalysisHarnessFieldsFromMaster(LinkedHashMap<String, Object> out, AiRunState state) {
+        if (out == null) {
+            return;
+        }
+        List<String> sel = stringListFromDebugList(out.get("purchaseSelectedAgents"));
+        boolean supplierSelected =
+                sel != null && sel.contains(BusinessAgentNames.SUPPLIER_ANALYSIS);
+        PurchaseAnswerPlan p = state != null ? state.getPurchaseAnswerPlan() : null;
+        boolean supplierPlan = PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING.equals(out.get("purchaseAnswerPlanType"))
+                || (p != null && PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING.equals(p.getPlanType()));
+        if (!supplierSelected && supplierPlan) {
+            supplierSelected = true;
+        }
+        if (!supplierSelected) {
+            return;
+        }
+        if (!Boolean.TRUE.equals(out.get("supplierAnalysisAgentUsed"))) {
+            out.put("supplierAnalysisAgentUsed", Boolean.TRUE);
+        }
+        if (out.get("supplierAnalysisAgentStatus") == null
+                || "SKIPPED".equals(String.valueOf(out.get("supplierAnalysisAgentStatus")))) {
+            Object st = out.get("purchaseAgentResultStatus");
+            out.put("supplierAnalysisAgentStatus", st != null ? st : null);
+        }
+        if (out.get("supplierAnalysisPlanType") == null) {
+            String pt = p != null ? blankToNull(p.getPlanType()) : null;
+            out.put(
+                    "supplierAnalysisPlanType",
+                    StringUtils.hasText(pt) ? pt : PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING);
+        }
+    }
+
+    /** Master debug 缺键时，库房库存专线用 RunState / 工具信封兜底稳定摊平。 */
+    private static void fillWarehouseStockHarnessFieldsFromMaster(LinkedHashMap<String, Object> out, AiRunState state) {
+        if (out == null || state == null) {
+            return;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return;
+        }
+        boolean whPath =
+                state.isWarehouseStockOverviewPath()
+                        && AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW.equals(rq.getEffectiveIntentCode())
+                        && AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(rq.getEffectivePathCode());
+        if (!whPath) {
+            return;
+        }
+        if (Boolean.FALSE.equals(out.get("warehouseStockAgentUsed"))) {
+            if (out.get("planSource") == null || !StringUtils.hasText(String.valueOf(out.get("planSource")))) {
+                out.put("planSource", "WarehouseStockAgent");
+            }
+            return;
+        }
+        if (out.get("warehouseStockAgentUsed") == null) {
+            out.put("warehouseStockAgentUsed", Boolean.TRUE);
+        }
+        if (out.get("warehouseStockAgentStatus") == null || "SKIPPED".equals(String.valueOf(out.get("warehouseStockAgentStatus")))) {
+            Object st = out.get("warehouseAgentResultStatus");
+            if (st != null) {
+                out.put("warehouseStockAgentStatus", st);
+            } else if (!Boolean.FALSE.equals(out.get("warehouseStockOverviewToolSuccess"))) {
+                out.put("warehouseStockAgentStatus", "SUCCESS");
+            }
+        }
+        if (out.get("warehouseStockOverviewToolSuccess") == null) {
+            Object t = out.get("masterWarehouseToolResultSuccess");
+            if (t instanceof Boolean b) {
+                out.put("warehouseStockOverviewToolSuccess", b);
+            } else {
+                Boolean probed = probeWarehouseStockToolSuccessFromState(state);
+                if (probed != null) {
+                    out.put("warehouseStockOverviewToolSuccess", probed);
+                }
+            }
+        }
+        if (out.get("warehouseStockPlanType") == null) {
+            out.put("warehouseStockPlanType", AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW);
+        }
+        if (out.get("warehouseStockResultCount") == null) {
+            out.put("warehouseStockResultCount", resolveWarehouseStockResultCountFromRunState(state));
+        }
+        if (out.get("planSource") == null || !StringUtils.hasText(String.valueOf(out.get("planSource")))) {
+            out.put("planSource", "WarehouseStockAgent");
+        }
+    }
+
+    private static Boolean probeWarehouseStockToolSuccessFromState(AiRunState state) {
+        if (state == null || state.getToolResults() == null) {
+            return null;
+        }
+        Object raw = state.getToolResults().get(AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
+        if (!(raw instanceof Map<?, ?> envelope)) {
+            return null;
+        }
+        Object s = envelope.get("success");
+        if (s instanceof Boolean b) {
+            return b;
+        }
+        Object data = envelope.get("data");
+        if (data instanceof Map<?, ?> dm && dm.get("warehouseOverview") != null) {
+            return Boolean.TRUE;
+        }
+        return null;
+    }
+
+    private static Integer resolveWarehouseStockResultCountFromRunState(AiRunState state) {
+        if (state == null || state.getToolResults() == null) {
+            return null;
+        }
+        Object raw = state.getToolResults().get(AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
+        if (!(raw instanceof Map<?, ?> envelope)) {
+            return null;
+        }
+        Object data = envelope.get("data");
+        if (!(data instanceof Map<?, ?> dm)) {
+            return null;
+        }
+        Object wo = dm.get("warehouseOverview");
+        if (!(wo instanceof Map<?, ?> wom)) {
+            return null;
+        }
+        Object sic = wom.get("stockItemCount");
+        if (sic instanceof Number n) {
+            return n.intValue();
+        }
+        int sum = 0;
+        String[] listKeys = {
+                "lowStockItems",
+                "overStockItems",
+                "inactiveStockItems",
+                "priorityStocktakeItems",
+                "storeStockAmountRanking",
+                "warehouseStockAmountRanking",
+                "storeInventoryAmountRanking"
+        };
+        for (String k : listKeys) {
+            Object v = wom.get(k);
+            if (v instanceof List<?> list) {
+                sum += list.size();
+            }
+        }
+        return sum;
+    }
+
+    private static void mirrorBusinessOverviewExecutionContractKeysDefaults(LinkedHashMap<String, Object> out) {
+        for (String k : BUSINESS_OVERVIEW_EXECUTION_CONTRACT_KEYS) {
+            out.put(k, null);
+        }
+    }
+
+    private static void mirrorBusinessOverviewExecutionContractKeys(
+            LinkedHashMap<String, Object> out, Map<String, Object> md) {
+        if (md == null) {
+            mirrorBusinessOverviewExecutionContractKeysDefaults(out);
+            return;
+        }
+        for (String k : BUSINESS_OVERVIEW_EXECUTION_CONTRACT_KEYS) {
+            out.put(k, md.get(k));
+        }
     }
 
     /**
@@ -1369,70 +1643,11 @@ public final class AiHarnessResolvedContextSummarizer {
             }
         }
 
-        BusinessDiagnosisPlan bdp = state.getBusinessDiagnosisPlan();
-        if (bdp != null) {
-            if (StringUtils.hasText(bdp.getPlanType())) {
-                out.putIfAbsent("harnessReplayBusinessDiagnosisPlanType", bdp.getPlanType().trim());
-            }
-            BusinessDiagnosisPlan.StorePriorityRankingPlan spr = bdp.getStorePriorityRanking();
-            if (spr != null) {
-                if (StringUtils.hasText(spr.getRankingType())) {
-                    out.putIfAbsent("harnessReplayStorePriorityRankingPlanType", spr.getRankingType().trim());
-                }
-                List<BusinessDiagnosisPlan.StorePriorityFocus> fs = spr.getFocusStores();
-                int rowLen = fs == null ? 0 : fs.size();
-                out.putIfAbsent("harnessReplayStorePriorityRankingRowsLen", rowLen);
-                if (fs != null && !fs.isEmpty()) {
-                    BusinessDiagnosisPlan.StorePriorityFocus top = fs.get(0);
-                    if (top != null) {
-                        if (StringUtils.hasText(top.getStoreName())) {
-                            out.putIfAbsent(
-                                    "harnessReplayStorePriorityRankingTop1StoreName", top.getStoreName().trim());
-                        }
-                        if (top.getPriorityRank() != null) {
-                            out.putIfAbsent("harnessReplayStorePriorityRankingTop1PriorityRank", top.getPriorityRank());
-                        }
-                    }
-                }
-            }
-        }
-
         if (isHarnessStoreCompareDiagnosisWire(rqExe)) {
             DiagnosisPlan dpc = state.getDiagnosisPlan();
             List<Map<String, Object>> cev = dpc != null ? dpc.getStoreCompareEvidence() : null;
             int crLen = cev == null ? 0 : cev.size();
             out.putIfAbsent("harnessReplayStoreCompareEvidenceRowsLen", crLen);
-        }
-    }
-
-    /**
-     * 门店优先排序：读 {@link BusinessDiagnosisPlan#getStorePriorityRanking()}，勿从 {@link DiagnosisPlan} 取（无此字段）。
-     */
-    private static void applyStorePriorityRankingSummaryFields(
-            LinkedHashMap<String, Object> out, BusinessDiagnosisPlan.StorePriorityRankingPlan sprp) {
-        if (sprp == null) {
-            out.put("storePriorityRankingPlanType", null);
-            out.put("storePriorityRankingRowsLen", null);
-            out.put("storePriorityRankingTop1StoreName", null);
-            out.put("storePriorityRankingTop1PriorityRank", null);
-            return;
-        }
-        out.put("storePriorityRankingPlanType", blankToNull(sprp.getRankingType()));
-        List<BusinessDiagnosisPlan.StorePriorityFocus> fs = sprp.getFocusStores();
-        int len = fs == null ? 0 : fs.size();
-        out.put("storePriorityRankingRowsLen", len);
-        if (fs != null && !fs.isEmpty()) {
-            BusinessDiagnosisPlan.StorePriorityFocus top = fs.get(0);
-            if (top != null) {
-                out.put("storePriorityRankingTop1StoreName", blankToNull(top.getStoreName()));
-                out.put("storePriorityRankingTop1PriorityRank", top.getPriorityRank());
-            } else {
-                out.put("storePriorityRankingTop1StoreName", null);
-                out.put("storePriorityRankingTop1PriorityRank", null);
-            }
-        } else {
-            out.put("storePriorityRankingTop1StoreName", null);
-            out.put("storePriorityRankingTop1PriorityRank", null);
         }
     }
 
@@ -1703,6 +1918,397 @@ public final class AiHarnessResolvedContextSummarizer {
             return null;
         }
         return (Map<String, Object>) JSON.parseObject(JSON.toJSONString(in), Map.class);
+    }
+
+    /**
+     * Scope Merge Debug：补充 LLM 原始语义解析结果 + 合并过程追踪字段，
+     * 用于诊断「全部店铺」是否被正确识别及覆盖上一轮门店范围。
+     */
+    private static void appendScopeMergeDebugFields(LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx) {
+        if (ctx == null) {
+            return;
+        }
+        AiQuerySemanticParseResult sem = ctx.getQuerySemanticParse();
+        AiConversationTurnMemory prev = ctx.getPreviousTurn();
+        AiResolvedOrgScope org = ctx.getOrgScope();
+
+        // ── LLM 原始语义解析结果 ──
+        // rawIntentCode：LLM 原始 intent 字符串
+        String rawIntent = sem != null ? blankToNull(sem.getIntent()) : null;
+        out.put("rawIntentCode", rawIntent);
+
+        // rawPathCode：从 LLM intent 映射的 pathCode（不在 LLM 输出中，通过 intent 推断）
+        String rawPathCode = mapLlmIntentToPathCode(rawIntent);
+        out.put("rawPathCode", rawPathCode);
+
+        // rawStructuredIntentDetail：来自 metric.rankingType 或 metric.primaryMetric
+        String rawStructuredIntentDetail = null;
+        if (sem != null && sem.getMetric() != null) {
+            if (StringUtils.hasText(sem.getMetric().getRankingType())) {
+                rawStructuredIntentDetail = sem.getMetric().getRankingType();
+            } else if (StringUtils.hasText(sem.getMetric().getPrimaryMetric())) {
+                rawStructuredIntentDetail = sem.getMetric().getPrimaryMetric();
+            }
+        }
+        out.put("rawStructuredIntentDetail", blankToNull(rawStructuredIntentDetail));
+
+        // rawTimeAction：LLM 原始 timeAction
+        out.put("rawTimeAction", sem != null ? blankToNull(sem.getTimeAction()) : null);
+
+        // rawScopeAction：LLM 原始 scopeAction
+        out.put("rawScopeAction", sem != null ? blankToNull(sem.getScopeAction()) : null);
+
+        // rawMentionedStore：LLM 原始提到的门店名（effectiveMentionedStoreNames 第一个）
+        List<String> mentionedStores = sem != null ? sem.effectiveMentionedStoreNames() : null;
+        String rawMentionedStore = (mentionedStores != null && !mentionedStores.isEmpty())
+                ? mentionedStores.get(0) : null;
+        out.put("rawMentionedStore", blankToNull(rawMentionedStore));
+
+        // rawSelectedTools：来自 orchestrationDecisionCandidate.selectedTools
+        List<String> rawSelectedTools = null;
+        if (sem != null && sem.getOrchestrationDecisionCandidate() != null) {
+            rawSelectedTools = sem.getOrchestrationDecisionCandidate().getSelectedTools();
+        }
+        out.put("rawSelectedTools", rawSelectedTools == null || rawSelectedTools.isEmpty()
+                ? null : new ArrayList<>(rawSelectedTools));
+
+        // ── 合并过程字段 ──
+        // previousScopeType：上一轮的 scopeType
+        String previousScopeType = prev != null ? blankToNull(prev.getLastScopeType()) : null;
+        out.put("previousScopeType", previousScopeType);
+
+        // previousMentionedStore：上一轮最终确定的门店名
+        String previousMentionedStore = resolvePreviousMentionedStore(prev, ctx);
+        out.put("previousMentionedStore", previousMentionedStore);
+
+        // currentScopeExplicit：当前是否显式声明了 scope（LLM 有 mentionedStoreNames 或 scopeAction）
+        boolean currentScopeExplicit = (mentionedStores != null && !mentionedStores.isEmpty())
+                || (sem != null && StringUtils.hasText(sem.getScopeAction()));
+        out.put("currentScopeExplicit", currentScopeExplicit);
+
+        // currentScopeSignal：scope 信号的来源
+        String currentScopeSignal = deriveScopeSignal(ctx, sem, prev, currentScopeExplicit);
+        out.put("currentScopeSignal", currentScopeSignal);
+
+        // scopeOverrideReason：为什么覆盖/继承/未覆盖上一轮的 scope
+        String scopeOverrideReason = deriveScopeOverrideReason(ctx, sem, prev, mentionedStores, currentScopeSignal, previousScopeType);
+        out.put("scopeOverrideReason", scopeOverrideReason);
+
+        // finalScopeType：最终的 scopeType
+        String finalScopeType = org != null ? blankToNull(org.getScopeType()) : null;
+        out.put("finalScopeType", finalScopeType);
+
+        // finalMentionedStore：最终确定的 mentionedStore（用于对比）
+        String finalMentionedStore = resolveFinalMentionedStore(ctx, org);
+        out.put("finalMentionedStore", finalMentionedStore);
+    }
+
+    /**
+     * Time Merge Debug：补充时间相关的 LLM 原始语义 + 合并过程追踪字段，
+     * 用于诊断「今年到现在」等 YTD 话术是否被正确识别及覆盖上一轮时间窗。
+     */
+    private static void appendTimeMergeDebugFields(LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx) {
+        if (ctx == null) {
+            return;
+        }
+        AiQuerySemanticParseResult sem = ctx.getQuerySemanticParse();
+        AiConversationTurnMemory prev = ctx.getPreviousTurn();
+        AiResolvedTimeWindow tw = ctx.getTimeWindow();
+
+        // ── LLM 原始语义时间字段 ──
+        // rawTimeAction：LLM 原始 timeAction
+        out.put("rawTimeAction", sem != null ? blankToNull(sem.getTimeAction()) : null);
+
+        // rawTimeSignal：LLM 原始 time.timeSource
+        out.put("rawTimeSignal",
+                sem != null && sem.getTime() != null ? blankToNull(sem.getTime().getTimeSource()) : null);
+
+        // canonicalTimeAction：归一化后的 timeAction
+        String canonicalTimeAction = canonicalTimeActionForHarness(sem);
+        out.put("canonicalTimeAction", canonicalTimeAction);
+
+        // ── 上一轮时间窗起止 ──
+        out.put("previousStartDate", prev != null ? blankToNull(prev.getLastStartDate()) : null);
+        out.put("previousEndDate", prev != null ? blankToNull(prev.getLastEndDate()) : null);
+
+        // ── timeOverrideReason：为什么覆盖/继承上一轮时间窗 ──
+        String timeOverrideReason = deriveTimeOverrideReason(ctx, sem, prev, canonicalTimeAction);
+        out.put("timeOverrideReason", timeOverrideReason);
+
+        // ── 最终落地的时间窗 ──
+        out.put("finalStartDate", tw != null && tw.getStartDate() != null ? tw.getStartDate().toString() : null);
+        out.put("finalEndDate", tw != null && tw.getEndDate() != null ? tw.getEndDate().toString() : null);
+    }
+
+    /**
+     * 归一化 timeAction（与 {@link AiQuerySemanticLlmMergeHelper#canonicalQuerySemanticV2TimeActionForHarness} 对齐）。
+     */
+    private static String canonicalTimeActionForHarness(AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.isParseMissing()) {
+            return null;
+        }
+        String taRaw = sem.getTimeAction();
+        if (!StringUtils.hasText(taRaw)) {
+            return null;
+        }
+        String ta = taRaw.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+        // semanticTimeStructuredToDeferToPreviousTurn
+        AiQuerySemanticParseResult.TimePart tp = sem.getTime();
+        if ("INHERIT_PREVIOUS".equals(ta)) {
+            return "INHERIT_PREVIOUS";
+        }
+        if (tp != null && Boolean.TRUE.equals(tp.getNeedInheritFromPrevious())) {
+            return "INHERIT_PREVIOUS";
+        }
+        if (tp != null && StringUtils.hasText(tp.getTimeSource())) {
+            String ts = tp.getTimeSource().trim().toUpperCase(Locale.ROOT).replace('-', '_');
+            if ("INHERITED_PREVIOUS".equals(ts)) {
+                return "INHERIT_PREVIOUS";
+            }
+        }
+        return taRaw;
+    }
+
+    /**
+     * 推导 time 覆盖原因（用于调试输出）。
+     * 规则：
+     * - 当 LLM rawTimeAction=OVERRIDE 且本句出现 YTD 话术时 → CURRENT_EXPLICIT_YTD_OVERRIDES_PREVIOUS_TIME
+     * - 当 LLM rawTimeAction=OVERRIDE 且本句出现本月话术时 → CURRENT_EXPLICIT_THIS_MONTH_OVERRIDES_PREVIOUS_TIME
+     * - 当 LLM rawTimeAction=OVERRIDE 且 timeType 为 LAST_YEAR_SAME_PERIOD 时 → CURRENT_EXPLICIT_LAST_YEAR_SAME_PERIOD
+     * - 当 canonicalTimeAction=INHERIT_PREVIOUS 时 → INHERITED_FROM_PREVIOUS_TURN
+     * - 否则 → DEFAULT_MONTH_TO_DATE
+     */
+    private static String deriveTimeOverrideReason(AiResolvedQueryContext ctx, AiQuerySemanticParseResult sem,
+                                                    AiConversationTurnMemory prev, String canonicalTimeAction) {
+        if (sem == null || sem.isParseMissing()) {
+            return "parse_missing";
+        }
+        String taRaw = sem.getTimeAction();
+        String ta = taRaw != null ? taRaw.trim().toUpperCase(Locale.ROOT).replace('-', '_') : "";
+        AiQuerySemanticParseResult.TimePart tp = sem.getTime();
+
+        // 最高优先级：LLM 识别 OVERRIDE + 本句含 YTD 话术 → YEAR_TO_DATE 强制覆盖
+        if (("OVERRIDE".equals(ta) || "NEW".equals(ta))
+                && StringUtils.hasText(ctx.getNormalizedQuestion())
+                && AiQuerySemanticTimeLexicon.explicitYTDOrYearRangeMentioned(ctx.getNormalizedQuestion())) {
+            return "CURRENT_EXPLICIT_YTD_OVERRIDES_PREVIOUS_TIME";
+        }
+        // OVERRIDE + 本句含本月话术
+        if (("OVERRIDE".equals(ta) || "NEW".equals(ta))
+                && StringUtils.hasText(ctx.getNormalizedQuestion())
+                && AiQuerySemanticTimeLexicon.explicitCurrentMonthMentioned(ctx.getNormalizedQuestion())) {
+            return "CURRENT_EXPLICIT_THIS_MONTH_OVERRIDES_PREVIOUS_TIME";
+        }
+        // OVERRIDE + LAST_YEAR_SAME_PERIOD
+        if (("OVERRIDE".equals(ta) || "NEW".equals(ta)) && tp != null && StringUtils.hasText(tp.getTimeType())) {
+            String label = AiResolvedTimeWindow.normalizeSemanticTimeTypeLabel(tp.getTimeType());
+            if (AiResolvedTimeWindow.LAST_YEAR_SAME_PERIOD.equals(label)) {
+                return "CURRENT_EXPLICIT_LAST_YEAR_SAME_PERIOD";
+            }
+            if (AiResolvedTimeWindow.YEAR_TO_DATE.equals(label)) {
+                return "CURRENT_EXPLICIT_YEAR_TO_DATE";
+            }
+        }
+        // 继承上一轮
+        if ("INHERIT_PREVIOUS".equals(canonicalTimeAction)) {
+            return "INHERITED_FROM_PREVIOUS_TURN";
+        }
+        // 默认
+        return "DEFAULT_MONTH_TO_DATE";
+    }
+
+    /**
+     * 从 LLM intent 字符串映射到 pathCode。
+     */
+    private static String mapLlmIntentToPathCode(String rawIntent) {
+        if (!StringUtils.hasText(rawIntent)) {
+            return null;
+        }
+        String u = rawIntent.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+        return switch (u) {
+            case "BUSINESS_OVERVIEW", "OPERATIONS_OVERVIEW" -> "PATH_BUSINESS_OVERVIEW";
+            case "REVENUE_OVERVIEW", "REVENUE" -> "PATH_REVENUE_OVERVIEW";
+            case "PURCHASE_OVERVIEW", "PROCUREMENT_OVERVIEW", "PURCHASE" -> "PATH_PURCHASE_OVERVIEW";
+            case "WAREHOUSE_STOCK_OVERVIEW", "STOCK_OVERVIEW", "WAREHOUSE_OVERVIEW", "STOCK_QUERY" -> "PATH_WAREHOUSE_STOCK";
+            case "STOCK_REDUCE_QUERY", "STOCK_OUT", "WRITE_OFF" -> "PATH_STOCK_REDUCE_QUERY";
+            case "DISH_PROFIT", "DISH_MARGIN" -> "PATH_DISH_PROFIT";
+            case "DISH_SALES_QUERY" -> "PATH_DISH_SALES_QUERY";
+            case "COST_DIAGNOSIS", "COST_DIAG" -> "PATH_COST_DIAGNOSIS";
+            case "BUSINESS_DIAGNOSIS" -> "PATH_BUSINESS_DIAGNOSIS";
+            default -> null;
+        };
+    }
+
+    /**
+     * 从 previousTurn 和最终 context 中获取上一轮提到的门店。
+     * 优先使用 harness 匹配结果；回退时尝试从当前 visibleStores 匹配上一轮 storeIds。
+     */
+    private static String resolvePreviousMentionedStore(AiConversationTurnMemory prev, AiResolvedQueryContext ctx) {
+        if (prev == null) {
+            return null;
+        }
+        // 优先从 lastHarnessMultiStoreMatchedStores 获取上一轮门店名
+        List<String> matchedStores = prev.getLastHarnessMultiStoreMatchedStores();
+        if (matchedStores != null && !matchedStores.isEmpty()) {
+            return String.join(",", matchedStores);
+        }
+        // 回退 1：从当前 visibleStores 中匹配上一轮 lastVisibleStoreIds
+        List<Integer> prevStoreIds = prev.getLastVisibleStoreIds();
+        AiResolvedOrgScope org = ctx.getOrgScope();
+        if (prevStoreIds != null && !prevStoreIds.isEmpty() && org != null && org.getVisibleStores() != null) {
+            List<String> foundNames = new ArrayList<>();
+            for (AiStoreScopeDTO s : org.getVisibleStores()) {
+                if (s != null && s.getStoreDepartmentId() != null
+                        && prevStoreIds.contains(s.getStoreDepartmentId().intValue())) {
+                    String name = s.getStoreName();
+                    if (StringUtils.hasText(name)) {
+                        foundNames.add(name.trim());
+                    }
+                }
+            }
+            if (!foundNames.isEmpty()) {
+                return String.join(",", foundNames);
+            }
+        }
+        // 回退 2：从 visibleStores 获取（当 previousScopeType=STORE 时返回唯一门店名）
+        if (org != null && org.getVisibleStores() != null && org.getVisibleStores().size() == 1) {
+            AiStoreScopeDTO s = org.getVisibleStores().get(0);
+            if (s != null && StringUtils.hasText(s.getStoreName())) {
+                return s.getStoreName().trim();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 推导 scope 信号的来源。
+     * 规则：当 currentScopeExplicit=true 时，绝不返回 INHERITED_PREVIOUS。
+     */
+    private static String deriveScopeSignal(AiResolvedQueryContext ctx, AiQuerySemanticParseResult sem,
+                                           AiConversationTurnMemory prev, boolean currentScopeExplicit) {
+        if (ctx == null) {
+            return null;
+        }
+        String effectiveScopeSource = ctx.getEffectiveScopeSource();
+        // 当 currentScopeExplicit=true（LLM 显式声明 scope 覆盖）时，
+        // 即使 effectiveScopeSource 为 INHERITED_PREVIOUS 也应覆盖为正确的信号。
+        if (currentScopeExplicit && "INHERITED_PREVIOUS".equals(effectiveScopeSource)) {
+            // LLM 显式声明了 OVERRIDE/NEW，但 ctx 中的 effectiveScopeSource 仍是 INHERITED_PREVIOUS
+            // 说明 scope merge 层有 bug，此处显示真实信号供调试。
+            return "SEMANTIC_OVERRIDE";
+        }
+        if (StringUtils.hasText(effectiveScopeSource)) {
+            return effectiveScopeSource;
+        }
+        // 兜底逻辑
+        if (currentScopeExplicit) {
+            return "SEMANTIC_EXPLICIT";
+        }
+        if (sem != null && !sem.isParseMissing()) {
+            String scopeAction = sem.getScopeAction();
+            if (StringUtils.hasText(scopeAction)) {
+                String norm = scopeAction.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+                if ("INHERIT_PREVIOUS".equals(norm)) {
+                    return "SEMANTIC_INHERIT";
+                }
+                if ("OVERRIDE".equals(norm) || "NEW".equals(norm)) {
+                    return "SEMANTIC_OVERRIDE";
+                }
+            }
+        }
+        if (prev != null && StringUtils.hasText(prev.getLastScopeType())) {
+            return "INHERITED_PREVIOUS";
+        }
+        return "DEFAULT_GROUP";
+    }
+
+    /**
+     * 推导 scope 覆盖原因（用于调试输出）。
+     */
+    private static String deriveScopeOverrideReason(AiResolvedQueryContext ctx, AiQuerySemanticParseResult sem,
+                                                    AiConversationTurnMemory prev, List<String> mentionedStores,
+                                                    String currentScopeSignal, String previousScopeType) {
+        if (ctx == null) {
+            return "ctx_null";
+        }
+        // ── 最高优先级：当 LLM rawScopeAction=OVERRIDE/NEW 且无具体门店名时，强制显示覆盖原因 ──
+        if (sem != null && !sem.isParseMissing()) {
+            String scopeAction = sem.getScopeAction();
+            if (StringUtils.hasText(scopeAction)) {
+                String norm = scopeAction.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+                if ("OVERRIDE".equals(norm) || "NEW".equals(norm)) {
+                    // 有具体门店名 → 当前消息点名门店覆盖上一轮
+                    if (mentionedStores != null && !mentionedStores.isEmpty()) {
+                        return "CURRENT_EXPLICIT_STORE_OVERRIDES_PREVIOUS_STORE";
+                    }
+                    // 无具体门店名 → 检查上一轮 scopeType 是否为 STORE
+                    // previousScopeType 非 STORE（首轮或上一轮为 GROUP）时，不写 OVERRIDES_PREVIOUS_STORE
+                    if (!"STORE".equals(previousScopeType)) {
+                        return "CURRENT_EXPLICIT_GROUP_SCOPE";
+                    }
+                    return "CURRENT_EXPLICIT_GROUP_OVERRIDES_PREVIOUS_STORE";
+                }
+            }
+        }
+        // ── effectiveScopeSource 已设置时的原因说明 ──
+        String effectiveScopeSource = ctx.getEffectiveScopeSource();
+        if (StringUtils.hasText(effectiveScopeSource)) {
+            switch (effectiveScopeSource) {
+                case "INHERITED_PREVIOUS":
+                    return "继承上一轮 scope（用户未明确指定）";
+                case "CURRENT_MESSAGE":
+                    return "当前消息显式声明 scope（可能包含 keyword 匹配）";
+                case "CURRENT_MESSAGE_EXPLICIT_STORE":
+                    return "当前消息显式点名门店（语义 LLM 匹配）";
+                case "SEMANTIC_SUBSET":
+                    return "语义 LLM 收窄至多店子集";
+                default:
+                    return effectiveScopeSource;
+            }
+        }
+        // ── 兜底：消息文本包含「全部店铺」──
+        String normQ = ctx.getNormalizedQuestion();
+        if (StringUtils.hasText(normQ)) {
+            String s = normQ.replace(" ", "");
+            if (s.contains("全部店铺") || s.contains("所有门店") || s.contains("全集团") || s.contains("全部门店")) {
+                return "用户消息包含「全部店铺/全集团」但可能未被正确处理";
+            }
+        }
+        return "unknown";
+    }
+
+    private static String resolveFinalMentionedStore(AiResolvedQueryContext ctx, AiResolvedOrgScope org) {
+        // 优先从 resolvedMatchedSemanticStoreMention 获取
+        if (StringUtils.hasText(ctx.getResolvedMatchedSemanticStoreMention())) {
+            return ctx.getResolvedMatchedSemanticStoreMention().trim();
+        }
+        // 从 visibleStores 获取
+        if (org != null && org.getVisibleStores() != null && org.getVisibleStores().size() == 1) {
+            AiStoreScopeDTO s = org.getVisibleStores().get(0);
+            if (s != null && StringUtils.hasText(s.getStoreName())) {
+                return s.getStoreName().trim();
+            }
+        }
+        return null;
+    }
+
+    /** 门店综合风险排序追问：将 {@link DiagnosisPlan#getDebug()} 中摘要键摊平到 Harness 根级，便于断言。 */
+    private static void mirrorDiagnosisStorePriorityHarnessFields(LinkedHashMap<String, Object> out, DiagnosisPlan dp) {
+        if (out == null || dp == null || dp.getDebug() == null) {
+            return;
+        }
+        Map<String, Object> d = dp.getDebug();
+        if (!BusinessDiagnosisAgentV1.DIAGNOSIS_QUESTION_STORE_PRIORITY_RANKING.equals(
+                d.get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_QUESTION_TYPE))) {
+            return;
+        }
+        out.put("diagnosisQuestionType", d.get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_QUESTION_TYPE));
+        Object top = d.get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_TOP_STORE_NAME);
+        out.put("diagnosisTopStoreName", top == null || !StringUtils.hasText(String.valueOf(top))
+                ? null
+                : String.valueOf(top).trim());
+        out.put("diagnosisTopStoreReasons", d.get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_TOP_STORE_REASONS));
+        out.put("diagnosisRankingRowsCount", d.get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_RANKING_ROWS_COUNT));
     }
 
     private static String blankToNull(String s) {

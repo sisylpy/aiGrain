@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbAiConversationHistoryMapper">
+
+    <sql id="ConvFromJoin">
+        FROM gb_ai_conversation c
+        LEFT JOIN gb_ai_conversation_pin p ON p.gb_ai_cp_conversation_id = c.gb_ai_conversation_id
+            AND p.gb_ai_cp_user_id = #{userId}
+    </sql>
+
+    <sql id="ConvWhere">
+        WHERE c.gb_ai_conversation_user_id = #{userId}
+        <if test="departmentId != null">
+            AND c.gb_ai_conversation_department_id = #{departmentId}
+        </if>
+        <if test="distributerId != null">
+            AND c.gb_ai_conversation_distributer_id = #{distributerId}
+        </if>
+        <if test="!includeArchived">
+            AND IFNULL(c.gb_ai_conversation_archived, 0) = 0
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (
+                c.gb_ai_conversation_title LIKE CONCAT('%', #{keyword}, '%')
+                OR EXISTS (
+                    SELECT 1 FROM gb_ai_message mk
+                    WHERE mk.gb_ai_message_conversation_id = c.gb_ai_conversation_id
+                      AND mk.gb_ai_message_content LIKE CONCAT('%', #{keyword}, '%')
+                    LIMIT 1
+                )
+            )
+        </if>
+        <if test="tagId != null">
+            AND EXISTS (
+                SELECT 1 FROM gb_ai_conversation_tag ct
+                WHERE ct.gb_ai_ct_conversation_id = c.gb_ai_conversation_id
+                  AND ct.gb_ai_ct_user_id = #{userId}
+                  AND ct.gb_ai_ct_tag_id = #{tagId}
+            )
+        </if>
+        <if test="notebookId != null">
+            AND EXISTS (
+                SELECT 1 FROM gb_ai_conversation_notebook cn
+                WHERE cn.gb_ai_cnb_conversation_id = c.gb_ai_conversation_id
+                  AND cn.gb_ai_cnb_user_id = #{userId}
+                  AND cn.gb_ai_cnb_notebook_id = #{notebookId}
+            )
+        </if>
+        <if test="pinned != null and pinned == true">
+            AND p.gb_ai_cp_id IS NOT NULL
+        </if>
+        <if test="lastRunStatus != null and lastRunStatus != '' and lastRunStatus != 'ALL'">
+            AND (
+                SELECT m.gb_ai_message_status FROM gb_ai_message m
+                WHERE m.gb_ai_message_conversation_id = c.gb_ai_conversation_id
+                  AND m.gb_ai_message_role = 'assistant'
+                ORDER BY m.gb_ai_message_create_time DESC, m.gb_ai_message_id DESC
+                LIMIT 1
+            ) = #{lastRunStatus}
+        </if>
+    </sql>
+
+    <select id="countConversationList" resultType="long">
+        SELECT COUNT(*)
+        <include refid="ConvFromJoin"/>
+        <include refid="ConvWhere"/>
+    </select>
+
+    <select id="selectConversationIds" resultType="java.lang.Long">
+        SELECT c.gb_ai_conversation_id
+        <include refid="ConvFromJoin"/>
+        <include refid="ConvWhere"/>
+        ORDER BY (p.gb_ai_cp_id IS NOT NULL) DESC,
+                 COALESCE(p.gb_ai_cp_pinned_at, TIMESTAMP('1970-01-01 00:00:00')) DESC,
+                 c.gb_ai_conversation_update_time DESC,
+                 c.gb_ai_conversation_id DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="selectFirstUserMessagePerConversation" resultType="com.nongxinle.entity.GbAiMessageEntity">
+        SELECT m.*
+        FROM gb_ai_message m
+        INNER JOIN (
+            SELECT gb_ai_message_conversation_id AS cid, MIN(gb_ai_message_id) AS mid
+            FROM gb_ai_message
+            WHERE gb_ai_message_role = 'user'
+              AND gb_ai_message_conversation_id IN
+            <foreach collection="ids" item="id" open="(" separator="," close=")">
+                #{id}
+            </foreach>
+            GROUP BY gb_ai_message_conversation_id
+        ) t ON m.gb_ai_message_conversation_id = t.cid AND m.gb_ai_message_id = t.mid
+    </select>
+
+    <select id="selectLatestAssistantMessagePerConversation" resultType="com.nongxinle.entity.GbAiMessageEntity">
+        SELECT m.*
+        FROM gb_ai_message m
+        INNER JOIN (
+            SELECT gb_ai_message_conversation_id AS cid, MAX(gb_ai_message_id) AS mid
+            FROM gb_ai_message
+            WHERE gb_ai_message_role = 'assistant'
+              AND gb_ai_message_conversation_id IN
+            <foreach collection="ids" item="id" open="(" separator="," close=")">
+                #{id}
+            </foreach>
+            GROUP BY gb_ai_message_conversation_id
+        ) t ON m.gb_ai_message_conversation_id = t.cid AND m.gb_ai_message_id = t.mid
+    </select>
+</mapper>

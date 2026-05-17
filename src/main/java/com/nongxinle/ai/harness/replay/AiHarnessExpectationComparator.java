@@ -468,6 +468,25 @@ public final class AiHarnessExpectationComparator {
         return out;
     }
 
+    /**
+     * {@code consumedAnswerPlans} 摘要项可能为 {@code DailyRevenueAnswerPlan:REVENUE_OVERVIEW} 等「类名:子类型」字符串。
+     */
+    private static boolean consumedAnswerPlansEntryMatchesPlan(List<String> consumed, String planClassSimpleName) {
+        if (!StringUtils.hasText(planClassSimpleName) || consumed == null || consumed.isEmpty()) {
+            return false;
+        }
+        String name = planClassSimpleName.trim();
+        for (String s : consumed) {
+            if (!StringUtils.hasText(s)) {
+                continue;
+            }
+            if (s.equals(name) || s.startsWith(name + ":")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean sameSortedInts(List<Integer> a, List<Integer> b) {
         List<Integer> ca = sortedCopyInt(a);
         List<Integer> cb = sortedCopyInt(b);
@@ -943,7 +962,6 @@ public final class AiHarnessExpectationComparator {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private static void assertBusinessDiagnosisDataCompletenessRevenue(
             Map<String, Object> summary,
             AiHarnessReplayExpectedRound exp,
@@ -953,20 +971,38 @@ public final class AiHarnessExpectationComparator {
         }
         String want = exp.getBusinessDiagnosisDataCompletenessRevenueExpected().trim();
         Object planRaw = summary.get("businessDiagnosisPlan");
-        if (!(planRaw instanceof Map<?, ?> plan)) {
-            out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "businessDiagnosisPlan.dataCompleteness.revenue", want, "(no plan map)"));
+        if (planRaw instanceof Map<?, ?> plan) {
+            Object dcRaw = plan.get("dataCompleteness");
+            if (dcRaw instanceof Map<?, ?> dc) {
+                Object rev = dc.get("revenue");
+                String actual = rev == null ? null : rev.toString().trim();
+                if (!eq(actual, want)) {
+                    out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "businessDiagnosisPlan.dataCompleteness.revenue", want, actual));
+                }
+                return;
+            }
+        }
+        if ("OK".equalsIgnoreCase(want)) {
+            List<String> consumed = nestedStringList(summary, "consumedAnswerPlans");
+            boolean presentOrExists =
+                    Boolean.TRUE.equals(summary.get("diagnosisPlanPresent"))
+                            || Boolean.TRUE.equals(summary.get("diagnosisPlanExists"));
+            boolean typeOk = "OVERALL_BUSINESS_DIAGNOSIS".equals(stringVal(summary.get("diagnosisPlanType")));
+            boolean hasRevenuePlan = consumedAnswerPlansEntryMatchesPlan(consumed, DailyRevenueAnswerPlan.class.getSimpleName());
+            if (presentOrExists && typeOk && hasRevenuePlan) {
+                return;
+            }
+            out.add(mm(
+                    AiHarnessFailureType.INTENT_MISMATCH,
+                    "businessDiagnosisPlan.dataCompleteness.revenue(compat)",
+                    want,
+                    "diagnosisPlanPresent=" + summary.get("diagnosisPlanPresent")
+                            + " diagnosisPlanExists=" + summary.get("diagnosisPlanExists")
+                            + " diagnosisPlanType=" + stringVal(summary.get("diagnosisPlanType"))
+                            + " consumedAnswerPlans=" + consumed));
             return;
         }
-        Object dcRaw = plan.get("dataCompleteness");
-        if (!(dcRaw instanceof Map<?, ?> dc)) {
-            out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "businessDiagnosisPlan.dataCompleteness.revenue", want, "(no dataCompleteness)"));
-            return;
-        }
-        Object rev = dc.get("revenue");
-        String actual = rev == null ? null : rev.toString().trim();
-        if (!eq(actual, want)) {
-            out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "businessDiagnosisPlan.dataCompleteness.revenue", want, actual));
-        }
+        out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "businessDiagnosisPlan.dataCompleteness.revenue", want, "(no legacy plan map)"));
     }
 
     private static void assertBusinessOverviewMultiAgentCommitted(
@@ -1151,8 +1187,7 @@ public final class AiHarnessExpectationComparator {
             AiHarnessReplayExpectedRound exp,
             List<AiHarnessMismatch> out) {
         assertOptionalBooleanProbe(summary, exp.getDiagnosisPlanExistsExpected(), "diagnosisPlanExists", out);
-        assertOptionalBooleanProbe(
-                summary, exp.getBusinessDiagnosisPlanExistsExpected(), "businessDiagnosisPlanExists", out);
+        assertBusinessDiagnosisPlanExistsCompatible(summary, exp.getBusinessDiagnosisPlanExistsExpected(), out);
         assertOptionalIntegerEq(
                 summary,
                 exp.getHarnessReplayStoreCompareEvidenceRowsLenExpected(),
@@ -1163,6 +1198,26 @@ public final class AiHarnessExpectationComparator {
         assertOptionalString(
                 summary, exp.getBusinessStoreCompareTop2StoreNameExpected(), "businessStoreCompareTop2StoreName", out);
         assertOptionalBooleanProbe(summary, exp.getFinalAnswerTextBlankExpected(), "finalAnswerTextBlank", out);
+    }
+
+    private static void assertBusinessDiagnosisPlanExistsCompatible(
+            Map<String, Object> summary, Boolean expectedEqual, List<AiHarnessMismatch> out) {
+        if (expectedEqual == null) {
+            return;
+        }
+        boolean legacy = Boolean.TRUE.equals(summary.get("businessDiagnosisPlanExists"));
+        boolean present = Boolean.TRUE.equals(summary.get("diagnosisPlanPresent"));
+        boolean exists = Boolean.TRUE.equals(summary.get("diagnosisPlanExists"));
+        boolean actual = legacy || present || exists;
+        if (!expectedEqual.equals(actual)) {
+            out.add(mm(
+                    AiHarnessFailureType.INTENT_MISMATCH,
+                    "businessDiagnosisPlanExists(compatible)",
+                    expectedEqual,
+                    "businessDiagnosisPlanExists=" + summary.get("businessDiagnosisPlanExists")
+                            + " diagnosisPlanPresent=" + summary.get("diagnosisPlanPresent")
+                            + " diagnosisPlanExists=" + summary.get("diagnosisPlanExists")));
+        }
     }
 
     private static void assertOptionalIntegerEq(

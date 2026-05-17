@@ -66,6 +66,7 @@ public class AiRunController {
         AiRunStatus st = session.getStatus();
         R r = R.ok()
                 .put("runId", session.getRunId())
+                .put("advisorId", session.getState() != null ? session.getState().getAdvisorId() : null)
                 .put("status", st.name())
                 .put("workspaceMode", session.getState().getWorkspaceMode() != null ? session.getState().getWorkspaceMode().name() : null)
                 .put("cancelled", session.getState().isCancelled())
@@ -90,6 +91,11 @@ public class AiRunController {
                 harnessDebug.put("structuredIntentDetailCode", summary.get("structuredIntentDetailCode"));
                 harnessDebug.put("structuredIntentDetailPresent", summary.get("structuredIntentDetailPresent"));
                 harnessDebug.put("purchaseSourceType", summary.get("purchaseSourceType"));
+                harnessDebug.put("supplierAnalysisAgentUsed", summary.get("supplierAnalysisAgentUsed"));
+                harnessDebug.put("supplierAnalysisAgentStatus", summary.get("supplierAnalysisAgentStatus"));
+                harnessDebug.put("supplierAnalysisPlanType", summary.get("supplierAnalysisPlanType"));
+                harnessDebug.put("purchaseSelectedAgents", summary.get("purchaseSelectedAgents"));
+                harnessDebug.put("masterBusinessAgentDebug", summary.get("masterBusinessAgentDebug"));
                 harnessDebug.put("stockReduceType", summary.get("stockReduceType"));
                 harnessDebug.put("dishProfitStructuredDetail", summary.get("dishProfitStructuredDetail"));
                 harnessDebug.put("mentionedDishName", summary.get("mentionedDishName"));
@@ -128,10 +134,19 @@ public class AiRunController {
                 harnessDebug.put("purchaseAnswerPlanSecondaryRows", summary.get("purchaseAnswerPlanSecondaryRows"));
                 harnessDebug.put("purchaseAnswerPlanDebug", summary.get("purchaseAnswerPlanDebug"));
                 harnessDebug.put("usedTools", summary.get("usedTools"));
+                harnessDebug.put("planSource", summary.get("planSource"));
+                harnessDebug.put("warehouseStockAgentUsed", summary.get("warehouseStockAgentUsed"));
+                harnessDebug.put("warehouseStockAgentStatus", summary.get("warehouseStockAgentStatus"));
+                harnessDebug.put("warehouseStockOverviewToolSuccess", summary.get("warehouseStockOverviewToolSuccess"));
+                harnessDebug.put("warehouseStockPlanType", summary.get("warehouseStockPlanType"));
+                harnessDebug.put("warehouseStockResultCount", summary.get("warehouseStockResultCount"));
+                harnessDebug.put("warehouseStockOverviewPath", summary.get("warehouseStockOverviewPath"));
+                harnessDebug.put("groupWarehouseStockOverview", summary.get("groupWarehouseStockOverview"));
+                harnessDebug.put("consumedAnswerPlans", summary.get("consumedAnswerPlans"));
+                harnessDebug.put("missingAnswerPlans", summary.get("missingAnswerPlans"));
                 harnessDebug.put("diagnosisPlan", summary.get("diagnosisPlan"));
                 harnessDebug.put("diagnosisPlanPresent", summary.get("diagnosisPlanPresent"));
                 harnessDebug.put("diagnosisPlanType", summary.get("diagnosisPlanType"));
-                harnessDebug.put("businessDiagnosisPlan", summary.get("businessDiagnosisPlan"));
                 harnessDebug.put("diagnosisRiskLevel", summary.get("diagnosisRiskLevel"));
                 harnessDebug.put("diagnosisDataCompleteness", summary.get("diagnosisDataCompleteness"));
                 harnessDebug.put("effectiveTimeWindowSource", summary.get("effectiveTimeWindowSource"));
@@ -147,6 +162,7 @@ public class AiRunController {
                     harnessDebug.put("querySemanticLlm_mentionedStoreNames", mq.get("mentionedStoreNames"));
                 }
             }
+            harnessDebug.put("advisorId", session.getState() != null ? session.getState().getAdvisorId() : null);
             harnessDebug.put("composerPromptId", session.getState() != null
                     ? session.getState().getComposerPromptRegistryId() : null);
             AiResolvedQueryContext rqPm = session.getState() != null

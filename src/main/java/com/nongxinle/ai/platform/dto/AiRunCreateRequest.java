@@ -10,6 +10,11 @@ public class AiRunCreateRequest {
      * 后续轮次必须带回同一 id（与 {@code gb_ai_conversation.gb_ai_conversation_id} 一致），勿由前端自行编造。
      */
     private Long conversationId;
+
+    /**
+     * 可选。顾问页发起 Run 时传入；仅用于 Run 归因 / 诊断，第一版不参与语义解析和权限判断。
+     */
+    private Long advisorId;
     /**
      * 可选。单店默认 {@link com.nongxinle.ai.scope.AiConversationScopeMode#STORE}（需 {@code departmentId}）；
      * 集团 {@code GROUP}（需 {@code distributerId}）。未传时按 {@code departmentId} / {@code distributerId} 推断。

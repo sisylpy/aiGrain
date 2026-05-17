@@ -302,7 +302,7 @@ AiResolvedQueryContext（timeWindow、dataScope、queryIntent、structuredIntent
 
 ### 7.2 Revenue 模块 **follow-up** 继承规则（解析 + Builder + Debug）
 
-下列规则适用于 **`path === revenue_overview_path`** 下的多轮短句（「上个月呢」「AAA 呢」「全部门店呢」等）。实现侧 **`AiFollowUpResolver`** / **`FollowUpIntentResolveService`** / **`AiConversationTurnMemory`** 须与会话记忆对齐，避免仅扩写文本却丢失排行语义。
+下列规则适用于 **`path === revenue_overview_path`** 下的多轮短句（「上个月呢」「AAA 呢」「全部门店呢」等）。实现侧 **`AiFollowUpResolver`** / **`AiFollowUpHintSupport`** / **`AiConversationTurnMemory`** 须与会话记忆对齐，避免仅扩写文本却丢失排行语义。
 
 #### 时间继承
 
@@ -389,7 +389,7 @@ AiResolvedQueryContext（timeWindow、dataScope、queryIntent、structuredIntent
 | Tool | **`RevenueQueryTool.java`**（及日营收 Service / Mapper） |
 | Debug | **`AiHarnessResolvedContextSummarizer.java`** |
 | Composer | **`StubAnswerComposerNode.java`** |
-| 语义 / 多轮 | **`AiQuerySemanticLexicon`**、**`AiFollowUpResolver`** / **`FollowUpIntentResolveService`** 等 |
+| 语义 / 多轮 | **`AiQuerySemanticLexicon`**、**`AiFollowUpResolver`** / **`AiFollowUpHintSupport`** 等 |
 | 单测 | **`DailyRevenueAnswerPlanBuilderTest.java`**、**`StubAnswerComposerNodeTest.java`**（营收相关方法见 §9.2） |
 
 ---

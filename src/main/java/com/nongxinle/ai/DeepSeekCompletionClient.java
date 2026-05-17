@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 非流式 DeepSeek Chat Completions 调用，供 AI 添加商品等独立编排复用（与 {@code GbAiChatServiceImpl} 配置同源）。
+ * 非流式 DeepSeek Chat Completions 调用，供 AI 添加商品等独立编排复用（与应用 {@code ai.deepseek.*} 配置同源）。
  */
 @Slf4j
 @Component

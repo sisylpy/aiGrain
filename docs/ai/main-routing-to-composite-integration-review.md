@@ -19,7 +19,7 @@ POST /ai/runs
        → Session 注册 + 异步 executeRun
   → AiRunService#executeRun
        → AiGraphRunner#runBusinessGraph
-            → BusinessWorkspaceRouteNode → … → BusinessDataPlannerNode → BusinessTimeWindowNode …
+            → BusinessScopeIntersectNode → BusinessTimeWindowNode → BusinessDataPlannerNode → …
             → BusinessToolExecutionNode（含 MasterBusinessAgent 四口尝试）
             → … → StubAnswerComposerNode（legacy 终稿）
        → maybeExecuteShadowCompositePlanner（SHADOW 且 Gate 放行 …）→ Composite tryExecute（**不**改 finalAnswerText）

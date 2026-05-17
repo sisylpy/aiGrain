@@ -1,7 +1,6 @@
 package com.nongxinle.ai.graph.business;
 
 import com.nongxinle.ai.context.AiUserContext;
-import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
@@ -29,27 +28,20 @@ import java.util.Map;
 
 /**
  * 经营概览：优先消费 {@link AiBusinessToolIds#BUSINESS_OVERVIEW_QUERY}（旧版日营收看板 stats），再结合菜品/采购/毛利 Tool。
+ * <p>在 {@link StubOutcomeReviewNode} 调用 {@link #aggregateIfApplicable(AiRunState)}，不再作为 Graph AgentNode。
  */
 @Component
 @RequiredArgsConstructor
-public class BusinessOverviewAgentNode implements AgentNode {
+public class BusinessOverviewAgentNode {
 
     private final AiSseEventPublisher publisher;
 
-    @Override
-    public String name() {
-        return "BusinessOverviewAgent";
-    }
-
-    @Override
-    public boolean shouldRun(AiRunState state) {
-        return state.isBusinessOverviewPath()
-                && state.getDataPlanTools() != null
-                && !state.getDataPlanTools().isEmpty();
-    }
-
-    @Override
-    public AiRunState run(AiRunState state) {
+    public void aggregateIfApplicable(AiRunState state) {
+        if (state == null || !state.isBusinessOverviewPath()
+                || state.getDataPlanTools() == null
+                || state.getDataPlanTools().isEmpty()) {
+            return;
+        }
         long rid = state.getRunId();
         publisher.publish(rid, "agent_started", Map.of(
                 "agent", "BusinessOverviewAgent",
@@ -322,7 +314,6 @@ public class BusinessOverviewAgentNode implements AgentNode {
                 "riskLevel", risk,
                 "needMoreData", needMore
         ));
-        return state;
     }
 
     private static boolean profitStatusContainsLoss(String profitStatus) {

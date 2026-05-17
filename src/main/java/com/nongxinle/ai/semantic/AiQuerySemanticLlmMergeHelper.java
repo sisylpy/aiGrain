@@ -92,6 +92,10 @@ public final class AiQuerySemanticLlmMergeHelper {
                 && sem.getMetric() != null && StringUtils.hasText(sem.getMetric().getPurchaseSourceType())) {
             merged.setPurchaseSourceType(sem.getMetric().getPurchaseSourceType().trim());
         }
+        if (AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(merged.getPathCode())
+                && AiQuerySemanticLexicon.userMessageIndicatesSelfPurchaseChannel(norm)) {
+            merged.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE);
+        }
         if (AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(merged.getPathCode())
                 && sem.getMetric() != null && StringUtils.hasText(sem.getMetric().getStockReduceType())) {
             String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(merged.getStructuredIntentDetail());
@@ -328,6 +332,10 @@ public final class AiQuerySemanticLlmMergeHelper {
             String taNorm,
             String normalizedUserMessage) {
         if (AiQuerySemanticTimeLexicon.explicitCurrentMonthMentioned(normalizedUserMessage)) {
+            return false;
+        }
+        // 本句出现「今年到现在/今年以来/YTD」等年度累计明确话术 → 禁止继承上一轮日历，强制走 LLM YEAR_TO_DATE 落地
+        if (AiQuerySemanticTimeLexicon.explicitYTDOrYearRangeMentioned(normalizedUserMessage)) {
             return false;
         }
         if (sem == null || previousTurn == null || mergedIntentHint == null) {

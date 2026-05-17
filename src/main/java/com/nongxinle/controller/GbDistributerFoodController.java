@@ -214,6 +214,7 @@ public class GbDistributerFoodController {
 			Map<String, Object> map = new HashMap<>();
 			map.put("foodName", foodName);
 			map.put("dayuFatherId", 0);
+			map.put("disId", disId);
 			List<GbDistributerFoodEntity> foodEntities = gbDistributerFoodService.queryFoodByParams(map);
 			logger.info("查询同名食品数量: {}", foodEntities.size());
 
@@ -243,9 +244,9 @@ public class GbDistributerFoodController {
 
 			//如果只有一个门店并且只有一个部分，则自动给部门添加菜品。
 			Map<String, Object> mapDep = new HashMap<>();
-			map.put("disId", disId);
-			map.put("depType", GbConstants.DepartmentType.STORE);
-			List<GbDepartmentEntity> gbDepartmentEntities = gbDepartmentService.queryGroupDepsByDisId(map);
+			mapDep.put("disId", disId);
+			mapDep.put("depType", GbConstants.DepartmentType.STORE);
+			List<GbDepartmentEntity> gbDepartmentEntities = gbDepartmentService.queryGroupDepsByDisId(mapDep);
 			String depFatherId = gbDepartmentEntities.get(0).getGbDepartmentId().toString();
 			List<GbDepartmentEntity> subDepartments = gbDepartmentService.querySubDepartments(Integer.valueOf(depFatherId));
 			System.out.println("subnamgbDepartmentEntitiesi" + gbDepartmentEntities.size());

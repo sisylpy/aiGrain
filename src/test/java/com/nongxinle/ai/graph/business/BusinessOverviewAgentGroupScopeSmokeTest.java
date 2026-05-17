@@ -100,7 +100,7 @@ class BusinessOverviewAgentGroupScopeSmokeTest {
         AiRunState st = b.toolResults(toolResultsMinimal(boEnv, purchases)).build();
 
         BusinessOverviewAgentNode node = new BusinessOverviewAgentNode(publisher);
-        node.run(st);
+        node.aggregateIfApplicable(st);
 
         var ov = st.getBusinessOverviewResult();
         assertThat(ov).isNotNull();
@@ -172,7 +172,7 @@ class BusinessOverviewAgentGroupScopeSmokeTest {
         AiRunState st = base.toolResults(toolResultsMinimal(boEnv, Map.of("purchaseSubTotal", BigDecimal.ZERO))).build();
 
         BusinessOverviewAgentNode node = new BusinessOverviewAgentNode(publisher);
-        node.run(st);
+        node.aggregateIfApplicable(st);
 
         var ov = st.getBusinessOverviewResult();
         Object banner = ov.getOverviewScope().get("primaryBanner");

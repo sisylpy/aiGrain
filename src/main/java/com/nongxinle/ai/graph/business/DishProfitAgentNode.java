@@ -7,7 +7,6 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiDishProfitDishBrief;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
@@ -38,40 +37,24 @@ import java.util.stream.Collectors;
 
 /**
  * {@code dish_profit_path}：消费 {@link AiBusinessToolIds#DISH_PROFIT_ANALYSIS}，产出 SSE 结构化
- * {@code dishProfitOverview}。
+ * {@code dishProfitOverview}（由 Tool 节点完成后在 {@link StubOutcomeReviewNode} 触发聚合）。
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class DishProfitAgentNode implements AgentNode {
+public class DishProfitAgentNode {
 
     private static final Pattern BEFORE_MAO = Pattern.compile("([\\u4e00-\\u9fa5]{2,16})毛利");
 
     private final AiSseEventPublisher publisher;
 
-    @Override
-    public String name() {
-        return "DishProfitAgent";
-    }
-
-    @Override
-    public boolean shouldRun(AiRunState state) {
-        if (state == null || state.getDataPlanTools() == null || state.getDataPlanTools().isEmpty()) {
-            return false;
+    /**
+     * 与旧 Graph shouldRun 对齐：在 OutcomeReview 前补全 overview / AnswerPlan。
+     */
+    public void aggregateIfApplicable(AiRunState state) {
+        if (!shouldAggregate(state)) {
+            return;
         }
-        if (state.isBusinessOverviewPath()
-                && state.getDataPlanTools().contains(AiBusinessToolIds.DISH_PROFIT_ANALYSIS)) {
-            return true;
-        }
-        if (state.isDishProfitPath()) {
-            return true;
-        }
-        return state.isBusinessDiagnosisPath()
-                && state.getDataPlanTools().contains(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
-    }
-
-    @Override
-    public AiRunState run(AiRunState state) {
         long rid = state.getRunId();
         publisher.publish(rid, "agent_started", Map.of(
                 "agent", "DishProfitAgent",
@@ -86,7 +69,21 @@ public class DishProfitAgentNode implements AgentNode {
                 "agent", "DishProfitAgent",
                 "displayText", "菜品毛利透视已就绪"
         ));
-        return state;
+    }
+
+    private static boolean shouldAggregate(AiRunState state) {
+        if (state == null || state.getDataPlanTools() == null || state.getDataPlanTools().isEmpty()) {
+            return false;
+        }
+        if (state.isBusinessOverviewPath()
+                && state.getDataPlanTools().contains(AiBusinessToolIds.DISH_PROFIT_ANALYSIS)) {
+            return true;
+        }
+        if (state.isDishProfitPath()) {
+            return true;
+        }
+        return state.isBusinessDiagnosisPath()
+                && state.getDataPlanTools().contains(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
     }
 
     private static void maybeMergeStoreDisclaimer(AiRunState state) {

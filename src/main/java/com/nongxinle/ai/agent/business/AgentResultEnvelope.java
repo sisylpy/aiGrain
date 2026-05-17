@@ -59,4 +59,7 @@ public class AgentResultEnvelope {
      * Master 仅在 true 时可跳过 legacy DISH_PROFIT_ANALYSIS。
      */
     private Boolean dishProfitAnalysisToolSuccess;
+
+    /** {@link com.nongxinle.ai.tool.business.AiBusinessToolIds#WAREHOUSE_STOCK_OVERVIEW} */
+    private Boolean warehouseStockOverviewToolSuccess;
 }

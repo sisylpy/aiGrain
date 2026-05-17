@@ -1,7 +1,7 @@
 version: "1.0"
 
-# 指标目录 v1：scope_strategy / time_strategy 与 Java 侧 AiMetricCatalog + MetricDepartmentScopeResolver 对齐。
-# datasource 一期仅作文档与排障；执行仍走现有 GbAiChatServiceImpl 查询方法，逐步改为按 metric_id Dispatch。
+# 指标目录 v1：历史文档；Java 侧 AiMetricCatalog / MetricDepartmentScopeResolver 已移除。
+# 多智能体主链以 Business Graph + Tool 为事实来源；本文件仅供人工对照与后续指标重建参考。
 
 metrics:
 
@@ -20,7 +20,7 @@ metrics:
       - product
 
     datasource:
-      provider: GbAiChatServiceImpl
+      provider: removed_legacy_single_agent_chat
       method: queryPurchaseGoodsFactsForAi
 
     fields:
@@ -59,7 +59,7 @@ metrics:
       - product
 
     datasource:
-      provider: GbAiChatServiceImpl
+      provider: removed_legacy_single_agent_chat
       method: queryPurchaseGoodsFactsForAi
 
     fields:
@@ -94,7 +94,7 @@ metrics:
       - department
 
     datasource:
-      provider: GbAiChatServiceImpl
+      provider: removed_legacy_single_agent_chat
       method: queryInventorySnapshotForAi
 
     fields:
@@ -201,7 +201,7 @@ metrics:
     name: 集团门店净营收排行（直营+加盟）
     description: |
       在 AI 会话解析范围内，筛选 gb_department_type 为门店(1)/加盟(11)，按 gb_ai_daily_revenue 汇总净营收（堂食+外卖−平台抽成）排序；
-      事实由 GbAiChatServiceImpl.queryGroupChainRetailDiagnosticsFacts 注入。
+      事实原由已移除的单 Agent Chat 注入；现由 Business Graph / 采购与出库相关 Tool 覆盖。
     category: 经营诊断
     unit: 元
     value_type: number
@@ -209,7 +209,7 @@ metrics:
       - store
       - group
     datasource:
-      provider: GbAiChatServiceImpl
+      provider: removed_legacy_single_agent_chat
       method: queryGroupChainRetailDiagnosticsFacts
     scope_strategy:
       department_scope: ALL
@@ -234,7 +234,7 @@ metrics:
       - store
       - group
     datasource:
-      provider: GbAiChatServiceImpl
+      provider: removed_legacy_single_agent_chat
       method: queryGroupChainRetailDiagnosticsFacts
     scope_strategy:
       department_scope: ALL

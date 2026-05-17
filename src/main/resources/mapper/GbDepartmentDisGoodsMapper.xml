@@ -557,6 +557,9 @@
             <if test="depId != null">
                 AND gddg.gb_DDG_department_id = #{depId}
             </if>
+            <if test="depFatherId != null">
+                AND gddg.gb_DDG_department_father_id = #{depFatherId}
+            </if>
             <if test="disId != null">
                 AND gddg.gb_DDG_gb_dis_id = #{disId}
             </if>
@@ -773,7 +776,6 @@
         ORDER BY gdgs.gb_department_goods_stock_id
     </select>
 
-    <!-- 按批发商分页查询商品数量：与 queryOnlyDisGoodsIds / disQueryDisGoodsWithOrderForAiTree 一致，以 gb_distributer_goods 为准 -->
     <select id="queryDisGoodsCount" resultType="java.lang.Integer">
         SELECT COUNT(*)
         FROM gb_distributer_goods AS gdg
@@ -781,6 +783,7 @@
             <if test="disId != null">
                 AND gdg.gb_dg_distributer_id = #{disId}
             </if>
+
             <if test="supplierId != null">
                 AND gdg.gb_dg_gb_supplier_id = #{supplierId}
             </if>
@@ -795,6 +798,7 @@
             </if>
         </where>
     </select>
+
 
     <!-- 按批发商分页查询商品（部门关联行；排序：gg→g→ddf/ddg.father→商品 sort） -->
     <select id="disQueryDisGoodsWithOrderForAi" resultType="com.nongxinle.entity.GbDepartmentDisGoodsEntity">
@@ -864,6 +868,56 @@
             </if>
         </where>
         ORDER BY gg.gb_dfg_father_goods_sort, g.gb_dfg_father_goods_sort, f.gb_dfg_father_goods_sort,
+                 gdg.gb_dg_goods_sort, gdg.gb_dg_goods_sons_sort, gdg.gb_distributer_goods_id DESC
+        <if test="limit != null">
+            LIMIT #{limit} OFFSET #{offset}
+        </if>
+    </select>
+
+    <!-- 按部门分页查询商品（从部门商品表查询，返回分销商商品实体；用于 storeGetDepGoodsGbPage） -->
+    <select id="disQueryDepGoodsWithOrderForAiTree" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        SELECT gdg.*,
+        IFNULL(MAX(stockStats.goodsStockTotal), 0) as 'goodsStockTotal',
+        IFNULL(MAX(stockStats.goodsStockWeightTotal), 0) as 'goodsStockWeightTotal',
+        MAX(gg.gb_dfg_father_goods_sort) as 'sort1',
+        MAX(g.gb_dfg_father_goods_sort) as 'sort2',
+        MAX(f.gb_dfg_father_goods_sort) as 'sort3'
+        FROM gb_department_dis_goods AS gddg
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = gddg.gb_DDG_dis_goods_grand_id
+        LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
+        LEFT JOIN gb_distributer_father_goods AS f ON f.gb_distributer_father_goods_id = gddg.gb_DDG_dis_goods_father_id
+        LEFT JOIN (
+            SELECT gb_dgs_gb_dis_goods_id,
+                   SUM(gb_dgs_rest_subtotal) as goodsStockTotal,
+                   SUM(gb_dgs_rest_weight) as goodsStockWeightTotal
+            FROM gb_department_goods_stock
+            WHERE gb_dgs_rest_weight > 0
+            GROUP BY gb_dgs_gb_dis_goods_id
+        ) AS stockStats ON stockStats.gb_dgs_gb_dis_goods_id = gdg.gb_distributer_goods_id
+        <where>
+            <if test="depFatherId != null">
+                AND gddg.gb_DDG_department_father_id = #{depFatherId}
+            </if>
+            <if test="depId != null">
+                AND gddg.gb_DDG_department_id = #{depId}
+            </if>
+            <if test="disId != null">
+                AND gddg.gb_DDG_gb_dis_id = #{disId}
+            </if>
+            <if test="supplierId != null">
+                AND gddg.gb_DDG_gb_supplier_id = #{supplierId}
+            </if>
+            <if test="goodsType != null and goodsType &lt; 99">
+                AND gddg.gb_DDG_goods_type = #{goodsType}
+            </if>
+            <if test="goodsType != null and goodsType == 101">
+                AND gdg.gb_dg_control_fresh = 1
+            </if>
+
+        </where>
+        GROUP BY gdg.gb_distributer_goods_id
+        ORDER BY sort1, sort2, sort3,
                  gdg.gb_dg_goods_sort, gdg.gb_dg_goods_sons_sort, gdg.gb_distributer_goods_id DESC
         <if test="limit != null">
             LIMIT #{limit} OFFSET #{offset}

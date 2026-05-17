@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbAiWorkflowMapper">
+
+    <select id="selectAdvisorWorkflowItems" resultType="com.nongxinle.ai.advisor.workflow.dto.AiAdvisorWorkflowItemDTO">
+        SELECT
+            w.gb_ai_workflow_id AS workflowId,
+            w.gb_ai_workflow_code AS code,
+            w.gb_ai_workflow_name AS name,
+            w.gb_ai_workflow_description AS description,
+            w.gb_ai_workflow_category AS category,
+            aw.gb_ai_aw_sort_order AS bindSortOrder,
+            aw.gb_ai_aw_pinned AS bindPinned,
+            aw.gb_ai_aw_is_default AS bindIsDefault,
+            aw.gb_ai_aw_relation_type AS relationType
+        FROM gb_ai_workflow w
+        INNER JOIN gb_ai_advisor_workflow aw ON aw.gb_ai_aw_workflow_id = w.gb_ai_workflow_id
+        WHERE aw.gb_ai_aw_advisor_id = #{advisorId}
+          AND w.gb_ai_workflow_enabled = 1
+        ORDER BY aw.gb_ai_aw_sort_order ASC, aw.gb_ai_aw_id ASC
+    </select>
+</mapper>

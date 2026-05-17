@@ -1,5 +1,7 @@
 package com.nongxinle.ai.graph.business;
 
+import com.nongxinle.ai.agent.business.MasterBusinessAgent;
+import com.nongxinle.ai.agent.business.MasterBusinessAgentResult;
 import com.nongxinle.ai.context.AiDepartmentUserTestRows;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
@@ -26,8 +28,10 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,6 +39,17 @@ class BusinessToolExecutionPermissionTest {
 
     @Mock
     AiSseEventPublisher publisher;
+
+    private static MasterBusinessAgent masterSkipped() {
+        MasterBusinessAgent master = mock(MasterBusinessAgent.class);
+        when(master.tryOrchestrateClassicBusinessOverview(any())).thenReturn(MasterBusinessAgentResult.skipped("test"));
+        when(master.tryOrchestrateRevenueOverview(any())).thenReturn(MasterBusinessAgentResult.skipped("test"));
+        when(master.tryOrchestratePurchaseOverview(any())).thenReturn(MasterBusinessAgentResult.skipped("test"));
+        when(master.tryOrchestrateStockReduceQuery(any())).thenReturn(MasterBusinessAgentResult.skipped("test"));
+        when(master.tryOrchestrateDishProfitAnalysis(any())).thenReturn(MasterBusinessAgentResult.skipped("test"));
+        when(master.tryOrchestrateWarehouseStockOverview(any())).thenReturn(MasterBusinessAgentResult.skipped("test"));
+        return master;
+    }
 
     @Test
     void groupManager_executesEveryPlannedTool() {
@@ -78,8 +93,21 @@ class BusinessToolExecutionPermissionTest {
 
         GbAiDailyRevenueService revenueSvc = mock(GbAiDailyRevenueService.class);
 
-        BusinessToolExecutionNode node = new BusinessToolExecutionNode(registry, new AiPermissionGuard(), scopeResolver,
-                publisher, revenueSvc);
+        AiPermissionGuard guard = new AiPermissionGuard();
+        ToolDepartmentResolutionSupport deptSupport = new ToolDepartmentResolutionSupport(scopeResolver);
+        RevenueQueryToolExecutor revenueExec = new RevenueQueryToolExecutor(registry, guard, publisher);
+        StockReduceQueryToolExecutor stockExec = new StockReduceQueryToolExecutor(registry, guard, publisher);
+        DishProfitQueryToolExecutor dishExec = new DishProfitQueryToolExecutor(registry, guard, publisher, revenueSvc);
+        BusinessToolExecutionNode node = new BusinessToolExecutionNode(
+                registry,
+                guard,
+                publisher,
+                revenueSvc,
+                deptSupport,
+                revenueExec,
+                stockExec,
+                dishExec,
+                masterSkipped());
         node.run(state);
 
         assertThat(executeCount.get()).isEqualTo(AiBusinessToolIds.DEFAULT_COST_INSIGHT_TOOLS.size());
@@ -126,12 +154,25 @@ class BusinessToolExecutionPermissionTest {
 
         GbAiDailyRevenueService revenueSvc = mock(GbAiDailyRevenueService.class);
 
-        BusinessToolExecutionNode node = new BusinessToolExecutionNode(registry, new AiPermissionGuard(), scopeResolver,
-                publisher, revenueSvc);
+        AiPermissionGuard guard = new AiPermissionGuard();
+        ToolDepartmentResolutionSupport deptSupport = new ToolDepartmentResolutionSupport(scopeResolver);
+        RevenueQueryToolExecutor revenueExec = new RevenueQueryToolExecutor(registry, guard, publisher);
+        StockReduceQueryToolExecutor stockExec = new StockReduceQueryToolExecutor(registry, guard, publisher);
+        DishProfitQueryToolExecutor dishExec = new DishProfitQueryToolExecutor(registry, guard, publisher, revenueSvc);
+        BusinessToolExecutionNode node = new BusinessToolExecutionNode(
+                registry,
+                guard,
+                publisher,
+                revenueSvc,
+                deptSupport,
+                revenueExec,
+                stockExec,
+                dishExec,
+                masterSkipped());
         node.run(state);
 
         assertThat(state.getPermissionDenials()).isNotEmpty();
-        org.mockito.Mockito.verify(registry, org.mockito.Mockito.never()).find(org.mockito.ArgumentMatchers.anyString());
+        verify(registry, org.mockito.Mockito.never()).find(org.mockito.ArgumentMatchers.anyString());
     }
 
     private static AiTool countingTool(AtomicInteger executeCount) {

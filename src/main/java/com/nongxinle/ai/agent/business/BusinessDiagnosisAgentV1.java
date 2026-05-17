@@ -1,5 +1,7 @@
 package com.nongxinle.ai.agent.business;
 
+import com.nongxinle.ai.context.AiResolvedQueryIntent;
+import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
@@ -14,6 +16,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * DiagnosisAgent v1（确定性）：只读四类 {@code *AnswerPlan}，不写库、不解析用户原文、不遍历失败 tool payload。
@@ -34,6 +38,16 @@ public final class BusinessDiagnosisAgentV1 {
     static final String FINDING_STOCK_REDUCE_ABNORMAL = "STOCK_REDUCE_ABNORMAL";
     static final String FINDING_LOW_DISH_MARGIN = "LOW_DISH_MARGIN";
     static final String FINDING_PROFIT_QUALITY_RISK = "PROFIT_QUALITY_RISK";
+
+    /** {@link DiagnosisPlan#getDebug()}：与 Harness 扁平探针对齐。 */
+    public static final String DEBUG_DIAGNOSIS_QUESTION_TYPE = "diagnosisQuestionType";
+    public static final String DEBUG_DIAGNOSIS_TOP_STORE_NAME = "diagnosisTopStoreName";
+    public static final String DEBUG_DIAGNOSIS_TOP_STORE_REASONS = "diagnosisTopStoreReasons";
+    public static final String DEBUG_DIAGNOSIS_RANKING_ROWS_COUNT = "diagnosisRankingRowsCount";
+    public static final String DIAGNOSIS_QUESTION_STORE_PRIORITY_RANKING = "STORE_PRIORITY_RANKING";
+
+    private static final Pattern STORE_NAME_FROM_DETAIL =
+            Pattern.compile("门店「([^」]+)」");
 
     static final String EVID_REVENUE = "REVENUE";
     static final String EVID_PURCHASE = "PURCHASE";
@@ -213,6 +227,95 @@ public final class BusinessDiagnosisAgentV1 {
                 plan.getActionSuggestions().add(act);
             }
         }
+
+        maybeStampStorePriorityRankingDebug(state, plan, pRevenue);
+    }
+
+    private static void maybeStampStorePriorityRankingDebug(
+            AiRunState state,
+            DiagnosisPlan plan,
+            DailyRevenueAnswerPlan pRevenue) {
+        if (state == null
+                || plan == null
+                || state.getResolvedQueryContext() == null) {
+            return;
+        }
+        AiResolvedQueryIntent qi = state.getResolvedQueryContext().getQueryIntent();
+        String raw = qi != null ? qi.getStructuredIntentDetail() : null;
+        if (!AiQuerySemanticLexicon.isStorePriorityRankingStructuredDetail(raw)) {
+            return;
+        }
+        Map<String, Object> dbg = plan.getDebug();
+        dbg.put(DEBUG_DIAGNOSIS_QUESTION_TYPE, DIAGNOSIS_QUESTION_STORE_PRIORITY_RANKING);
+
+        String topStore = extractStoreNameForStorePriorityRanking(plan, pRevenue);
+        if (topStore != null && !topStore.isBlank()) {
+            dbg.put(DEBUG_DIAGNOSIS_TOP_STORE_NAME, topStore.trim());
+        } else {
+            dbg.put(DEBUG_DIAGNOSIS_TOP_STORE_NAME, null);
+        }
+
+        List<String> reasonTitles = new ArrayList<>();
+        for (Map<String, Object> f : plan.getFocusFindings()) {
+            if (f == null || "NO_MAJOR_FINDING".equals(f.get("findingType"))) {
+                continue;
+            }
+            String ttl = nzStr(f.get("title"));
+            if (!ttl.isEmpty()) {
+                reasonTitles.add(ttl);
+            }
+        }
+        dbg.put(DEBUG_DIAGNOSIS_TOP_STORE_REASONS, reasonTitles.isEmpty() ? List.of() : reasonTitles);
+        dbg.put(DEBUG_DIAGNOSIS_RANKING_ROWS_COUNT, plan.getRiskRows().size());
+    }
+
+    /**
+     * 门店优先级追问：优先 PROFIT_QUALITY_RISK 解析店名；其次 evidenceItems.store_profit_quality；
+     * 再退化营业额门店排行首行（仅当 planType 已为门店排行，不重算排序）。
+     */
+    public static String extractStoreNameForStorePriorityRanking(
+            DiagnosisPlan plan,
+            DailyRevenueAnswerPlan pRevenue) {
+        if (plan == null) {
+            return null;
+        }
+        for (Map<String, Object> f : plan.getFocusFindings()) {
+            if (f == null) {
+                continue;
+            }
+            if (!FINDING_PROFIT_QUALITY_RISK.equals(String.valueOf(f.get("findingType")))) {
+                continue;
+            }
+            Matcher m = STORE_NAME_FROM_DETAIL.matcher(nzStr(f.get("detail")));
+            if (m.find()) {
+                return m.group(1).trim();
+            }
+        }
+        for (Map<String, Object> row : plan.getEvidenceItems()) {
+            if (row == null) {
+                continue;
+            }
+            if ("store_profit_quality".equals(String.valueOf(row.get("label")))) {
+                String v = nzStr(row.get("value"));
+                if (!v.isEmpty()) {
+                    return v.trim();
+                }
+            }
+        }
+        if (pRevenue != null
+                && DailyRevenueAnswerPlan.TYPE_REVENUE_STORE_AMOUNT_RANKING.equals(planTypeSafe(pRevenue))) {
+            Map<String, Object> r0 = pickTopMatchingRowSummary(pRevenue.getFocusRows());
+            if (r0 != null) {
+                String n = nzStr(r0.get("storeDisplayName"));
+                if (n.isEmpty()) {
+                    n = nzStr(r0.get("storeName"));
+                }
+                if (!n.isEmpty()) {
+                    return n.trim();
+                }
+            }
+        }
+        return null;
     }
 
     private static void aggregateRisk(DiagnosisPlan plan, List<Map<String, Object>> findings) {

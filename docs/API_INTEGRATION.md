@@ -25,7 +25,7 @@
 
 ## `AiUserContext` · `AiOrgScope` · 范围求交 · `permissionDenied`（第一、二波已落地）
 
-> **状态（2026-05-10）**：Run 起始由 **`AiUserContextResolver`** / **`AiOrgScopeResolver`**（`POST` Body）装配上下文并写入 **`AiRunState`**；**`AiPermissionGuard`** 在 **`BusinessToolExecutionNode`**（逐 Tool）、**`CostDiagnosisAgentNode`**（`VIEW_COST`）前判定。无 **`AiUserContext`** 挂载时 Guard **放行**（兼容仅用 bare `AiRunState` 的单元测试）。**第二波**：**`AiRunScopeIntersectService`**、**`AiWorkspaceAccessGuard`** 已落地（见 **`docs/SSE_BACKEND_EVENT_CONTRACT.md`**）。**身份主数据**：**`userId` ↔ `gb_department_user`**，`gb_du_admin` → **`AiRoleMapper`** → **`roleCode` / `permissions`**（完整表见 **`docs/PERMISSION_MODEL.md`**）。
+> **状态（2026-05-17）**：Run 起始由 **`AiUserContextResolver`** / **`AiOrgScopeResolver`**（`POST` Body）装配上下文并写入 **`AiRunState`**；**`AiPermissionGuard`** 在 **`BusinessToolExecutionNode`**（逐 Tool）、**`CostDiagnosisAgentNode`**（`VIEW_COST`）前判定。无 **`AiUserContext`** 挂载时 Guard **放行**（兼容仅用 bare `AiRunState` 的单元测试）。**`AiRunScopeIntersectService`** 在 **`BusinessScopeIntersectNode`** 内参与范围求交。旧 **`BusinessWorkspaceRouteNode` / `WorkspaceRouterService` / `AiWorkspaceAccessGuard`**（关键词工作台路由 + **`WORKSPACE_ACCESS_DENIED`**）已删除，见 **`docs/legacy-reference/workspace-keyword-route-and-guard.md`**。**身份主数据**：**`userId` ↔ `gb_department_user`**，`gb_du_admin` → **`AiRoleMapper`** → **`roleCode` / `permissions`**（完整表见 **`docs/PERMISSION_MODEL.md`**）。
 
 ### 服务端解析顺序
 
@@ -33,8 +33,7 @@
 POST /api/ai/runs
  → AiUserContextResolver
  → AiOrgScopeResolver
- → AiRunService 装配 AiRunState
- → BusinessWorkspaceRouteNode：WorkspaceRouterService + AiWorkspaceAccessGuard（工作台入口）
+ → AiRunService 装配 AiRunState（含 AiResolvedQueryContextResolver；追问/语义在此收口）
  → BusinessScopeIntersectNode：AiRunScopeIntersectService（请求 dept 子树 ∩ 身份锚点子树 → 写回 departmentId、AiQueryScope、刷新 AiOrgScope）
  → BusinessTimeWindowNode → DataPlanner → ToolExecution（逐 Tool：AiPermissionGuard）→ …
 ```
@@ -64,13 +63,9 @@ POST /api/ai/runs
 | **过渡期 / 单测** | 仅当显式传 **`FINANCE_MANAGER`** 或 **`MARKETING_MANAGER`** 时跳过 DB，走合成权限（见 **`AiUserContextResolver`**）。 |
 | **详细表** | admin 数值、中文、`roleCode`、默认权限、组织范围、工作台、Tool → **`docs/PERMISSION_MODEL.md`**。 |
 
-### 工作空间入口 permission（第二波）
+### 工作空间入口 permission（历史）
 
-| `workspaceMode`（路由命中） | 所需 permission |
-|-----------------------------|-----------------|
-| `MARKETING_GROWTH` | `ACCESS_MARKETING_WORKSPACE` |
-
-若缺码：降级 **`BUSINESS_CHAT`**，并发 **`error`**（**`WORKSPACE_ACCESS_DENIED`**，`data.permissionDenied` 见 **`docs/SSE_BACKEND_EVENT_CONTRACT.md`** §6）。
+`workspaceMode` 与 **`ACCESS_*_WORKSPACE`** 仍存在于 **`AiUserContext` / 权限表**，但 **已无能产生 `MARKETING_GROWTH` 等关键词路由的 Graph 节点**（原 **`WorkspaceRouterService`** 已删）。若产品日后恢复「营销工作台」入口，应在 **`AiRunState` 装配或独立 BFF** 显式设置 `workspaceMode`，并 **复用 `AiPermissionGuard` 或与 SSE 契约对齐的新拒绝路径**；**`WORKSPACE_ACCESS_DENIED`** 的示例信封仍见 **`docs/SSE_BACKEND_EVENT_CONTRACT.md`** §6（**历史示例**）。
 
 ### `AiOrgScope`
 
@@ -109,7 +104,7 @@ curl -Ns "http://localhost:8090/api/ai/runs/<runId>/events"
 
 **预期**：**`userId`** 在 **`gb_department_user`** 存在；**`gb_du_admin`** 映射为可读 **`roleCode`**（如 **`admin=0` → `GROUP_MANAGER`**，原 **`GROUP_BOSS` 别名已废弃**）；**`ScopeIntersect`** 对 **`GROUP_MANAGER`** 不错误收窄本次业务样例中的 **1/2** 锚点；五 Tool 不因权限误拦截；**`answer_delta.data.costDiagnosis`** 有结构；**`run_finished.status`** 为 **`completed`**；卡片联调仍看 **`answer_delta.data.costDiagnosis`**。
 
-**已验一回（2026-05-10，本机，`runId=1778350824377`）**：`WorkspaceRouter`→**`BUSINESS_CHAT`**；**`ScopeIntersectNode`** 完成，`resolvedDepartmentCount:3`；**DataPlanner** 五 Tool 全编排；**五 Tool** `tool_finished.success` 均为 **`true`**（其中 **`dish_sales_query`** 约 **31s**）；**`CostDiagnosisAgent`** `riskLevel:data_incomplete`、`needMoreData:false`；**`answer_delta`** 含 **`data.costDiagnosis`** 与 **`data.text`**；无 **`event:error`** / **`permissionDenied`**；**`run_finished`** **`status:completed`**。**`GET /api/ai/runs/{id}`** 返回 **`status:COMPLETED`**、**`workspaceMode:BUSINESS_CHAT`**。
+**已验一回（2026-05-10，本机，`runId=1778350824377`）**：**`ScopeIntersectNode`** 完成，`resolvedDepartmentCount:3`；**DataPlanner** 五 Tool 全编排；**五 Tool** `tool_finished.success` 均为 **`true`**（其中 **`dish_sales_query`** 约 **31s**）；**`CostDiagnosisAgent`** `riskLevel:data_incomplete`、`needMoreData:false`；**`answer_delta`** 含 **`data.costDiagnosis`** 与 **`data.text`**；无 **`event:error`** / **`permissionDenied`**；**`run_finished`** **`status:completed`**。**`GET /api/ai/runs/{id}`** 返回 **`status:COMPLETED`**、**`workspaceMode:BUSINESS_CHAT`**。
 
 > **说明**：无监听端口的 IDE/CI Agent 环境可能无法代抓取 SSE；门禁仍以 **`mvn test`** 为准。真机可把 **`curl -Ns .../events`** 输出重定向留档。
 
@@ -141,7 +136,7 @@ curl -Ns "http://localhost:8090/api/ai/runs/<runId>/events"
 ## Bean 命名与 SSE「agent」字段
 
 - **`SSE 中的 `agent` 字段是产品展示名称**，用于 UI 与人类可读日志，**不一定等于 Spring Bean 名称**。  
-  例：`WorkspaceRouterAgent` 为展示名；实际编排 Bean 为 **`WorkspaceRouterService`**，图节点为 **`BusinessWorkspaceRouteNode`**（`name()` = `WorkspaceRoute`）。
+  历史 **`WorkspaceRouter` / `WorkspaceRoute`** 相关 Bean 与图节点已移除；当前 Graph 主链以 **`AiBusinessGraphConfig#businessAgentNodes`** 为准。
 
 ---
 

@@ -33,6 +33,11 @@ public class AiResolvedTimeWindow {
     public static final String LAST_YEAR_SAME_PERIOD = "LAST_YEAR_SAME_PERIOD";
     /** 含今日共 7 天的滚动窗口，与业务上「最近 7 天」一致 */
     public static final String ROLLING_7 = "ROLLING_7";
+    /**
+     * 本年累计（1月1日～当前日期），由语义 LLM timeType=YEAR_TO_DATE 触发。
+     * 与「今年到现在/今年至今/今年以来」等用户话术对齐。
+     */
+    public static final String YEAR_TO_DATE = "YEAR_TO_DATE";
     public static final String CUSTOM = "CUSTOM";
 
     private String timeLabel;
@@ -172,6 +177,17 @@ public class AiResolvedTimeWindow {
                     .startDate(start)
                     .endDate(anchor)
                     .displayText("最近 7 天（" + start + "～" + anchor + "）")
+                    .inheritedFromPreviousTurn(false)
+                    .explicitTimeMentioned(true)
+                    .build();
+        }
+        if (YEAR_TO_DATE.equals(label)) {
+            LocalDate start = anchor.withDayOfYear(1);
+            return AiResolvedTimeWindow.builder()
+                    .timeLabel(YEAR_TO_DATE)
+                    .startDate(start)
+                    .endDate(anchor)
+                    .displayText("本年累计（" + start + "～" + anchor + "）")
                     .inheritedFromPreviousTurn(false)
                     .explicitTimeMentioned(true)
                     .build();

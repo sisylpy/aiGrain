@@ -22,4 +22,27 @@ public final class AiQuerySemanticTimeLexicon {
         String m = normalizedUserMessage;
         return m.contains("这个月") || m.contains("本月") || m.contains("当前月");
     }
+
+    /**
+     * 本句是否出现「本年/今年以来/YTD」等年度累计的明确口语。
+     * 用于在 {@link AiQuerySemanticLlmMergeHelper#samePathScopeOrMetricOverrideInheritsPreviousCalendar}
+     * 中 bypass「同 path 换 scope/metric 时继承上一轮日历」逻辑。
+     */
+    public static boolean explicitYTDOrYearRangeMentioned(String normalizedUserMessage) {
+        if (!StringUtils.hasText(normalizedUserMessage)) {
+            return false;
+        }
+        String m = normalizedUserMessage;
+        return m.contains("今年到现在")
+                || m.contains("今年至今")
+                || m.contains("今年以来")
+                || m.contains("本年到现在")
+                || m.contains("本年至今")
+                || m.contains("本年以来")
+                || m.contains("本年累计")
+                || m.contains("今年累计")
+                || m.contains("YTD")
+                || m.contains("ytd")
+                || m.contains("year to date");
+    }
 }

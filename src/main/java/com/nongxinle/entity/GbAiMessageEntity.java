@@ -49,8 +49,17 @@ public class GbAiMessageEntity implements Serializable {
 	 *  是否提取到记忆
 	 */
 	private Integer gbAiMessageMemoryExtracted;
+
+	/** 多智能体 Run 锚点（Run 落库任务写入） */
+	private Long gbAiMessageRunId;
+
+	/** PENDING / RUNNING / COMPLETED / FAILED / CANCELLED（Run 历史落库） */
+	private String gbAiMessageStatus;
+
 	/**
 	 *  创建时间
 	 */
 	private Date gbAiMessageCreateTime;
+
+	private Date gbAiMessageUpdateTime;
 }

@@ -15,7 +15,7 @@ import com.nongxinle.ai.resolver.AiResolvedQueryContextResolver;
 import com.nongxinle.ai.scope.AiConversationScopeMode;
 import com.nongxinle.ai.trace.AiRunSessionRegistry;
 import com.nongxinle.entity.GbAiConversationEntity;
-import com.nongxinle.service.GbAiChatService;
+import com.nongxinle.ai.conversation.AiConversationCoreService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -39,7 +39,7 @@ public class AiHarnessReplayService {
     private final AiResolvedQueryContextResolver resolvedQueryContextResolver;
     private final AiConversationMemoryService conversationMemoryService;
     private final AiRunSessionRegistry sessionRegistry;
-    private final GbAiChatService gbAiChatService;
+    private final AiConversationCoreService conversationCoreService;
     private final AiRunService aiRunService;
     private final RevenuePlannerRealReadBridge revenuePlannerRealReadBridge;
     private final PurchasePlannerRealReadBridge purchasePlannerRealReadBridge;
@@ -69,7 +69,7 @@ public class AiHarnessReplayService {
 
         AiConversationScopeMode mode = inferScopeMode(req);
 
-        GbAiConversationEntity conv = gbAiChatService.createNewConversationForAgentRun(
+        GbAiConversationEntity conv = conversationCoreService.createNewConversationForAgentRun(
                 req.getDepartmentId(), req.getDistributerId(), mode, req.getUserId(), 0);
         long conversationId = conv.getGbAiConversationId();
 

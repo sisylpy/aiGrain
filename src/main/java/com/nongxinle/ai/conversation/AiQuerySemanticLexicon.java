@@ -10,7 +10,7 @@ import java.util.Locale;
 
 /**
  * 结构化子意图协议：wire 常量、canonical/debug 映射、格式化工具。
- * <p>不包含自然语言 contains/正则语义判断。</p>
+ * <p>除「采购来源」用户口径别名归一化（供解析合并层投递 wire）外，不包含其它自然语言推断。</p>
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class AiQuerySemanticLexicon {
@@ -48,6 +48,21 @@ public final class AiQuerySemanticLexicon {
     public static final String SOURCE_SELF_PURCHASE = "SELF_PURCHASE";
     public static final String SOURCE_SUPPLIER_PURCHASE = "SUPPLIER_PURCHASE";
     public static final String SOURCE_ALL = "ALL";
+
+    /**
+     * 用户话术是否指向「自采/自行采购」渠道（与 {@link #SOURCE_SELF_PURCHASE} 对齐）。
+     * 仅用于解析合并等显式归一化，不可替代结构化 JSON。
+     */
+    public static boolean userMessageIndicatesSelfPurchaseChannel(String normalizedUserMessage) {
+        if (!StringUtils.hasText(normalizedUserMessage)) {
+            return false;
+        }
+        String n = normalizedUserMessage.replace(" ", "").replace("\u3000", "");
+        return n.contains("自行采购")
+                || n.contains("自采购")
+                || n.contains("自采")
+                || n.contains("自购");
+    }
 
     public static final String STRUCTURED_STOCK_REDUCE_OVERVIEW_SUMMARY = "stock_reduce_overview";
     public static final String STRUCTURED_PRODUCE_CONSUME = "produce_consume";
@@ -159,7 +174,13 @@ public final class AiQuerySemanticLexicon {
             case "type2" -> STRUCTURED_WASTE;
             case "type3" -> STRUCTURED_LOSS;
             case "type4" -> STRUCTURED_RETURN;
-            case "supplier_ranking" -> STRUCTURED_SUPPLIER_AMOUNT_RANKING;
+            case "supplier_ranking",
+                    "supplier_amount_ranking",
+                    "supplier_purchase_amount_ranking",
+                    "supplier_supply_amount_ranking",
+                    "purchase_supplier_amount_ranking",
+                    "supplier_purchase_ranking",
+                    "highest_supplier_purchase_amount_ranking" -> STRUCTURED_SUPPLIER_AMOUNT_RANKING;
             case "goods_outbound_amount_ranking" -> STRUCTURED_GOODS_OUTBOUND_RANKING;
             case "stock_reduce_store_amount_ranking" -> STRUCTURED_STORE_OUTBOUND_AMOUNT_RANKING;
             case "business_store_status_ranking" -> STRUCTURED_BUSINESS_STORE_STATUS_COMPARE;

@@ -42,7 +42,7 @@ public interface GbDistributerPurchaseGoodsMapper extends BaseMapper<GbDistribut
     List<PurchaseTypeAggRow> queryGbPurchaseGoodsAggByPurchaseType(Map<String, Object> map);
 
     /**
-     * 与 {@link #queryGbPurchaseGoodsCount} 同条件；采购方式按旧版「供货属性摘要」（{@code GbAiChatServiceImpl#appendPurchaseSupplyMixSummary}）：
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件；采购方式口径与 {@code PurchaseOverviewTool} / API 文档中「供货属性摘要」一致：
      * type=5；type=1 且 nx 正整数归入供货商侧；type=1 且 nx 空/-1 为自采；其余为其它。
      */
     List<PurchaseMethodLegacyAggRow> queryGbPurchaseGoodsAggByLegacyPurchaseMethod(Map<String, Object> map);

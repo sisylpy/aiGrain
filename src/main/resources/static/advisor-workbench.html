@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>业务顾问工作台 · Advisor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --accent: #2d9d8c;
+            --accent-dim: #247a6d;
+            --bg: #eef2f2;
+            --surface: #fff;
+            --border: #dde3e3;
+            --text: #1a1f1e;
+            --muted: #5c6d6a;
+            --col-advisor: 272px;
+            --col-run: 400px;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+        }
+        .app-header {
+            height: 52px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            flex-shrink: 0;
+        }
+        .app-header h1 {
+            font-size: 16px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+        .app-header .hint {
+            font-size: 12px;
+            color: var(--muted);
+        }
+        .workbench {
+            display: grid;
+            grid-template-columns: var(--col-advisor) 1fr var(--col-run);
+            height: calc(100vh - 52px);
+            gap: 0;
+        }
+        .col {
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            overflow: hidden;
+        }
+        .col:last-child { border-right: none; }
+        .col-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--muted);
+            padding: 14px 16px 8px;
+        }
+        .advisor-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 8px 12px;
+        }
+        .advisor-item {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 12px 14px;
+            margin-bottom: 6px;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            background: var(--bg);
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .advisor-item:hover {
+            background: #e4ebe9;
+        }
+        .advisor-item.active {
+            border-color: var(--accent);
+            background: rgba(45, 157, 140, 0.08);
+        }
+        .advisor-item .name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        .advisor-item .sub {
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.35;
+        }
+        .detail-body { flex: 1; overflow-y: auto; padding: 0 20px 24px; }
+        .detail-hero {
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .detail-hero h2 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+        .detail-hero .subtitle { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
+        .detail-hero .desc {
+            font-size: 14px;
+            line-height: 1.55;
+            color: #3d4846;
+        }
+        .workflow-block {
+            margin-top: 20px;
+        }
+        .workflow-block h3 {
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 12px;
+        }
+        .workflow-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .workflow-card {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px 14px;
+            cursor: pointer;
+            transition: border-color 0.15s, box-shadow 0.15s;
+            background: #fafbfb;
+        }
+        .workflow-card:hover {
+            border-color: var(--accent);
+        }
+        .workflow-card.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(45, 157, 140, 0.15);
+            background: var(--surface);
+        }
+        .workflow-card .wf-name { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+        .workflow-card .wf-meta {
+            font-size: 11px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+        .workflow-card .wf-desc {
+            font-size: 13px;
+            color: #4a5654;
+            line-height: 1.4;
+        }
+        .run-panel { padding: 12px 16px 20px; flex: 1; overflow-y: auto; }
+      .run-panel .panel-title { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+        .form-group textarea { min-height: 88px; resize: vertical; font-family: ui-monospace, monospace; }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+            width: 100%;
+        }
+        .btn-primary:hover { background: var(--accent-dim); }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .result-box {
+            margin-top: 16px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .result-box header {
+            background: var(--bg);
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted);
+        }
+        .result-box pre {
+            margin: 0;
+            padding: 12px;
+            font-size: 12px;
+            line-height: 1.45;
+            overflow-x: auto;
+            max-height: 280px;
+            background: #fafbfb;
+        }
+        .status-line {
+            font-size: 12px;
+            padding: 8px 12px;
+            background: #f0f7f6;
+            border-bottom: 1px solid var(--border);
+        }
+        .status-line strong { color: var(--accent); }
+        .empty-hint {
+            padding: 24px 16px;
+            text-align: center;
+            font-size: 13px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            padding: 12px 20px;
+            background: #2c2c2c;
+            color: #fff;
+            border-radius: 8px;
+            font-size: 14px;
+            opacity: 0;
+            transition: transform 0.25s, opacity 0.25s;
+            z-index: 1000;
+            max-width: 90vw;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+        .toast.err { background: #c0392b; }
+        .loading-text { font-size: 13px; color: var(--muted); padding: 12px 16px; }
+        @media (max-width: 960px) {
+            .workbench {
+                grid-template-columns: 1fr;
+                height: auto;
+                min-height: calc(100vh - 52px);
+            }
+            .col { border-right: none; border-bottom: 1px solid var(--border); max-height: 50vh; }
+        }
+    </style>
+</head>
+<body>
+    <header class="app-header">
+        <h1>业务顾问工作台</h1>
+        <span class="hint">数据来自后端 <code>/api/ai/advisors</code> · Workflow 仅第一阶段落库（PENDING）</span>
+    </header>
+    <div class="workbench">
+        <aside class="col">
+            <div class="col-title">业务顾问</div>
+            <div id="advisorLoading" class="loading-text" style="display:none">加载顾问列表…</div>
+            <div id="advisorList" class="advisor-list"></div>
+        </aside>
+        <section class="col">
+            <div id="detailEmpty" class="empty-hint">请从左侧选择一位业务顾问</div>
+            <div id="detailContent" style="display:none; flex-direction:column; height:100%">
+                <div class="detail-hero">
+                    <h2 id="dName"></h2>
+                    <div class="subtitle" id="dSubtitle"></div>
+                    <p class="desc" id="dDesc"></p>
+                </div>
+                <div class="detail-body">
+                    <div class="workflow-block">
+                        <h3>绑定工作流</h3>
+                        <div id="wfLoading" class="loading-text" style="display:none">加载工作流…</div>
+                        <div id="workflowCards" class="workflow-cards"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <aside class="col">
+            <div class="col-title">运行</div>
+            <div class="run-panel">
+                <div id="runEmpty" class="empty-hint">在中间栏选择一个工作流后，可在此发起运行（仅创建 WorkflowRun）</div>
+                <div id="runForm" style="display:none">
+                    <div class="panel-title" id="runWfTitle"></div>
+                    <div class="form-group">
+                        <label for="userId">userId（必填，gb_department_user）</label>
+                        <input type="number" id="userId" placeholder="例如 10001" />
+                    </div>
+                    <div class="form-group">
+                        <label for="extraJson">inputParams（JSON 对象，可选）</label>
+                        <textarea id="extraJson" placeholder='例如 {"month":"2026-05"}'></textarea>
+                    </div>
+                    <button type="button" class="btn btn-primary" id="btnRun">发起运行</button>
+                    <div id="resultWrap" style="display:none" class="result-box">
+                        <header>WorkflowRun 详情（GET /api/ai/workflow-runs/{id}）</header>
+                        <div class="status-line">状态：<strong id="runStatus"></strong> · runId（Harness）：<strong id="runHarnessId">—</strong></div>
+                        <pre id="runJson"></pre>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+    <div class="toast" id="toast"></div>
+
+    <script>
+(function () {
+        const LS_USER = 'advisorWorkbenchUserId';
+
+        function apiRoot() {
+            const q = new URLSearchParams(location.search).get('api');
+            if (q) return q.replace(/\/$/, '');
+            return location.origin + '/api';
+        }
+
+        const API = apiRoot();
+
+        const state = {
+            advisors: [],
+            advisorId: null,
+            detail: null,
+            workflows: [],
+            workflowId: null,
+            lastRunDetail: null
+        };
+
+        function toast(msg, err) {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.className = 'toast' + (err ? ' err' : '') + ' show';
+            clearTimeout(el._t);
+            el._t = setTimeout(() => { el.classList.remove('show'); }, 3200);
+        }
+
+        async function fetchR(url, options) {
+            const res = await fetch(url, options);
+            const text = await res.text();
+            let json;
+            try { json = JSON.parse(text); } catch (e) { throw new Error('非 JSON 响应: ' + text.slice(0, 120)); }
+            if (json.code !== 0 && json.code !== 200) {
+                throw new Error(json.msg || json.message || '请求失败 code=' + json.code);
+            }
+            return json;
+        }
+
+        function renderAdvisors() {
+            const host = document.getElementById('advisorList');
+            host.innerHTML = '';
+            state.advisors.forEach(a => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'advisor-item' + (state.advisorId === a.advisorId ? ' active' : '');
+                btn.innerHTML = '<div class="name"></div><div class="sub"></div>';
+                btn.querySelector('.name').textContent = a.name;
+                btn.querySelector('.sub').textContent = a.subtitle || a.code || '';
+                btn.onclick = () => selectAdvisor(a.advisorId);
+                host.appendChild(btn);
+            });
+        }
+
+        async function selectAdvisor(advisorId) {
+            state.advisorId = advisorId;
+            state.workflowId = null;
+            state.lastRunDetail = null;
+            renderAdvisors();
+            document.getElementById('detailEmpty').style.display = 'none';
+            document.getElementById('detailContent').style.display = 'flex';
+            document.getElementById('wfLoading').style.display = 'block';
+            document.getElementById('workflowCards').innerHTML = '';
+            document.getElementById('runEmpty').style.display = 'block';
+            document.getElementById('runForm').style.display = 'none';
+            document.getElementById('resultWrap').style.display = 'none';
+
+            try {
+                const [d, wfs] = await Promise.all([
+                    fetchR(API + '/ai/advisors/' + advisorId),
+                    fetchR(API + '/ai/advisors/' + advisorId + '/workflows')
+                ]);
+                state.detail = d.data;
+                state.workflows = wfs.data || [];
+                document.getElementById('dName').textContent = state.detail.name || '';
+                document.getElementById('dSubtitle').textContent = state.detail.subtitle || '';
+                document.getElementById('dDesc').textContent = state.detail.description || '（暂无描述）';
+                renderWorkflows();
+            } catch (e) {
+                toast(e.message, true);
+            } finally {
+                document.getElementById('wfLoading').style.display = 'none';
+            }
+        }
+
+        function renderWorkflows() {
+            const host = document.getElementById('workflowCards');
+            host.innerHTML = '';
+            state.workflows.forEach(w => {
+                const card = document.createElement('div');
+                card.className = 'workflow-card' + (state.workflowId === w.workflowId ? ' active' : '');
+                const meta = [];
+                if (w.category) meta.push(w.category);
+                if (w.bindIsDefault) meta.push('默认');
+                card.innerHTML =
+                    '<div class="wf-name"></div>' +
+                    '<div class="wf-meta"></div>' +
+                    '<div class="wf-desc"></div>';
+                card.querySelector('.wf-name').textContent = w.name;
+                card.querySelector('.wf-meta').textContent = meta.join(' · ') || '工作流';
+                card.querySelector('.wf-desc').textContent = w.description || '';
+                card.onclick = () => selectWorkflow(w.workflowId);
+                host.appendChild(card);
+            });
+            if (!state.workflows.length) {
+                host.innerHTML = '<div class="empty-hint">该顾问暂无绑定工作流</div>';
+            }
+        }
+
+        function selectWorkflow(workflowId) {
+            state.workflowId = workflowId;
+            state.lastRunDetail = null;
+            renderWorkflows();
+            const w = state.workflows.find(x => x.workflowId === workflowId);
+            document.getElementById('runEmpty').style.display = 'none';
+            document.getElementById('runForm').style.display = 'block';
+            document.getElementById('runWfTitle').textContent = w ? w.name : ('工作流 #' + workflowId);
+            document.getElementById('resultWrap').style.display = 'none';
+            const uid = localStorage.getItem(LS_USER);
+            if (uid) document.getElementById('userId').value = uid;
+        }
+
+        async function runWorkflow() {
+            const uid = document.getElementById('userId').value.trim();
+            if (!uid) {
+                toast('请填写 userId', true);
+                return;
+            }
+            localStorage.setItem(LS_USER, uid);
+            let params = {};
+            const raw = document.getElementById('extraJson').value.trim();
+            if (raw) {
+                try { params = JSON.parse(raw); }
+                catch (e) { toast('inputParams 不是合法 JSON', true); return; }
+                if (params === null || typeof params !== 'object' || Array.isArray(params)) {
+                    toast('inputParams 须为 JSON 对象', true);
+                    return;
+                }
+            }
+            const btn = document.getElementById('btnRun');
+            btn.disabled = true;
+            try {
+                const body = {
+                    userId: Number(uid),
+                    advisorId: state.advisorId,
+                    inputParams: Object.keys(params).length ? params : undefined
+                };
+                const created = await fetchR(API + '/ai/workflows/' + state.workflowId + '/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const runId = created.data.workflowRunId;
+                toast('已创建 WorkflowRun #' + runId);
+                const detail = await fetchR(API + '/ai/workflow-runs/' + runId);
+                state.lastRunDetail = detail.data;
+                document.getElementById('resultWrap').style.display = 'block';
+                document.getElementById('runStatus').textContent = state.lastRunDetail.status || '—';
+                const rid = state.lastRunDetail.runId;
+                document.getElementById('runHarnessId').textContent = rid != null ? String(rid) : '（未接 Harness）';
+                document.getElementById('runJson').textContent = JSON.stringify(state.lastRunDetail, null, 2);
+            } catch (e) {
+                toast(e.message, true);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function init() {
+            document.getElementById('advisorLoading').style.display = 'block';
+            try {
+                const r = await fetchR(API + '/ai/advisors');
+                state.advisors = r.data || [];
+                if (!state.advisors.length) {
+                    document.getElementById('advisorList').innerHTML = '<div class="empty-hint">暂无数据，请先执行种子 SQL</div>';
+                } else {
+                    renderAdvisors();
+                    await selectAdvisor(state.advisors[0].advisorId);
+                }
+            } catch (e) {
+                toast(e.message + '（可试 ?api=http://localhost:8090/api）', true);
+                document.getElementById('advisorList').innerHTML =
+                    '<div class="empty-hint">加载失败。请确认后端已启动，或 URL 加参数 <code>?api=http://主机:端口/api</code></div>';
+            } finally {
+                document.getElementById('advisorLoading').style.display = 'none';
+            }
+        }
+
+        document.getElementById('btnRun').addEventListener('click', runWorkflow);
+        document.addEventListener('DOMContentLoaded', init);
+})();
+    </script>
+</body>
+</html>

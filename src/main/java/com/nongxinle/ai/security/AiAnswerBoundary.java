@@ -210,44 +210,6 @@ public final class AiAnswerBoundary {
     }
 
     /**
-     * {@code business_diagnosis_path} 且 BusinessDiagnosisPlan 已挂载：对部分 persona 强制确定性降级正文。
-     */
-    public static boolean shouldRenderPermissionDowngradedBusinessDiagnosis(AiRunState state) {
-        if (state == null || !state.isBusinessDiagnosisPath() || state.getBusinessDiagnosisPlan() == null) {
-            return false;
-        }
-        AiUserContext ctx = state.getAiUserContext();
-        if (ctx == null || ctx.getRoleCode() == null) {
-            return false;
-        }
-        String rc = ctx.getRoleCode();
-        if (AiRoleMapper.isGroupWideOrgScope(rc) || AiRoleCodes.STORE_MANAGER.equals(rc)) {
-            return false;
-        }
-        AiResolvedOrgScope org = state.getResolvedQueryContext() != null
-                ? state.getResolvedQueryContext().getOrgScope()
-                : null;
-        if (!isPartialBusinessDiagnosisPersona(ctx, org)) {
-            return false;
-        }
-        Set<String> perms = ctx.getPermissions() == null ? Set.of() : Set.copyOf(ctx.getPermissions());
-        List<AiPermissionDenied> denials = state.getPermissionDenials();
-
-        boolean explicitRevenue = isToolPermissionDenied(denials, AiBusinessToolIds.REVENUE_QUERY)
-                || isRevenuePermissionDenied(denials);
-        boolean explicitDish = isToolPermissionDenied(denials, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
-        boolean personaNoRevenue = !perms.contains(AiPermissions.VIEW_REVENUE);
-        boolean personaNoDishPipeline = CostInsightIntentConvergence.isProcurementCostConvergenceRole(rc)
-                || AiRoleCodes.WAREHOUSE_MANAGER.equals(rc)
-                || AiRoleCodes.REGION_WAREHOUSE.equals(rc)
-                || AiRoleCodes.DELIVERY_SUPPLIER.equals(rc)
-                || AiRoleCodes.DELIVERY_DRIVER.equals(rc)
-                || resolvedOrgScopeIsWarehouse(state);
-
-        return explicitRevenue || explicitDish || personaNoRevenue || personaNoDishPipeline;
-    }
-
-    /**
      * 营业额权限被拒时的 Composer 正文（不含 {@link #composeHumanPrefix}；二者由 StubAnswerComposerNode 拼装）。
      * {@link #revenuePermissionDeniedComposerBody(AiRunState)} 的无状态等价：库房后续引导。
      */

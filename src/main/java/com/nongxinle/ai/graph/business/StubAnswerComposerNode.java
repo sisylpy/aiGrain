@@ -12,7 +12,6 @@ import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiBusinessOverviewResult;
 import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
-import com.nongxinle.ai.dto.business.BusinessDiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
@@ -71,19 +70,6 @@ public class StubAnswerComposerNode implements AgentNode {
 
     private static String fmtStockWeightCn(Object value) {
         return plainNumericHint(value) + " " + W_STOCK_WEIGHT_UNIT;
-    }
-
-    /** 写入「剩余 {n} 斤」时中间的数字部分（斤前留空格）。 */
-    private static String stockWeightNumberOnly(Object value) {
-        return plainNumericHint(value);
-    }
-
-    private static boolean warehouseOverviewHasVisibleWarehouses(Map<String, Object> wo) {
-        if (wo == null) {
-            return false;
-        }
-        Object v = wo.get("visibleWarehouses");
-        return v instanceof List<?> l && !l.isEmpty();
     }
 
     /** 按岗位去掉不当的「店长」寒暄（与 {@link #warehouseSalutationDirective} 一致）。 */
@@ -154,44 +140,12 @@ public class StubAnswerComposerNode implements AgentNode {
             answer = pickLlmSanitized(llm, deterministicAnswerRenderer.renderCostFallback(d));
         } else if (coreToolPermissionOnlyBody != null) {
             answer = coreToolPermissionOnlyBody;
-        } else if (state.isBusinessDiagnosisPath() && state.getBusinessDiagnosisPlan() != null
-                && AiAnswerBoundary.shouldRenderPermissionDowngradedBusinessDiagnosis(state)) {
-            answer = deterministicAnswerRenderer.renderPermissionDowngradedBusinessDiagnosis(state,
-                    state.getBusinessDiagnosisPlan());
-        } else if (!DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)
-                && state.getDiagnosisPlan() != null
+        } else if (state.getDiagnosisPlan() != null
                 && DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS.equals(state.getDiagnosisPlan().getPlanType())
                 && (state.isBusinessDiagnosisPath()
                 || DiagnosisPlanBuilder.shouldPreferDiagnosisPlanInComposer(state))) {
-            // 新版 DiagnosisPlan：经营诊断 path 上即使 dishProfitPath 仍为 true（历史标志位）也必须优先，避免落入旧 BusinessDiagnosisPlan+LLM
+            // 新版 DiagnosisPlan：经营诊断 path 上即使 dishProfitPath 仍为 true（历史标志位）也必须优先
             answer = deterministicAnswerRenderer.renderHarnessDiagnosisPlan(state, state.getDiagnosisPlan());
-        } else if (state.isBusinessDiagnosisPath() && state.getBusinessDiagnosisPlan() != null) {
-            BusinessDiagnosisPlan bdPlan = state.getBusinessDiagnosisPlan();
-            if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)) {
-                if (DiagnosisDeterministicRenderer.isWarehouseOrgScope(state)) {
-                    answer = deterministicAnswerRenderer.renderWarehouseBoundedBusinessDiagnosisStorePriority(state,
-                            bdPlan);
-                } else {
-                    LinkedHashMap<String, Object> spPayload =
-                            answerComposerPayloadFactory.buildBusinessDiagnosisStorePriorityPayload(state, bdPlan);
-                    String pidSp = AiPromptIds.COMPOSER_DIAGNOSIS_STORE_PRIORITY_V1;
-                    state.setComposerPromptRegistryId(pidSp);
-                    String llmSp = llmGateway.chatSimple(aiPromptService.require(pidSp),
-                            JSON.toJSONString(spPayload));
-                    String draftSp =
-                            pickLlmSanitized(llmSp, deterministicAnswerRenderer.renderStorePriorityRanking(state, bdPlan));
-                    answer = guardBusinessDiagnosisAnswer(draftSp, state, bdPlan);
-                }
-            } else {
-                LinkedHashMap<String, Object> bdPayload =
-                        answerComposerPayloadFactory.buildBusinessDiagnosisPayload(state, bdPlan);
-                String pidBd = AiPromptIds.COMPOSER_DIAGNOSIS_V1;
-                state.setComposerPromptRegistryId(pidBd);
-                String llm = llmGateway.chatSimple(aiPromptService.require(pidBd), JSON.toJSONString(bdPayload));
-                String draft = pickLlmSanitized(llm,
-                        deterministicAnswerRenderer.renderBusinessDiagnosisFallback(state, bdPlan));
-                answer = guardBusinessDiagnosisAnswer(draft, state, bdPlan);
-            }
         } else if (dishSalesDeterministicEligible(state)) {
             answer = deterministicAnswerRenderer.renderDishSalesAnswerPlan(state.getDishSalesAnswerPlan());
         } else if (state.isDishProfitPath()) {
@@ -226,6 +180,20 @@ public class StubAnswerComposerNode implements AgentNode {
             }
         } else if (businessOverviewMultiAgentFourDomainDeterministicEligible(state)) {
             answer = composeBusinessOverviewMultiAgentFourDomainMarkdown(state).trim();
+        } else if (classicBusinessOverviewAnswerPlanComposerEligible(state)) {
+            AiBusinessOverviewResult o = state.getBusinessOverviewAnswerPlan().getClassicOverviewResult();
+            boolean skipOverviewLlm =
+                    BusinessOverviewDeterministicSummaryBuilder.hasAuthoritativeBusinessOverviewRevenuePlan(state);
+            if (skipOverviewLlm) {
+                answer = deterministicAnswerRenderer.renderBusinessOverviewFallback(state, o).trim();
+            } else {
+                String pidBo = AiPromptIds.COMPOSER_BUSINESS_OVERVIEW_V1;
+                state.setComposerPromptRegistryId(pidBo);
+                String llm = llmGateway.chatSimple(aiPromptService.require(pidBo),
+                        JSON.toJSONString(answerComposerPayloadFactory.buildBusinessOverviewPayload(state, o)));
+                answer = pickLlmSanitized(llm,
+                        deterministicAnswerRenderer.renderBusinessOverviewFallback(state, o));
+            }
         } else if (state.getBusinessOverviewResult() != null) {
             AiBusinessOverviewResult o = state.getBusinessOverviewResult();
             boolean skipOverviewLlm = BusinessOverviewDeterministicSummaryBuilder.hasAuthoritativeBusinessOverviewRevenuePlan(state);
@@ -441,56 +409,6 @@ public class StubAnswerComposerNode implements AgentNode {
                 || t.startsWith("AI 未返回有效");
     }
 
-    /**
-     * LLM 偶发忽略 focusRows 时：若仍存在结构化风险依据，则打回兜底句，避免「未识别风险」类错答。
-     */
-    private String guardBusinessDiagnosisAnswer(String text, AiRunState state, BusinessDiagnosisPlan plan) {
-        if (!businessDiagnosisHasRiskSignal(state, plan)) {
-            return text;
-        }
-        String t = text == null ? "" : text;
-        boolean badDenial = containsBusinessDiagnosisBadDenial(t);
-        if (badDenial) {
-            return deterministicAnswerRenderer.renderBusinessDiagnosisFallback(state, plan);
-        }
-        return t;
-    }
-
-    private static boolean businessDiagnosisHasRiskSignal(AiRunState state, BusinessDiagnosisPlan plan) {
-        if (plan != null && plan.getStorePriorityRanking() != null
-                && plan.getStorePriorityRanking().getFocusStores() != null
-                && !plan.getStorePriorityRanking().getFocusStores().isEmpty()) {
-            return true;
-        }
-        if (plan != null && plan.getRiskItems() != null && !plan.getRiskItems().isEmpty()) {
-            return true;
-        }
-        DishProfitAnswerPlan ap = state != null ? state.getDishProfitAnswerPlan() : null;
-        if (ap != null && ap.getFocusRows() != null && !ap.getFocusRows().isEmpty()) {
-            return true;
-        }
-        return false;
-    }
-
-    /** 与「暂无风险」「未识别」等指令冲突的泛泛否认（在有 risk/focusRows 时不可用）。 */
-    private static boolean containsBusinessDiagnosisBadDenial(String t) {
-        if (t == null || t.isBlank()) {
-            return true;
-        }
-        String s = t;
-        if (s.contains("未识别到") && (s.contains("风险") || s.contains("具体"))) {
-            return true;
-        }
-        if (s.contains("暂无风险") || s.contains("无具体建议") || s.contains("没有明显风险")) {
-            return true;
-        }
-        if (s.contains("暂无具体执行") || s.contains("无具体执行事项")) {
-            return true;
-        }
-        return false;
-    }
-
-
     private static boolean dishSalesDeterministicEligible(AiRunState state) {
         if (state == null || state.getDishSalesAnswerPlan() == null) {
             return false;
@@ -638,6 +556,17 @@ public class StubAnswerComposerNode implements AgentNode {
             return true;
         }
         return false;
+    }
+
+    private static boolean classicBusinessOverviewAnswerPlanComposerEligible(AiRunState state) {
+        if (state == null || !state.isBusinessOverviewPath()) {
+            return false;
+        }
+        BusinessOverviewAnswerPlan bop = state.getBusinessOverviewAnswerPlan();
+        if (bop == null || bop.getPlanType() == null || bop.getClassicOverviewResult() == null) {
+            return false;
+        }
+        return BusinessOverviewAnswerPlan.PLAN_TYPE_BUSINESS_OVERVIEW_CLASSIC_V1.equals(bop.getPlanType().trim());
     }
 
     private static boolean businessOverviewMultiAgentFourDomainDeterministicEligible(AiRunState state) {
@@ -1732,9 +1661,6 @@ public class StubAnswerComposerNode implements AgentNode {
                 && DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS.equals(state.getDiagnosisPlan().getPlanType())
                 && (state.isBusinessDiagnosisPath()
                         || DiagnosisPlanBuilder.shouldPreferDiagnosisPlanInComposer(state))) {
-            return false;
-        }
-        if (state.isBusinessDiagnosisPath() && state.getBusinessDiagnosisPlan() != null) {
             return false;
         }
         return true;

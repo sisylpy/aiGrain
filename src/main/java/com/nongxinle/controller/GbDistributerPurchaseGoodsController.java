@@ -159,7 +159,7 @@ public class GbDistributerPurchaseGoodsController {
             log.info("kanaknGbgoods" + purchaseToday.get(0).getGbDistributerGoodsEntity());
         }
         Map<String, Object> map1 = new HashMap<>();
-        map1.put("purDepId", purDepId);
+        map1.put("toDepId", purDepId);
         map1.put("status", 3);
         map1.put("equalBuyStatus", 0);
         map1.put("notEqualOrderType", 9);

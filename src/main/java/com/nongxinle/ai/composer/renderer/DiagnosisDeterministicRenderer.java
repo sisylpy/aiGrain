@@ -1,5 +1,6 @@
 package com.nongxinle.ai.composer.renderer;
 
+import com.nongxinle.ai.agent.business.BusinessDiagnosisAgentV1;
 import com.nongxinle.ai.context.AiDepartmentScopeDTO;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
@@ -7,7 +8,6 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
-import com.nongxinle.ai.dto.business.BusinessDiagnosisPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.graph.business.CostInsightIntentConvergence;
@@ -30,11 +30,17 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Deterministic fallback prose for business diagnosis paths (store priority, harness {@link DiagnosisPlan},
- * {@link BusinessDiagnosisPlan} summaries). Does not call the LLM.
+ * Deterministic fallback prose for business diagnosis paths (harness {@link DiagnosisPlan}). Does not call the LLM.
  */
 @Component
 public final class DiagnosisDeterministicRenderer {
+
+    /** 与 {@link BusinessDiagnosisAgentV1} findingType 对齐（跨包仅在此处用字面量，避免访问包可见常量）。 */
+    private static final String FT_PROFIT_QUALITY_RISK = "PROFIT_QUALITY_RISK";
+    private static final String FT_PURCHASE_PRESSURE = "PURCHASE_PRESSURE";
+    private static final String FT_COST_PRESSURE = "COST_PRESSURE";
+    private static final String FT_STOCK_REDUCE_ABNORMAL = "STOCK_REDUCE_ABNORMAL";
+    private static final String FT_LOW_DISH_MARGIN = "LOW_DISH_MARGIN";
 
     /** 门店账号单店口径下，Composer/LLM 偶发把「采购 327」写成「327.0万元」；金额字段本身为元，只对带小数的「X万元」做纠偏。 */
     private static final Pattern STORE_PRIORITY_DECIMAL_WAN_YUAN_CONFUSION =
@@ -57,36 +63,6 @@ public final class DiagnosisDeterministicRenderer {
         }
         AiResolvedOrgScope org = state.getResolvedQueryContext().getOrgScope();
         return org != null && AiResolvedOrgScope.SCOPE_WAREHOUSE.equals(org.getScopeType());
-    }
-
-    /**
-     * 经营诊断 store_priority_ranking：确定性短文；{@link AiRunState} 非空时在店长单店 STORE Scope 下做显示层纠偏
-     * （集团视角话术 / 小数万元误标注），不改 Plan 数据来源。
-     */
-    public String renderStorePriorityRanking(AiRunState state, BusinessDiagnosisPlan plan) {
-        return applyStorePrioritySingleStoreScopeDisplayPatches(shortFallbackStorePriorityRanking(plan), state);
-    }
-
-    /**
-     * D-11：库房 Scope 下用户对「哪家店优先」类追问——只给库房证据链摘要，不调 LLM、不做多门店经营排名。
-     */
-    public String renderWarehouseBoundedBusinessDiagnosisStorePriority(AiRunState state, BusinessDiagnosisPlan plan) {
-        String anchor = resolveWarehouseAnchorLabel(state);
-        StringBuilder sb = new StringBuilder();
-        sb.append("【库房视角说明】\n");
-        sb.append("当前账号为库房端，只能查看 ").append(anchor).append(" 权限范围内的库存、出库/核销与采购入库相关数据。");
-        sb.append("不能做全集团或多门店「哪家店综合经营问题最大」的排名，也不讨论营业额与菜品毛利。\n\n");
-        sb.append("【库房侧风险摘要】\n");
-
-        boolean any = appendWarehousePurchaseStockEvidence(sb, plan);
-        any |= appendRiskItemsForDomains(sb, plan, "PURCHASE", "STOCK_REDUCE");
-        any |= appendMainFindingsFiltered(sb, plan, 4, false);
-
-        if (!any) {
-            sb.append("- 本轮在库房权限内可用的结构化采购/出库摘要较少；建议核对盘点差异、报损与入库单据是否在统计周期内完整同步。\n");
-        }
-        sb.append("\n若需对比多家门店的经营表现或营业额排名，请在具备相应权限的岗位下提问。");
-        return sb.toString().trim();
     }
 
     private static String resolveWarehouseAnchorLabel(AiRunState state) {
@@ -163,7 +139,241 @@ public final class DiagnosisDeterministicRenderer {
         if (isStoreCompareEvidenceAnswerTurn(state, plan)) {
             return renderStoreCompareEvidenceAnswer(plan);
         }
+        if (isStorePriorityRankingAnswerTurn(state, plan)) {
+            return renderStorePriorityRankingAnswer(state, plan);
+        }
         return shortDeterministicHarnessDiagnosisPlan(plan);
+    }
+
+    /**
+     * 门店风险/优先级追问（{@code store_priority_ranking} 或同类口语）单独编排：首句点店名，再按域简述依据；不先宣读单一出库段落。
+     */
+    public static boolean isStorePriorityRankingAnswerTurn(AiRunState state, DiagnosisPlan plan) {
+        if (plan == null) {
+            return false;
+        }
+        if (isWarehouseOrgScope(state)) {
+            return false;
+        }
+        if (isBusinessDiagnosisStorePriorityTurn(state)) {
+            return true;
+        }
+        Map<String, Object> dbg = plan.getDebug();
+        if (dbg != null
+                && BusinessDiagnosisAgentV1.DIAGNOSIS_QUESTION_STORE_PRIORITY_RANKING.equals(
+                dbg.get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_QUESTION_TYPE))) {
+            return true;
+        }
+        if (state != null
+                && userMessageLooksLikeStorePriorityRanking(state)
+                && state.isBusinessDiagnosisPath()
+                && state.getDiagnosisPlan() != null) {
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean userMessageLooksLikeStorePriorityRanking(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        String q = state.getNormalizedUserInput();
+        if (!StringUtils.hasText(q)) {
+            q = state.getRawUserInput();
+        }
+        if (!StringUtils.hasText(q)) {
+            return false;
+        }
+        String t = q.trim();
+        return t.contains("哪个门店问题最大")
+                || t.contains("哪家门店问题最大")
+                || t.contains("哪个店问题最大")
+                || t.contains("哪家店问题最大")
+                || t.contains("哪个店问题最多")
+                || t.contains("哪家店问题最多")
+                || t.contains("哪个门店问题最多")
+                || t.contains("哪个店风险最高")
+                || t.contains("哪家店风险最高")
+                || t.contains("哪个门店风险最高");
+    }
+
+    private static String renderStorePriorityRankingAnswer(AiRunState state, DiagnosisPlan plan) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("【门店综合风险·优先关注】\n");
+
+        boolean strictStoreRank = hasFindingType(plan, FT_PROFIT_QUALITY_RISK);
+        String topStore = resolveStorePriorityTopStoreName(plan);
+        boolean named = StringUtils.hasText(topStore);
+
+        if (strictStoreRank && named) {
+            if (plan.getTimeLabel() != null && !plan.getTimeLabel().isBlank()) {
+                sb.append('「').append(plan.getTimeLabel().trim()).append("」范围内问题最大的门店是 ")
+                        .append(topStore.trim()).append("。\n\n");
+            } else {
+                sb.append("本期问题最大的门店是 ").append(topStore.trim()).append("。\n\n");
+            }
+        } else if (named) {
+            sb.append("当前数据不足以形成严格的门店风险排名；从已返回指标看，")
+                    .append(topStore.trim()).append(" 更值得优先关注。\n\n");
+        } else {
+            sb.append("当前数据不足以形成严格的门店风险排名；已挂载子域未对齐到可点名的门店级综合结论，建议结合门店排行明细再判断。\n\n");
+        }
+
+        sb.append("判断依据（均来自诊断计划与 AnswerPlan 已有聚合字段，未重算）：\n");
+        sb.append("- 营业额表现：").append(storePriorityRevenueLine(plan)).append('\n');
+        sb.append("- 采购金额或采购异常：").append(storePriorityPurchaseLine(plan)).append('\n');
+        sb.append("- 出库/核销金额：").append(storePriorityStockLine(plan)).append('\n');
+        sb.append("- 菜品毛利或低毛利菜品：").append(storePriorityDishLine(plan)).append('\n');
+        sb.append("- 数据缺失或暂不可判：").append(storePriorityMissingLine(plan)).append('\n');
+
+        List<Map<String, Object>> sug = plan.getActionSuggestions();
+        if (sug != null && !sug.isEmpty()) {
+            sb.append("\n可跟进动作（摘自诊断计划建议，按需取用）：\n");
+            int n = 0;
+            for (Map<String, Object> row : sug) {
+                if (row == null || n >= 4) {
+                    break;
+                }
+                String a = str(row.get("action"));
+                if (!a.isBlank()) {
+                    sb.append("- ").append(a.trim()).append('\n');
+                    n++;
+                }
+            }
+        }
+
+        return sb.toString().trim();
+    }
+
+    private static String resolveStorePriorityTopStoreName(DiagnosisPlan plan) {
+        if (plan.getDebug() != null) {
+            Object o = plan.getDebug().get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_TOP_STORE_NAME);
+            if (o != null && StringUtils.hasText(o.toString())) {
+                return o.toString().trim();
+            }
+        }
+        String fallback = BusinessDiagnosisAgentV1.extractStoreNameForStorePriorityRanking(plan, null);
+        return fallback == null ? "" : fallback.trim();
+    }
+
+    private static boolean hasFindingType(DiagnosisPlan plan, String findingType) {
+        if (!StringUtils.hasText(findingType) || plan.getFocusFindings() == null) {
+            return false;
+        }
+        for (Map<String, Object> f : plan.getFocusFindings()) {
+            if (f != null && findingType.equals(str(f.get("findingType")))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String clipFindingDetail(Map<String, Object> f, int maxLen) {
+        if (f == null) {
+            return "";
+        }
+        String d = str(f.get("detail"));
+        if (d.isEmpty()) {
+            return str(f.get("title"));
+        }
+        if (d.length() <= maxLen) {
+            return d;
+        }
+        return d.substring(0, maxLen).trim() + "…";
+    }
+
+    private static Map<String, Object> firstFinding(DiagnosisPlan plan, String findingType) {
+        if (plan.getFocusFindings() == null) {
+            return null;
+        }
+        for (Map<String, Object> f : plan.getFocusFindings()) {
+            if (f != null && findingType.equals(str(f.get("findingType")))) {
+                return f;
+            }
+        }
+        return null;
+    }
+
+    private static boolean missingHas(DiagnosisPlan plan, String key) {
+        if (plan.getMissingSections() == null || !StringUtils.hasText(key)) {
+            return false;
+        }
+        for (String s : plan.getMissingSections()) {
+            if (s != null && key.equalsIgnoreCase(s.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String storePriorityRevenueLine(DiagnosisPlan plan) {
+        if (missingHas(plan, "revenue")) {
+            return "营业额子域 AnswerPlan 未挂载，无法从营收侧补强门店级结论。";
+        }
+        Map<String, Object> pq = firstFinding(plan, FT_PROFIT_QUALITY_RISK);
+        if (pq != null) {
+            return "门店排行行显示该店营业额领先，并与下文采购/出库压力判断对齐（AnswerPlan 门店匹配行）。";
+        }
+        Map<String, Object> nm = firstFinding(plan, "NO_MAJOR_FINDING");
+        if (nm != null && plan.getFocusFindings() != null && plan.getFocusFindings().size() == 1) {
+            return str(nm.get("detail"));
+        }
+        return "未发现单独命中「营业额」阈值的告警摘要；如需对比可看营业额门店排行类 AnswerPlan。";
+    }
+
+    private static String storePriorityPurchaseLine(DiagnosisPlan plan) {
+        if (missingHas(plan, "purchase")) {
+            return "采购子域未挂载，对应门店采购压力无法在诊断中展开。";
+        }
+        Map<String, Object> pq = firstFinding(plan, FT_PROFIT_QUALITY_RISK);
+        if (pq != null) {
+            return "该店采购金额相对该店营业额偏高（AnswerPlan 门店匹配行，与「利润质量待关注」同源信号）。";
+        }
+        Map<String, Object> pur = firstFinding(plan, FT_PURCHASE_PRESSURE);
+        if (pur != null) {
+            return "集团/汇总口径：" + clipFindingDetail(pur, 120);
+        }
+        return "未发现命中当前规则的采购压力摘要，或风险主要体现在其它域。";
+    }
+
+    private static String storePriorityStockLine(DiagnosisPlan plan) {
+        if (missingHas(plan, "stockReduce")) {
+            return "出库/核销子域未挂载，无法在同类口径下补足门店流出判断。";
+        }
+        Map<String, Object> pq = firstFinding(plan, FT_PROFIT_QUALITY_RISK);
+        if (pq != null) {
+            return "该店出库/核销合计相对该店营业额比值偏高（同上，不单列宣读集团总出库段落）。";
+        }
+        Map<String, Object> cost = firstFinding(plan, FT_COST_PRESSURE);
+        if (cost != null) {
+            return "汇总口径：" + clipFindingDetail(cost, 120);
+        }
+        Map<String, Object> ab = firstFinding(plan, FT_STOCK_REDUCE_ABNORMAL);
+        if (ab != null) {
+            return clipFindingDetail(ab, 120);
+        }
+        return "未检出废弃/损耗/退货分项或汇总出库压力的规则命中。";
+    }
+
+    private static String storePriorityDishLine(DiagnosisPlan plan) {
+        if (missingHas(plan, "dishProfit")) {
+            return "菜品毛利子域未挂载，低毛利菜品无法在诊断中展开。";
+        }
+        Map<String, Object> dm = firstFinding(plan, FT_LOW_DISH_MARGIN);
+        if (dm != null) {
+            return clipFindingDetail(dm, 120);
+        }
+        return "未发现命中当前规则的低毛利代表性菜品摘要。";
+    }
+
+    private static String storePriorityMissingLine(DiagnosisPlan plan) {
+        if (plan.getMissingSections() != null && !plan.getMissingSections().isEmpty()) {
+            return "未挂载或缺口域：" + String.join("、", plan.getMissingSections()) + "。";
+        }
+        if (plan.getWarnings() == null || plan.getWarnings().isEmpty()) {
+            return "暂无额外告警；若门店排行行不齐仍需回到后台核对权限与工具覆盖。";
+        }
+        return String.join("；", plan.getWarnings());
     }
 
     /**
@@ -428,10 +638,6 @@ public final class DiagnosisDeterministicRenderer {
         return c.toString().trim();
     }
 
-    public String renderBusinessDiagnosisFallback(AiRunState state, BusinessDiagnosisPlan plan) {
-        return shortFallbackBusinessDiagnosis(state, plan);
-    }
-
     /**
      * D-11：{@code STORE} + 唯一可见门店时，修正终稿中与集团广角混用的措辞；
      * 并将「327.0万元」这类<strong>含小数且金额实为元</strong>的串改回「327.0元」（采购等字段口径为元）。
@@ -465,45 +671,6 @@ public final class DiagnosisDeterministicRenderer {
         }
         m.appendTail(sb);
         return sb.toString();
-    }
-
-    private static String shortFallbackStorePriorityRanking(BusinessDiagnosisPlan plan) {
-        if (plan == null || plan.getStorePriorityRanking() == null) {
-            return "当前未能生成门店优先级排序，请稍后重试或核对可见门店范围。";
-        }
-        List<BusinessDiagnosisPlan.StorePriorityFocus> fs = plan.getStorePriorityRanking().getFocusStores();
-        if (fs == null || fs.isEmpty()) {
-            return "当前未能生成门店优先级排序，请稍后重试或核对可见门店范围。";
-        }
-        BusinessDiagnosisPlan.StorePriorityFocus first = fs.get(0);
-        StringBuilder sb = new StringBuilder();
-        sb.append("今天建议先处理 ").append(DeterministicRendererSupport.nz(first.getStoreName())).append("。\n\n");
-        sb.append("原因是：").append(DeterministicRendererSupport.nz(first.getReason())).append("\n\n");
-        if (fs.size() > 1) {
-            BusinessDiagnosisPlan.StorePriorityFocus second = fs.get(1);
-            sb.append(DeterministicRendererSupport.nz(second.getStoreName())).append(" 排在后面：")
-                    .append(DeterministicRendererSupport.nz(second.getReason())).append("\n\n");
-        }
-        sb.append("今天先做三件事：\n");
-        int k = 0;
-        for (BusinessDiagnosisPlan.StorePriorityFocus f : fs) {
-            if (f == null) {
-                continue;
-            }
-            String su = f.getSuggestion();
-            if (su == null || su.isBlank()) {
-                continue;
-            }
-            k++;
-            sb.append(k).append(". ").append(su.trim()).append("\n");
-            if (k >= 3) {
-                break;
-            }
-        }
-        if (k == 0 && first.getSuggestion() != null && !first.getSuggestion().isBlank()) {
-            sb.append("1. ").append(first.getSuggestion().trim());
-        }
-        return sb.toString().trim();
     }
 
     /** 新版 {@link DiagnosisPlan}（只读子域 AnswerPlan 聚合）：确定性短文，不调用 LLM、不心算。 */
@@ -711,24 +878,6 @@ public final class DiagnosisDeterministicRenderer {
         return parts.isEmpty() ? null : String.join("；", parts);
     }
 
-    private static String shortFallbackBusinessDiagnosis(AiRunState state, BusinessDiagnosisPlan plan) {
-        if (state != null && isBusinessDiagnosisStorePriorityTurn(state) && plan != null
-                && plan.getStorePriorityRanking() != null
-                && plan.getStorePriorityRanking().getFocusStores() != null
-                && !plan.getStorePriorityRanking().getFocusStores().isEmpty()) {
-            return applyStorePrioritySingleStoreScopeDisplayPatches(shortFallbackStorePriorityRanking(plan), state);
-        }
-        DishProfitAnswerPlan ap = state != null ? state.getDishProfitAnswerPlan() : null;
-        if (ap != null && DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN.equals(ap.getPlanType())
-                && ap.getFocusRows() != null && !ap.getFocusRows().isEmpty()) {
-            Map<String, Object> r0 = ap.getFocusRows().get(0);
-            if (r0 != null) {
-                return lowestMarginDiagnosisFallbackLine(r0);
-            }
-        }
-        return shortFallbackBusinessDiagnosisFromPlanOnly(plan);
-    }
-
     /** Exposed for {@link DeterministicAnswerRenderer} dish-profit deterministic paths (same wording). */
     public static String lowestMarginDiagnosisFallbackLine(Map<String, Object> r0) {
         String name = DeterministicRendererSupport.nz(r0.get("dishName"));
@@ -740,7 +889,7 @@ public final class DiagnosisDeterministicRenderer {
         return sb.toString();
     }
 
-    /** 与 BusinessDiagnosisPlanBuilder 一致：仅拼接非空的销售额/理论/实际/毛利率，禁止「xx为，」半截。 */
+    /** 仅拼接非空的销售额/理论/实际/毛利率，禁止「xx为，」半截。 */
     public static String buildDiagnosisDishDragEvidenceSentenceStub(String dishName, Map<String, Object> row) {
         List<String> segs = new ArrayList<>();
         String rate = diagnosisFmtPercent(r0Get(row, "blendedGrossMarginRateOnListPrice"));
@@ -826,235 +975,4 @@ public final class DiagnosisDeterministicRenderer {
         return s;
     }
 
-    private static String shortFallbackBusinessDiagnosisFromPlanOnly(BusinessDiagnosisPlan plan) {
-        if (plan == null) {
-            return "本轮经营诊断计划暂未生成，请稍后重试。";
-        }
-        StringBuilder sb = new StringBuilder();
-        if (plan.getOverallSummary() != null
-                && plan.getOverallSummary().getHeadline() != null
-                && !plan.getOverallSummary().getHeadline().isBlank()) {
-            sb.append(plan.getOverallSummary().getHeadline().trim());
-        }
-        if (plan.getMainFindings() != null && !plan.getMainFindings().isEmpty()) {
-            if (sb.length() > 0) {
-                sb.append('\n');
-            }
-            sb.append("主要发现：");
-            int i = 0;
-            for (String f : plan.getMainFindings()) {
-                if (f == null || f.isBlank()) {
-                    continue;
-                }
-                if (i >= 5) {
-                    break;
-                }
-                sb.append(i == 0 ? "" : "；").append(f.trim());
-                i++;
-            }
-        }
-        if (plan.getRiskItems() != null && !plan.getRiskItems().isEmpty()) {
-            if (sb.length() > 0) {
-                sb.append('\n');
-            }
-            sb.append("风险：");
-            int j = 0;
-            for (BusinessDiagnosisPlan.DiagnosisRiskItem ri : plan.getRiskItems()) {
-                if (ri == null || (ri.getTitle() == null || ri.getTitle().isBlank())) {
-                    continue;
-                }
-                if (j >= 5) {
-                    break;
-                }
-                sb.append(j == 0 ? "" : "；").append(ri.getTitle().trim());
-                j++;
-            }
-        }
-        if (plan.getActionItems() != null && !plan.getActionItems().isEmpty()) {
-            if (sb.length() > 0) {
-                sb.append('\n');
-            }
-            sb.append("建议：");
-            int k = 0;
-            for (String a : plan.getActionItems()) {
-                if (a == null || a.isBlank()) {
-                    continue;
-                }
-                if (k >= 5) {
-                    break;
-                }
-                sb.append(k == 0 ? "" : "；").append(a.trim());
-                k++;
-            }
-        }
-        String s = sb.toString().trim();
-        return s.isEmpty() ? "经营诊断结果已就绪，详情见调试计划。" : s;
-    }
-
-    /**
-     * D-11：库房 / 采购 / 配送等在诊断链路上的权限降级正文（不调 LLM，不包含营业额与菜品毛利结论）。
-     */
-    public String renderPermissionDowngradedBusinessDiagnosis(AiRunState state, BusinessDiagnosisPlan plan) {
-        if (plan == null) {
-            return "";
-        }
-        AiUserContext ctx = state != null ? state.getAiUserContext() : null;
-        String rc = ctx != null ? ctx.getRoleCode() : null;
-        if (isWarehouseOrgScope(state)
-                || AiRoleCodes.WAREHOUSE_MANAGER.equals(rc)
-                || AiRoleCodes.REGION_WAREHOUSE.equals(rc)) {
-            return renderWarehouseDowngradedBusinessDiagnosis(state, plan);
-        }
-        if (CostInsightIntentConvergence.isProcurementCostConvergenceRole(rc)) {
-            return renderPurchaserDowngradedBusinessDiagnosis(plan);
-        }
-        if (AiRoleCodes.DELIVERY_SUPPLIER.equals(rc) || AiRoleCodes.DELIVERY_DRIVER.equals(rc)) {
-            return renderDeliveryDowngradedBusinessDiagnosis(plan);
-        }
-        return renderPurchaserDowngradedBusinessDiagnosis(plan);
-    }
-
-    private static String renderWarehouseDowngradedBusinessDiagnosis(AiRunState state, BusinessDiagnosisPlan plan) {
-        String anchor = resolveWarehouseAnchorLabel(state);
-        StringBuilder sb = new StringBuilder();
-        sb.append("【权限降级·库房视角】\n");
-        sb.append("当前账号不包含营业额或菜品毛利权限；只能查看 ").append(anchor).append(" 权限范围内的库存、出库/核销与采购入库侧结构化摘要。\n");
-        sb.append("以下不作为全集团或多门店综合经营排名依据。\n\n");
-        sb.append("【库房侧风险摘要】\n");
-
-        boolean any = appendWarehousePurchaseStockEvidence(sb, plan);
-        any |= appendRiskItemsForDomains(sb, plan, "PURCHASE", "STOCK_REDUCE");
-        any |= appendMainFindingsFiltered(sb, plan, 4, true);
-
-        if (!any) {
-            sb.append("- 本轮在库房权限内可用的结构化采购/出库摘要较少；建议核对盘点差异、报损与入库单据是否在统计周期内完整同步。\n");
-        }
-        sb.append("\n若需营业额或菜品毛利视角，请在具备相应权限的岗位下提问。");
-        return sb.toString().trim();
-    }
-
-    private static String renderPurchaserDowngradedBusinessDiagnosis(BusinessDiagnosisPlan plan) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("【权限降级·采购视角】\n");
-        sb.append("当前账号不包含营业额或菜品毛利结构化结论；以下为采购与出库/核销范围内的摘要（非全集团经营排名）。\n\n");
-        sb.append("【采购侧风险摘要】\n");
-        boolean any = appendWarehousePurchaseStockEvidence(sb, plan);
-        any |= appendRiskItemsForDomains(sb, plan, "PURCHASE", "STOCK_REDUCE");
-        any |= appendMainFindingsFiltered(sb, plan, 5, true);
-        if (!any) {
-            sb.append("- 本轮在采购权限内可用的结构化摘要较少；建议核对入库单据与核销分型是否在统计周期内完整同步。\n");
-        }
-        sb.append("\n如需营业额或菜品毛利视角，请在具备相应权限的岗位下提问。");
-        return sb.toString().trim();
-    }
-
-    private static String renderDeliveryDowngradedBusinessDiagnosis(BusinessDiagnosisPlan plan) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("【权限降级·配送侧视角】\n");
-        sb.append("当前账号不包含营业额或菜品毛利分析权限；以下仅摘要配送侧可见的采购与库存流转相关信号（非综合经营诊断）。\n\n");
-        sb.append("【配送侧可见摘要】\n");
-        boolean any = appendWarehousePurchaseStockEvidence(sb, plan);
-        any |= appendRiskItemsForDomains(sb, plan, "PURCHASE", "STOCK_REDUCE");
-        any |= appendMainFindingsFiltered(sb, plan, 5, true);
-        if (!any) {
-            sb.append("- 本轮在权限内可用的结构化摘要较少；建议核对出库/核销与入库同步是否完整。\n");
-        }
-        sb.append("\n如需营业额或菜品毛利视角，请在具备相应权限的岗位下提问。");
-        return sb.toString().trim();
-    }
-
-    private static boolean appendWarehousePurchaseStockEvidence(StringBuilder sb, BusinessDiagnosisPlan plan) {
-        boolean any = false;
-        BusinessDiagnosisPlan.SourceResultSummary srs = plan.getSourceResultSummary();
-        if (srs != null && srs.getPurchase() != null && srs.getPurchase().getTotalAmount() != null) {
-            sb.append("- 采购入库合计约 ")
-                    .append(String.format(Locale.CHINA, "%.0f", srs.getPurchase().getTotalAmount()))
-                    .append(" 元（来自采购概览工具）\n");
-            any = true;
-        }
-        if (srs != null && srs.getStockReduce() != null && srs.getStockReduce().getTotalAmount() != null) {
-            sb.append("- 出库/核销四类合计约 ")
-                    .append(String.format(Locale.CHINA, "%.1f", srs.getStockReduce().getTotalAmount()))
-                    .append(" 元（来自核销/出库汇总工具）\n");
-            any = true;
-        }
-        return any;
-    }
-
-    private static boolean appendRiskItemsForDomains(StringBuilder sb, BusinessDiagnosisPlan plan, String... domains) {
-        if (plan.getRiskItems() == null || domains == null || domains.length == 0) {
-            return false;
-        }
-        boolean any = false;
-        for (BusinessDiagnosisPlan.DiagnosisRiskItem ri : plan.getRiskItems()) {
-            if (ri == null || ri.getDomain() == null) {
-                continue;
-            }
-            String dom = ri.getDomain().trim();
-            boolean match = false;
-            for (String d : domains) {
-                if (d != null && d.equalsIgnoreCase(dom)) {
-                    match = true;
-                    break;
-                }
-            }
-            if (!match) {
-                continue;
-            }
-            if (!StringUtils.hasText(ri.getTitle())) {
-                continue;
-            }
-            if (permissionDowngradeDiagnosisLineExcluded(ri.getTitle())
-                    || (StringUtils.hasText(ri.getEvidence()) && permissionDowngradeDiagnosisLineExcluded(ri.getEvidence()))) {
-                continue;
-            }
-            sb.append("- ").append(ri.getTitle().trim());
-            if (StringUtils.hasText(ri.getEvidence())) {
-                sb.append("（").append(ri.getEvidence().trim()).append("）");
-            }
-            sb.append("\n");
-            any = true;
-        }
-        return any;
-    }
-
-    private static boolean appendMainFindingsFiltered(StringBuilder sb, BusinessDiagnosisPlan plan, int maxLines,
-            boolean permissionDowngradeExtraFilter) {
-        if (plan.getMainFindings() == null) {
-            return false;
-        }
-        boolean any = false;
-        int added = 0;
-        for (String f : plan.getMainFindings()) {
-            if (f == null || f.isBlank()) {
-                continue;
-            }
-            if (warehouseFindingExcludedForWarehouseScope(f)) {
-                continue;
-            }
-            if (permissionDowngradeExtraFilter && permissionDowngradeDiagnosisLineExcluded(f)) {
-                continue;
-            }
-            sb.append("- ").append(f.trim()).append("\n");
-            any = true;
-            if (++added >= maxLines) {
-                break;
-            }
-        }
-        return any;
-    }
-
-    /** 降级渲染：剔除集团排行、营业额与菜品毛利口径等句式（与库房追问过滤对齐并稍加扩展）。 */
-    private static boolean permissionDowngradeDiagnosisLineExcluded(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return true;
-        }
-        if (warehouseFindingExcludedForWarehouseScope(raw)) {
-            return true;
-        }
-        String s = raw.trim();
-        return s.contains("全集团") || s.contains("集团排名") || s.contains("综合经营诊断")
-                || s.contains("毛利率") || s.contains("毛利偏低") || s.contains("拖累毛利")
-                || s.contains("销售额") || s.contains("营业额占比") || s.contains("菜品销售额");
-    }
 }

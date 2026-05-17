@@ -66,6 +66,11 @@ public interface GbDepartmentDisGoodsService extends IService<GbDepartmentDisGoo
     List<GbDistributerGoodsEntity> disQueryDisGoodsWithOrderForAiTree(Map<String, Object> map);
 
     /**
+     * 按部门分页查询商品（从部门商品表查询，返回分销商商品实体）
+     */
+    List<GbDistributerGoodsEntity> disQueryDepGoodsWithOrderForAiTree(Map<String, Object> map);
+
+    /**
      * 部门已关联批发商商品的快速检索（老项目 queryDepDisGoodsQuickSearchStrGb，按部门商品主键去重排序）
      */
     TreeSet<GbDepartmentDisGoodsEntity> queryDepDisGoodsQuickSearchStrGb(Map<String, Object> map);

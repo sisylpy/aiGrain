@@ -47,6 +47,10 @@ public class MasterBusinessAgentResult {
     @Builder.Default
     private boolean dishProfitToolExecutedByMasterPath = false;
 
+    /** warehouse_stock_overview 由 Master → {@link com.nongxinle.ai.agent.business.WarehouseStockAgent} 独占。 */
+    @Builder.Default
+    private boolean warehouseStockToolExecutedByMasterPath = false;
+
     /**
      * 四域 Harness：循环正常跑完且无未捕获异常（与「是否有执行成功的域」无关）。应与 debug
      * {@code businessOverviewMultiAgentBatchCompleted} 同义。
@@ -64,6 +68,10 @@ public class MasterBusinessAgentResult {
     /** 四域中至少一域工具实际 success。 */
     @Builder.Default
     private boolean businessOverviewMultiAgentAnyDomainSuccess = false;
+
+    /** 经典六工具经营概况由 Master → {@link com.nongxinle.ai.agent.business.BusinessOverviewAgent} 执行后，BTEN 应跳过重复工具循环。 */
+    @Builder.Default
+    private boolean classicBusinessOverviewMasterPath = false;
 
     public static MasterBusinessAgentResult skipped(String reason) {
         return MasterBusinessAgentResult.builder()

@@ -5,7 +5,6 @@ import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.dto.business.AiBusinessOverviewResult;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
-import com.nongxinle.ai.dto.business.BusinessDiagnosisPlan;
 import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
@@ -38,6 +37,10 @@ import java.util.Map;
 public class AiRunState {
 
     private Long runId;
+    /**
+     * 可选。与 {@link com.nongxinle.ai.platform.dto.AiRunCreateRequest#getAdvisorId()} 对齐；Run 归因，不参与语义与权限。
+     */
+    private Long advisorId;
     /** 与 {@link com.nongxinle.ai.platform.dto.AiRunCreateRequest#getConversationId()} 一致（会话表主键） */
     private Long conversationId;
     private Long userId;
@@ -48,7 +51,9 @@ public class AiRunState {
     private String rawUserInput;
     private String normalizedUserInput;
 
-    private AiWorkspaceMode workspaceMode;
+    /** 默认 BUSINESS_CHAT：Harness 主链路以 LLM {@link AiResolvedQueryContext} 路由，非 null，避免 DataPlanner 误截断。 */
+    @Builder.Default
+    private AiWorkspaceMode workspaceMode = AiWorkspaceMode.BUSINESS_CHAT;
 
     private String userRole;
 
@@ -211,12 +216,7 @@ public class AiRunState {
      */
     private DailyRevenueAnswerPlan revenueAnswerPlan;
 
-    /** 经营诊断 Harness：服务端组装的计划（Composer / Debug 同源）。 */
-    private BusinessDiagnosisPlan businessDiagnosisPlan;
-
-    /**
-     * 经营诊断：只读子域 AnswerPlan 聚合（{@link DiagnosisPlanBuilder}）；与 {@link #businessDiagnosisPlan} 并存。
-     */
+    /** 经营诊断：只读子域 AnswerPlan 聚合（{@link DiagnosisPlanBuilder}）。 */
     private DiagnosisPlan diagnosisPlan;
 
     /** 库房库存概览结构化摘要（供 {@code answer_delta.data.warehouseOverview}）。 */

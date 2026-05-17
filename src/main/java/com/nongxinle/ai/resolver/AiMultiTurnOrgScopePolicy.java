@@ -95,6 +95,11 @@ public final class AiMultiTurnOrgScopePolicy {
         if (semanticDeclaresStoreFocus(semanticLlm, baselineOrg)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
+        // 【关键修复】当 LLM 返回 OVERRIDE/NEW 但无具体门店名时（如"全部店铺平均毛利"），
+        // 不继承上一轮 STORE scope，保持 baselineOrg（GROUP 全量可见）。
+        if (semanticDeclaresGroupOverride(semanticLlm)) {
+            return new OrgScopeApplyOutcome(baselineOrg, false);
+        }
         if (shouldReleaseHarnessDualStoreContextFromPreviousTurn(previousTurn, semanticLlm)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
@@ -189,6 +194,27 @@ public final class AiMultiTurnOrgScopePolicy {
         }
         AiQuerySemanticParseResult.RequestedScopePart rs = sem.getRequestedScope();
         return rs != null && StringUtils.hasText(rs.getMentionedStoreName());
+    }
+
+    /**
+     * 检测 LLM 语义层是否显式声明了「集团/全店范围覆盖」。
+     * 当 scopeAction=OVERRIDE 或 NEW，但 mentionedStoreNames 为空时，
+     * 说明用户在说「全部店铺/全集团范围」，此时不允许继承上一轮的 STORE。
+     */
+    private static boolean semanticDeclaresGroupOverride(AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.isParseMissing()) {
+            return false;
+        }
+        // 必须有 OVERRIDE 或 NEW action
+        String action = normalizeSemanticAction(sem.getScopeAction());
+        if (!("OVERRIDE".equals(action) || "NEW".equals(action))) {
+            return false;
+        }
+        // 并且没有点名具体门店
+        if (!sem.effectiveMentionedStoreNames().isEmpty()) {
+            return false;
+        }
+        return true;
     }
 
     /**

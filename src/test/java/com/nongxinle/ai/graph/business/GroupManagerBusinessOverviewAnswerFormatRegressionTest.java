@@ -104,7 +104,7 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
                 .toolResults(toolResultsMinimal(boEnv, Map.of("purchaseSubTotal", new BigDecimal("3303"))))
                 .build();
 
-        new BusinessOverviewAgentNode(publisher).run(st);
+        new BusinessOverviewAgentNode(publisher).aggregateIfApplicable(st);
 
         AiBusinessOverviewResult ov = st.getBusinessOverviewResult();
         assertThat(ov).isNotNull();
@@ -182,7 +182,7 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
 
         AiRunState st = baseRunState(uc, rq, boEnv);
 
-        new BusinessOverviewAgentNode(publisher).run(st);
+        new BusinessOverviewAgentNode(publisher).aggregateIfApplicable(st);
 
         AiBusinessOverviewResult ov = st.getBusinessOverviewResult();
         assertThat(ov.getPriorityStoresBrief()).startsWith("需要优先关注的门店：");
@@ -232,7 +232,7 @@ class GroupManagerBusinessOverviewAnswerFormatRegressionTest {
 
         AiRunState st = baseRunState(uc, rq, boEnv);
 
-        new BusinessOverviewAgentNode(publisher).run(st);
+        new BusinessOverviewAgentNode(publisher).aggregateIfApplicable(st);
 
         assertThat(st.getBusinessOverviewResult().getPriorityStoresBrief())
                 .isEqualTo(AiGroupOverviewStoreBrief.noIssuesLine());

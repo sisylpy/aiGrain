@@ -4,7 +4,6 @@ import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.core.AiRunState;
-import com.nongxinle.ai.dto.business.BusinessDiagnosisPlan;
 import com.alibaba.fastjson2.JSON;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import lombok.AllArgsConstructor;
@@ -475,22 +474,6 @@ public class AiConversationTurnMemory {
         }
         Set<String> names = new LinkedHashSet<>();
         collectDishNamesFromAnswerPlan(state.getDishProfitAnswerPlan(), names);
-        BusinessDiagnosisPlan bd = state.getBusinessDiagnosisPlan();
-        if (bd != null) {
-            if (bd.getFocusTargets() != null && bd.getFocusTargets().getDishes() != null) {
-                for (String d : bd.getFocusTargets().getDishes()) {
-                    if (StringUtils.hasText(d)) {
-                        names.add(d.trim());
-                    }
-                }
-            }
-            if (bd.getSourceResultSummary() != null && bd.getSourceResultSummary().getDishProfit() != null) {
-                String low = bd.getSourceResultSummary().getDishProfit().getLowestMarginDish();
-                if (StringUtils.hasText(low)) {
-                    names.add(low.trim());
-                }
-            }
-        }
         if (names.isEmpty()) {
             return null;
         }

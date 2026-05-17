@@ -72,7 +72,7 @@ class CostDiagnosisAgentNodeDataIncompleteScenarioTest {
         gm.put("basisRevenue", "10000");
         state.getToolResults().put(AiBusinessToolIds.GROSS_MARGIN_CALCULATOR, envData(gm));
 
-        node.run(state);
+        node.applyIfApplicable(state);
 
         AiCostDiagnosisResult r = state.getCostDiagnosisResult();
         assertThat(r).isNotNull();

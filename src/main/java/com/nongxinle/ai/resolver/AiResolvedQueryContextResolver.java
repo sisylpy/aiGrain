@@ -16,7 +16,7 @@ import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiFollowUpResolver;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.agent.business.BusinessAgentNames;
-import com.nongxinle.ai.followup.FollowUpIntentResolveService;
+import com.nongxinle.ai.followup.AiFollowUpHintSupport;
 import com.nongxinle.ai.followup.FollowUpPathKind;
 import com.nongxinle.ai.harness.AiMultiStoreHarnessTrace;
 import com.nongxinle.ai.security.AiAnswerBoundary;
@@ -374,6 +374,7 @@ public class AiResolvedQueryContextResolver {
         if (!clarificationRequired) {
             normalizeStockReduceStructuredRouting(queryIntent);
             normalizePurchaseStructuredRouting(queryIntent);
+            upgradePurchaseSupplierDimensionFromResolverSignals(queryIntent, semanticLlm, normalized);
             normalizeRevenueIntentRouting(queryIntent);
             alignFollowUpEffectiveRoutingWithQueryIntent(followUp, queryIntent);
             repairInheritedIntentPathAfterBroadScopeFollowUpLeak(
@@ -895,7 +896,7 @@ public class AiResolvedQueryContextResolver {
                 cur != null ? cur.getPurchaseSourceType() : null,
                 currentExplicitTimeMentioned,
                 currentExplicitStore,
-                FollowUpIntentResolveService.currentMessageDeclaresDomainPath(rawMessage),
+                AiFollowUpHintSupport.currentMessageDeclaresDomainPath(rawMessage),
                 ctx.getEffectiveIntentCode(),
                 ctx.getEffectivePathCode(),
                 tw != null ? tw.getStartDate() : null,
@@ -1103,6 +1104,220 @@ public class AiResolvedQueryContextResolver {
         }
     }
 
+    /**
+     * 采购专线已落在 {@link AiResolvedQueryIntent#PATH_PURCHASE_OVERVIEW}，但结构化子口径仍为泛化 summary、且
+     * 语义 JSON / 归一化话术已明确供货商维度时，补齐 wire 与 {@code purchaseSourceType}，以便
+     * {@link com.nongxinle.ai.agent.business.MasterBusinessAgent} 路由到 {@link com.nongxinle.ai.agent.business.SupplierAnalysisAgent}。
+     * <p>
+     * 不放行：自采固化、≥2 店并排采购（由 merge 层写门店对比 wire）、已为供货商/商品子口径者。
+     */
+    private static void upgradePurchaseSupplierDimensionFromResolverSignals(
+            AiResolvedQueryIntent qi,
+            AiQuerySemanticParseResult semanticLlm,
+            String normalizedUserMessage) {
+        if (qi == null) {
+            return;
+        }
+        if (!AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(qi.getPathCode())) {
+            return;
+        }
+        if (StringUtils.hasText(qi.getIntentCode())
+                && !AiResolvedQueryIntent.PURCHASE_OVERVIEW.equals(qi.getIntentCode())) {
+            return;
+        }
+        String selfWire = AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE;
+        String qiPst = qi.getPurchaseSourceType();
+        if (StringUtils.hasText(qiPst) && selfWire.equals(qiPst.trim().toUpperCase(Locale.ROOT).replace('-', '_'))) {
+            return;
+        }
+        if (semanticLlm != null && semanticLlm.getMetric() != null) {
+            String mPst = semanticLlm.getMetric().getPurchaseSourceType();
+            if (StringUtils.hasText(mPst) && selfWire.equals(mPst.trim().toUpperCase(Locale.ROOT).replace('-', '_'))) {
+                return;
+            }
+        }
+        PurchaseSupplierTextSignals txt = parsePurchaseSupplierTextSignals(normalizedUserMessage);
+        boolean forceSupplierWireFromExplicitUserText =
+                txt.supplierChannel() && (txt.rankingish() || txt.situational());
+
+        String canonSid =
+                StringUtils.hasText(qi.getStructuredIntentDetail())
+                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail().trim())
+                        : null;
+        if (StringUtils.hasText(canonSid) && AiQuerySemanticLexicon.isSupplierAmountRankingDetail(canonSid)) {
+            return;
+        }
+        if (StringUtils.hasText(canonSid)
+                && AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING.equals(canonSid)) {
+            if (!forceSupplierWireFromExplicitUserText) {
+                return;
+            }
+        }
+        if (StringUtils.hasText(canonSid) && AiQuerySemanticLexicon.isStructuredPurchaseGoodsFocusedDetail(canonSid)) {
+            if (!forceSupplierWireFromExplicitUserText) {
+                return;
+            }
+        }
+        if (StringUtils.hasText(canonSid)
+                && AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY.equals(canonSid)) {
+            if (!forceSupplierWireFromExplicitUserText) {
+                return;
+            }
+        }
+        if (StringUtils.hasText(canonSid)
+                && AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(canonSid)) {
+            boolean allowOverrideSourceGoods =
+                    forceSupplierWireFromExplicitUserText
+                            && !purchaseUserMessageMentionsGoodsDrilldown(normalizedUserMessage);
+            if (!allowOverrideSourceGoods) {
+                return;
+            }
+        }
+        if (!forceSupplierWireFromExplicitUserText
+                && !purchaseStructuredSidEligibleForSupplierOverviewUpgrade(canonSid)) {
+            return;
+        }
+        if (semanticLlm != null && semanticLlm.effectiveMentionedStoreNames().size() >= 2) {
+            return;
+        }
+
+        boolean signalMetricSupplierPst = metricPurchaseSourceSuggestsSupplier(semanticLlm);
+        boolean signalMetricSupplierRanking = metricRankingTypeSuggestsSupplierAmountRanking(semanticLlm);
+        boolean signalOrch = orchestrationSuggestsSupplierAgent(semanticLlm);
+
+        if (!signalMetricSupplierPst
+                && !signalMetricSupplierRanking
+                && !signalOrch
+                && !txt.supplierChannel()) {
+            return;
+        }
+
+        boolean strongRanking =
+                signalMetricSupplierRanking
+                        || signalOrch
+                        || txt.rankingish()
+                        || (signalMetricSupplierPst && txt.rankingish());
+
+        if (!strongRanking && !signalMetricSupplierPst && !txt.situational()) {
+            return;
+        }
+
+        if (strongRanking) {
+            qi.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_SUPPLIER_AMOUNT_RANKING);
+            if (!StringUtils.hasText(qi.getTopic()) || "采购概览".equals(qi.getTopic())) {
+                qi.setTopic("采购概览（供货商排行）");
+            }
+        } else {
+            qi.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY);
+            if (!StringUtils.hasText(qi.getTopic()) || "采购概览".equals(qi.getTopic())) {
+                qi.setTopic("采购概览（供货商维度）");
+            }
+        }
+        qi.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE);
+        if (!StringUtils.hasText(qi.getIntentCode())) {
+            qi.setIntentCode(AiResolvedQueryIntent.PURCHASE_OVERVIEW);
+        }
+    }
+
+    private record PurchaseSupplierTextSignals(boolean supplierChannel, boolean rankingish, boolean situational) {}
+
+    private static PurchaseSupplierTextSignals parsePurchaseSupplierTextSignals(String normalizedUserMessage) {
+        if (!StringUtils.hasText(normalizedUserMessage)) {
+            return new PurchaseSupplierTextSignals(false, false, false);
+        }
+        String n = normalizedUserMessage.replace(" ", "").replace("\u3000", "");
+        boolean textSupplierChannel =
+                n.contains("供应商") || n.contains("供货商") || n.contains("供货方");
+        boolean textRankingish = false;
+        boolean textSituational = false;
+        if (textSupplierChannel) {
+            textRankingish =
+                    n.contains("最高")
+                            || n.contains("最多")
+                            || n.contains("排行")
+                            || n.contains("排名")
+                            || n.contains("第一")
+                            || n.contains("榜首")
+                            || n.contains("哪一家")
+                            || n.contains("哪家")
+                            || n.contains("哪个")
+                            || n.contains("谁");
+            textSituational = n.contains("情况") || n.contains("分析");
+        }
+        return new PurchaseSupplierTextSignals(textSupplierChannel, textRankingish, textSituational);
+    }
+
+    /**
+     * 用户明确要求「供应商供了哪些货 / 商品」时，应保留 {@link AiQuerySemanticLexicon#STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY}，
+     * 不因出现「供应商」字样误升为金额排行。
+     */
+    private static boolean purchaseUserMessageMentionsGoodsDrilldown(String normalizedUserMessage) {
+        if (!StringUtils.hasText(normalizedUserMessage)) {
+            return false;
+        }
+        String n = normalizedUserMessage.replace(" ", "").replace("\u3000", "").toLowerCase(Locale.ROOT);
+        return n.contains("商品")
+                || n.contains("货品")
+                || n.contains("单品")
+                || n.contains("sku")
+                || n.contains("哪些货")
+                || n.contains("什么货");
+    }
+
+    private static boolean purchaseStructuredSidEligibleForSupplierOverviewUpgrade(String canonSid) {
+        if (!StringUtils.hasText(canonSid)) {
+            return true;
+        }
+        return AiQuerySemanticLexicon.STRUCTURED_PURCHASE_OVERVIEW_SUMMARY.equals(canonSid)
+                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_SUMMARY.equals(canonSid);
+    }
+
+    private static boolean metricPurchaseSourceSuggestsSupplier(AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.getMetric() == null) {
+            return false;
+        }
+        String pst = sem.getMetric().getPurchaseSourceType();
+        if (!StringUtils.hasText(pst)) {
+            return false;
+        }
+        String n = pst.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+        return AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equals(n);
+    }
+
+    private static boolean metricRankingTypeSuggestsSupplierAmountRanking(AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.getMetric() == null) {
+            return false;
+        }
+        String rt = sem.getMetric().getRankingType();
+        if (!StringUtils.hasText(rt)) {
+            return false;
+        }
+        return AiQuerySemanticLexicon.isSupplierAmountRankingDetail(rt);
+    }
+
+    private static boolean orchestrationSuggestsSupplierAgent(AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.getOrchestrationDecisionCandidate() == null) {
+            return false;
+        }
+        List<String> agents = sem.getOrchestrationDecisionCandidate().getSelectedAgents();
+        if (agents == null || agents.isEmpty()) {
+            return false;
+        }
+        for (String raw : agents) {
+            if (!StringUtils.hasText(raw)) {
+                continue;
+            }
+            String t = raw.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+            if (BusinessAgentNames.SUPPLIER_ANALYSIS.equals(t)) {
+                return true;
+            }
+            if (t.contains("supplier") && (t.contains("analysis") || t.contains("rank"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** path 已为营收专线但 intent 缺失时补齐，避免 Harness effectiveIntentCode 断档。 */
     private static void normalizeRevenueIntentRouting(AiResolvedQueryIntent qi) {
         if (qi == null) {
@@ -1208,11 +1423,11 @@ public class AiResolvedQueryContextResolver {
         if (StringUtils.hasText(queryIntent.getPathCode()) && StringUtils.hasText(queryIntent.getIntentCode())) {
             return;
         }
-        if (FollowUpIntentResolveService.currentMessageDeclaresDomainPath(normalized)) {
+        if (AiFollowUpHintSupport.currentMessageDeclaresDomainPath(normalized)) {
             return;
         }
         FollowUpPathKind lk = followUpPathKindFrom(previousTurn.getLastPathCode());
-        if (lk == null || FollowUpIntentResolveService.pathTopicConflict(normalized, lk)) {
+        if (lk == null || AiFollowUpHintSupport.pathTopicConflict(normalized, lk)) {
             return;
         }
         applyInheritedIntentOverlayFromMemory(previousTurn, queryIntent);

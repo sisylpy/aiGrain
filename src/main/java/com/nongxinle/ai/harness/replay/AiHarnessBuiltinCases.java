@@ -83,13 +83,14 @@ public final class AiHarnessBuiltinCases {
         r1.setEffectivePathCode("purchase_overview_path");
         r1.getEffectiveTimeWindowSourceAnyOf().add("CURRENT_MESSAGE_EXPLICIT");
         r1.getEffectiveTimeWindowSourceAnyOf().add("DEFAULT_MONTH_TO_DATE");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("SEMANTIC_EXPLICIT");
         r1.setStartDate(a.monthStartInclusive());
         r1.setEndDate(a.monthToDateInclusive());
         r1.setScopeType("GROUP");
         r1.getVisibleStoreRootIds().add(1L);
         r1.getVisibleStoreRootIds().add(3L);
         r1.setCheckPurchaseSourceType(Boolean.TRUE);
-        r1.setPurchaseSourceType(null);
+        r1.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_ALL);
         list.add(r1);
 
         String p0 = a.previousMonthFirstDay();
@@ -100,13 +101,14 @@ public final class AiHarnessBuiltinCases {
         r2.setEffectivePathCode("purchase_overview_path");
         r2.getEffectiveTimeWindowSourceAnyOf().add("CURRENT_MESSAGE_EXPLICIT");
         r2.getEffectiveTimeWindowSourceAnyOf().add("TIME_SHIFT");
+        r2.getEffectiveTimeWindowSourceAnyOf().add("SEMANTIC_EXPLICIT");
         r2.setStartDate(p0);
         r2.setEndDate(p1);
         r2.setScopeType("GROUP");
         r2.getVisibleStoreRootIds().add(1L);
         r2.getVisibleStoreRootIds().add(3L);
         r2.setCheckPurchaseSourceType(Boolean.TRUE);
-        r2.setPurchaseSourceType(null);
+        r2.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_ALL);
         list.add(r2);
 
         AiHarnessReplayExpectedRound r3 = new AiHarnessReplayExpectedRound();
@@ -118,7 +120,7 @@ public final class AiHarnessBuiltinCases {
         r3.setScopeType("STORE");
         r3.getVisibleStoreRootIds().add(1L);
         r3.setCheckPurchaseSourceType(Boolean.TRUE);
-        r3.setPurchaseSourceType(null);
+        r3.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_ALL);
         r3.setMentionedStore("AAA");
         list.add(r3);
 
@@ -144,7 +146,7 @@ public final class AiHarnessBuiltinCases {
         r5.setScopeType("STORE");
         r5.getVisibleStoreRootIds().add(3L);
         r5.setCheckPurchaseSourceType(Boolean.TRUE);
-        r5.setPurchaseSourceType(null);
+        r5.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE);
         r5.setMentionedStore("汀兰餐厅");
         list.add(r5);
 
@@ -172,7 +174,7 @@ public final class AiHarnessBuiltinCases {
         r7.setMentionedStore("汀兰餐厅");
         r7.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_SUPPLIER_AMOUNT_RANKING);
         r7.setCheckPurchaseSourceType(Boolean.TRUE);
-        r7.setPurchaseSourceType(null);
+        r7.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE);
         list.add(r7);
 
         return list;

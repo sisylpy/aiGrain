@@ -66,7 +66,7 @@ class CostDiagnosisPermissionDeniedTest {
         preloadTools(state);
 
         CostDiagnosisAgentNode node = new CostDiagnosisAgentNode(publisher, permissionGuard);
-        node.run(state);
+        node.applyIfApplicable(state);
 
         assertThat(state.getCostDiagnosisResult()).isNull();
         assertThat(state.getPermissionDenials()).isNotEmpty();

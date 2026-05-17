@@ -268,7 +268,6 @@ public final class BusinessDiagnosisCompositePlanFactory {
                 .stockReduceAnswerPlan(null)
                 .dishProfitAnswerPlan(null)
                 .businessOverviewAnswerPlan(null)
-                .businessDiagnosisPlan(null)
                 .diagnosisPlan(null)
                 .build();
     }

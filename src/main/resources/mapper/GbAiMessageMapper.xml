@@ -17,4 +17,44 @@
 		WHERE 1=1
 	</select>
 
+	<insert id="upsertRunScopedMessage">
+		INSERT INTO gb_ai_message (
+			gb_ai_message_conversation_id,
+			gb_ai_message_user_id,
+			gb_ai_message_type,
+			gb_ai_message_role,
+			gb_ai_message_content,
+			gb_ai_message_token_count,
+			gb_ai_message_memory_extracted,
+			gb_ai_message_run_id,
+			gb_ai_message_status,
+			gb_ai_message_create_time,
+			gb_ai_message_update_time
+		) VALUES (
+			#{conversationId},
+			#{userId},
+			#{messageType},
+			#{role},
+			#{content},
+			0,
+			0,
+			#{runId},
+			#{status},
+			#{createTime},
+			#{updateTime}
+		)
+		ON DUPLICATE KEY UPDATE
+			gb_ai_message_content = VALUES(gb_ai_message_content),
+			gb_ai_message_status = VALUES(gb_ai_message_status),
+			gb_ai_message_update_time = VALUES(gb_ai_message_update_time)
+	</insert>
+
+	<select id="selectMessageIdByConversationRunAndRole" resultType="java.lang.Long">
+		SELECT gb_ai_message_id FROM gb_ai_message
+		WHERE gb_ai_message_conversation_id = #{conversationId}
+		  AND gb_ai_message_run_id = #{runId}
+		  AND gb_ai_message_role = #{role}
+		LIMIT 1
+	</select>
+
 </mapper>

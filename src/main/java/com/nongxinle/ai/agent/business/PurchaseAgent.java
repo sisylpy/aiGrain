@@ -2,6 +2,7 @@ package com.nongxinle.ai.agent.business;
 
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
+import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.graph.business.PurchaseAnswerPlanBuilder;
@@ -58,8 +59,22 @@ public class PurchaseAgent implements BusinessSubAgent {
                     AiResolvedQueryIntent.PURCHASE_OVERVIEW,
                     AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW);
         }
-        return AiResolvedQueryIntent.PURCHASE_OVERVIEW.equals(rq.getEffectiveIntentCode())
-                && AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(rq.getEffectivePathCode());
+        if (!AiResolvedQueryIntent.PURCHASE_OVERVIEW.equals(rq.getEffectiveIntentCode())
+                || !AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(rq.getEffectivePathCode())) {
+            return false;
+        }
+        return !supplierAnalysisClaims(rq);
+    }
+
+    private static boolean supplierAnalysisClaims(AiResolvedQueryContext rq) {
+        if (rq == null || rq.getQueryIntent() == null) {
+            return false;
+        }
+        String sid = rq.getQueryIntent().getStructuredIntentDetail();
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY.equals(sid)) {
+            return true;
+        }
+        return AiQuerySemanticLexicon.isSupplierAmountRankingDetail(sid);
     }
 
     @Override

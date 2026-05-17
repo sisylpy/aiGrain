@@ -17,7 +17,6 @@ public final class AiBusinessToolIds {
     public static final String WAREHOUSE_STOCK_OVERVIEW = "warehouse_stock_overview";
     public static final String STOCK_REDUCE_QUERY = "stock_reduce_query";
     public static final String DISH_SALES_QUERY = "dish_sales_query";
-    /** 菜品毛利专项：同源 {@link GbDepFoodBusinessInsightService#buildInsight}，输出结构化毛利汇总。 */
     public static final String DISH_PROFIT_ANALYSIS = "dish_profit_analysis";
     public static final String GROSS_MARGIN_CALCULATOR = "gross_margin_calculator";
 

@@ -47,7 +47,7 @@ import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_VISIBLE_STORE
 /**
  * 采购概览（{@code purchase_overview_path}）：按 {@link com.nongxinle.ai.context.AiResolvedQueryContext}
  * 解析的组织范围与时间窗聚合采购入库金额、行数、Top 列表与采购方式拆分。
- * <p>采购方式与旧版 {@code GbAiChatServiceImpl#appendPurchaseSupplyMixSummary} 一致：type=5 与 type=1 且
+ * <p>采购方式与历史「供货属性摘要」口径一致：type=5 与 type=1 且
  * {@code gb_DPG_purchase_nx_supplier_id} 为正合并为「供货商采购」；type=1 且 nx 为 null 或 -1 为「自采」；其余类型为「其它方式」。
  * 退货以 {@code typeNotEqual}={@link GbConstants.PurchaseOrderType#RETURN} 排除；
  * 统计条件与 {@link com.nongxinle.mapper.GbDistributerPurchaseGoodsMapper#queryGbPurchaseGoodsCount} 同 join。</p>

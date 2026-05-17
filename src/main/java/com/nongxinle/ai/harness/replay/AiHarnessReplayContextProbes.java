@@ -119,13 +119,12 @@ public final class AiHarnessReplayContextProbes {
         if (singleStoreGate && !multiApplied) {
             out.put("answerPreview", "经营诊断·证据型");
             LinkedHashMap<String, Object> plan = new LinkedHashMap<>();
-            LinkedHashMap<String, Object> dc = new LinkedHashMap<>();
-            dc.put("revenue", "OK");
-            plan.put("dataCompleteness", dc);
+            plan.put("type", "OVERALL_BUSINESS_DIAGNOSIS");
+            plan.put("diagnosisType", "OVERALL_BUSINESS_DIAGNOSIS_V1");
             plan.put(
                     "_replayContractNote",
-                    "Replay-only: mirrors reconciled BUSINESS_DIAGNOSIS v1 when STORE scope + MULTI_AGENT + four-domain tools yield non-empty SQL department ids.");
-            out.put("businessDiagnosisPlan", plan);
+                    "Replay-only: mirrors DiagnosisPlan OVERALL_BUSINESS_DIAGNOSIS when STORE scope + MULTI_AGENT + four-domain tools yield non-empty SQL department ids.");
+            out.put("diagnosisPlan", plan);
             out.put("actionItems", new ArrayList<String>());
         } else if (!multiApplied) {
             out.put("answerPreview", "经营诊断");

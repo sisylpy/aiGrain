@@ -4,7 +4,6 @@ import com.alibaba.fastjson2.JSON;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiBusinessOverviewResult;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
-import com.nongxinle.ai.dto.business.BusinessDiagnosisPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
@@ -226,24 +225,6 @@ public final class DeterministicAnswerRenderer {
     /** 与 {@link StubAnswerComposerNode} 一致传入 state，用于门店经营对比 canonical 意图门控。 */
     public String renderHarnessDiagnosisPlan(AiRunState state, DiagnosisPlan plan) {
         return diagnosisDeterministicRenderer.renderHarnessDiagnosisPlan(state, plan);
-    }
-
-    public String renderStorePriorityRanking(AiRunState state, BusinessDiagnosisPlan plan) {
-        return diagnosisDeterministicRenderer.renderStorePriorityRanking(state, plan);
-    }
-
-    /** D-11：库房 Scope + 门店排序追问——库房边界短文，不调 LLM。 */
-    public String renderWarehouseBoundedBusinessDiagnosisStorePriority(AiRunState state, BusinessDiagnosisPlan plan) {
-        return diagnosisDeterministicRenderer.renderWarehouseBoundedBusinessDiagnosisStorePriority(state, plan);
-    }
-
-    /** D-11：部分岗位在诊断链路上仅输出采购/库存/核销侧摘要，禁止集团排行与营业额/毛利口径。 */
-    public String renderPermissionDowngradedBusinessDiagnosis(AiRunState state, BusinessDiagnosisPlan plan) {
-        return diagnosisDeterministicRenderer.renderPermissionDowngradedBusinessDiagnosis(state, plan);
-    }
-
-    public String renderBusinessDiagnosisFallback(AiRunState state, BusinessDiagnosisPlan plan) {
-        return diagnosisDeterministicRenderer.renderBusinessDiagnosisFallback(state, plan);
     }
 
     public String renderDishProfitFallback(AiDishProfitOverviewResult r, AiRunState state) {

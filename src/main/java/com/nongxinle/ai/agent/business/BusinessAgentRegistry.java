@@ -10,9 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 子 Agent 注册表：构造期注入全部 {@link BusinessSubAgent} Bean（阶段 A 骨架）。
- * <p>
- * 未接入 Business Graph / Planner；无运行时调用点。
+ * 子 Agent 注册表：构造期注入全部 {@link BusinessSubAgent} Bean，供 {@link MasterBusinessAgent} 编排查找。
  *
  * @see docs/ai/master-business-agent-design.md
  */

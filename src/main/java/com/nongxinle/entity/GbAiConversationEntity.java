@@ -34,6 +34,14 @@ public class GbAiConversationEntity implements Serializable {
 	 */
 	private Long gbAiConversationDistributerId;
 	/**
+	 * 绑定的顾问主键 {@code gb_ai_advisor_id}；非顾问会话为空。
+	 */
+	private Long gbAiConversationAdvisorId;
+	/**
+	 * 会话线程类别：{@code ADVISOR}=顾问专属长期会话；与普通整数 {@link #gbAiConversationType} 无关。
+	 */
+	private String gbAiConversationThreadKind;
+	/**
 	 * 统计范围：0=单店(父部门子树) 1=集团(dis 下全部门)；见 {@link com.nongxinle.ai.scope.AiConversationScopeMode}
 	 */
 	private Integer gbAiConversationScopeMode;
@@ -61,4 +69,15 @@ public class GbAiConversationEntity implements Serializable {
 	 *  对话类型 (0=普通聊天, 1=促销活动/销售额, 2=公众号相关)
 	 */
 	private Integer gbAiConversationType;
+
+	/** 0 正常，1 归档（历史列表筛选用） */
+	private Integer gbAiConversationArchived;
+
+	private Long gbAiConversationLastRunId;
+
+	private Long gbAiConversationLastMessageId;
+
+	private String gbAiConversationLastIntent;
+
+	private String gbAiConversationLastPath;
 }

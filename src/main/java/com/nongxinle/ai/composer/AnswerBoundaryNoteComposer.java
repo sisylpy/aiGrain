@@ -1,5 +1,6 @@
 package com.nongxinle.ai.composer;
 
+import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.resolver.AiMultiTurnOrgScopePolicy;
@@ -21,6 +22,9 @@ public final class AnswerBoundaryNoteComposer {
     private static final String RESOLVER_COMBINED_BAD_SUFFIX =
             "本句未指定新的时间和门店。若需调整请直接说明。";
 
+    private static final String GROUP_SCOPE_ALL_STORES_SUFFIX =
+            "本句指定全部店铺，已切换为集团范围。";
+
     private AnswerBoundaryNoteComposer() {
     }
 
@@ -36,6 +40,13 @@ public final class AnswerBoundaryNoteComposer {
         AiResolvedTimeWindow tw = ctx.getTimeWindow();
         String timeHuman = tw != null ? AiMultiTurnTimeWindowPolicy.humanReadableTimeCarryover(tw) : "上文";
         if (timeInherited && scopeInherited) {
+            // 【优化】检测 LLM 返回 scopeAction=OVERRIDE/NEW 但无具体门店名 → "全部店铺"场景
+            if (semanticDeclaresGroupScopeOverride(ctx)) {
+                String suffix = AiResolvedOrgScope.SCOPE_GROUP.equals(ctx.getOrgScope().getScopeType())
+                        ? GROUP_SCOPE_ALL_STORES_SUFFIX
+                        : "本句指定范围覆盖上一轮门店。";
+                return "时间沿用上文「" + timeHuman + "」。" + suffix + "若需调整请直接说明。";
+            }
             return rawNote;
         }
         if (timeInherited && !scopeInherited) {
@@ -55,6 +66,27 @@ public final class AnswerBoundaryNoteComposer {
             return "门店沿用上文「" + storeHint + "」；本句指定了新的统计时间为「" + timePhrase + "」。若需调整请直接说明。";
         }
         return rawNote;
+    }
+
+    /**
+     * 检测 LLM 语义层是否声明了「全部店铺/集团范围覆盖」。
+     * 当 scopeAction=OVERRIDE 或 NEW，但 mentionedStoreNames 为空时，代表用户在说"全部店铺"。
+     */
+    private static boolean semanticDeclaresGroupScopeOverride(AiResolvedQueryContext ctx) {
+        AiQuerySemanticParseResult sem = ctx.getQuerySemanticParse();
+        if (sem == null || sem.isParseMissing()) {
+            return false;
+        }
+        String action = sem.getScopeAction();
+        if (!StringUtils.hasText(action)) {
+            return false;
+        }
+        String norm = action.trim().toUpperCase(java.util.Locale.ROOT).replace('-', '_');
+        if (!("OVERRIDE".equals(norm) || "NEW".equals(norm))) {
+            return false;
+        }
+        // 有 OVERRIDE/NEW 但无具体门店名 → "全部店铺"场景
+        return sem.effectiveMentionedStoreNames().isEmpty();
     }
 
     private static String structuredStoreEnumerationPhrase(AiResolvedQueryContext ctx) {

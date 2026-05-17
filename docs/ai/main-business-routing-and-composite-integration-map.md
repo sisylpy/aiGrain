@@ -42,9 +42,9 @@
 | **`AiResolvedQueryIntent`**（`intentCode`、`pathCode`、`structuredIntentDetail`、`topic`、…） | Resolver 将 **语义采纳结果**与规则合并写入 **`AiResolvedQueryContext.queryIntent`**（见 `AiResolvedQueryContextResolver` 内 `mergedIntent`、`trySemanticAdoption` 之后装配）。 |
 | **`structuredIntentDetail`（wire）** | 来自 **LLM 解析 + Lexicon canonical**；后续 **Gate** 再用 `AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(...)`。 |
 | **`effectiveIntentCode` / `effectivePathCode`**（及 **`effectiveTimeWindowSource`**、**`effectiveScopeSource`**、**`effectiveIntentSource`**） | Resolver 在构建 **`AiResolvedQueryContext`** 时根据 **`AiFollowUpResolution`** 等写好（见 Resolver 中段 `AiResolvedQueryContext.builder()` 及对 `followUp.getEffectiveIntentCode()` 一类赋值）。  
-| **图上「追问节点」** | `BusinessFollowUpIntentResolveNode` 调 **`FollowUpIntentResolveService.applyIfFollowUp`** —— **现行实现恒返回 false**（扩写已由 **Resolver 内 LLM** 收口），**不会**在 Graph 中改写 **`normalizedUserInput`**。 |
+| **图上旧「追问节点」** | 已移出主图；追问合并由 **Resolver + conversation memory** 在 Graph 前完成。 |
 
-因此：**effective\*** 在 **进入 Graph 之前**已由 Resolver **定稿**；Gate 在 `startRun` 内读取的 **`AiResolvedQueryContext`** 与后续 **DataPlanner** 看到的是 **同一版**上下文（不会因 `FollowUpIntentResolve` 再变）。
+因此：**effective\*** 在 **进入 Graph 之前**已由 Resolver **定稿**；Gate 在 `startRun` 内读取的 **`AiResolvedQueryContext`** 与后续 **DataPlanner** 看到的是 **同一版**上下文（主图首个节点为 **ScopeIntersect**，不再经过 no-op 追问节点）。
 
 ### 1.5 `AiResolvedQueryContext` 与 `AiRunState`：创建与挂载
 
@@ -53,7 +53,7 @@
 | **创建 Context** | `AiResolvedQueryContextResolver.resolve(...)` | 返回完整 **`AiResolvedQueryContext`**。 |
 | **创建 State** | `AiRunService#newRunStateFromResolved` | `AiRunState.builder().resolvedQueryContext(resolved)...build()`；`needClarification` ← `resolved.isNeedSemanticClarification()` 等。 |
 | **Gate 观测写入** | `AiRunService#recordCompositeProductionGateObservation` | 调用 **`BusinessDiagnosisCompositeProductionGate.evaluate(rq, state, effectiveEnabled)`**，将 **`BusinessDiagnosisCompositeGateResult`** 设为 **`state.setBusinessDiagnosisCompositeGateResult`**。 |
-| **持久 Turn 记忆（完成后）** | `AiRunService#executeRun` 成功末尾 | **`AiConversationMemoryService.rememberCompletedTurn`**、`**FollowUpIntentResolveService.snapshotFromCompletedState`** + **`followUpConversationMemory.remember`** —— 供 **下一轮** Resolver 加载。 |
+| **持久 Turn 记忆（完成后）** | `AiRunService#executeRun` 成功末尾 | **`AiConversationMemoryService.rememberCompletedTurn`**、**`AiFollowUpIntentSnapshotSupport.snapshotFromCompletedState`** + **`followUpConversationMemory.remember`** —— 供 **下一轮** Resolver 加载。 |
 
 **注意**：Gate **evaluate** 本体 **不修改** **`AiRunState`**（见 `BusinessDiagnosisCompositeProductionGate` 注释）；仅 **调用方** `AiRunService` 把 **结果对象**挂上 State。
 
@@ -63,18 +63,14 @@
 
 **顺序（与 Bean 注释一致）**：
 
-1. **`BusinessWorkspaceRouteNode`** — `WorkspaceRouterService.route(state)`，定 **`AiWorkspaceMode`**（如 **BUSINESS_CHAT**）。  
-2. **`BusinessFollowUpIntentResolveNode`** — 现行 **不扩写**（见上）。  
-3. **`BusinessScopeIntersectNode`** — 范围求交。  
-4. **`BusinessTimeWindowNode`** — 时间窗落地到 State（如 `statStartDate`/`statEndDate` 等）。  
-5. **`BusinessDataPlannerNode`** — **核心路由**：读取 **`effectivePathCode`**（及澄清位），设置 **`AiRunState`** 上一组 **boolean path 标志**与 **`dataPlanTools`**（`AiBusinessToolIds` 列表）。若不澄清，按 path 勾选 **purchase / revenue / dish / stock / diagnosis / overview / warehouse / cost** 等支线。  
-6. **`BusinessToolExecutionNode`** — 按 **`dataPlanTools`** 调 **`ToolRegistry`** 与各 **\*ToolExecutor**；并对 **营收/采购/出库/菜品/经营概览多域**调用 **`MasterBusinessAgent`** 的 `tryOrchestrate*`（见下）。  
-7. **`DishProfitAgentNode`** — 菜品支线补充。  
-8. **`BusinessDiagnosisPlanNode`** — 经营诊断计划挂载。  
-9. **`CostDiagnosisAgentNode`** — 成本诊断支线。  
-10. **`BusinessOverviewAgentNode`** — 经营概况支线。  
-11. **`StubOutcomeReviewNode`** — 审核桩 + **`MasterBusinessAgent.refreshBusinessOverviewMultiAgentPlanIfApplicable`**、`DiagnosisPlanBuilder`、`BusinessDiagnosisPlanBuilder`。  
-12. **`StubAnswerComposerNode`** — **终稿**：`LlmGateway` + 确定性渲染等，写入 **`AiRunState.finalAnswerText`**（及部分结构化 DTO）。
+1. **`BusinessScopeIntersectNode`** — 范围求交。  
+2. **`BusinessTimeWindowNode`** — 将 **`AiResolvedQueryContext.timeWindow`** 镜像到 **`statStartDate` / `statEndDate`**（与 **`effectiveTimeWindowSource`** 一致）；**不**再对用户话术调用 **`AiUserQueryTimeWindowResolver`**。缺省窗时与本锚点 **本月至今** 兜底。  
+3. **`BusinessDataPlannerNode`** — **核心路由**：读取 **`effectivePathCode`**（及澄清位），设置 **`AiRunState`** 上一组 **boolean path 标志**与 **`dataPlanTools`**（`AiBusinessToolIds` 列表）。若不澄清，按 path 勾选 **purchase / revenue / dish / stock / diagnosis / overview / warehouse / cost** 等支线。  
+4. **`BusinessToolExecutionNode`** — 按 **`dataPlanTools`** 调 **`ToolRegistry`** 与各 **\*ToolExecutor**；并对 **营收/采购/出库/菜品/经营概览多域**调用 **`MasterBusinessAgent`** 的 `tryOrchestrate*`（见下）。  
+5. **`StubOutcomeReviewNode`** — 审核桩 + **`MasterBusinessAgent.refreshBusinessOverviewMultiAgentPlanIfApplicable`**、诊断/计划 Builder 等。  
+6. **`StubAnswerComposerNode`** — **终稿**：`LlmGateway` + 确定性渲染等，写入 **`AiRunState.finalAnswerText`**（及部分结构化 DTO）。
+
+（**`BusinessWorkspaceRouteNode` / `BusinessFollowUpIntentResolveNode` / `WorkspaceRouterService` / `AiWorkspaceAccessGuard`** 等类已从代码删除，见 **`docs/legacy-reference/workspace-keyword-route-and-guard.md`**；**`AiUserQueryTimeWindowResolver` / LLM 时间 JSON 解析器** 随旧单 Agent Chat 已删除；Harness 时间唯一定稿见 **`AiResolvedQueryContext` + `BusinessTimeWindowNode`**。）
 
 **`MasterBusinessAgent` 在哪里**：**不**作为独立 Graph 顶点；嵌入 **`BusinessToolExecutionNode`**（多域编排）与 **`StubOutcomeReviewNode`**（刷新计划）。**分支选择**的一手来源仍是 **Resolver 上下文 + DataPlannerNode 对 path 的解释**。
 
@@ -179,10 +175,8 @@ flowchart TD
     GATE_EVAL --> S1[state.businessDiagnosisCompositeGateResult]
     S1 --> ASYNC{async executeRun}
     ASYNC --> G0[AiGraphRunner.runBusinessGraph]
-    G0 --> N1[WorkspaceRoute]
-    N1 --> N2[FollowUpIntentResolve 现行 no-op]
-    N2 --> N3[ScopeIntersect]
-    N3 --> N4[TimeWindow]
+    G0 --> N3[ScopeIntersect]
+    N3 --> N4[TimeWindow 镜像 RQ.timeWindow]
     N4 --> N5[BusinessDataPlannerNode<br/>path -> dataPlanTools flags]
     N5 --> N6[BusinessToolExecutionNode<br/>ToolRegistry + Master tryOrchestrate]
     N6 --> N7[DishProfit / DiagnosisPlan / Cost / Overview nodes]
@@ -203,7 +197,7 @@ flowchart TD
   → new AiRunState(resolvedQueryContext)
   → BusinessDiagnosisCompositeProductionGate.evaluate → businessDiagnosisCompositeGateResult（仅观测 + 后续 Composite 前置）
   → [异步] AiGraphRunner：
-        WorkspaceRoute → FollowUp(no-op) → ScopeIntersect → TimeWindow
+        ScopeIntersect → TimeWindow（镜像 AiResolvedQueryContext.timeWindow）
       → BusinessDataPlannerNode（effectivePath → dataPlanTools / path flags）
       → BusinessToolExecutionNode（Tools + MasterBusinessAgent 编排）
       → … → StubAnswerComposerNode → finalAnswerText

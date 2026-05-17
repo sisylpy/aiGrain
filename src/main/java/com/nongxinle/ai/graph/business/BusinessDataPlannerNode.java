@@ -52,7 +52,6 @@ public class BusinessDataPlannerNode implements AgentNode {
                 "displayText", "正在规划经营数据来源…"
         ));
 
-        boolean inBusinessChat = state.getWorkspaceMode() == AiWorkspaceMode.BUSINESS_CHAT;
         String q = state.getNormalizedUserInput() != null ? state.getNormalizedUserInput().trim() : "";
 
         var rCtx = state.getResolvedQueryContext();
@@ -64,6 +63,10 @@ public class BusinessDataPlannerNode implements AgentNode {
                         : (!semanticClarifies && rqi != null && StringUtils.hasText(rqi.getPathCode())
                                 ? rqi.getPathCode().trim()
                                 : null);
+
+        // 主路由以 LLM 解析为准：若已有有效 path，不因历史非 BUSINESS_CHAT workspace 截断经营 Tool 规划。
+        boolean inBusinessChat = state.getWorkspaceMode() == AiWorkspaceMode.BUSINESS_CHAT
+                || (!semanticClarifies && StringUtils.hasText(effPath));
 
         boolean resolvedPurchaseOverview =
                 inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(effPath);
@@ -98,7 +101,6 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setStockReduceQueryPath(false);
             state.setGroupStockReduceQuery(false);
             state.setBusinessDiagnosisPath(false);
-            state.setBusinessDiagnosisPlan(null);
             state.setRevenueOverviewPath(false);
             state.setRevenueAnswerPlan(null);
             state.setDataPlanTools(new ArrayList<>());
@@ -175,7 +177,6 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setStockReduceQueryPath(false);
             state.setGroupStockReduceQuery(false);
             state.setBusinessDiagnosisPath(false);
-            state.setBusinessDiagnosisPlan(null);
             state.setRevenueOverviewPath(false);
             state.setRevenueAnswerPlan(null);
             state.setDataPlanTools(new ArrayList<>());
@@ -359,34 +360,6 @@ public class BusinessDataPlannerNode implements AgentNode {
         ctx.setEffectiveIntentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS);
     }
 
-    private static void patchBusinessDiagnosisFromPreviousTurn(AiResolvedQueryIntent rqi, AiConversationTurnMemory prev,
-            String rawUserInput) {
-        if (rqi == null || prev == null) {
-            return;
-        }
-        rqi.setPathCode(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS);
-        rqi.setIntentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS);
-        if (StringUtils.hasText(prev.getLastStructuredIntentDetail())) {
-            rqi.setStructuredIntentDetail(prev.getLastStructuredIntentDetail());
-        }
-        rqi.setInheritedFromPreviousTurn(true);
-    }
-
-    /** 与采购 patch 对称：「出库成本多少」等子口径若解析阶段未并入 path，从 TurnMemory 续上菜品毛利链。 */
-    private static void patchDishProfitIntentFromPreviousTurn(
-            AiResolvedQueryIntent rqi, AiConversationTurnMemory prev,
-            @SuppressWarnings("unused") String normalizedQuestion) {
-        if (rqi == null || prev == null) {
-            return;
-        }
-        rqi.setPathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT);
-        rqi.setIntentCode(AiResolvedQueryIntent.DISH_PROFIT);
-        if (!StringUtils.hasText(rqi.getStructuredIntentDetail())
-                && StringUtils.hasText(prev.getLastStructuredIntentDetail())) {
-            rqi.setStructuredIntentDetail(prev.getLastStructuredIntentDetail());
-        }
-        rqi.setInheritedFromPreviousTurn(true);
-    }
 
     /** 与库存抬头一致：仅当解析结果中确有独立库房节点时，文案才写「门店/库房」。 */
     private static boolean resolvedOrgHasVisibleWarehouses(AiRunState state) {
@@ -417,14 +390,13 @@ public class BusinessDataPlannerNode implements AgentNode {
         state.setGroupPurchaseOverview(false);
         state.setDishProfitPath(false);
         state.setBusinessDiagnosisPath(false);
-        state.setBusinessDiagnosisPlan(null);
         state.setRevenueOverviewPath(false);
         state.setRevenueAnswerPlan(null);
     }
 
     /**
      * 经营诊断：采购 + 出库/核销 + 菜品毛利 + 营业额（{@link AiPermissions#VIEW_REVENUE} 时追加
-     * {@link AiBusinessToolIds#REVENUE_QUERY}，供 {@link DiagnosisPlan} 挂载 {@link com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan}）；
+     * {@link AiBusinessToolIds#REVENUE_QUERY}， 挂载 {@link com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan}）；
      * 同一 {@link AiResolvedQueryContext}；权限可裁剪子集。
      */
     private static void applyBusinessDiagnosisBranch(AiRunState state) {
@@ -784,7 +756,6 @@ public class BusinessDataPlannerNode implements AgentNode {
         state.setStockReduceQueryPath(false);
         state.setGroupStockReduceQuery(false);
         state.setBusinessDiagnosisPath(false);
-        state.setBusinessDiagnosisPlan(null);
         state.setDataPlanTools(new ArrayList<>());
 
         AiUserContext ctx = state.getAiUserContext();
@@ -1028,7 +999,6 @@ public class BusinessDataPlannerNode implements AgentNode {
         state.setRevenueOverviewPath(false);
         state.setRevenueAnswerPlan(null);
         state.setBusinessDiagnosisPath(false);
-        state.setBusinessDiagnosisPlan(null);
 
         AiUserContext ctx = state.getAiUserContext();
         if (ctx != null) {

@@ -240,6 +240,49 @@ public class GbDepartmentDisGoodsController {
     }
 
     /**
+     * 获取批发商商品分类和商品ID列表
+     * 接口: /gbdepartmentdisgoods/disGetDepGoodsCataGb
+     */
+    @Operation(summary = "获取批发商商品分类", description = "获取批发商关联的商品分类树，以及商品ID列表")
+    @RequestMapping(value = "/storeGetDepGoodsCataGb", method = RequestMethod.POST)
+    public R storeGetDepGoodsCataGb(
+            @RequestParam Integer depFatherId,
+            @RequestParam(required = false) Integer goodsType) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("depFatherId", depFatherId);
+
+        if (goodsType != null && goodsType < 99) {
+            map.put("goodsType", goodsType);
+        } else {
+            if (goodsType != null && goodsType == 101) {
+                map.put("fresh", 1);
+            } else if (goodsType != null && goodsType == 102) {
+                map.put("pull", 1);
+            }
+        }
+
+        log.info("【disGetDepGoodsCataGb】查询参数: disId={}, goodsType={}", depFatherId, goodsType);
+
+        // 获取分类
+        List<GbDistributerFatherGoodsEntity> disGoodsEntities = gbDepartmentDisGoodsService.disGetDepDisGoodsCataGb(map);
+        log.info("【disGetDepGoodsCataGb】一级分类数量: {}", disGoodsEntities != null ? disGoodsEntities.size() : 0);
+
+        // 获取商品ID列表
+        List<Integer> disGoodsIds = gbDepartmentDisGoodsService.queryOnlyDisGoodsIds(map);
+        log.info("【disGetDepGoodsCataGb】商品ID数量: {}", disGoodsIds != null ? disGoodsIds.size() : 0);
+
+        Map<String, Object> mapR = new HashMap<>();
+        mapR.put("cataArr", disGoodsEntities);
+        mapR.put("disGoodsArr", disGoodsIds);
+
+        return R.ok().put("data", mapR);
+    }
+
+
+
+
+
+    /**
      * 按批发商分页获取商品
      * 接口: /gbdepartmentdisgoods/disGetDepGoodsGbPage
      */
@@ -250,20 +293,57 @@ public class GbDepartmentDisGoodsController {
             @RequestParam Integer page,
             @RequestParam Integer disId,
             @RequestParam(required = false) Integer goodsType) {
-        
+
         Map<String, Object> map = new HashMap<>();
         map.put("disId", disId);
         if (goodsType != null) {
             map.put("goodsType", goodsType);
         }
-        
+
         // 1. 获取总数
         int total = gbDepartmentDisGoodsService.queryDisGoodsCount(map);
-        
+
         // 2. 获取当前页数据
         map.put("limit", limit);
         map.put("offset", (page - 1) * limit);
         List<GbDistributerGoodsEntity> currentPageList = gbDepartmentDisGoodsService.disQueryDisGoodsWithOrderForAiTree(map);
+
+        // 3. 返回分页数据
+        Map<String, Object> pageMap = new HashMap<>();
+        pageMap.put("totalCount", total);
+        pageMap.put("pageSize", limit);
+        pageMap.put("totalPage", (total + limit - 1) / limit);
+        pageMap.put("currPage", page);
+        pageMap.put("list", currentPageList);
+
+        return R.ok().put("page", pageMap);
+    }
+
+
+    /**
+     * 按批发商分页获取商品
+     * 接口: /gbdepartmentdisgoods/disGetDepGoodsGbPage
+     */
+    @Operation(summary = "按批发商分页获取商品列表", description = "分页查询指定批发商关联的商品列表")
+    @RequestMapping(value = "/storeGetDepGoodsGbPage", method = RequestMethod.POST)
+    public R storeGetDepGoodsGbPage(
+            @RequestParam Integer limit,
+            @RequestParam Integer page,
+            @RequestParam Integer depFatherId,
+            @RequestParam(required = false) Integer goodsType) {
+        
+        Map<String, Object> map = new HashMap<>();
+        map.put("depFatherId", depFatherId);
+        if (goodsType != null) {
+            map.put("goodsType", goodsType);
+        }
+        // 1. 获取总数
+        int total = gbDepartmentDisGoodsService.queryDepGoodsCount(map);
+        
+        // 2. 获取当前页数据
+        map.put("limit", limit);
+        map.put("offset", (page - 1) * limit);
+        List<GbDistributerGoodsEntity> currentPageList = gbDepartmentDisGoodsService.disQueryDepGoodsWithOrderForAiTree(map);
 
         // 3. 返回分页数据
         Map<String, Object> pageMap = new HashMap<>();

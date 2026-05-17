@@ -4,6 +4,7 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
+import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.graph.business.toolrequest.BusinessToolExecutionRequestResolver;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.graph.business.toolrequest.DishProfitToolRequestContext;
@@ -228,8 +229,8 @@ public class MasterBusinessAgent {
     }
 
     /**
-     * MultiAgent 概览的 DishProfitAnswerPlan 在 {@link com.nongxinle.ai.graph.business.DishProfitAgentNode} 之后才可挂载：
-     * OutcomeReview 前再合并一次 {@link BusinessOverviewAnswerPlan}。
+     * MultiAgent 概览的 DishProfitAnswerPlan 在 OutcomeReview 的 {@link com.nongxinle.ai.graph.business.DishProfitAgentNode#aggregateIfApplicable}
+     * 之后才可挂载；本方法再合并一次 {@link BusinessOverviewAnswerPlan}。
      */
     public void refreshBusinessOverviewMultiAgentPlanIfApplicable(AiRunState state) {
         if (state == null) {
@@ -250,6 +251,121 @@ public class MasterBusinessAgent {
                 dbgPrev != null && !dbgPrev.isEmpty() ? copyStringKeyMap(dbgPrev) : new LinkedHashMap<>();
         diag.put("refreshedAfterDishNode", true);
         assembleBusinessOverviewAnswerPlan(state, w, diag);
+    }
+
+    /**
+     * 经典经营概况（六工具Planner链）：{@link BusinessOverviewAgent} 独占编排拉数并挂载
+     * {@link BusinessOverviewAnswerPlan#PLAN_TYPE_BUSINESS_OVERVIEW_CLASSIC_V1}；非 MULTI_AGENT 四域。
+     */
+    public MasterBusinessAgentResult tryOrchestrateClassicBusinessOverview(AiRunState state) {
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("classicBusinessOverviewMasterEnabled", false);
+        if (!eligibleForClassicBusinessOverview(state)) {
+            return MasterBusinessAgentResult.builder()
+                    .masterAgentEnabled(false)
+                    .masterAgentUsed(false)
+                    .fallbackUsed(false)
+                    .fallbackReason("not_eligible_for_classic_business_overview")
+                    .classicBusinessOverviewMasterPath(false)
+                    .agentResults(List.of())
+                    .debug(dbg)
+                    .build();
+        }
+        dbg.put("classicBusinessOverviewMasterEnabled", true);
+        dbg.put("planSource", "MasterBusinessAgent");
+        Optional<BusinessSubAgent> agentOpt = registry.getAgent(BusinessAgentNames.BUSINESS_OVERVIEW);
+        if (agentOpt.isEmpty()) {
+            dbg.put("classicBusinessOverviewReason", "business_overview_agent_not_registered");
+            return MasterBusinessAgentResult.builder()
+                    .masterAgentEnabled(true)
+                    .masterAgentUsed(false)
+                    .fallbackUsed(true)
+                    .fallbackReason("business_overview_agent_not_registered")
+                    .classicBusinessOverviewMasterPath(false)
+                    .agentResults(List.of())
+                    .debug(dbg)
+                    .build();
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        BusinessAgentRequest request = BusinessAgentRequest.builder()
+                .runId(state.getRunId())
+                .conversationId(state.getConversationId())
+                .userId(state.getUserId())
+                .distributerId(state.getDistributerId())
+                .resolvedQueryContext(rq)
+                .semanticResult(rq != null ? rq.getQuerySemanticParse() : null)
+                .executionContext(state)
+                .orchestratedBusinessOverviewMultiAgent(false)
+                .debugOptions(new LinkedHashMap<>())
+                .build();
+        BusinessSubAgent agent = agentOpt.get();
+        if (!agent.supports(request)) {
+            dbg.put("classicBusinessOverviewReason", "supports_false");
+            return MasterBusinessAgentResult.builder()
+                    .masterAgentEnabled(true)
+                    .masterAgentUsed(false)
+                    .fallbackUsed(false)
+                    .fallbackReason("business_overview_agent_supports_false")
+                    .classicBusinessOverviewMasterPath(false)
+                    .agentResults(List.of())
+                    .debug(dbg)
+                    .build();
+        }
+        try {
+            AgentResultEnvelope env = agent.execute(request);
+            boolean ok = env.getStatus() != null
+                    && (env.getStatus() == AgentResultStatus.SUCCESS
+                            || env.getStatus() == AgentResultStatus.PARTIAL_SUCCESS
+                            || env.getStatus() == AgentResultStatus.DEGRADED);
+            dbg.put("classicBusinessOverviewAgentStatus",
+                    env.getStatus() != null ? env.getStatus().name() : null);
+            if (env.getWarnings() != null && !env.getWarnings().isEmpty()) {
+                dbg.put("classicBusinessOverviewWarnings", new ArrayList<>(env.getWarnings()));
+            }
+            return MasterBusinessAgentResult.builder()
+                    .masterAgentEnabled(true)
+                    .masterAgentUsed(ok)
+                    .fallbackUsed(!ok)
+                    .fallbackReason(ok ? null : "classic_business_overview_agent_failed")
+                    .classicBusinessOverviewMasterPath(true)
+                    .agentResults(List.of(env))
+                    .debug(dbg)
+                    .build();
+        } catch (Exception ex) {
+            log.warn("[MasterBusinessAgent] classic business overview orchestration failed runId={}",
+                    state.getRunId(), ex);
+            dbg.put("classicBusinessOverviewException", ex.getClass().getSimpleName());
+            return MasterBusinessAgentResult.builder()
+                    .masterAgentEnabled(true)
+                    .masterAgentUsed(false)
+                    .fallbackUsed(true)
+                    .fallbackReason("classic_business_overview_exception:" + ex.getClass().getSimpleName())
+                    .classicBusinessOverviewMasterPath(true)
+                    .agentResults(List.of())
+                    .debug(dbg)
+                    .build();
+        }
+    }
+
+    public static boolean eligibleForClassicBusinessOverview(AiRunState state) {
+        if (state == null || !state.isBusinessOverviewPath()) {
+            return false;
+        }
+        if (eligibleForBusinessOverviewMultiAgentOrchestration(state)) {
+            return false;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        if (!AiResolvedQueryIntent.BUSINESS_OVERVIEW.equals(rq.getEffectiveIntentCode())) {
+            return false;
+        }
+        if (!AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(rq.getEffectivePathCode())) {
+            return false;
+        }
+        List<String> plan = state.getDataPlanTools();
+        return plan != null && !plan.isEmpty();
     }
 
     /**
@@ -328,8 +444,8 @@ public class MasterBusinessAgent {
                 dbg.put("fallbackUsed", true);
                 dbg.put("fallbackReason", "agent_status_" + env.getStatus()
                         + "_or_tool_success_" + env.getRevenueQueryToolSuccess());
-                dbg.put("legacyRevenueSkipped", false);
-                dbg.put("revenueToolExecutedByMasterPath", false);
+                dbg.put("legacyRevenueSkipped", true);
+                dbg.put("revenueToolExecutedByMasterPath", true);
                 dbg.put("masterRevenueToolResultKey", AiBusinessToolIds.REVENUE_QUERY);
                 dbg.put("masterRevenueToolResultSuccess", env.getRevenueQueryToolSuccess());
                 trace = buildTrace(state, rq, dispatchPlan, envelopes, startedAt, Instant.now(),
@@ -343,7 +459,7 @@ public class MasterBusinessAgent {
                         .fallbackReason("agent_status_" + env.getStatus()
                                 + "_or_tool_success_" + env.getRevenueQueryToolSuccess())
                         .debug(dbg)
-                        .revenueToolExecutedByMasterPath(false)
+                        .revenueToolExecutedByMasterPath(true)
                         .build();
             }
 
@@ -372,8 +488,8 @@ public class MasterBusinessAgent {
             dbg.put("masterAgentUsed", false);
             dbg.put("fallbackUsed", true);
             dbg.put("fallbackReason", "master_exception:" + ex.getClass().getSimpleName());
-            dbg.put("legacyRevenueSkipped", false);
-            dbg.put("revenueToolExecutedByMasterPath", false);
+            dbg.put("legacyRevenueSkipped", true);
+            dbg.put("revenueToolExecutedByMasterPath", true);
             dbg.put("masterRevenueToolResultKey", AiBusinessToolIds.REVENUE_QUERY);
             dbg.put("masterRevenueToolResultSuccess", null);
             dbg.put("selectedAgents", List.of(BusinessAgentNames.REVENUE_OVERVIEW));
@@ -388,7 +504,7 @@ public class MasterBusinessAgent {
                     .fallbackUsed(true)
                     .fallbackReason("master_exception:" + ex.getClass().getSimpleName())
                     .debug(dbg)
-                    .revenueToolExecutedByMasterPath(false)
+                    .revenueToolExecutedByMasterPath(true)
                     .build();
         }
     }
@@ -401,6 +517,7 @@ public class MasterBusinessAgent {
         if (!eligibleForMasterPurchaseOverview(state)) {
             dbg.put("purchaseMasterAgentEnabled", false);
             dbg.put("purchaseMasterAgentUsed", false);
+            putSupplierAnalysisHarnessContract(dbg, null);
             dbg.put("purchaseSelectedAgents", List.of());
             dbg.put("purchaseDispatchPlan", null);
             dbg.put("purchaseAgentResults", List.of());
@@ -451,30 +568,27 @@ public class MasterBusinessAgent {
         List<AgentResultEnvelope> envelopes = new ArrayList<>();
         AgentTraceEnvelope trace = null;
         try {
-            Optional<BusinessSubAgent> agentOpt = registry.getAgent(BusinessAgentNames.PURCHASE_OVERVIEW);
-            if (agentOpt.isEmpty()) {
-                return purchaseFallback(dbg, envelopes, dispatchPlan, startedAt, rq, "purchase_agent_not_registered", state);
-            }
-            BusinessSubAgent agent = agentOpt.get();
-            if (!agent.supports(request)) {
-                return purchaseFallback(dbg, envelopes, dispatchPlan, startedAt, rq, "purchase_agent_supports_false", state);
+            BusinessSubAgent agent = resolvePurchaseSubAgent(registry, request);
+            if (agent == null) {
+                return purchaseFallback(dbg, envelopes, dispatchPlan, startedAt, rq, "purchase_family_agent_unavailable", state);
             }
 
             AgentResultEnvelope env = agent.execute(request);
             envelopes.add(env);
 
-            dbg.put("purchaseSelectedAgents", List.of(BusinessAgentNames.PURCHASE_OVERVIEW));
+            dbg.put("purchaseSelectedAgents", List.of(agent.agentName()));
             dbg.put("purchaseAgentResults", summarizeEnvelopes(envelopes));
             dbg.put("purchaseAgentResultStatus", env.getStatus() != null ? env.getStatus().name() : null);
             dbg.put("purchaseDegraded", env.isDegraded());
+            putSupplierAnalysisHarnessContract(dbg, env);
 
             if (!masterPurchasePathAllowsLegacySkip(env)) {
                 dbg.put("purchaseMasterAgentUsed", false);
                 dbg.put("purchaseFallbackUsed", true);
                 dbg.put("purchaseFallbackReason", "agent_status_" + env.getStatus()
                         + "_or_tool_success_" + env.getPurchaseOverviewToolSuccess());
-                dbg.put("legacyPurchaseSkipped", false);
-                dbg.put("purchaseToolExecutedByMasterPath", false);
+                dbg.put("legacyPurchaseSkipped", true);
+                dbg.put("purchaseToolExecutedByMasterPath", true);
                 dbg.put("masterPurchaseToolResultKey", AiBusinessToolIds.PURCHASE_OVERVIEW);
                 dbg.put("masterPurchaseToolResultSuccess", env.getPurchaseOverviewToolSuccess());
                 trace = buildTrace(state, rq, dispatchPlan, envelopes, startedAt, Instant.now(),
@@ -489,7 +603,7 @@ public class MasterBusinessAgent {
                                 + "_or_tool_success_" + env.getPurchaseOverviewToolSuccess())
                         .debug(dbg)
                         .revenueToolExecutedByMasterPath(false)
-                        .purchaseToolExecutedByMasterPath(false)
+                        .purchaseToolExecutedByMasterPath(true)
                         .build();
             }
 
@@ -519,10 +633,11 @@ public class MasterBusinessAgent {
             dbg.put("purchaseMasterAgentUsed", false);
             dbg.put("purchaseFallbackUsed", true);
             dbg.put("purchaseFallbackReason", "master_exception:" + ex.getClass().getSimpleName());
-            dbg.put("legacyPurchaseSkipped", false);
-            dbg.put("purchaseToolExecutedByMasterPath", false);
+            dbg.put("legacyPurchaseSkipped", true);
+            dbg.put("purchaseToolExecutedByMasterPath", true);
             dbg.put("masterPurchaseToolResultKey", AiBusinessToolIds.PURCHASE_OVERVIEW);
             dbg.put("masterPurchaseToolResultSuccess", null);
+            putSupplierAnalysisHarnessContract(dbg, null);
             dbg.put("purchaseSelectedAgents", List.of(BusinessAgentNames.PURCHASE_OVERVIEW));
             dbg.put("purchaseAgentResults", summarizeEnvelopes(envelopes));
             trace = buildTrace(state, rq, dispatchPlan, envelopes, startedAt, Instant.now(),
@@ -536,7 +651,7 @@ public class MasterBusinessAgent {
                     .fallbackReason("master_exception:" + ex.getClass().getSimpleName())
                     .debug(dbg)
                     .revenueToolExecutedByMasterPath(false)
-                    .purchaseToolExecutedByMasterPath(false)
+                    .purchaseToolExecutedByMasterPath(true)
                     .build();
         }
     }
@@ -551,12 +666,13 @@ public class MasterBusinessAgent {
         dbg.put("purchaseMasterAgentUsed", false);
         dbg.put("purchaseFallbackUsed", true);
         dbg.put("purchaseFallbackReason", reason);
+        putSupplierAnalysisHarnessContract(dbg, null);
         dbg.put("purchaseSelectedAgents", List.of(BusinessAgentNames.PURCHASE_OVERVIEW));
         dbg.put("purchaseAgentResults", summarizeEnvelopes(envelopes));
         dbg.put("purchaseAgentResultStatus", null);
         dbg.put("purchaseDegraded", false);
-        dbg.put("legacyPurchaseSkipped", false);
-        dbg.put("purchaseToolExecutedByMasterPath", false);
+        dbg.put("legacyPurchaseSkipped", true);
+        dbg.put("purchaseToolExecutedByMasterPath", true);
         dbg.put("masterPurchaseToolResultKey", AiBusinessToolIds.PURCHASE_OVERVIEW);
         dbg.put("masterPurchaseToolResultSuccess", null);
         dbg.put("purchaseDispatchPlan", summarizeDispatchPlan(dispatchPlan));
@@ -572,7 +688,7 @@ public class MasterBusinessAgent {
                 .fallbackReason(reason)
                 .debug(dbg)
                 .revenueToolExecutedByMasterPath(false)
-                .purchaseToolExecutedByMasterPath(false)
+                .purchaseToolExecutedByMasterPath(true)
                 .stockReduceToolExecutedByMasterPath(false)
                 .build();
     }
@@ -660,8 +776,8 @@ public class MasterBusinessAgent {
                 dbg.put("stockReduceFallbackUsed", true);
                 dbg.put("stockReduceFallbackReason", "agent_status_" + env.getStatus()
                         + "_or_tool_success_" + env.getStockReduceQueryToolSuccess());
-                dbg.put("legacyStockReduceSkipped", false);
-                dbg.put("stockReduceToolExecutedByMasterPath", false);
+                dbg.put("legacyStockReduceSkipped", true);
+                dbg.put("stockReduceToolExecutedByMasterPath", true);
                 dbg.put("masterStockReduceToolResultKey", AiBusinessToolIds.STOCK_REDUCE_QUERY);
                 dbg.put("masterStockReduceToolResultSuccess", env.getStockReduceQueryToolSuccess());
                 trace = buildTrace(state, rq, dispatchPlan, envelopes, startedAt, Instant.now(),
@@ -677,7 +793,7 @@ public class MasterBusinessAgent {
                         .debug(dbg)
                         .revenueToolExecutedByMasterPath(false)
                         .purchaseToolExecutedByMasterPath(false)
-                        .stockReduceToolExecutedByMasterPath(false)
+                        .stockReduceToolExecutedByMasterPath(true)
                         .build();
             }
 
@@ -708,8 +824,8 @@ public class MasterBusinessAgent {
             dbg.put("stockReduceMasterAgentUsed", false);
             dbg.put("stockReduceFallbackUsed", true);
             dbg.put("stockReduceFallbackReason", "master_exception:" + ex.getClass().getSimpleName());
-            dbg.put("legacyStockReduceSkipped", false);
-            dbg.put("stockReduceToolExecutedByMasterPath", false);
+            dbg.put("legacyStockReduceSkipped", true);
+            dbg.put("stockReduceToolExecutedByMasterPath", true);
             dbg.put("masterStockReduceToolResultKey", AiBusinessToolIds.STOCK_REDUCE_QUERY);
             dbg.put("masterStockReduceToolResultSuccess", null);
             dbg.put("stockReduceSelectedAgents", List.of(BusinessAgentNames.STOCK_REDUCE_QUERY));
@@ -726,7 +842,7 @@ public class MasterBusinessAgent {
                     .debug(dbg)
                     .revenueToolExecutedByMasterPath(false)
                     .purchaseToolExecutedByMasterPath(false)
-                    .stockReduceToolExecutedByMasterPath(false)
+                    .stockReduceToolExecutedByMasterPath(true)
                     .build();
         }
     }
@@ -812,8 +928,8 @@ public class MasterBusinessAgent {
                 dbg.put("dishProfitFallbackUsed", true);
                 dbg.put("dishProfitFallbackReason", "agent_status_" + env.getStatus()
                         + "_or_tool_success_" + env.getDishProfitAnalysisToolSuccess());
-                dbg.put("legacyDishProfitSkipped", false);
-                dbg.put("dishProfitToolExecutedByMasterPath", false);
+                dbg.put("legacyDishProfitSkipped", true);
+                dbg.put("dishProfitToolExecutedByMasterPath", true);
                 dbg.put("masterDishProfitToolResultKey", AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
                 dbg.put("masterDishProfitToolResultSuccess", env.getDishProfitAnalysisToolSuccess());
                 trace = buildTrace(state, rq, dispatchPlan, envelopes, startedAt, Instant.now(),
@@ -830,7 +946,7 @@ public class MasterBusinessAgent {
                         .revenueToolExecutedByMasterPath(false)
                         .purchaseToolExecutedByMasterPath(false)
                         .stockReduceToolExecutedByMasterPath(false)
-                        .dishProfitToolExecutedByMasterPath(false)
+                        .dishProfitToolExecutedByMasterPath(true)
                         .build();
             }
 
@@ -862,8 +978,8 @@ public class MasterBusinessAgent {
             dbg.put("dishProfitMasterAgentUsed", false);
             dbg.put("dishProfitFallbackUsed", true);
             dbg.put("dishProfitFallbackReason", "master_exception:" + ex.getClass().getSimpleName());
-            dbg.put("legacyDishProfitSkipped", false);
-            dbg.put("dishProfitToolExecutedByMasterPath", false);
+            dbg.put("legacyDishProfitSkipped", true);
+            dbg.put("dishProfitToolExecutedByMasterPath", true);
             dbg.put("masterDishProfitToolResultKey", AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
             dbg.put("masterDishProfitToolResultSuccess", null);
             dbg.put("dishProfitSelectedAgents", List.of(BusinessAgentNames.DISH_PROFIT_ANALYSIS));
@@ -881,9 +997,297 @@ public class MasterBusinessAgent {
                     .revenueToolExecutedByMasterPath(false)
                     .purchaseToolExecutedByMasterPath(false)
                     .stockReduceToolExecutedByMasterPath(false)
-                    .dishProfitToolExecutedByMasterPath(false)
+                    .dishProfitToolExecutedByMasterPath(true)
                     .build();
         }
+    }
+
+    private static void putSupplierAnalysisHarnessContract(LinkedHashMap<String, Object> dbg, AgentResultEnvelope env) {
+        if (dbg == null) {
+            return;
+        }
+        if (env != null && BusinessAgentNames.SUPPLIER_ANALYSIS.equals(env.getAgentName())) {
+            dbg.put("supplierAnalysisAgentUsed", Boolean.TRUE);
+            AgentResultStatus st = env.getStatus();
+            dbg.put("supplierAnalysisAgentStatus", st != null ? st.name() : null);
+            String pt = env.getResultType();
+            if (pt == null || pt.isBlank()) {
+                Object ap = env.getAnswerPlan();
+                if (ap instanceof PurchaseAnswerPlan pap) {
+                    pt = pap.getPlanType();
+                }
+            }
+            if (pt == null || pt.isBlank()) {
+                pt = PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING;
+            }
+            dbg.put("supplierAnalysisPlanType", pt);
+            return;
+        }
+        dbg.put("supplierAnalysisAgentUsed", Boolean.FALSE);
+        dbg.put("supplierAnalysisAgentStatus", "SKIPPED");
+        dbg.put("supplierAnalysisPlanType", null);
+    }
+
+    private static BusinessSubAgent resolvePurchaseSubAgent(BusinessAgentRegistry registry, BusinessAgentRequest request) {
+        Optional<BusinessSubAgent> supplierOpt = registry.getAgent(BusinessAgentNames.SUPPLIER_ANALYSIS);
+        if (supplierOpt.isPresent() && supplierOpt.get().supports(request)) {
+            return supplierOpt.get();
+        }
+        Optional<BusinessSubAgent> purchaseOpt = registry.getAgent(BusinessAgentNames.PURCHASE_OVERVIEW);
+        if (purchaseOpt.isEmpty()) {
+            return null;
+        }
+        BusinessSubAgent p = purchaseOpt.get();
+        if (!p.supports(request)) {
+            return null;
+        }
+        return p;
+    }
+
+    /**
+     * 库房库存概览：WAREHOUSE_STOCK_OVERVIEW + warehouse_stock_overview_path + 计划仅
+     * {@link AiBusinessToolIds#WAREHOUSE_STOCK_OVERVIEW}。
+     */
+    public MasterBusinessAgentResult tryOrchestrateWarehouseStockOverview(AiRunState state) {
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        if (!eligibleForMasterWarehouseStockOverview(state)) {
+            dbg.put("warehouseMasterAgentEnabled", false);
+            dbg.put("warehouseToolExecutedByMasterPath", false);
+            putWarehouseStockHarnessSkipped(dbg);
+            return MasterBusinessAgentResult.builder()
+                    .masterAgentEnabled(false)
+                    .masterAgentUsed(false)
+                    .fallbackUsed(false)
+                    .fallbackReason("not_eligible_for_master_warehouse_gate")
+                    .agentResults(List.of())
+                    .debug(dbg)
+                    .warehouseStockToolExecutedByMasterPath(false)
+                    .build();
+        }
+
+        dbg.put("warehouseMasterAgentEnabled", true);
+        Instant startedAt = Instant.now();
+        BusinessAgentDispatchPlan dispatchPlan = buildWarehouseDispatchPlan();
+        dbg.put("warehouseDispatchPlan", summarizeDispatchPlan(dispatchPlan));
+
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        BusinessAgentRequest request = BusinessAgentRequest.builder()
+                .runId(state.getRunId())
+                .conversationId(state.getConversationId())
+                .userId(state.getUserId())
+                .distributerId(state.getDistributerId())
+                .resolvedQueryContext(rq)
+                .semanticResult(rq != null ? rq.getQuerySemanticParse() : null)
+                .executionContext(state)
+                .debugOptions(new LinkedHashMap<>())
+                .build();
+
+        List<AgentResultEnvelope> envelopes = new ArrayList<>();
+        AgentTraceEnvelope trace = null;
+        try {
+            Optional<BusinessSubAgent> agentOpt = registry.getAgent(BusinessAgentNames.WAREHOUSE_STOCK);
+            if (agentOpt.isEmpty()) {
+                return warehouseFallback(dbg, envelopes, dispatchPlan, startedAt, rq, "warehouse_agent_not_registered",
+                        state);
+            }
+            BusinessSubAgent agent = agentOpt.get();
+            if (!agent.supports(request)) {
+                return warehouseFallback(dbg, envelopes, dispatchPlan, startedAt, rq, "warehouse_agent_supports_false",
+                        state);
+            }
+
+            AgentResultEnvelope env = agent.execute(request);
+            envelopes.add(env);
+
+            dbg.put("warehouseSelectedAgents", List.of(BusinessAgentNames.WAREHOUSE_STOCK));
+            dbg.put("warehouseAgentResults", summarizeEnvelopes(envelopes));
+            dbg.put("warehouseAgentResultStatus", env.getStatus() != null ? env.getStatus().name() : null);
+
+            boolean toolOk = Boolean.TRUE.equals(env.getWarehouseStockOverviewToolSuccess());
+            dbg.put("warehouseMasterAgentUsed", toolOk);
+            dbg.put("warehouseToolExecutedByMasterPath", true);
+            dbg.put("masterWarehouseToolResultSuccess", toolOk);
+            putWarehouseStockHarnessFromEnvelope(dbg, env, state);
+            trace = buildTrace(state, rq, dispatchPlan, envelopes, startedAt, Instant.now(),
+                    semanticSummary(rq), resolvedSummary(rq));
+            return MasterBusinessAgentResult.builder()
+                    .trace(trace)
+                    .agentResults(envelopes)
+                    .masterAgentEnabled(true)
+                    .masterAgentUsed(toolOk)
+                    .fallbackUsed(!toolOk)
+                    .fallbackReason(toolOk ? null : "warehouse_tool_failed")
+                    .debug(dbg)
+                    .warehouseStockToolExecutedByMasterPath(true)
+                    .build();
+        } catch (Exception ex) {
+            log.warn("[MasterBusinessAgent] warehouse stock overview orchestration failed runId={}",
+                    state.getRunId(), ex);
+            dbg.put("warehouseToolExecutedByMasterPath", true);
+            putWarehouseStockHarnessException(dbg, state, envelopes);
+            trace = buildTrace(state, rq, dispatchPlan, envelopes, startedAt, Instant.now(),
+                    semanticSummary(rq), resolvedSummary(rq));
+            return MasterBusinessAgentResult.builder()
+                    .trace(trace)
+                    .agentResults(envelopes)
+                    .masterAgentEnabled(true)
+                    .masterAgentUsed(false)
+                    .fallbackUsed(true)
+                    .fallbackReason("master_exception:" + ex.getClass().getSimpleName())
+                    .debug(dbg)
+                    .warehouseStockToolExecutedByMasterPath(true)
+                    .build();
+        }
+    }
+
+    private static MasterBusinessAgentResult warehouseFallback(LinkedHashMap<String, Object> dbg,
+            List<AgentResultEnvelope> envelopes,
+            BusinessAgentDispatchPlan dispatchPlan,
+            Instant startedAt,
+            AiResolvedQueryContext rq,
+            String reason,
+            AiRunState state) {
+        dbg.put("warehouseToolExecutedByMasterPath", true);
+        dbg.put("warehouseFallbackReason", reason);
+        putWarehouseStockHarnessFailure(dbg, state, null);
+        AgentTraceEnvelope trace = buildTrace(state, rq, dispatchPlan, envelopes, startedAt, Instant.now(),
+                semanticSummary(rq), resolvedSummary(rq));
+        return MasterBusinessAgentResult.builder()
+                .trace(trace)
+                .agentResults(envelopes)
+                .masterAgentEnabled(true)
+                .masterAgentUsed(false)
+                .fallbackUsed(true)
+                .fallbackReason(reason)
+                .debug(dbg)
+                .warehouseStockToolExecutedByMasterPath(true)
+                .build();
+    }
+
+    private static void putWarehouseStockHarnessSkipped(LinkedHashMap<String, Object> dbg) {
+        if (dbg == null) {
+            return;
+        }
+        dbg.put("warehouseStockAgentUsed", Boolean.FALSE);
+        dbg.put("warehouseStockAgentStatus", "SKIPPED");
+        dbg.put("warehouseStockOverviewToolSuccess", null);
+        dbg.put("warehouseStockPlanType", null);
+        dbg.put("warehouseStockResultCount", null);
+    }
+
+    private static void putWarehouseStockHarnessFromEnvelope(
+            LinkedHashMap<String, Object> dbg, AgentResultEnvelope env, AiRunState state) {
+        if (dbg == null) {
+            return;
+        }
+        if (env == null) {
+            putWarehouseStockHarnessFailure(dbg, state, null);
+            return;
+        }
+        dbg.put("warehouseStockAgentUsed", Boolean.TRUE);
+        dbg.put("warehouseStockAgentStatus", env.getStatus() != null ? env.getStatus().name() : null);
+        dbg.put("warehouseStockOverviewToolSuccess", env.getWarehouseStockOverviewToolSuccess());
+        dbg.put("warehouseStockPlanType", AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW);
+        dbg.put("warehouseStockResultCount", resolveWarehouseStockResultCount(state));
+    }
+
+    private static void putWarehouseStockHarnessFailure(
+            LinkedHashMap<String, Object> dbg, AiRunState state, AgentResultEnvelope envOrNull) {
+        if (dbg == null) {
+            return;
+        }
+        dbg.put("warehouseStockAgentUsed", Boolean.TRUE);
+        dbg.put("warehouseStockAgentStatus", "FAILED");
+        Boolean t = envOrNull != null ? envOrNull.getWarehouseStockOverviewToolSuccess() : Boolean.FALSE;
+        dbg.put("warehouseStockOverviewToolSuccess", Boolean.TRUE.equals(t));
+        dbg.put("warehouseStockPlanType", AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW);
+        dbg.put("warehouseStockResultCount", resolveWarehouseStockResultCount(state));
+    }
+
+    private static void putWarehouseStockHarnessException(
+            LinkedHashMap<String, Object> dbg, AiRunState state, List<AgentResultEnvelope> envelopes) {
+        if (dbg == null) {
+            return;
+        }
+        AgentResultEnvelope last =
+                envelopes == null || envelopes.isEmpty() ? null : envelopes.get(envelopes.size() - 1);
+        putWarehouseStockHarnessFailure(dbg, state, last);
+        dbg.put("warehouseStockAgentStatus", "FAILED");
+    }
+
+    private static Integer resolveWarehouseStockResultCount(AiRunState state) {
+        if (state == null || state.getToolResults() == null) {
+            return null;
+        }
+        Object raw = state.getToolResults().get(AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
+        if (!(raw instanceof Map<?, ?> envelope)) {
+            return null;
+        }
+        Object data = envelope.get("data");
+        if (!(data instanceof Map<?, ?> dm)) {
+            return null;
+        }
+        Object wo = dm.get("warehouseOverview");
+        if (!(wo instanceof Map<?, ?> wom)) {
+            return null;
+        }
+        Object sic = wom.get("stockItemCount");
+        if (sic instanceof Number n) {
+            return n.intValue();
+        }
+        int sum = 0;
+        String[] listKeys = {
+            "lowStockItems",
+            "overStockItems",
+            "inactiveStockItems",
+            "priorityStocktakeItems",
+            "storeStockAmountRanking",
+            "warehouseStockAmountRanking",
+            "storeInventoryAmountRanking"
+        };
+        for (String k : listKeys) {
+            Object v = wom.get(k);
+            if (v instanceof List<?> list) {
+                sum += list.size();
+            }
+        }
+        return sum;
+    }
+
+    private static boolean eligibleForMasterWarehouseStockOverview(AiRunState state) {
+        if (state == null || !state.isWarehouseStockOverviewPath()) {
+            return false;
+        }
+        List<String> plan = state.getDataPlanTools();
+        if (plan == null || plan.size() != 1 || !AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(plan.get(0))) {
+            return false;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        String ei = rq.getEffectiveIntentCode();
+        String ep = rq.getEffectivePathCode();
+        return AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW.equals(ei)
+                && AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(ep);
+    }
+
+    private static BusinessAgentDispatchPlan buildWarehouseDispatchPlan() {
+        BusinessAgentDispatchStep step = BusinessAgentDispatchStep.builder()
+                .agentName(BusinessAgentNames.WAREHOUSE_STOCK)
+                .required(true)
+                .timeoutMs(120_000L)
+                .failurePolicy(AgentFailurePolicy.FAIL_FAST)
+                .order(0)
+                .build();
+        return BusinessAgentDispatchPlan.builder()
+                .dispatchId(UUID.randomUUID().toString())
+                .intentCode(AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW)
+                .pathCode(AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK)
+                .steps(List.of(step))
+                .parallelAllowed(false)
+                .debug(new LinkedHashMap<>())
+                .build();
     }
 
     private static MasterBusinessAgentResult dishProfitFallback(LinkedHashMap<String, Object> dbg,
@@ -899,8 +1303,8 @@ public class MasterBusinessAgent {
         dbg.put("dishProfitSelectedAgents", List.of(BusinessAgentNames.DISH_PROFIT_ANALYSIS));
         dbg.put("dishProfitAgentResults", summarizeEnvelopes(envelopes));
         dbg.put("dishProfitAgentResultStatus", null);
-        dbg.put("legacyDishProfitSkipped", false);
-        dbg.put("dishProfitToolExecutedByMasterPath", false);
+        dbg.put("legacyDishProfitSkipped", true);
+        dbg.put("dishProfitToolExecutedByMasterPath", true);
         dbg.put("masterDishProfitToolResultKey", AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
         dbg.put("masterDishProfitToolResultSuccess", null);
         dbg.put("dishProfitDispatchPlan", summarizeDispatchPlan(dispatchPlan));
@@ -918,7 +1322,7 @@ public class MasterBusinessAgent {
                 .revenueToolExecutedByMasterPath(false)
                 .purchaseToolExecutedByMasterPath(false)
                 .stockReduceToolExecutedByMasterPath(false)
-                .dishProfitToolExecutedByMasterPath(false)
+                .dishProfitToolExecutedByMasterPath(true)
                 .build();
     }
 
@@ -936,8 +1340,8 @@ public class MasterBusinessAgent {
         dbg.put("stockReduceAgentResults", summarizeEnvelopes(envelopes));
         dbg.put("stockReduceAgentResultStatus", null);
         dbg.put("stockReduceDegraded", false);
-        dbg.put("legacyStockReduceSkipped", false);
-        dbg.put("stockReduceToolExecutedByMasterPath", false);
+        dbg.put("legacyStockReduceSkipped", true);
+        dbg.put("stockReduceToolExecutedByMasterPath", true);
         dbg.put("masterStockReduceToolResultKey", AiBusinessToolIds.STOCK_REDUCE_QUERY);
         dbg.put("masterStockReduceToolResultSuccess", null);
         dbg.put("stockReduceDispatchPlan", summarizeDispatchPlan(dispatchPlan));
@@ -954,7 +1358,7 @@ public class MasterBusinessAgent {
                 .debug(dbg)
                 .revenueToolExecutedByMasterPath(false)
                 .purchaseToolExecutedByMasterPath(false)
-                .stockReduceToolExecutedByMasterPath(false)
+                .stockReduceToolExecutedByMasterPath(true)
                 .build();
     }
 
@@ -972,8 +1376,8 @@ public class MasterBusinessAgent {
         dbg.put("agentResults", summarizeEnvelopes(envelopes));
         dbg.put("agentResultStatus", null);
         dbg.put("degraded", false);
-        dbg.put("legacyRevenueSkipped", false);
-        dbg.put("revenueToolExecutedByMasterPath", false);
+        dbg.put("legacyRevenueSkipped", true);
+        dbg.put("revenueToolExecutedByMasterPath", true);
         dbg.put("masterRevenueToolResultKey", AiBusinessToolIds.REVENUE_QUERY);
         dbg.put("masterRevenueToolResultSuccess", null);
         dbg.put("dispatchPlan", summarizeDispatchPlan(dispatchPlan));
@@ -988,7 +1392,7 @@ public class MasterBusinessAgent {
                 .fallbackUsed(true)
                 .fallbackReason(reason)
                 .debug(dbg)
-                .revenueToolExecutedByMasterPath(false)
+                .revenueToolExecutedByMasterPath(true)
                 .purchaseToolExecutedByMasterPath(false)
                 .stockReduceToolExecutedByMasterPath(false)
                 .dishProfitToolExecutedByMasterPath(false)
@@ -1285,12 +1689,13 @@ public class MasterBusinessAgent {
             row.put("purchaseOverviewToolSuccess", e.getPurchaseOverviewToolSuccess());
             row.put("stockReduceQueryToolSuccess", e.getStockReduceQueryToolSuccess());
             row.put("dishProfitAnalysisToolSuccess", e.getDishProfitAnalysisToolSuccess());
+            row.put("warehouseStockOverviewToolSuccess", e.getWarehouseStockOverviewToolSuccess());
             out.add(row);
         }
         return out;
     }
 
-    private static boolean eligibleForBusinessOverviewMultiAgentOrchestration(AiRunState state) {
+    public static boolean eligibleForBusinessOverviewMultiAgentOrchestration(AiRunState state) {
         if (state == null) {
             return false;
         }
@@ -1670,6 +2075,6 @@ public class MasterBusinessAgent {
         if (env instanceof Map<?, ?> m && Boolean.FALSE.equals(m.get("success"))) {
             return "dish_profit_analysis 执行失败或 success=false";
         }
-        return "AnswerPlan 未挂载（DishProfitAgentNode 未产出或数据不足）";
+        return "AnswerPlan 未挂载（菜品毛利聚合未产出或数据不足）";
     }
 }

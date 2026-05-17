@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbAiWorkflowRunMapper">
+
+    <select id="selectRecentByAdvisorAndUser" resultType="com.nongxinle.ai.advisor.workflow.dto.AiAdvisorWorkflowRunListItemDTO">
+        SELECT
+            r.gb_ai_wr_id AS workflowRunId,
+            r.gb_ai_wr_workflow_id AS workflowId,
+            w.gb_ai_workflow_code AS workflowCode,
+            w.gb_ai_workflow_name AS workflowName,
+            r.gb_ai_wr_advisor_id AS advisorId,
+            r.gb_ai_wr_user_id AS userId,
+            r.gb_ai_wr_status AS status,
+            r.gb_ai_wr_result_summary AS resultSummary,
+            r.gb_ai_wr_error_message AS errorMessage,
+            r.gb_ai_wr_create_time AS createTime,
+            r.gb_ai_wr_update_time AS updateTime
+        FROM gb_ai_workflow_run r
+        INNER JOIN gb_ai_workflow w ON w.gb_ai_workflow_id = r.gb_ai_wr_workflow_id
+        WHERE r.gb_ai_wr_advisor_id = #{advisorId}
+          AND r.gb_ai_wr_user_id = #{userId}
+        ORDER BY r.gb_ai_wr_create_time DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

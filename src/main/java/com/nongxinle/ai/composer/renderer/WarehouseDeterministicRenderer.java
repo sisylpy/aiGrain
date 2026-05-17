@@ -62,10 +62,12 @@ public final class WarehouseDeterministicRenderer {
             sb.append("【库存规模】约有 ").append(DeterministicRendererSupport.plainNumericHint(wo.get("stockItemCount")))
                     .append(" 种商品仍有账面剩余（全库批次约 ")
                     .append(DeterministicRendererSupport.plainNumericHint(wo.get("stockBatchRowCount"))).append(" 行）；库存剩余总金额约 ")
-                    .append(DeterministicRendererSupport.plainNumericHint(wo.get("totalStockAmount"))).append(" 元，剩余总重量约 ")
-                    .append(DeterministicRendererSupport.fmtStockWeightCn(wo.get("totalStockWeight"))).append("。\n");
+                    .append(DeterministicRendererSupport.plainNumericHint(wo.get("totalStockAmount"))).append(" 元，")
+                    .append("账面剩余数量/重量合计约 ").append(DeterministicRendererSupport.plainNumericHint(wo.get("totalStockWeight")))
+                    .append("（含不同规格商品）。\n");
             sb.append("【入库】入库金额约 ").append(DeterministicRendererSupport.plainNumericHint(wo.get("inboundAmount")))
-                    .append(" 元，入库重量约 ").append(DeterministicRendererSupport.fmtStockWeightCn(wo.get("inboundWeight"))).append("。\n");
+                    .append(" 元，入库数量/重量合计约 ").append(DeterministicRendererSupport.plainNumericHint(wo.get("inboundWeight")))
+                    .append("（含不同规格商品）。\n");
             sb.append("【核销/出库】出品约 ").append(DeterministicRendererSupport.plainNumericHint(wo.get("produceAmount")))
                     .append(" 元；废弃 ").append(DeterministicRendererSupport.plainNumericHint(wo.get("wasteAmount")))
                     .append(" 元，损耗 ").append(DeterministicRendererSupport.plainNumericHint(wo.get("lossAmount")))

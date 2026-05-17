@@ -79,6 +79,13 @@ public final class PurchaseAnswerPlanBuilder {
         }
 
         String planType = resolvePlanType(wire, pst);
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING.equals(planType)) {
+            if (pst == null
+                    || pst.isBlank()
+                    || AiQuerySemanticLexicon.SOURCE_ALL.equalsIgnoreCase(pst.trim())) {
+                pst = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE;
+            }
+        }
         String scopeLabel = resolveScopeLabel(overview, rq);
         String timeLabel = resolveTimeLabel(state, rq);
 

@@ -277,7 +277,7 @@ data: {"status":"failed","displayText":"运行失败","data":{},"event":"run_fin
 }
 ```
 
-**真实示例（营销工作台被拒，`WORKSPACE_ACCESS_DENIED`，字段与后端一致）**：
+**历史示例（营销工作台被拒，`WORKSPACE_ACCESS_DENIED`）**：曾由已删除的 **`AiWorkspaceAccessGuard`** / **`BusinessWorkspaceRouteNode`** 发出；当前主链 **不会**再经该路径产生此错误码，示例仅保留契约参考。
 
 ```json
 {
@@ -488,6 +488,7 @@ data:{...}
 | 2026-05-10 | 新增本文；`publishError` 统一 `error.data`；`run_finished` 固定带 `data: {}`；`run_finished.displayText` 按终态区分「完成 / 已取消 / 运行失败」。 |
 | 2026-05-10 | `answer_delta.displayText`=**回答生成中**；`AiRunSession`：`data(envelopeMap, APPLICATION_JSON)`；**`WebMvcConfig`**：`StringHttpMessageConverter` 在 FastJson 之前（见「总则 · 帧字节」）；checklist/`docs/JDK_MAVEN.md`。 |
 | 2026-05-10 | **权限第一波**：`publishError` → `data.permissionDenied`（`requiredPermission`/`subject` 等）；**§6** 明确 **Tool 软拒绝**与 **`run_finished.completed`** 共存；与 `API_INTEGRATION.md` 对齐。 |
-| 2026-05-10 | **权限第二波**：**§8** 在 **`WorkspaceRoute` → `ScopeIntersect`** → **`TimeWindow`** 间插入 **`ScopeIntersect`**；**§6** 增补 **`WORKSPACE_ACCESS_DENIED`** 信封示例与共存说明；与本仓库 **`BusinessScopeIntersectNode`** / **`AiWorkspaceAccessGuard`** 对齐。 |
+| 2026-05-10 | **权限第二波**：**§8** 在 **`WorkspaceRoute` → `ScopeIntersect`** → **`TimeWindow`** 间插入 **`ScopeIntersect`**；**§6** 增补 **`WORKSPACE_ACCESS_DENIED`** 信封示例与共存说明；与当时实现 **`BusinessScopeIntersectNode`** / **`AiWorkspaceAccessGuard`** 对齐。 |
+| 2026-05-17 | **`BusinessWorkspaceRouteNode` / `AiWorkspaceAccessGuard`** 等已删除（见 **`docs/legacy-reference/workspace-keyword-route-and-guard.md`**）；**`WORKSPACE_ACCESS_DENIED`** 示例在 §6 **仅作历史契约参考**；现行 Graph 以 **`BusinessScopeIntersectNode`** 起始。 |
 
 ---

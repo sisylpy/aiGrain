@@ -1,6 +1,5 @@
 package com.nongxinle.ai.graph.business;
 
-import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.cost.AiCostDiagnosisResult;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
@@ -18,25 +17,21 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 成本洞察结构化诊断：在 {@link StubOutcomeReviewNode} 于 Tool 链完成后调用（非 Graph AgentNode）。
+ */
 @Component
 @RequiredArgsConstructor
-public class CostDiagnosisAgentNode implements AgentNode {
+public class CostDiagnosisAgentNode {
 
     private final AiSseEventPublisher publisher;
     private final AiPermissionGuard permissionGuard;
 
-    @Override
-    public String name() {
-        return "CostDiagnosisAgent";
-    }
-
-    @Override
-    public boolean shouldRun(AiRunState state) {
-        return state.isCostInsightPath() && state.getDataPlanTools() != null && !state.getDataPlanTools().isEmpty();
-    }
-
-    @Override
-    public AiRunState run(AiRunState state) {
+    public void applyIfApplicable(AiRunState state) {
+        if (state == null || !state.isCostInsightPath() || state.getDataPlanTools() == null
+                || state.getDataPlanTools().isEmpty()) {
+            return;
+        }
         long rid = state.getRunId();
 
         var perm = permissionGuard.evaluateCostDiagnosisAgent(state);
@@ -61,7 +56,7 @@ public class CostDiagnosisAgentNode implements AgentNode {
                     "displayText", "成本诊断因权限不足已跳过",
                     "permissionDenied", denial != null ? denial.asDataMap() : Map.of()
             ));
-            return state;
+            return;
         }
 
         publisher.publish(rid, "agent_started", Map.of(
@@ -199,7 +194,6 @@ public class CostDiagnosisAgentNode implements AgentNode {
                 "riskLevel", risk,
                 "needMoreData", needMore
         ));
-        return state;
     }
 
     /** 优先使用毛利 Tool 的展示字段；不可靠时禁止把「空/0」渲染成可解读的毛利率数值。 */

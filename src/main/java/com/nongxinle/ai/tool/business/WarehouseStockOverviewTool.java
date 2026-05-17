@@ -297,23 +297,25 @@ public class WarehouseStockOverviewTool implements AiTool {
                                 + "当前范围内暂未查询到有效库存记录，请确认入库、出库、盘点数据是否已录入。",
                         storesTotal, storesWithSignal, storesNoSignal);
             } else if (hasResolvedWarehouses) {
+                // 【优化】统一使用"账面剩余数量/重量合计"替代"剩余重量约 x 斤"
                 summary = String.format(Locale.CHINA,
                         "集团范围内共识别到 %d 个门店/库房，其中 %d 个有库存侧信号，%d 个暂无有效库存记录。"
-                                + "合并后约 %d 种商品仍有账面剩余（批次约 %d 行）；剩余金额约 %.2f 元，剩余重量约 %.2f%s；"
-                                + "统计区间内入库约 %.2f 元、入库重量约 %.2f%s；核销侧出品约 %.2f 元，损耗 %.2f、报损 %.2f、退货 %.2f。",
+                                + "合并后约 %d 种商品仍有账面剩余（批次约 %d 行）；剩余金额约 %.2f 元，账面剩余数量/重量合计约 %.2f（含不同规格商品）；"
+                                + "统计区间内入库约 %.2f 元，入库数量/重量合计约 %.2f（含不同规格商品）；核销侧出品约 %.2f 元，损耗 %.2f、报损 %.2f、退货 %.2f。",
                         storesTotal, storesWithSignal, storesNoSignal,
-                        skuCount, totalBatchRows, restAmtSum, restWtSum, STOCK_WEIGHT_UNIT_CN,
-                        inboundAmtSum, inboundWtSum, STOCK_WEIGHT_UNIT_CN,
+                        skuCount, totalBatchRows, restAmtSum, restWtSum,
+                        inboundAmtSum, inboundWtSum,
                         outboundBd.doubleValue(), wasteSum.doubleValue(),
                         lossSum.doubleValue(), returnSum.doubleValue());
             } else {
+                // 【优化】统一使用"账面剩余数量/重量合计"替代"剩余重量约 x 斤"
                 summary = String.format(Locale.CHINA,
                         "集团范围内共识别到 %d 家门店，其中 %d 家有库存侧信号，%d 家暂无有效库存记录。"
-                                + "合并后约 %d 种商品仍有账面剩余（批次约 %d 行）；剩余金额约 %.2f 元，剩余重量约 %.2f%s；"
-                                + "统计区间内入库约 %.2f 元、入库重量约 %.2f%s；核销侧出品约 %.2f 元，损耗 %.2f、报损 %.2f、退货 %.2f。",
+                                + "合并后约 %d 种商品仍有账面剩余（批次约 %d 行）；剩余金额约 %.2f 元，账面剩余数量/重量合计约 %.2f（含不同规格商品）；"
+                                + "统计区间内入库约 %.2f 元，入库数量/重量合计约 %.2f（含不同规格商品）；核销侧出品约 %.2f 元，损耗 %.2f、报损 %.2f、退货 %.2f。",
                         storesTotal, storesWithSignal, storesNoSignal,
-                        skuCount, totalBatchRows, restAmtSum, restWtSum, STOCK_WEIGHT_UNIT_CN,
-                        inboundAmtSum, inboundWtSum, STOCK_WEIGHT_UNIT_CN,
+                        skuCount, totalBatchRows, restAmtSum, restWtSum,
+                        inboundAmtSum, inboundWtSum,
                         outboundBd.doubleValue(), wasteSum.doubleValue(),
                         lossSum.doubleValue(), returnSum.doubleValue());
             }
@@ -554,8 +556,7 @@ public class WarehouseStockOverviewTool implements AiTool {
                 label = nmRaw.trim();
             }
             GoodAgg g = byGoods.computeIfAbsent(key, k -> new GoodAgg(label, key));
-            g.restWeight += rw;
-            g.restAmount += ra;
+            g.mergeFrom(e); // 同时累加数量并提取商品单位
             String batchDate = e.getGbDgsDate();
             if (batchDate != null && start.compareTo(batchDate) > 0 && rw > 0) {
                 if (inactiveBatches.size() < INACTIVE_BATCH_MAX) {
@@ -598,12 +599,12 @@ public class WarehouseStockOverviewTool implements AiTool {
         if (skuCount == 0 && batchRows == 0 && restAmtTotal <= 0 && inboundAmt <= 0 && reduceAllBd.signum() == 0) {
             summary = "当前范围内暂未查询到有效库存记录，请确认入库、出库、盘点数据是否已录入。";
         } else {
+            // 【优化】统一使用"账面剩余数量/重量合计"替代"剩余重量约 x 斤"，避免包装类商品误导
             String metrics = String.format(
                     Locale.CHINA,
-                    "共有 %d 种商品、约 %d 个批次仍有账面剩余；剩余金额约 %.2f 元，剩余重量约 %.2f%s；"
-                            + "统计区间内入库约 %.2f 元、入库重量约 %.2f%s；核销侧出品约 %.2f 元，损耗 %.2f、报损 %.2f、退货 %.2f。",
-                    skuCount, batchRows, restAmtTotal, restWtTotal, STOCK_WEIGHT_UNIT_CN, inboundAmt,
-                    inboundWt, STOCK_WEIGHT_UNIT_CN,
+                    "共有 %d 种商品、约 %d 个批次仍有账面剩余；剩余金额约 %.2f 元，账面剩余数量/重量合计约 %.2f（含不同规格商品）；"
+                            + "统计区间内入库约 %.2f 元，入库数量/重量合计约 %.2f（含不同规格商品）；核销侧出品约 %.2f 元，损耗 %.2f、报损 %.2f、退货 %.2f。",
+                    skuCount, batchRows, restAmtTotal, restWtTotal, inboundAmt, inboundWt,
                     outboundBd.doubleValue(), wasteBd.doubleValue(),
                     lossBd.doubleValue(), returnBd.doubleValue());
             if (storeLabel == null || storeLabel.isBlank()) {
@@ -653,7 +654,11 @@ public class WarehouseStockOverviewTool implements AiTool {
                     }
                     it.put("restWeightTotal", round2(g.restWeight));
                     it.put("restAmountTotal", round2(g.restAmount));
-                    it.put("note", "剩余重量偏低，请关注是否需要补货");
+                    // 【关键】填充商品真实单位，渲染层 WarehouseDeterministicRenderer 会优先使用此字段
+                    if (g.weightUnit != null && !g.weightUnit.isBlank()) {
+                        it.put("weightDisplayUnit", g.weightUnit);
+                    }
+                    it.put("note", "剩余数量偏低，请关注是否需要补货");
                     lowStock.add(it);
                 });
         return lowStock;
@@ -677,6 +682,10 @@ public class WarehouseStockOverviewTool implements AiTool {
                     }
                     it.put("restAmountTotal", round2(g.restAmount));
                     it.put("restWeightTotal", round2(g.restWeight));
+                    // 【关键】填充商品真实单位，渲染层 WarehouseDeterministicRenderer 会优先使用此字段
+                    if (g.weightUnit != null && !g.weightUnit.isBlank()) {
+                        it.put("weightDisplayUnit", g.weightUnit);
+                    }
                     it.put("note", "剩余金额相对较高，建议优先消耗避免积压");
                     overStock.add(it);
                 });
@@ -753,6 +762,10 @@ public class WarehouseStockOverviewTool implements AiTool {
             GoodAgg t = merged.computeIfAbsent(g.goodsId, k -> new GoodAgg(g.name, g.goodsId));
             t.restWeight += g.restWeight;
             t.restAmount += g.restAmount;
+            // 合并时保留第一个非空单位
+            if ((t.weightUnit == null || t.weightUnit.isBlank()) && g.weightUnit != null && !g.weightUnit.isBlank()) {
+                t.weightUnit = g.weightUnit;
+            }
         }
     }
 
@@ -908,10 +921,28 @@ public class WarehouseStockOverviewTool implements AiTool {
         final int goodsId;
         double restWeight;
         double restAmount;
+        /** 商品库存展示单位（如「箱」「瓶」「桶」「件」）；无则为 null。 */
+        String weightUnit;
 
         GoodAgg(String name, int goodsId) {
             this.name = name;
             this.goodsId = goodsId;
+        }
+
+        /**
+         * 汇总时取第一个非空单位。
+         * 后续渲染层 {@link com.nongxinle.ai.composer.renderer.WarehouseDeterministicRenderer}
+         * 会优先使用此字段而非统一写死的「斤」。
+         */
+        void mergeFrom(GbDepartmentGoodsStockEntity e) {
+            this.restWeight += parseDoubleLoose(e.getGbDgsRestWeight());
+            this.restAmount += parseDoubleLoose(e.getGbDgsRestSubtotal());
+            if (this.weightUnit == null || this.weightUnit.isBlank()) {
+                String u = e.getGbDgsRestWeightShowStandardName();
+                if (u != null && !u.isBlank()) {
+                    this.weightUnit = u.trim();
+                }
+            }
         }
     }
 

@@ -8,7 +8,6 @@ import com.nongxinle.ai.dto.business.AiDishProfitDishBrief;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
 import com.nongxinle.ai.dto.business.AiOverviewCoveredStoreItem;
 import com.nongxinle.ai.dto.business.AiOverviewStoreIssueItem;
-import com.nongxinle.ai.dto.business.BusinessDiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.cost.AiCostDiagnosisResult;
 import com.nongxinle.ai.composer.summary.BusinessOverviewDeterministicSummaryBuilder;
@@ -81,55 +80,6 @@ public class AnswerComposerPayloadFactory {
         m.put("topProfitDishes", capDishBriefs(dp.getTopProfitDishes(), 5));
         m.put("abnormalDishes", capDishBriefs(dp.getAbnormalDishes(), 6));
         m.put("recommendations", dp.getRecommendations() == null ? List.of() : dp.getRecommendations());
-        return m;
-    }
-
-    public LinkedHashMap<String, Object> buildBusinessDiagnosisPayload(AiRunState state,
-            BusinessDiagnosisPlan bdPlan) {
-        LinkedHashMap<String, Object> bdPayload = new LinkedHashMap<>();
-        bdPayload.put("hint", "优先 dishProfitAnswerPlan.plan；DISH_LOWEST_MARGIN 用 focusRows[0]；禁止否认风险");
-        bdPayload.put("userQuestion", nz(state != null ? state.getNormalizedUserInput() : null));
-        bdPayload.put("diagnosisPlan", bdPlan);
-        LinkedHashMap<String, Object> apWrap = new LinkedHashMap<>();
-        DishProfitAnswerPlan ap = state != null ? state.getDishProfitAnswerPlan() : null;
-        boolean present = ap != null;
-        apWrap.put("present", present);
-        if (present) {
-            try {
-                apWrap.put("plan", JSON.parseObject(JSON.toJSONString(ap)));
-            } catch (Exception e) {
-                apWrap.put("plan", null);
-                apWrap.put("planSerializeWarning", "failed");
-            }
-        } else {
-            apWrap.put("plan", null);
-        }
-        bdPayload.put("dishProfitAnswerPlan", apWrap);
-        return bdPayload;
-    }
-
-    public LinkedHashMap<String, Object> buildBusinessDiagnosisStorePriorityPayload(AiRunState state,
-            BusinessDiagnosisPlan bdPlan) {
-        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
-        m.put("mode", "STORE_PRIORITY_RANKING");
-        m.put("hint",
-                "门店优先级答复：先处理谁、原因、其它店、2-3 动作；禁止集团采购+出库+毛利率总览式开头。");
-        m.put("userQuestion", nz(state != null ? state.getNormalizedUserInput() : null));
-        m.put("scopeLabel", bdPlan != null ? nz(bdPlan.getScopeLabel()) : "");
-        m.put("timeLabel", bdPlan != null ? nz(bdPlan.getTimeLabel()) : "");
-        if (bdPlan != null && bdPlan.getStorePriorityRanking() != null) {
-            try {
-                m.put("storePriorityRanking",
-                        JSON.parseObject(JSON.toJSONString(bdPlan.getStorePriorityRanking())));
-            } catch (Exception e) {
-                m.put("storePriorityRanking", bdPlan.getStorePriorityRanking());
-            }
-        } else {
-            m.put("storePriorityRanking", null);
-        }
-        if (bdPlan != null && bdPlan.getDataCompleteness() != null) {
-            m.put("dataCompleteness", bdPlan.getDataCompleteness());
-        }
         return m;
     }
 
