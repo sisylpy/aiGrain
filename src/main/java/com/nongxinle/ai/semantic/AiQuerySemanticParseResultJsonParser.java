@@ -119,6 +119,7 @@ public final class AiQuerySemanticParseResultJsonParser {
                     .endDate(trimToNull(tjo.getStr("endDate")))
                     .timeSource(trimToNull(tjo.getStr("timeSource")))
                     .needInheritFromPrevious(parseNullableBool(tjo.get("needInheritFromPrevious")))
+                    .reason(trimToNull(tjo.getStr("reason")))
                     .build();
         }
 
@@ -167,8 +168,11 @@ public final class AiQuerySemanticParseResultJsonParser {
                     .build();
         }
 
+        AiQuerySemanticParseResult.SemanticSlotsPart semanticSlots = parseSemanticSlots(o);
+
         return AiQuerySemanticParseResult.builder()
                 .intent(trimToNull(o.getStr("intent")))
+                .semanticDomain(trimToNull(o.getStr("domain")))
                 .mentionedDishName(trimToNull(o.getStr("mentionedDishName")))
                 .confidence(parseDouble(o.get("confidence")))
                 .followUp(parseNullableBool(o.get("isFollowUp")))
@@ -179,6 +183,7 @@ public final class AiQuerySemanticParseResultJsonParser {
                 .time(time)
                 .requestedScope(scope)
                 .metric(metric)
+                .semanticSlots(semanticSlots)
                 .orchestrationDecisionCandidate(orchestration)
                 .needClarification(parseNullableBool(o.get("needClarification")))
                 .clarificationQuestion(trimToNull(o.getStr("clarificationQuestion")))
@@ -257,6 +262,26 @@ public final class AiQuerySemanticParseResultJsonParser {
     private static String trimToNull(String s) {
         String t = s == null ? "" : s.trim();
         return StringUtils.hasText(t) ? t : null;
+    }
+
+    private static AiQuerySemanticParseResult.SemanticSlotsPart parseSemanticSlots(JSONObject o) {
+        if (o == null) {
+            return null;
+        }
+        JSONObject sjo = o.getJSONObject("semanticSlots");
+        if (sjo == null || sjo.isEmpty()) {
+            return null;
+        }
+        stripForbiddenKeysRecursive(sjo);
+        return AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                .queryObject(trimToNull(sjo.getStr("queryObject")))
+                .operation(trimToNull(sjo.getStr("operation")))
+                .metric(trimToNull(sjo.getStr("metric")))
+                .sourceFacet(trimToNull(sjo.getStr("sourceFacet")))
+                .anchorPolicy(trimToNull(sjo.getStr("anchorPolicy")))
+                .detailWanted(trimToNull(sjo.getStr("detailWanted")))
+                .structuredIntentDetailWire(trimToNull(sjo.getStr("structuredIntentDetailWire")))
+                .build();
     }
 
     private static JSONObject extractJsonObject(String trimmed) {

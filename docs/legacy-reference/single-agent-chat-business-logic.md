@@ -13,7 +13,7 @@
 | 集团连锁诊断 | 集团诊断段落（净营收 − 出库等） | 多部门营收、`queryReduceAllTypesTotalForRetailDepartmentFathers` | **经营概览 / 诊断 Composite** 与 visibleStores；细节以当前 Tool 为准 |
 | 指标目录 metric_id | `AiMetricCatalog` + `MetricExecutionContextFactory`（已删） | YAML `ai-metrics/catalog-v1.yaml`（保留为文档） | **无** 自动 Java 装载；事实走 Graph Tool |
 | 时间窗口（规则 + LLM JSON） | `AiUserQueryTimeWindowResolver`、`AiUserQueryTimeWindowLlmParser` | 无表；驱动查库起止日 | **`AiResolvedQueryContext.timeWindow`** + `BusinessTimeWindowNode`（旧 `AiTimePromptGuide` 已删） |
-| 会话结束总结 / 记忆 | `endConversation`、`summarizeConversation`、`GbAiMemoryService` | `gb_ai_message`、记忆表 | **未迁**：旧入口 `POST /api/ai/chat/end` 已删；若需「关会话总结」需在 Run 或独立任务上重做 |
+| 会话结束总结 / 记忆 | `endConversation`、`summarizeConversation`、~~`GbAiMemoryService`~~（已删） | ~~`gb_ai_memory`~~、~~`gb_ai_message_memory_extracted`~~（已删） | **未迁**：若需「关会话总结」在 Run 或独立任务重做；参见 `docs/legacy-reference/gb_ai_memory_removed.md` |
 | 静态推荐主题卡片 | `GbAiChatController#getRecommendedTopics` | 无 | **未迁**：若产品仍要首页卡片，由前端静态配置或新 BFF 提供 |
 
 ## 计算公式与字段（高精摘要，无大段代码）
@@ -27,4 +27,4 @@
 
 1. 产品若仍需「关会话自动总结」，定义新 API 或 Hook，避免恢复单 Agent。
 2. `catalog-v1.yaml` 可按 Tool 一条条重写 `datasource`，或删除文件（当前仅作文档）。
-3. `GbAiMemoryService` 若不再有调用方，可后续精简或与新 Run 记忆策略合并（本轮保留类，避免牵连）。
+3. ~~`GbAiMemoryService` / `gb_ai_memory`~~ 已删除；持久化追问上下文以 `GbAiConversationTurnMemory*` 与快照为准。

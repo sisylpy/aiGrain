@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-# 本地 Harness Replay 回归：内置 case + PROBE 7 轮故事线
+# 全量 Harness Replay 回归验收（内置 case + PROBE 7 轮；跑一次约较久，适合合并前/里程碑）
+#
+# 日常小改请优先用分层脚本（输出格式与 bundle 一致：每 case 一个 JSON，末尾汇总 caseId + overallPass）：
+#   ./scripts/harness/replay-purchase-followup-core.sh
+#   ./scripts/harness/replay-dish-followup-core.sh
+#   ./scripts/harness/replay-diagnosis-followup-core.sh
+#   ./scripts/harness/replay-single-case.sh <caseId> "句1" "句2" ...
+#
 # 用法:
 #   ./scripts/harness/run-local-replay-regression-bundle.sh
-#   API_BASE=http://localhost:8080/api REPLAY_OUT_DIR=~/Desktop/my-replay ./scripts/harness/run-local-replay-regression-bundle.sh
+#   API_BASE=http://localhost:8090/api REPLAY_OUT_DIR=~/Desktop/my-replay ./scripts/harness/run-local-replay-regression-bundle.sh
+#   REPLAY_OUT_DIR=./out/replay-bundle ./scripts/harness/run-local-replay-regression-bundle.sh
 #
 # 前置: 服务已启动；application 中 ai.harness.replay-enabled=true；建议安装 jq（macOS: brew install jq）
 set -euo pipefail
 
-: "${API_BASE:=http://localhost:8080/api}"
+: "${API_BASE:=http://localhost:8090/api}"
 : "${REPLAY_OUT_DIR:=$HOME/Desktop/aigrain-replay-results}"
 
 URL="${API_BASE%/}/ai/harness/replay"
@@ -167,6 +175,67 @@ print(json.dumps(base, ensure_ascii=False))
 PY
 )"
 
+run_one "PURCHASE_SUPPLIER_RANKING_DRILLDOWN_GOODS_UNIT_PRICE_3" "$(python3 - "$BASE_JSON" <<'PY'
+import json, sys
+base = json.loads(sys.argv[1])
+msgs = [
+    "这个月哪个供应商供货金额最高",
+    "上个月呢",
+    "采购了哪些商品？单价分别是多少？",
+]
+base.update({"caseId": "PURCHASE_SUPPLIER_RANKING_DRILLDOWN_GOODS_UNIT_PRICE_3", "messages": msgs})
+print(json.dumps(base, ensure_ascii=False))
+PY
+)"
+
+run_one "PURCHASE_GOODS_RANKING_DRILLDOWN_SUPPLIER_UNIT_PRICE_2" "$(python3 - "$BASE_JSON" <<'PY'
+import json, sys
+base = json.loads(sys.argv[1])
+msgs = [
+    "这个月采购金额最高的商品是什么？",
+    "这个商品是哪些供应商供的？单价分别是多少？",
+]
+base.update({"caseId": "PURCHASE_GOODS_RANKING_DRILLDOWN_SUPPLIER_UNIT_PRICE_2", "messages": msgs})
+print(json.dumps(base, ensure_ascii=False))
+PY
+)"
+
+run_one "PURCHASE_GOODS_RANKING_SOURCE_BREAKDOWN_2" "$(python3 - "$BASE_JSON" <<'PY'
+import json, sys
+base = json.loads(sys.argv[1])
+msgs = [
+    "这个月采购金额最高的商品是什么？",
+    "这个商品自采了多少，供货商订了多少？",
+]
+base.update({"caseId": "PURCHASE_GOODS_RANKING_SOURCE_BREAKDOWN_2", "messages": msgs})
+print(json.dumps(base, ensure_ascii=False))
+PY
+)"
+
+run_one "PURCHASE_SUPPLIER_FACET_GOODS_RANKING_SOURCE_BREAKDOWN_2" "$(python3 - "$BASE_JSON" <<'PY'
+import json, sys
+base = json.loads(sys.argv[1])
+msgs = [
+    "供货商供货的商品里，哪个商品的采购金额最大？",
+    "这个商品总共采购多少，其中自采多少、供货商多少？",
+]
+base.update({"caseId": "PURCHASE_SUPPLIER_FACET_GOODS_RANKING_SOURCE_BREAKDOWN_2", "messages": msgs})
+print(json.dumps(base, ensure_ascii=False))
+PY
+)"
+
+run_one "PURCHASE_SUPPLIER_FACET_GOODS_AMOUNT_RANKING_IGNORE_ANCHOR_2" "$(python3 - "$BASE_JSON" <<'PY'
+import json, sys
+base = json.loads(sys.argv[1])
+msgs = [
+    "这个月商品哪个采购金额最大？",
+    "供货商供货的商品里，哪个商品的采购金额最大？",
+]
+base.update({"caseId": "PURCHASE_SUPPLIER_FACET_GOODS_AMOUNT_RANKING_IGNORE_ANCHOR_2", "messages": msgs})
+print(json.dumps(base, ensure_ascii=False))
+PY
+)"
+
 run_one "STOCK_REDUCE_AGENT_GRAPH_CORE" "$(python3 - "$BASE_JSON" <<'PY'
 import json, sys
 base = json.loads(sys.argv[1])
@@ -185,6 +254,33 @@ msgs = [
     "这个月哪个菜毛利率最高？",
 ]
 base.update({"caseId": "DISH_PROFIT_AGENT_GRAPH_CORE", "messages": msgs})
+print(json.dumps(base, ensure_ascii=False))
+PY
+)"
+
+# D-13.3A：DISH anchor → 原料构成下钻协议（无真实原料明细）
+run_one "DISH_LOW_MARGIN_DRILLDOWN_INGREDIENT_COST_2" "$(python3 - "$BASE_JSON" <<'PY'
+import json, sys
+base = json.loads(sys.argv[1])
+msgs = [
+    "上个月哪个菜毛利率最低？",
+    "具体是哪些原料拖累了毛利？",
+]
+base.update({"caseId": "DISH_LOW_MARGIN_DRILLDOWN_INGREDIENT_COST_2", "messages": msgs})
+print(json.dumps(base, ensure_ascii=False))
+PY
+)"
+
+# --- D-13.2：经营概览 → 门店优先级 → STORE 原因追问（与 D-13.1 供应商 drilldown 独立）---
+run_one "BUSINESS_STORE_PRIORITY_DRILLDOWN_REASONS_3" "$(python3 - "$BASE_JSON" <<'PY'
+import json, sys
+base = json.loads(sys.argv[1])
+msgs = [
+    "这个月经营得怎么样？",
+    "哪个门店问题最大？",
+    "具体是什么问题？",
+]
+base.update({"caseId": "BUSINESS_STORE_PRIORITY_DRILLDOWN_REASONS_3", "messages": msgs})
 print(json.dumps(base, ensure_ascii=False))
 PY
 )"

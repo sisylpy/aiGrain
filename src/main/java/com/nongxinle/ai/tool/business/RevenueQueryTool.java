@@ -105,10 +105,11 @@ public class RevenueQueryTool implements AiTool {
     }
 
     /**
-     * 与 {@link BusinessOverviewQueryTool#executeGroupWideOverview} 收入侧 rollup 对齐：门店根 →
+     * 集团广角收入聚合（{@link AiBusinessToolIds#REVENUE_QUERY}）：门店根 →
      * {@link GbAiDailyRevenueService#expandStoreRootsToDailyRevenueScopeIds} →
      * {@link GbAiDailyRevenueService#getGroupIncomeAggregateForDepartmentIds}，
      * 保证 {@code totalRevenue/days} 与 {@link #buildStoreRevenueRanking} 各店合计一致。
+     * <p>Historical removed：不再与已删 {@code BusinessOverviewQueryTool} 并列说明；MULTI 经营概览收入侧以本 Tool 为准。
      */
     private ToolResult executeGroupWideRevenueAggregate(ToolRequest request, Map<String, Object> args,
             Long dept, String start, String stop) {

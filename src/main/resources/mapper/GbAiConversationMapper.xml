@@ -9,7 +9,6 @@
 		<result column="gb_ai_conversation_scope_mode" property="gbAiConversationScopeMode" />
 		<result column="gb_ai_conversation_advisor_id" property="gbAiConversationAdvisorId" />
 		<result column="gb_ai_conversation_thread_kind" property="gbAiConversationThreadKind" />
-		<result column="gb_ai_conversation_type" property="gbAiConversationType" />
 		<result column="gb_ai_conversation_title" property="gbAiConversationTitle" />
 		<result column="gb_ai_conversation_create_time" property="gbAiConversationCreateTime" />
 		<result column="gb_ai_conversation_update_time" property="gbAiConversationUpdateTime" />

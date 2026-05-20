@@ -1,25 +1,17 @@
 package com.nongxinle.ai.composer.renderer;
 
-import com.nongxinle.ai.context.AiResolvedQueryContext;
-import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.core.AiRunState;
-import com.nongxinle.ai.dto.business.AiDishProfitDishBrief;
-import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
-import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Component
 public final class DishProfitDeterministicRenderer {
-
-    public String renderDishProfitFallback(AiDishProfitOverviewResult r, AiRunState state) {
-        return shortFallbackDishProfit(r, state);
-    }
 
     /**
      * 仅宣读 {@link DishProfitAnswerPlan} 已定稿的 focus/secondary 行（如经营概览 MultiAgent 汇总中的一句菜品侧摘要）。
@@ -42,6 +34,12 @@ public final class DishProfitDeterministicRenderer {
             return null;
         }
         String type = plan.getPlanType() != null ? plan.getPlanType().trim() : "";
+        if (DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN.equals(type)) {
+            if (plan.getIngredientBreakdownAvailable() != null && plan.getIngredientBreakdownAvailable()) {
+                return composeIngredientBreakdownAvailableFromAnswerPlan(plan);
+            }
+            return composeIngredientBreakdownUnavailableFromAnswerPlan(row, plan);
+        }
         if (DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN.equals(type)) {
             StringBuilder sb = new StringBuilder(DiagnosisDeterministicRenderer.lowestMarginDiagnosisFallbackLine(row));
             appendOptionalSecondaryContrast(sb, plan);
@@ -66,6 +64,275 @@ public final class DishProfitDeterministicRenderer {
             return composeDishProfitRateFromAnswerPlanRow(row, plan);
         }
         return composeDishProfitGenericFocusRowFromAnswerPlan(row, plan);
+    }
+
+    private static String composeIngredientBreakdownUnavailableFromAnswerPlan(
+            Map<String, Object> row, DishProfitAnswerPlan plan) {
+        StringBuilder sb = new StringBuilder();
+        String reason = plan != null ? plan.getIngredientBreakdownUnavailableReason() : null;
+        if ("FOOD_NOT_FOUND".equals(reason)) {
+            sb.append("未在菜品库中定位到该菜品，原料成本构成无法展开。");
+        } else if ("RECIPE_NOT_FOUND".equals(reason)) {
+            sb.append("该菜品暂无有效配方行，原料成本构成无法拆分。");
+        } else if ("NEED_DISH_CLARIFICATION".equals(reason)) {
+            sb.append("存在多道同名菜，请先明确具体菜品后再查原料成本构成。");
+        } else if ("EMPTY_INGREDIENT_ROWS".equals(reason)) {
+            sb.append("配方或出库成本数据不足，本期原料成本构成暂无明细行（未编造配料）。");
+        } else if ("NO_INGREDIENT_BREAKDOWN_TOOL_RUN".equals(reason)) {
+            sb.append("原料成本构成查询未执行，暂无法拆分明细。");
+        } else if ("DISH_INGREDIENT_TOOL_FAILED".equals(reason)) {
+            sb.append("原料成本构成查询失败，请稍后重试。");
+        } else {
+            sb.append("当前无法给出原料成本构成明细。");
+            if (reason != null && !reason.isBlank()) {
+                sb.append("（").append(reason.trim()).append("）");
+            }
+        }
+        if (row != null && !row.isEmpty()) {
+            sb.append("\n\n整菜汇总：");
+            appendWholeDishSummaryFields(sb, row);
+            sb.append("。");
+        }
+        return sb.toString().trim();
+    }
+
+    private static String composeIngredientBreakdownAvailableFromAnswerPlan(DishProfitAnswerPlan plan) {
+        StringBuilder sb = new StringBuilder();
+        List<Map<String, Object>> rows = plan.getIngredientRows();
+        if (rows == null || rows.isEmpty()) {
+            sb.append("原料成本构成暂无明细行（可能区间内无销量或未出库核销），未编造配料名目。");
+            return sb.toString().trim();
+        }
+        String dish = DeterministicRendererSupport.nz(
+                plan.getFocusRows() != null && !plan.getFocusRows().isEmpty()
+                        ? plan.getFocusRows().get(0).get("dishName")
+                        : null);
+        if (dish.isEmpty()) {
+            dish = "该菜品";
+        }
+        String tr = plan.getTimeLabel();
+        if (tr.isEmpty()) {
+            tr = "所选时间范围";
+        }
+        sb.append("按上文菜品【").append(dish).append("】和【").append(tr).append("】查询，原料成本构成如下：\n");
+
+        List<Map<String, Object>> sortedByPerDish = new ArrayList<>(rows);
+        sortedByPerDish.sort(
+                Comparator.comparingDouble((Map<String, Object> r) ->
+                                parseDoubleLoose(DeterministicRendererSupport.nz(r.get("costPerDish"))))
+                        .reversed());
+
+        List<Map<String, Object>> sortedByTotal = new ArrayList<>(rows);
+        sortedByTotal.sort(
+                Comparator.comparingDouble((Map<String, Object> r) ->
+                                parseDoubleLoose(DeterministicRendererSupport.nz(r.get("totalCost"))))
+                        .reversed());
+
+        Map<String, Object> topPerDish = pickFirstNamedRow(sortedByPerDish);
+        Map<String, Object> topTotal = pickFirstNamedRow(sortedByTotal);
+
+        int n = 0;
+        for (Map<String, Object> r : sortedByPerDish) {
+            if (n >= 6) {
+                break;
+            }
+            String iname = DeterministicRendererSupport.nz(r.get("ingredientName"));
+            if (iname.isEmpty()) {
+                continue;
+            }
+            String rq = blankToDash(r.get("recipeQuantityPerDish"));
+            String ru = DeterministicRendererSupport.nz(r.get("recipeUnit"));
+            String perUse = (rq.equals("—") && ru.isEmpty()) ? "—" : rq + (ru.isEmpty() ? "" : ru);
+            sb.append("\n- ")
+                    .append(iname)
+                    .append("：每份配方用量 ")
+                    .append(perUse)
+                    .append("，每份菜摊销成本 ")
+                    .append(blankToDash(r.get("costPerDish")))
+                    .append("，本期总成本 ")
+                    .append(blankToDash(r.get("totalCost")))
+                    .append("，成本占比 ")
+                    .append(blankToDash(r.get("costRatio")));
+            String usageGap = formatUsageGapLine(r);
+            if (!usageGap.isEmpty()) {
+                sb.append("；").append(usageGap);
+            }
+            String w = DeterministicRendererSupport.nz(r.get("warning"));
+            if (!w.isEmpty()) {
+                sb.append("；提示：").append(w);
+            }
+            n++;
+        }
+        if (n == 0) {
+            sb.append("\n（明细行缺少可展示原料名，未编造。）");
+        }
+
+        if (plan.getMissingPriceItems() != null && !plan.getMissingPriceItems().isEmpty()) {
+            sb.append("\n\n部分原料本期未能摊入有效出库成本，上表已标注；整体结论请以工具明细为准。");
+        }
+
+        appendIngredientExecutiveSummary(sb, topPerDish, topTotal, sortedByPerDish);
+
+        String topPdName = topPerDish == null ? "" : DeterministicRendererSupport.nz(topPerDish.get("ingredientName"));
+        if (StringUtils.hasText(topPdName)) {
+            sb.append("\n\n从当前数据看，原料侧压力较突出的是「")
+                    .append(topPdName)
+                    .append("」（按每份菜摊销原料成本排序；完整清单以服务端明细为准）。");
+        } else {
+            sb.append("\n\n从当前数据看，暂不能从明细中单点「主要拖累」原料名（行数据不足）。");
+        }
+
+        return sb.toString().trim();
+    }
+
+    private static Map<String, Object> pickFirstNamedRow(List<Map<String, Object>> rows) {
+        for (Map<String, Object> r : rows) {
+            if (r != null && StringUtils.hasText(DeterministicRendererSupport.nz(r.get("ingredientName")))) {
+                return r;
+            }
+        }
+        return null;
+    }
+
+    private static void appendIngredientExecutiveSummary(
+            StringBuilder sb, Map<String, Object> topPerDish, Map<String, Object> topTotal, List<Map<String, Object>> rows) {
+        String nPd = topPerDish == null ? "" : DeterministicRendererSupport.nz(topPerDish.get("ingredientName"));
+        String nTot = topTotal == null ? "" : DeterministicRendererSupport.nz(topTotal.get("ingredientName"));
+        if (StringUtils.hasText(nPd) || StringUtils.hasText(nTot)) {
+            sb.append("\n\n老板视角摘要：");
+            if (StringUtils.hasText(nPd)) {
+                sb.append("每份菜摊销成本最高的是「")
+                        .append(nPd)
+                        .append("」（")
+                        .append(blankToDash(topPerDish.get("costPerDish")))
+                        .append(" / 份）。");
+            }
+            if (StringUtils.hasText(nTot) && !nTot.equals(nPd)) {
+                sb.append("本期总成本最高的是「")
+                        .append(nTot)
+                        .append("」（")
+                        .append(blankToDash(topTotal.get("totalCost")))
+                        .append("）。");
+            } else if (StringUtils.hasText(nTot) && nTot.equals(nPd)) {
+                sb.append("本期总成本最高的同样是「").append(nTot).append("」。");
+            }
+        }
+        String gapIng = findLargestUsageGapIngredient(rows);
+        if (StringUtils.hasText(gapIng)) {
+            sb.append("理论用量与实摊出库差距突出的是：").append(gapIng).append("。");
+        }
+        String convWarn = firstRowMatchingSubstring(rows, "UNIT_CONVERSION_MISSING");
+        if (StringUtils.hasText(convWarn)) {
+            sb.append("存在单位/规格与出库口径可能不一致的原料（").append(convWarn).append("），金额以系统已算结果为准，请勿手工换算单价。");
+        }
+    }
+
+    private static String firstRowMatchingSubstring(List<Map<String, Object>> rows, String needle) {
+        if (rows == null || needle == null) {
+            return "";
+        }
+        for (Map<String, Object> r : rows) {
+            String w = DeterministicRendererSupport.nz(r.get("warning"));
+            if (w.contains(needle)) {
+                return DeterministicRendererSupport.nz(r.get("ingredientName"));
+            }
+        }
+        return "";
+    }
+
+    /** 按 |理论与实摊出库|/理论 找偏差最大一行（理论为 0 则跳过）。 */
+    private static String findLargestUsageGapIngredient(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return "";
+        }
+        double best = -1;
+        String bestName = "";
+        for (Map<String, Object> r : rows) {
+            String name = DeterministicRendererSupport.nz(r.get("ingredientName"));
+            if (name.isEmpty()) {
+                continue;
+            }
+            double th = parseDoubleLoose(DeterministicRendererSupport.nz(r.get("theoryUsage")));
+            double act = parseDoubleLoose(DeterministicRendererSupport.nz(r.get("actualUsage")));
+            if (th <= 0) {
+                continue;
+            }
+            double ratio = Math.abs(act - th) / th;
+            if (ratio > best && ratio >= 0.15) {
+                best = ratio;
+                bestName = name + "（偏差约 " + String.format(Locale.ROOT, "%.0f%%", ratio * 100) + "）";
+            }
+        }
+        return bestName;
+    }
+
+    private static String formatUsageGapLine(Map<String, Object> r) {
+        double th = parseDoubleLoose(DeterministicRendererSupport.nz(r.get("theoryUsage")));
+        double act = parseDoubleLoose(DeterministicRendererSupport.nz(r.get("actualUsage")));
+        if (th <= 0) {
+            return "";
+        }
+        double ratio = Math.abs(act - th) / th;
+        if (ratio < 0.15) {
+            return "";
+        }
+        return "理论用量 "
+                + blankToDash(r.get("theoryUsage"))
+                + "、实摊出库 "
+                + blankToDash(r.get("actualUsage"))
+                + "（相对偏差约 "
+                + String.format(Locale.ROOT, "%.0f%%", ratio * 100)
+                + "）";
+    }
+
+    private static double parseDoubleLoose(String s) {
+        if (s == null || s.isBlank()) {
+            return 0d;
+        }
+        String t = s.replace("%", "").trim();
+        try {
+            return Double.parseDouble(t);
+        } catch (Exception e) {
+            return 0d;
+        }
+    }
+
+    private static String blankToDash(Object v) {
+        String s = DeterministicRendererSupport.nz(v);
+        return s.isEmpty() ? "—" : s;
+    }
+
+    private static void appendWholeDishSummaryFields(StringBuilder sb, Map<String, Object> row) {
+        if (row == null) {
+            sb.append("暂无");
+            return;
+        }
+        String dish = DeterministicRendererSupport.nz(row.get("dishName"));
+        boolean any = false;
+        if (!dish.isEmpty()) {
+            sb.append("「").append(dish).append("」");
+            any = true;
+        }
+        any = appendLabeledFieldAfterDish(sb, any, "销量", row.get("salesQuantity"));
+        any = appendLabeledFieldAfterDish(sb, any, "标价收入", row.get("listPriceRevenue"));
+        any = appendLabeledFieldAfterDish(sb, any, "理论成本", row.get("theoryCostAmount"));
+        any = appendLabeledFieldAfterDish(sb, any, "实际成本", row.get("actualCostAmount"));
+        any = appendLabeledFieldAfterDish(sb, any, "毛利率", row.get("blendedGrossMarginRateOnListPrice"));
+        String rr = DeterministicRendererSupport.nz(row.get("riskReason"));
+        if (!rr.isEmpty()) {
+            sb.append(any ? "；" : "").append("风险说明：").append(rr);
+        } else if (!any) {
+            sb.append("暂无");
+        }
+    }
+
+    private static boolean appendLabeledFieldAfterDish(StringBuilder sb, boolean any, String label, Object raw) {
+        String v = DeterministicRendererSupport.nz(raw);
+        if (v.isEmpty() || "暂无".equals(v)) {
+            return any;
+        }
+        sb.append(any ? "；" : "").append(label).append(" ").append(v);
+        return true;
     }
 
     private static String composeDishProfitReasonFromAnswerPlanRow(Map<String, Object> row, DishProfitAnswerPlan plan) {
@@ -280,205 +547,5 @@ public final class DishProfitDeterministicRenderer {
             sb.append(any ? "，" : "").append("成本差额约").append(gap).append("元");
         }
         sb.append("。");
-    }
-
-    private static String maybePrependDishProfitQueryScopeBanner(AiDishProfitOverviewResult r, String body) {
-        if (r == null || body == null || body.isBlank()) {
-            return body;
-        }
-        String b = r.getQueryScopeBanner();
-        if (b == null || b.isBlank()) {
-            return body;
-        }
-        String bt = b.trim();
-        if (body.startsWith(bt)) {
-            return body;
-        }
-        return bt + "\n\n" + body;
-    }
-
-    private static String shortFallbackDishProfit(AiDishProfitOverviewResult r, AiRunState state) {
-        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
-        if (r == null) {
-            String range = tw != null && tw.getDisplayTimeRange() != null ? tw.getDisplayTimeRange() : "该统计区间";
-            return "按「" + range + "」口径，当前可用的菜品利润/毛利数据不足，暂时无法给出有效分析。"
-                    + "请确认该门店在该统计周期内是否有完整销售、成本与配方/核销数据。";
-        }
-        // 有 AnswerPlan.focusRows 的窄意图优先于下方的 dishProfitUseDeterministicSummaryOnly（仅吞工具 summary），避免误以为后者会覆盖计划行。
-        DishProfitAnswerPlan apPlan = state != null ? state.getDishProfitAnswerPlan() : null;
-        if (apPlan != null && apPlan.getFocusRows() != null && !apPlan.getFocusRows().isEmpty()
-                && dishProfitNarrowRankingOrReasonPlan(state)) {
-            String composed = composeDishProfitDeterministicFromAnswerPlan(apPlan);
-            if (composed != null && !composed.isBlank()) {
-                return maybePrependDishProfitQueryScopeBanner(r, composed);
-            }
-        }
-        if (dishProfitUseDeterministicSummaryOnly(state)) {
-            if (r.getSummary() != null && !r.getSummary().isBlank()) {
-                return r.getSummary().trim();
-            }
-            if (r.getQueryScopeBanner() != null && !r.getQueryScopeBanner().isBlank()) {
-                return r.getQueryScopeBanner().trim();
-            }
-            return "当前结构化菜品毛利数据不足或本轮工具未返回明细，请先核对配方与出库核销数据是否齐备。";
-        }
-        if (dishProfitNarrowRankingOrReasonPlan(state)) {
-            StringBuilder narrow = new StringBuilder();
-            if (r.getQueryScopeBanner() != null && !r.getQueryScopeBanner().isBlank()) {
-                narrow.append(r.getQueryScopeBanner().trim());
-            }
-            if (r.getSummary() != null && !r.getSummary().isBlank()) {
-                if (narrow.length() > 0) {
-                    narrow.append("\n\n");
-                }
-                narrow.append(r.getSummary().trim());
-            }
-            String ns = narrow.toString().trim();
-            return !ns.isEmpty() ? ns : "当前结构化菜品毛利数据不足或本轮工具未返回明细，请先核对配方与出库核销数据是否齐备。";
-        }
-        StringBuilder sb = new StringBuilder();
-        if (r.getQueryScopeBanner() != null && !r.getQueryScopeBanner().isBlank()) {
-            sb.append(r.getQueryScopeBanner().trim());
-        }
-        if (r.getSummary() != null && !r.getSummary().isBlank()) {
-            if (sb.length() > 0) {
-                sb.append("\n\n");
-            }
-            sb.append(r.getSummary().trim());
-        }
-        if (dishProfitAnswerIsActualOutboundOnly(state)) {
-            String s = sb.toString().trim();
-            return !s.isEmpty() ? s : DeterministicRendererSupport.nz(r.getSummary());
-        }
-        appendDishSectionOrPlaceholder(sb, "毛利表现较好的菜（成本口径相对完整）", r.getReliableProfitDishes(), 3, false,
-                tw);
-        appendDishSectionOrPlaceholder(sb, "需要关注的低毛利或成本偏高菜", r.getLowProfitDishes(), 3, false, tw);
-        appendDishSectionOrPlaceholder(sb, "成本数据不完整、毛利率仅供参考的菜", r.getCostDataIncompleteDishes(), 4, true,
-                tw);
-        String s = sb.toString().trim();
-        if (!s.isEmpty()) {
-            return s;
-        }
-        if (r.getDishCount() > 0 && r.getSummary() != null && !r.getSummary().isBlank()) {
-            return r.getSummary().trim();
-        }
-        if (r.getDishCount() > 0) {
-            return "本轮识别到 " + r.getDishCount()
-                    + " 道菜品销量记录，但草稿中未能展开结构化明细行；请查看上方摘要或菜品卡片。";
-        }
-        return "当前结构化菜品毛利数据不足或本轮工具未返回明细，请先核对配方与出库核销数据是否齐备。";
-    }
-
-    private static boolean dishProfitUseDeterministicSummaryOnly(AiRunState state) {
-        if (state == null) {
-            return false;
-        }
-        AiResolvedQueryContext ctx = state.getResolvedQueryContext();
-        var qi = ctx != null ? ctx.getQueryIntent() : null;
-        if (qi == null) {
-            return false;
-        }
-        String sid = qi.getStructuredIntentDetail();
-        if (sid == null || sid.isBlank()) {
-            return false;
-        }
-        return AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(sid);
-    }
-
-    /**
-     * 排行/原因类子意图：服务端已压缩 summary 与 answerPlan，Composer 走确定性短文，避免总览模板。
-     */
-    private static boolean dishProfitNarrowRankingOrReasonPlan(AiRunState state) {
-        DishProfitAnswerPlan plan = state != null ? state.getDishProfitAnswerPlan() : null;
-        if (plan == null || plan.getPlanType() == null || plan.getPlanType().isBlank()) {
-            return false;
-        }
-        String t = plan.getPlanType().trim();
-        return DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_PROFIT_REASON.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_THEORETICAL_COST.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_ACTUAL_OUTBOUND_COST.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_PROFIT_RATE.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_COST_GAP.equals(t);
-    }
-
-    private static boolean dishProfitAnswerIsActualOutboundOnly(AiRunState state) {
-        if (state == null) {
-            return false;
-        }
-        AiResolvedQueryContext ctx = state.getResolvedQueryContext();
-        var qi = ctx != null ? ctx.getQueryIntent() : null;
-        return qi != null
-                && AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(qi.getStructuredIntentDetail());
-    }
-
-    private static List<AiDishProfitDishBrief> dedupeDishBriefsForComposer(List<AiDishProfitDishBrief> xs) {
-        LinkedHashMap<String, AiDishProfitDishBrief> m = new LinkedHashMap<>();
-        for (AiDishProfitDishBrief b : xs) {
-            String key;
-            if (b.getFoodId() != null && !b.getFoodId().isBlank()) {
-                key = "id:" + b.getFoodId().trim();
-            } else if (b.getDishName() != null && !b.getDishName().isBlank()) {
-                key = "n:" + b.getDishName().trim();
-            } else {
-                key = "row:" + m.size();
-            }
-            m.putIfAbsent(key, b);
-        }
-        return new ArrayList<>(m.values());
-    }
-
-    private static void appendDishSectionOrPlaceholder(StringBuilder sb, String title, List<AiDishProfitDishBrief> dishes,
-            int max, boolean incompleteCost, AiTimeWindowTextFormatter.UserPhrases tw) {
-        if (dishes == null || dishes.isEmpty()) {
-            if (sb.length() > 0) {
-                sb.append("\n\n");
-            }
-            if (title != null && title.contains("毛利表现较好")) {
-                sb.append(title).append("：").append(tw.getDisplayTimeRange())
-                        .append("内暂未识别到成本数据完整且毛利表现突出的菜品。");
-            } else {
-                sb.append(title).append("：暂无");
-            }
-            return;
-        }
-        appendDishSection(sb, title, dishes, max, incompleteCost);
-    }
-
-    private static void appendDishSection(StringBuilder sb, String title, List<AiDishProfitDishBrief> dishes, int max,
-            boolean incompleteCost) {
-        if (dishes == null || dishes.isEmpty()) {
-            return;
-        }
-        List<AiDishProfitDishBrief> use = dedupeDishBriefsForComposer(dishes);
-        if (sb.length() > 0) {
-            sb.append("\n\n");
-        }
-        sb.append(title).append("：");
-        int n = 0;
-        for (AiDishProfitDishBrief b : use) {
-            if (n >= max || b == null) {
-                break;
-            }
-            if (b.getDishName() == null || b.getDishName().isBlank()) {
-                continue;
-            }
-            sb.append("\n• ").append(DeterministicRendererSupport.nz(b.getDishName()))
-                    .append("：销量约 ").append(DeterministicRendererSupport.nz(b.getSalesQty()))
-                    .append("，销售额约 ").append(DeterministicRendererSupport.nz(b.getSalesAmount()))
-                    .append("，理论成本 ").append(DeterministicRendererSupport.nz(b.getTheoreticalCost()))
-                    .append("，实际成本 ").append(DeterministicRendererSupport.nz(b.getActualCost()))
-                    .append("，毛利率 ").append(AiQuerySemanticLexicon.formatGrossMarginRateForNaturalLanguage(b.getGrossProfitRate()));
-            if (incompleteCost) {
-                sb.append("（成本未齐，该毛利率不可靠；请先补 BOM/出库核销）");
-            } else if (b.getRiskReason() != null && !b.getRiskReason().isBlank()) {
-                sb.append("（").append(b.getRiskReason().trim()).append("）");
-            }
-            n++;
-        }
-        if (n == 0) {
-            sb.append("\n暂无");
-        }
     }
 }

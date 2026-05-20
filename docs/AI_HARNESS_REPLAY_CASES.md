@@ -8,6 +8,16 @@
 - **日期**：`startDate` / `endDate` 为 **`yyyy-MM-dd`**，与 `AiResolvedTimeWindow`、`AiRunState#stat*` 对齐。内置用例 `PURCHASE_MULTITURN_1` 根据 **`frozenClockDate`**（语义「今天」锚点）计算「本月至此日」起止以及「上个月」闭合区间。
 - **开关**：`GET /api/ai/runs/{runId}` 始终含 **`harnessDebug.debugContextEnabled`**（与运行时 `ai.harness.debug-context-enabled` 一致）。若为 `true`，另含 **`harnessDebug.resolvedQueryContextPresent`**；仅当为 `true` 且内存态有 `resolvedQueryContext` 时才有 **`harnessDebug.resolvedQueryContextSummary`**。（本地联调见 `application-local.properties`：`ai.harness.debug-context-enabled=true`。）
 - **Replay 接口**：`POST /api/ai/harness/replay`；需 **`ai.harness.replay-enabled=true`**（本地 profile 已默认开启）。全路径带 `server.servlet.context-path=/api` 时为 **`/api/ai/harness/replay`**。
+- **经营类阶段 1B（仅 Resolver 摘要 · `dryRunStage=RESOLVED_CONTEXT_ONLY`）**：预期字段与十条最小矩阵见 **`docs/ai/business-phase1b-semantic-harness-matrix.md`**；内置 **`caseId`** **`BUSINESS_SEMANTIC_1B_RESOLVED_CONTEXT`**（`AiHarnessBuiltinCases` / `messagesBusinessSemantic1bResolvedContext()`；服务端对本 `caseId` 默认 `dryRunStage=RESOLVED_CONTEXT_ONLY`）。
+- **出库 / 核销阶段 1C（仅 Resolver 摘要 · `dryRunStage=RESOLVED_CONTEXT_ONLY`）**：矩阵见 **`docs/ai/stock-reduce-phase1c-semantic-harness-matrix.md`**；内置 **`caseId`** **`STOCK_REDUCE_SEMANTIC_1C_RESOLVED_CONTEXT`**（`messagesStockReduceSemantic1cResolvedContext()`；默认同上；R15 可能 **`purchase_slow_moving_risk`** / **`purchase_stock_reduce_mismatch`** **AnyOf**，见矩阵 §5）。
+
+### 阶段 2：Tool Request / SQL 入参层
+
+- **计划新增 `dryRunStage=TOOL_REQUEST_ONLY`**（方案 A，**尚未实现**）：Graph 跑至 DataPlanner + `BusinessToolExecutionRequestResolver` + `build*ToolArgs`，在 **`Tool.execute` 之前截断**。
+- **只验**：`plannedToolArgsByToolId`、`*RequestContext` / `*RequestResolutionDebug`、`ToolRequest.args`（日期、scope、`purchaseSourceFocus` / `purchaseNarrativeMode` / `stockReduceNarrativeMode`、集团聚合旗标等）。
+- **不验**：`Tool.execute` 返回行、SQL 真实结果、**`AnswerPlan`**、**`Composer`** / `answerPreview`、前端。
+- **详细矩阵**：**`docs/ai/phase2-tool-request-harness-matrix.md`**（与 **`docs/ai/phase2-tool-request-sql-input-plan.md`** 配套）。
+- **第一批计划覆盖**：**2A 采购**（`PURCHASE_TOOL_REQUEST_2A_CORE_5`）、**2B 营业额/经营**（`BUSINESS_TOOL_REQUEST_2B_CORE_5`）、**2C 出库**（`STOCK_REDUCE_TOOL_REQUEST_2C_CORE_4`）；跨域 **2D** 暂列不实现。
 
 ---
 
@@ -18,8 +28,35 @@
 
 变更 **QuerySemanticParser（v2）**、**Resolver**、**FollowUp**、**AnswerPlan wire**、**MasterBusinessAgent**、**BusinessToolExecutionNode**、**Graph 节点** 等相关代码时，应按改动范围 **至少** 跑通表中对应 Case（见下节 **「必须跑本 Case 前的改动范围」** 与各 Case 详解）。
 
+**语义主链（D-CLEAN-V1 + D-1X-D3）**：生产 **V2-only**（`semantic.query_parser.v2`）；主断言 **`semanticSlots` / `structuredIntentDetailWire` / `effectivePathCode`**。**Historical removed**：`query_semantic_parser.v1`、`AiQuerySemanticV2*Normalizer`、`AiQuerySemanticTimeLexicon`、Java 关键词 `fromUserMessage` 主路由。`metric.rankingType` 仅 compat/debug（**D-1X-D3-RANKINGTYPE-FINAL** 已收口主 wire / planType）。
+
+### Replay 断言契约（Current — D-CLEAN-DOCS-REPLAY-CONTRACT-FINAL）
+
+**优先断言（与现网 Resolver / Graph 一致）**
+
+| 字段 / 探针 | 用途 |
+|-------------|------|
+| **`effectiveIntentCode`** | 收养后 intent |
+| **`effectivePathCode`** | 收养后 path |
+| **`semanticSlots`**（含 **`structuredIntentDetailWire`**） | V2 槽位主依据 |
+| **`structuredIntentDetail`** / Harness **`rawStructuredIntentDetail`** | canonical wire（摘要来自 slots / `currentTurnStructuredIntentDetailWire`，**非** rankingType） |
+| **`selectedTools` / `usedTools`** | Tool 规划结果 |
+| **AnswerPlan 探针**（如 `harnessReplay*AnswerPlanType`） | 消费层 planType |
+| **`startDate` / `endDate` / `effectiveTimeWindowSource` / v2 `timeAction`** | 时间窗（V2 + Policy） |
+
+**仅 debug / compat（不得作为唯一 PASS 条件）**
+
+| 字段 | 说明 |
+|------|------|
+| **`metric.rankingType`** | LLM 可输出；Harness 可记录；**不得**单独断言其等于 canonical wire 而忽略 slots |
+| **`stockReduceType`**（metric facet） | Tool 过滤 / debug；非 wire 权威 |
+
+**历史 JSON**：`out/` 下 replay 抓包为 **Historical raw capture**，字段集合可能含已删 Tool id 或旧 rankingType 主断言口径；**以本文档 + 内置 case expected + `docs/ai/d1x-rankingtype-and-duplicate-responsibility-inventory.md` 现网契约为准**。
+
 | `caseId` | 说明 |
 |---------|------|
+| **`BUSINESS_SEMANTIC_1B_RESOLVED_CONTEXT`** | **经营类 1B（13 轮 · 默认 `RESOLVED_CONTEXT_ONLY`）**：语义矩阵 R01–R10（R08–R10 为 2+2+2 轮）；内置预期仅校验 **intent / path / wire（含 R06 `*AnyOf`）/ 时间窗与 v2 `timeAction` / 多店 scope 探针** 等，不比 Tool / `AnswerPlan` 行集 / Composer。须传入与 `AiHarnessBuiltinCases#messagesBusinessSemantic1bResolvedContext()` 一致的 **`messages`**；矩阵见 **`docs/ai/business-phase1b-semantic-harness-matrix.md`**。 |
+| **`STOCK_REDUCE_SEMANTIC_1C_RESOLVED_CONTEXT`** | **出库 / 核销 1C（18 轮 · 默认 `RESOLVED_CONTEXT_ONLY`）**：矩阵 R01–R15（R11–R13 各 2 轮）；仅断言 **effective intent/path、canonical wire、`stockReduceType`（debug）、`timeSource`/`timeAction`、scope/多店、多轮继承**；R14/R15 为 **`BUSINESS_DIAGNOSIS`**，**不得**期望 **`STOCK_REDUCE_QUERY` / `stock_reduce_query_path`**；R15 wire **AnyOf**（`purchase_slow_moving_risk` \| `purchase_stock_reduce_mismatch`）。可比 **`AiHarnessBuiltinCases#messagesStockReduceSemantic1cResolvedContext()`**；矩阵 **`docs/ai/stock-reduce-phase1c-semantic-harness-matrix.md`**。 |
 | **`V2_SEMANTIC_MAINLINE_CORE_10`** | **核心回归必跑**：固化已通过验收的真实问句顺序；**不跑完整 Graph / Tool**，仅验证 **v2 解析 + Resolver + FollowUp + Harness 摘要** 与关键 AnswerPlan / **`structuredIntentDetail`** 探针。**当前仍必须通过**。修改 **`QuerySemanticParser`**、Resolver、FollowUp、TimeWindow、OrgScope、**`MasterBusinessAgent`**、**`BusinessToolExecutionNode`**、**AnswerPlan wire** 后，应 **优先** 跑通本 Case 再合。**语义覆盖**：十条轮次交织 **四条单领域 Agent**（营收 / 采购 / 出库核销 / 菜品毛利）的 **语义入口**及经营概览问法等；**不等价** Master 全链路调度断言 —— **真实 Master 编排与时序仍须 `POST /api/ai/runs` 验证**。 |
 | **`DISH_PROFIT_RANKING_TO_NAMED_DISH_FOLLOWUP_2`** | **专项（2 轮）**：上一轮「上个月哪个菜毛利率最低？」须落 **`dish_profit_ranking_low_margin`** / 探针 **`DISH_LOWEST_MARGIN`**；追问「核桃芽菜西芹毛利怎么样？」须在**无本句时间词**时 **`effectiveTimeWindowSource=INHERITED_PREVIOUS`**，且 **`structuredIntentDetailWire=dish_gross_margin_query`**、**`querySemanticV2MetricAction=OVERRIDE`**、**`dishProfitMetricType=GROSS_MARGIN`**、**`harnessReplayDishProfitAnswerPlanType=DISH_PROFIT_RATE`** —— **不得**再继承上轮排行口径（与 V2 Case 前两轮等价，便于 CI 中单跑）。 |
 | **`BUSINESS_DIAGNOSIS_V1_CORE_3`** | **DiagnosisAgent v1（3 轮 · `GRAPH_RUN` 默认）**：固化「集团本月问诊 → AAA 单店成本偏高 → 双店并排原因」。断言 **`effectiveIntentCode=BUSINESS_DIAGNOSIS`**、**`business_diagnosis_path`**、**`orchestrationTaskMode=MULTI_AGENT`**、四域 **`consumedAnswerPlans`**、`answerPreview` 含「经营诊断」、单店轮 **`businessDiagnosisPlan.dataCompleteness.revenue=OK`** 等（**不比** Composer 正文长文）。详解 **Case Diagnosis v1**。 |
@@ -38,7 +75,7 @@
 1. **QuerySemanticParser**（含 v2 prompt / 解析与采纳策略）  
 2. **Resolver**（`AiResolvedQueryContextResolver` 等）  
 3. **FollowUp**（追问合并、结构化合并）  
-4. **TimeWindow**（多轮时间窗、`AiMultiTurnTimeWindowPolicy`）  
+4. **TimeWindow**（Resolver 时间窗 + `BusinessTimeWindowNode` 镜像）
 5. **OrgScope**（多轮组织范围、`AiMultiTurnOrgScopePolicy`）  
 6. **AnswerPlan wire**（与 Harness 摘要中 `harnessReplay*` / `structuredIntentDetail` 探针对齐的路径）  
 7. **`MasterBusinessAgent`**（四条专线调度 / fallback / legacy skip / debug 扁平字段）  
@@ -77,8 +114,10 @@
 |------------------------|----------------------|
 | **`businessDiagnosisPath`** | **`true`**：`business_diagnosis_path` 与 RunState 一致 |
 | **`dataPlanTools`** | 数组含 **`revenue_query`**、**`purchase_overview`**、**`stock_reduce_query`**、**`dish_profit_analysis`**（四域齐全；缺一优先查权限裁剪或非 Multi 编排，`MasterBusinessAgent` 亦有对应自检文案） |
-| **`diagnosisPlanExists`** | **`true`**：**`AiRunState#getDiagnosisPlan()`** 非空 |
-| **`businessDiagnosisPlanExists`** | **`true`**：**`BusinessDiagnosisPlan`** 挂载 |
+| **`diagnosisPlanExists`** / **`diagnosisPlanPresent`** | **`true`**：**`AiRunState#getDiagnosisPlan()`** 非空（**推荐** Replay 断言键） |
+| **`diagnosisPlanType`** | 如 **`OVERALL_BUSINESS_DIAGNOSIS`**（`DiagnosisPlan.planType`） |
+| **`businessDiagnosisPlanExists`** | **Deprecated compat**：与 **`diagnosisPlanExists`** 同义；**非**已删 `BusinessDiagnosisPlan` DTO |
+| **`harnessReplayBusinessDiagnosisPlanType`** | **Deprecated compat**：与 **`diagnosisPlanType`** 同源（Explorer **`probe`** 前缀） |
 | **`businessStoreCompareEvidenceRowsLen`** / **`harnessReplayStoreCompareEvidenceRowsLen`** | 双店并排时为 **`2`**（与对比门店数一致；键名两处为 Summarizer 摊平惯例） |
 | **`finalAnswerTextBlank`** | **`false`**：Composer 终稿非空 |
 | **`needSemanticClarification`** / **`needClarification`** | **`false`**：非澄清岔路 |
@@ -490,12 +529,9 @@ Replay **断言门店 visible 范围**时请以 **`visibleStoreRootIds` / `store
 
 ---
 
-## Unknown semantic 采集（采购短追问）
+## Unknown semantic 采集（Historical removed）
 
-当 **上一轮** `lastIntentCode=PURCHASE_OVERVIEW` 且 `lastPathCode=purchase_overview_path`，本轮进入 **采购短追问 augment 长度包络**（≤40 字）且 **`augmentPurchaseOverviewSourceFromShortCue` 未收窄出 `purchaseSourceType`**、且 **`mergePurchaseCuesInto` 也未给出来源** 时：
-
-- 若 `ai.harness.unknown-purchase-semantic-log-enabled=true`，打出结构化日志：**`AIHarnessUnknownPurchaseSemantic`**。
-- 用于后续扩充 **`AiQuerySemanticLexicon`**，避免仅靠临时猜词。
+**D-AI-FILE-INVENTORY-CLEANUP-P1（2026-05-20）**：已删除未接线的 **`AiHarnessUnknownPurchaseSemanticLogger`** 与配置项 **`ai.harness.unknown-purchase-semantic-log-enabled`**。采购短追问语义扩充请走 **V2 `semanticSlots` + `AiQuerySemanticLexicon`** 正常迭代，勿恢复专用 Logger。
 
 ---
 

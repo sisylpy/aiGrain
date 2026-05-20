@@ -1,8 +1,12 @@
 package com.nongxinle.ai.agent.business;
 
+import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrixRow;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
@@ -12,6 +16,7 @@ import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -20,7 +25,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * DiagnosisAgent v1（确定性）：只读四类 {@code *AnswerPlan}，不写库、不解析用户原文、不遍历失败 tool payload。
+ * 经营诊断确定性 enrich 层（现网）：在 {@link com.nongxinle.ai.graph.business.DiagnosisPlanBuilder}
+ * 已组装 {@link DiagnosisPlan} 骨架后，于 {@code business_diagnosis_path} 上追加规则型 findings / 门店优先与风险追问 debug。
+ * <p>
+ * <b>不是</b>独立 Graph {@code AgentNode}，也<b>不是</b>已删除的 {@code BusinessDiagnosisPlan} / {@code BusinessDiagnosisPlanBuilder}。
+ * 消费方：{@link com.nongxinle.ai.composer.renderer.DiagnosisDeterministicRenderer}、Harness 摘要（debug 键）、Replay 期望常量。
+ * <p>
+ * Composite（{@code BusinessDiagnosisComposite*}）为 SHADOW / HARNESS_ONLY 旁路，不替代本类 + {@link DiagnosisPlan} 主链。
  */
 public final class BusinessDiagnosisAgentV1 {
 
@@ -40,11 +51,24 @@ public final class BusinessDiagnosisAgentV1 {
     static final String FINDING_PROFIT_QUALITY_RISK = "PROFIT_QUALITY_RISK";
 
     /** {@link DiagnosisPlan#getDebug()}：与 Harness 扁平探针对齐。 */
+    public static final String DEBUG_DIAGNOSIS_DRILLDOWN_MATRIX_ROW_ID = "diagnosisDrilldownMatrixRowId";
     public static final String DEBUG_DIAGNOSIS_QUESTION_TYPE = "diagnosisQuestionType";
+    public static final String DEBUG_DIAGNOSIS_FACET = "diagnosisFacet";
+    public static final String DEBUG_DIAGNOSIS_CHILD_DOMAIN = "diagnosisChildDomain";
+    public static final String DEBUG_DIAGNOSIS_KNOWN_GAP = "diagnosisKnownGap";
+    public static final String DEBUG_DIAGNOSIS_TARGET_STORE_NAME = "diagnosisTargetStoreName";
     public static final String DEBUG_DIAGNOSIS_TOP_STORE_NAME = "diagnosisTopStoreName";
     public static final String DEBUG_DIAGNOSIS_TOP_STORE_REASONS = "diagnosisTopStoreReasons";
     public static final String DEBUG_DIAGNOSIS_RANKING_ROWS_COUNT = "diagnosisRankingRowsCount";
     public static final String DIAGNOSIS_QUESTION_STORE_PRIORITY_RANKING = "STORE_PRIORITY_RANKING";
+
+    /** D-13.2：STORE anchor 收敛调试（对齐 {@link com.nongxinle.ai.harness.AiHarnessResolvedContextSummarizer} 摊平键）。 */
+    public static final String DEBUG_STORE_ANCHOR_CANDIDATE_STORES = "storeAnchorCandidateStores";
+    public static final String DEBUG_STORE_ANCHOR_REJECTED_REASON = "storeAnchorRejectedReason";
+    public static final String DEBUG_STORE_ANCHOR_REJECTED_SOURCES = "storeAnchorRejectedSources";
+
+    /** D-13.2：承接上一轮 STORE 锚点的「原因 / 具体问题」追问。 */
+    public static final String DIAGNOSIS_QUESTION_STORE_RISK_REASONS = "STORE_RISK_REASONS";
 
     private static final Pattern STORE_NAME_FROM_DETAIL =
             Pattern.compile("门店「([^」]+)」");
@@ -228,57 +252,357 @@ public final class BusinessDiagnosisAgentV1 {
             }
         }
 
-        maybeStampStorePriorityRankingDebug(state, plan, pRevenue);
-    }
-
-    private static void maybeStampStorePriorityRankingDebug(
-            AiRunState state,
-            DiagnosisPlan plan,
-            DailyRevenueAnswerPlan pRevenue) {
-        if (state == null
-                || plan == null
-                || state.getResolvedQueryContext() == null) {
-            return;
+        BusinessDiagnosisDrilldownMatrixRow matrixRow = BusinessDiagnosisDrilldownMatrix.resolveRow(state);
+        if (matrixRow != null) {
+            BusinessDiagnosisDrilldownMatrix.applyResolvedRow(
+                    state, plan, matrixRow, pPurchase, pStock, pDish, pRevenue);
+        } else if (BusinessDiagnosisDrilldownMatrix.isStorePriorityHarnessTextFallback(state)) {
+            BusinessDiagnosisDrilldownMatrix.applyResolvedRow(
+                    state,
+                    plan,
+                    BusinessDiagnosisDrilldownMatrix.STORE_PRIORITY_RANKING,
+                    pPurchase,
+                    pStock,
+                    pDish,
+                    pRevenue);
         }
-        AiResolvedQueryIntent qi = state.getResolvedQueryContext().getQueryIntent();
-        String raw = qi != null ? qi.getStructuredIntentDetail() : null;
-        if (!AiQuerySemanticLexicon.isStorePriorityRankingStructuredDetail(raw)) {
-            return;
-        }
-        Map<String, Object> dbg = plan.getDebug();
-        dbg.put(DEBUG_DIAGNOSIS_QUESTION_TYPE, DIAGNOSIS_QUESTION_STORE_PRIORITY_RANKING);
-
-        String topStore = extractStoreNameForStorePriorityRanking(plan, pRevenue);
-        if (topStore != null && !topStore.isBlank()) {
-            dbg.put(DEBUG_DIAGNOSIS_TOP_STORE_NAME, topStore.trim());
-        } else {
-            dbg.put(DEBUG_DIAGNOSIS_TOP_STORE_NAME, null);
-        }
-
-        List<String> reasonTitles = new ArrayList<>();
-        for (Map<String, Object> f : plan.getFocusFindings()) {
-            if (f == null || "NO_MAJOR_FINDING".equals(f.get("findingType"))) {
-                continue;
-            }
-            String ttl = nzStr(f.get("title"));
-            if (!ttl.isEmpty()) {
-                reasonTitles.add(ttl);
-            }
-        }
-        dbg.put(DEBUG_DIAGNOSIS_TOP_STORE_REASONS, reasonTitles.isEmpty() ? List.of() : reasonTitles);
-        dbg.put(DEBUG_DIAGNOSIS_RANKING_ROWS_COUNT, plan.getRiskRows().size());
     }
 
     /**
-     * 门店优先级追问：优先 PROFIT_QUALITY_RISK 解析店名；其次 evidenceItems.store_profit_quality；
-     * 再退化营业额门店排行首行（仅当 planType 已为门店排行，不重算排序）。
+     * 二参数版：无采购/出库计划时使用。
      */
     public static String extractStoreNameForStorePriorityRanking(
             DiagnosisPlan plan,
             DailyRevenueAnswerPlan pRevenue) {
+        return extractStoreNameForStorePriorityRanking(plan, pRevenue, null, null, null);
+    }
+
+    /**
+     * 门店优先级追问：findings「门店」括号 / 利润质量证据 / 营业额门店排行头行收敛；采购、出库仅在 Plan
+     * 为门店排行时用 {@link #multiStoreKey} 与营业额头行对齐。锚点展示名优先取营业额行，避免采购排行「首行」与
+     * 营收头部门店不一致命名字符串互斥。
+     */
+    public static String extractStoreNameForStorePriorityRanking(
+            DiagnosisPlan plan,
+            DailyRevenueAnswerPlan pRevenue,
+            PurchaseAnswerPlan pPurchase,
+            StockReduceAnswerPlan pStock) {
+        return extractStoreNameForStorePriorityRanking(plan, pRevenue, pPurchase, pStock, null);
+    }
+
+    public static String extractStoreNameForStorePriorityRanking(
+            DiagnosisPlan plan,
+            DailyRevenueAnswerPlan pRevenue,
+            PurchaseAnswerPlan pPurchase,
+            StockReduceAnswerPlan pStock,
+            Map<String, Object> debugSink) {
         if (plan == null) {
             return null;
         }
+        if (debugSink != null) {
+            debugSink.put(DEBUG_STORE_ANCHOR_CANDIDATE_STORES, new ArrayList<>());
+        }
+
+        List<String> missingStoreLevel = explainMissingStoreLevelEvidenceForPriorityRanking(
+                pRevenue, pPurchase, pStock);
+        if (missingStoreLevel != null) {
+            stampStoreAnchorRejection(debugSink, "NO_STORE_LEVEL_EVIDENCE", missingStoreLevel);
+            return null;
+        }
+
+        LinkedHashSet<String> pqBrackets = bracketStoresInProfitQualityFindings(plan);
+        if (pqBrackets.size() > 1) {
+            stampStoreAnchorRejection(
+                    debugSink, "MULTIPLE_STORE_CANDIDATES", List.of("profitQualityFindingBrackets"));
+            return null;
+        }
+
+        LinkedHashSet<String> allBrackets = bracketStoresAllFindings(plan);
+        if (allBrackets.size() > 1) {
+            stampStoreAnchorRejection(debugSink, "MULTIPLE_STORE_CANDIDATES", List.of("allFindingBrackets"));
+            return null;
+        }
+
+        String singlePq = singleBracketSetOrNull(pqBrackets);
+        String singleAll = singleBracketSetOrNull(allBrackets);
+        if (singlePq != null && singleAll != null && !singlePq.equals(singleAll)) {
+            stampStoreAnchorRejection(
+                    debugSink, "BRACKET_SOURCE_CONFLICT", List.of("profitQualityFindingBrackets", "allFindingBrackets"));
+            return null;
+        }
+
+        String bracketStore = singlePq != null ? singlePq : singleAll;
+        if (bracketStore != null && isUsableStoreAnchorLabel(bracketStore)) {
+            putAnchorCandidate(debugSink, "FINDING_BRACKETS", bracketStore, null);
+        } else {
+            bracketStore = null;
+        }
+
+        String evRaw = evidenceStoreProfitQualityValue(plan);
+        String evidenceLabel = (evRaw != null && isUsableStoreAnchorLabel(evRaw)) ? evRaw.trim() : null;
+        if (evidenceLabel != null) {
+            putAnchorCandidate(debugSink, "EVIDENCE_PROFIT_QUALITY", evidenceLabel, null);
+        }
+
+        if (bracketStore != null && evidenceLabel != null && !bracketStore.equals(evidenceLabel)) {
+            stampStoreAnchorRejection(
+                    debugSink,
+                    "BRACKET_EVIDENCE_CONFLICT",
+                    List.of("findingBrackets", "store_profit_quality_evidence"));
+            return null;
+        }
+
+        Map<String, Object> rv = null;
+        String revenueKey = null;
+        String revenueLabel = null;
+        if (DailyRevenueAnswerPlan.TYPE_REVENUE_STORE_AMOUNT_RANKING.equals(planTypeSafe(pRevenue))
+                && pRevenue != null) {
+            rv = pickTopMatchingRowSummary(pRevenue.getFocusRows());
+            if (rv != null) {
+                revenueKey = multiStoreKey(rv);
+                revenueLabel = rowStoreLabelPreferDisplay(rv);
+                if (isUsableStoreAnchorLabel(revenueLabel)) {
+                    putAnchorCandidate(debugSink, "REVENUE_TOP_ROW", revenueLabel, revenueKey);
+                    revenueLabel = revenueLabel.trim();
+                } else {
+                    revenueLabel = null;
+                }
+            }
+        }
+
+        if (bracketStore != null && revenueLabel != null && !storeLabelMatchesRevenueRow(bracketStore, rv)) {
+            stampStoreAnchorRejection(debugSink, "BRACKET_REVENUE_CONFLICT", List.of("findingBrackets", "revenueTopRow"));
+            return null;
+        }
+        if (evidenceLabel != null && revenueLabel != null && !storeLabelMatchesRevenueRow(evidenceLabel, rv)) {
+            stampStoreAnchorRejection(
+                    debugSink, "EVIDENCE_REVENUE_CONFLICT", List.of("store_profit_quality_evidence", "revenueTopRow"));
+            return null;
+        }
+
+        String anchor = null;
+        if (revenueLabel != null) {
+            anchor = revenueLabel;
+        } else if (bracketStore != null) {
+            anchor = bracketStore;
+        } else if (evidenceLabel != null) {
+            anchor = evidenceLabel;
+        }
+
+        if (anchor == null || !isUsableStoreAnchorLabel(anchor)) {
+            stampStoreAnchorRejection(
+                    debugSink,
+                    "NO_USABLE_STORE_LABEL",
+                    List.of("revenueTopRow", "findingBrackets", "store_profit_quality_evidence"));
+            return null;
+        }
+
+        if (revenueKey != null && rv != null) {
+            if (PurchaseAnswerPlan.TYPE_PURCHASE_STORE_AMOUNT_RANKING.equals(planTypeSafe(pPurchase))
+                    && pPurchase != null) {
+                Map<String, Object> pv = pickTopPurchaseRowForKey(pPurchase.getFocusRows(), rv);
+                if (pv != null) {
+                    String pk = multiStoreKey(pv);
+                    if (pk != null && !Objects.equals(revenueKey, pk)) {
+                        stampStoreAnchorRejection(
+                                debugSink,
+                                "PURCHASE_ROW_KEY_MISMATCH",
+                                List.of("revenueTopRow", "purchaseRowForKey"));
+                        return null;
+                    }
+                }
+            }
+            if (StockReduceAnswerPlan.TYPE_STOCK_REDUCE_STORE_AMOUNT_RANKING.equals(planTypeSafe(pStock))
+                    && pStock != null) {
+                Map<String, Object> sv = pickStockRowForKey(pStock.getFocusRows(), rv);
+                if (sv != null) {
+                    String sk = multiStoreKey(sv);
+                    if (sk != null && !Objects.equals(revenueKey, sk)) {
+                        stampStoreAnchorRejection(
+                                debugSink,
+                                "STOCK_ROW_KEY_MISMATCH",
+                                List.of("revenueTopRow", "stockRowForKey"));
+                        return null;
+                    }
+                }
+            }
+        }
+
+        if (debugSink != null) {
+            debugSink.put(DEBUG_STORE_ANCHOR_REJECTED_REASON, null);
+            debugSink.put(DEBUG_STORE_ANCHOR_REJECTED_SOURCES, List.of());
+        }
+        return anchor.trim();
+    }
+
+    private static void putAnchorCandidate(
+            Map<String, Object> dbg, String source, String label, String storeKey) {
+        if (dbg == null || label == null || !isUsableStoreAnchorLabel(label)) {
+            return;
+        }
+        Object raw = dbg.get(DEBUG_STORE_ANCHOR_CANDIDATE_STORES);
+        if (!(raw instanceof List<?> listRaw)) {
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> list = (List<Map<String, Object>>) listRaw;
+        LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+        row.put("source", source);
+        row.put("label", label.trim());
+        if (storeKey != null && !storeKey.isBlank()) {
+            row.put("storeKey", storeKey.trim());
+        }
+        list.add(row);
+    }
+
+    private static void stampStoreAnchorRejection(Map<String, Object> dbg, String reason, List<String> sources) {
+        if (dbg == null) {
+            return;
+        }
+        dbg.put(DEBUG_STORE_ANCHOR_REJECTED_REASON, reason);
+        dbg.put(DEBUG_STORE_ANCHOR_REJECTED_SOURCES, sources == null ? List.of() : sources);
+    }
+
+    /**
+     * 「哪个门店问题最大」需要至少一个领域以门店排行 Plan + 含 multiStoreKey 的行；仅有集团汇总 finding
+     * 不允许造 STORE anchor。
+     *
+     * @return {@code null} 当至少一域具备门店级排行证据；否则返回可供 debug 的诊断片段（写入 rejectedSources）
+     */
+    private static List<String> explainMissingStoreLevelEvidenceForPriorityRanking(
+            DailyRevenueAnswerPlan pRevenue,
+            PurchaseAnswerPlan pPurchase,
+            StockReduceAnswerPlan pStock) {
+        boolean ok = hasKeyedStoreRowsInRevenueRanking(pRevenue)
+                || hasKeyedStoreRowsInPurchaseRanking(pPurchase)
+                || hasKeyedStoreRowsInStockRanking(pStock);
+        if (ok) {
+            return null;
+        }
+        return List.of(
+                "revenue:" + summarizeRevenueRankingEvidence(pRevenue),
+                "purchase:" + summarizePurchaseRankingEvidence(pPurchase),
+                "stock:" + summarizeStockRankingEvidence(pStock));
+    }
+
+    private static boolean hasKeyedStoreRowsInRevenueRanking(DailyRevenueAnswerPlan p) {
+        if (p == null
+                || !DailyRevenueAnswerPlan.TYPE_REVENUE_STORE_AMOUNT_RANKING.equals(planTypeSafe(p))) {
+            return false;
+        }
+        return countKeyedRows(p.getFocusRows()) > 0;
+    }
+
+    private static boolean hasKeyedStoreRowsInPurchaseRanking(PurchaseAnswerPlan p) {
+        if (p == null || !PurchaseAnswerPlan.TYPE_PURCHASE_STORE_AMOUNT_RANKING.equals(planTypeSafe(p))) {
+            return false;
+        }
+        return countKeyedRows(p.getFocusRows()) > 0;
+    }
+
+    private static boolean hasKeyedStoreRowsInStockRanking(StockReduceAnswerPlan p) {
+        if (p == null || !StockReduceAnswerPlan.TYPE_STOCK_REDUCE_STORE_AMOUNT_RANKING.equals(planTypeSafe(p))) {
+            return false;
+        }
+        return countKeyedRows(p.getFocusRows()) > 0;
+    }
+
+    private static int countKeyedRows(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return 0;
+        }
+        int n = 0;
+        for (Map<String, Object> r : rows) {
+            if (r != null && multiStoreKey(r) != null) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private static String summarizeRevenueRankingEvidence(DailyRevenueAnswerPlan p) {
+        if (p == null) {
+            return "absent";
+        }
+        String t = planTypeSafe(p);
+        List<Map<String, Object>> rows = p.getFocusRows();
+        int n = rows == null ? 0 : rows.size();
+        return "planType=" + (t.isEmpty() ? "(empty)" : t)
+                + ",focusRows=" + n
+                + ",keyedRows=" + countKeyedRows(rows);
+    }
+
+    private static String summarizePurchaseRankingEvidence(PurchaseAnswerPlan p) {
+        if (p == null) {
+            return "absent";
+        }
+        String t = planTypeSafe(p);
+        List<Map<String, Object>> rows = p.getFocusRows();
+        int n = rows == null ? 0 : rows.size();
+        return "planType=" + (t.isEmpty() ? "(empty)" : t)
+                + ",focusRows=" + n
+                + ",keyedRows=" + countKeyedRows(rows);
+    }
+
+    private static String summarizeStockRankingEvidence(StockReduceAnswerPlan p) {
+        if (p == null) {
+            return "absent";
+        }
+        String t = planTypeSafe(p);
+        List<Map<String, Object>> rows = p.getFocusRows();
+        int n = rows == null ? 0 : rows.size();
+        return "planType=" + (t.isEmpty() ? "(empty)" : t)
+                + ",focusRows=" + n
+                + ",keyedRows=" + countKeyedRows(rows);
+    }
+
+    private static boolean storeLabelMatchesRevenueRow(String label, Map<String, Object> rv) {
+        if (label == null || label.isBlank() || rv == null) {
+            return false;
+        }
+        String l = label.trim();
+        if (l.equals(nzStr(rv.get("storeDisplayName")).trim())) {
+            return true;
+        }
+        if (l.equals(nzStr(rv.get("storeName")).trim())) {
+            return true;
+        }
+        if (l.equals(nzStr(rv.get("label")).trim())) {
+            return true;
+        }
+        String canonical = rowStoreLabelPreferDisplay(rv);
+        return canonical != null && l.equals(canonical);
+    }
+
+    private static boolean isUsableStoreAnchorLabel(String name) {
+        if (name == null) {
+            return false;
+        }
+        String t = name.trim();
+        if (t.isEmpty()) {
+            return false;
+        }
+        if ("头部门店".equals(t)) {
+            return false;
+        }
+        if ("—".equals(t) || "暂无".equals(t)) {
+            return false;
+        }
+        return true;
+    }
+
+    private static String singleBracketSetOrNull(LinkedHashSet<String> brackets) {
+        if (brackets == null || brackets.isEmpty()) {
+            return null;
+        }
+        if (brackets.size() != 1) {
+            return null;
+        }
+        return brackets.iterator().next();
+    }
+
+    private static LinkedHashSet<String> bracketStoresInProfitQualityFindings(DiagnosisPlan plan) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
         for (Map<String, Object> f : plan.getFocusFindings()) {
             if (f == null) {
                 continue;
@@ -286,36 +610,73 @@ public final class BusinessDiagnosisAgentV1 {
             if (!FINDING_PROFIT_QUALITY_RISK.equals(String.valueOf(f.get("findingType")))) {
                 continue;
             }
-            Matcher m = STORE_NAME_FROM_DETAIL.matcher(nzStr(f.get("detail")));
-            if (m.find()) {
-                return m.group(1).trim();
+            collectBracketStoresInto(nzStr(f.get("detail")), out);
+        }
+        return out;
+    }
+
+    private static LinkedHashSet<String> bracketStoresAllFindings(DiagnosisPlan plan) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        if (plan == null) {
+            return out;
+        }
+        for (Map<String, Object> f : plan.getFocusFindings()) {
+            if (f == null || "NO_MAJOR_FINDING".equals(String.valueOf(f.get("findingType")))) {
+                continue;
             }
+            String text = nzStr(f.get("detail")) + " " + nzStr(f.get("title"));
+            collectBracketStoresInto(text, out);
+        }
+        for (Map<String, Object> rr : plan.getRiskRows()) {
+            if (rr == null) {
+                continue;
+            }
+            collectBracketStoresInto(nzStr(rr.get("title")), out);
+        }
+        return out;
+    }
+
+    private static void collectBracketStoresInto(String text, LinkedHashSet<String> out) {
+        if (text.isBlank()) {
+            return;
+        }
+        Matcher m = STORE_NAME_FROM_DETAIL.matcher(text);
+        while (m.find()) {
+            String s = m.group(1).trim();
+            if (isUsableStoreAnchorLabel(s)) {
+                out.add(s);
+            }
+        }
+    }
+
+    private static String evidenceStoreProfitQualityValue(DiagnosisPlan plan) {
+        if (plan == null) {
+            return null;
         }
         for (Map<String, Object> row : plan.getEvidenceItems()) {
             if (row == null) {
                 continue;
             }
             if ("store_profit_quality".equals(String.valueOf(row.get("label")))) {
-                String v = nzStr(row.get("value"));
-                if (!v.isEmpty()) {
-                    return v.trim();
-                }
-            }
-        }
-        if (pRevenue != null
-                && DailyRevenueAnswerPlan.TYPE_REVENUE_STORE_AMOUNT_RANKING.equals(planTypeSafe(pRevenue))) {
-            Map<String, Object> r0 = pickTopMatchingRowSummary(pRevenue.getFocusRows());
-            if (r0 != null) {
-                String n = nzStr(r0.get("storeDisplayName"));
-                if (n.isEmpty()) {
-                    n = nzStr(r0.get("storeName"));
-                }
-                if (!n.isEmpty()) {
-                    return n.trim();
-                }
+                Object v = row.get("value");
+                return v == null ? null : v.toString();
             }
         }
         return null;
+    }
+
+    private static String rowStoreLabelPreferDisplay(Map<String, Object> row) {
+        if (row == null) {
+            return null;
+        }
+        String n = nzStr(row.get("storeDisplayName"));
+        if (n.isEmpty()) {
+            n = nzStr(row.get("storeName"));
+        }
+        if (n.isEmpty()) {
+            n = nzStr(row.get("label"));
+        }
+        return n.isEmpty() ? null : n.trim();
     }
 
     private static void aggregateRisk(DiagnosisPlan plan, List<Map<String, Object>> findings) {

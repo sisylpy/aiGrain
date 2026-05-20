@@ -1,6 +1,7 @@
 package com.nongxinle.ai.dto.business;
 
 import com.alibaba.fastjson2.annotation.JSONField;
+import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -48,6 +49,11 @@ public class DishProfitAnswerPlan {
      */
     public static final String TYPE_AGGREGATED_DISH_PORTFOLIO_FALLBACK = "AGGREGATED_DISH_PORTFOLIO_FALLBACK";
 
+    /**
+     * D-13.3A：原料成本构成下钻（当前 Tool 无 ingredient 明细；协议与 Composer 诚实降级）。
+     */
+    public static final String TYPE_DISH_INGREDIENT_COST_BREAKDOWN = "DISH_INGREDIENT_COST_BREAKDOWN";
+
     /** 与文档 {@code answerPlan.type} 对齐 */
     @JSONField(name = "type")
     private String planType;
@@ -73,7 +79,34 @@ public class DishProfitAnswerPlan {
     @Builder.Default
     private Map<String, Object> debug = new LinkedHashMap<>();
 
+    /** D-13.3：多轮 DISH 锚点（低/高毛利排行、单菜指标等）；无菜名不得写入。 */
+    @Builder.Default
+    private List<AiResultAnchor> resultAnchors = new ArrayList<>();
+
+    // --- D-13.3B：原料成本构成（与 dish_ingredient_cost_breakdown 工具同源；Composer 只读，不重算）---
+
+    private Boolean ingredientBreakdownAvailable;
+    private String ingredientBreakdownUnavailableReason;
+
+    @Builder.Default
+    private List<Map<String, Object>> ingredientRows = new ArrayList<>();
+
+    private String totalIngredientCost;
+
+    @Builder.Default
+    private List<Map<String, Object>> missingPriceItems = new ArrayList<>();
+
     public static Map<String, Object> emptyDebug() {
         return new LinkedHashMap<>();
+    }
+
+    /** 产出可被「原料构成」类追问承接的上一轮锚点类型（不含聚合 fallback / 原料 wire 自身）。 */
+    public static boolean isDishDrilldownAnchorSourcePlanType(String sourcePlanType) {
+        return DishProfitDrilldownMatrix.isDishAnchorSourcePlanType(sourcePlanType);
+    }
+
+    /** 本轮 AnswerPlan 是否在服务端生成 DISH {@link AiResultAnchor}（矩阵 {@link DishProfitDrilldownMatrix#emitsDishResultAnchor}）。 */
+    public static boolean planTypeEmitsResultAnchor(String planType) {
+        return DishProfitDrilldownMatrix.emitsDishResultAnchor(planType);
     }
 }

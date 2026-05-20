@@ -1,7 +1,12 @@
 # 旧版单板 Agent：菜品毛利 / 菜品成本能力复盘
 
-> **文档目的**：为后续「菜品毛利 / 菜品成本分析」向新 Harness、多智能体架构迁移做基线说明。  
-> **范围**：基于当前仓库中**已存在的**旧版服务、接口、Skill 与文档整理；**不新增代码与设计**，第五节起仅为**建议方案**（未实现）。  
+> **Historical baseline（盘点归档 — 非现网设计）**  
+> **D-AI-FILE-INVENTORY-CLEANUP-P1（2026-05-20）**：下文描述 **旧版 `GbAiChat` / Skill / REST** 与数据服务基线，**不是**当前 Graph 契约。  
+> **现网菜品毛利主链**：`dish_profit_path` / `dish_sales_query_path`（语义 path）→ **`dish_profit_analysis`**（`DishProfitAnalysisTool`）→ **`DishProfitAnswerPlan`** / **`DishSalesAnswerPlan`**（D-8）→ Composer / Renderer。详见 `docs/ai/dish-profit-domain-capability-matrix.md`、`docs/ai/dish-sales-domain-capability-matrix.md`。  
+> **禁止**按本文恢复独立 `DishSalesQueryTool` 或 `dish_sales_query` Tool id。
+
+> **文档目的**：为迁移期保留的旧版能力对照；新功能以 V2 语义 + AnswerPlan 为准。  
+> **范围**：基于仓库中旧版服务、接口、Skill 整理；第五节起为**历史建议**（多数已落地或废弃）。  
 > **出库四类口径（与现网定义一致）**：  
 > **type1** = 生产耗用（制作菜品正常消耗）；**type2** = 废弃 / 过保鲜期废弃；**type3** = 损耗 / 丢失、破损、自然损耗（口语「报损」多指本类）；**type4** = 退货。  
 > 旧代码注释、个别历史文档仍可能出现「损耗/报损」与 type 编号混用，迁移时应以 **业务口径 + `GbConstants.StockReduceType` / `LEGACY_STOCK_REDUCE_ASSETS.md`** 为准。

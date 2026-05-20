@@ -48,6 +48,10 @@ public class AiGraphRunner {
                             inputSnap, outSnap, "SUCCESS", (int) Math.min(ms, Integer.MAX_VALUE), null);
                 }
                 log.debug("[AiGraphRunner] runId={} node={} end", runId, node.name());
+                if (cur.isHarnessToolRequestOnly() && "ToolExecution".equals(node.name())) {
+                    log.debug("[AiGraphRunner] runId={} harness TOOL_REQUEST_ONLY stop after {}", runId, node.name());
+                    break;
+                }
             } catch (Exception ex) {
                 long ms = System.currentTimeMillis() - t0;
                 if (runId != null) {

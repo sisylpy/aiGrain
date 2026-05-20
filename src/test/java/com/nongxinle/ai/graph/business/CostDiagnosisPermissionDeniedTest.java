@@ -77,17 +77,17 @@ class CostDiagnosisPermissionDeniedTest {
         state.getToolResults().put(AiBusinessToolIds.REVENUE_QUERY, envData(Map.of(
                 "totalRevenue", new BigDecimal("100"),
                 "days", 1)));
-        state.getToolResults().put(AiBusinessToolIds.PURCHASE_QUERY, envData(Map.of("purchaseSubTotal", BigDecimal.ONE)));
+        state.getToolResults().put(AiBusinessToolIds.PURCHASE_OVERVIEW, envData(Map.of(
+                "purchaseOverview", Map.of(
+                        "totalPurchaseAmount", "1",
+                        "purchaseOrderCount", 1))));
         state.getToolResults().put(AiBusinessToolIds.STOCK_REDUCE_QUERY, envData(Map.of(
                 "productionTotal", BigDecimal.ZERO,
                 "produceTotal", BigDecimal.ZERO,
                 "wasteTotal", BigDecimal.ZERO,
                 "lossTotal", BigDecimal.ZERO)));
-        state.getToolResults().put(AiBusinessToolIds.DISH_SALES_QUERY, envData(Map.of("listPriceRevenueTotal", BigDecimal.ZERO)));
-        state.getToolResults().put(AiBusinessToolIds.GROSS_MARGIN_CALCULATOR, envData(Map.of(
-                "grossMarginReliable", false,
-                "estimatedGrossMarginPercent", "0",
-                "basisRevenue", "100")));
+        state.getToolResults().put(AiBusinessToolIds.DISH_PROFIT_ANALYSIS, envData(Map.of(
+                "businessInsightSummary", Map.of("totalListPriceRevenue", BigDecimal.ZERO))));
     }
 
     private static Map<String, Object> envData(Map<String, Object> payload) {

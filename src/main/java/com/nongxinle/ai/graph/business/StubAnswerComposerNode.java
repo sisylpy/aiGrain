@@ -6,35 +6,25 @@ import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
-import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
-import com.nongxinle.ai.dto.business.AiBusinessOverviewResult;
 import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
-import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
-import com.nongxinle.ai.dto.cost.AiCostDiagnosisResult;
-import com.nongxinle.ai.gateway.LlmGateway;
-import com.nongxinle.ai.composer.payload.AnswerComposerPayloadFactory;
+import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
 import com.nongxinle.ai.composer.AnswerBoundaryNoteComposer;
 import com.nongxinle.ai.composer.renderer.DiagnosisDeterministicRenderer;
 import com.nongxinle.ai.composer.renderer.DeterministicAnswerRenderer;
 import com.nongxinle.ai.composer.summary.BusinessOverviewDeterministicSummaryBuilder;
-import com.nongxinle.ai.prompt.AiPromptIds;
-import com.nongxinle.ai.prompt.AiPromptService;
-import com.nongxinle.ai.mapping.AiRoleMapper;
 import com.nongxinle.ai.security.AiAnswerBoundary;
-import com.nongxinle.ai.security.AiRoleCodes;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
-import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.util.AiNumericPlainText;
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
-import com.alibaba.fastjson2.JSON;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,14 +40,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
- * Answer Composer：汇入 Tool/诊断结果与 DeepSeek 生成最终自然语言。<br>
- * 有结构化卡片（成本诊断 / 经营概览）时，正文只输出短口语化结论，明细由前端卡片承载。<br>
- * DeepSeek 经 {@link LlmGateway} 接入；仅占位时请设 {@code ai.agent.llm.stub=true}
- *（{@link com.nongxinle.ai.gateway.PlaceholderLlmGateway}）。
+ * Answer Composer：Plan-first 宣读层。各业务域只读 AnswerPlan / DiagnosisPlan / 结构化卡片 DTO；
+ * 无 Plan 时输出固定 no-plan 话术，不再从 toolResults 拼事实，也不走 LLM + Tool fallback。
  */
 @Component
 @RequiredArgsConstructor
@@ -65,24 +51,7 @@ public class StubAnswerComposerNode implements AgentNode {
 
     private static final Logger log = LoggerFactory.getLogger(StubAnswerComposerNode.class);
 
-    /** 库存重量对用户展示单位（与业务库存字段常见口径一致）。 */
-    private static final String W_STOCK_WEIGHT_UNIT = "斤";
-
-    private static String fmtStockWeightCn(Object value) {
-        return plainNumericHint(value) + " " + W_STOCK_WEIGHT_UNIT;
-    }
-
-    /** 按岗位去掉不当的「店长」寒暄（与 {@link #warehouseSalutationDirective} 一致）。 */
-    private static final Pattern WAREHOUSE_LEADING_SALUTATION =
-            Pattern.compile("^((好的|嗯|您好)[，,\\s]*)?((亲爱的)?店长)([，,。．、:\\s]+|(?=本库房|以下是|以下按|当前|说明|目前|共有))");
-
-    private static final Pattern WAREHOUSE_LEADING_MANAGER_NO_PUNCT =
-            Pattern.compile("^店长(?=本库房|以下是|以下按|当前|说明|目前|共有)");
-
-    private final LlmGateway llmGateway;
     private final AiSseEventPublisher publisher;
-    private final AiPromptService aiPromptService;
-    private final AnswerComposerPayloadFactory answerComposerPayloadFactory;
     private final DeterministicAnswerRenderer deterministicAnswerRenderer;
 
     @Override
@@ -115,9 +84,6 @@ public class StubAnswerComposerNode implements AgentNode {
             }
         }
 
-        // 库存排行确定性正文已含「查询范围 / 统计时间」，rankTakeover 时再置位，避免 head 重复 scope/intent/boundary。
-        boolean suppressScopeIntentBoundaryHead = false;
-
         String coreToolPermissionOnlyBody = AiAnswerBoundary.tryComposeCoreToolPermissionOnlyAnswer(state);
         if (StringUtils.hasText(coreToolPermissionOnlyBody)) {
             coreToolPermissionOnlyBody = coreToolPermissionOnlyBody.trim();
@@ -132,40 +98,48 @@ public class StubAnswerComposerNode implements AgentNode {
         } else if (state.isCouponCostInsightBlocked()) {
             answer = "";
         } else if (state.getCostDiagnosisResult() != null) {
-            AiCostDiagnosisResult d = state.getCostDiagnosisResult();
-            String pid = AiPromptIds.COMPOSER_COST_DIAGNOSIS_V1;
-            state.setComposerPromptRegistryId(pid);
-            String llm = llmGateway.chatSimple(aiPromptService.require(pid),
-                    JSON.toJSONString(answerComposerPayloadFactory.buildCostPayload(state, d)));
-            answer = pickLlmSanitized(llm, deterministicAnswerRenderer.renderCostFallback(d));
+            answer = AiAnswerBoundary.stripDeveloperFacingLeakage(
+                    deterministicAnswerRenderer.renderCostFallback(state.getCostDiagnosisResult()).trim());
         } else if (coreToolPermissionOnlyBody != null) {
             answer = coreToolPermissionOnlyBody;
+        } else if (isBusinessDiagnosisComposerMainline(state)) {
+            DiagnosisPlan dp = state.getDiagnosisPlan();
+            if (dp != null && DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS.equals(dp.getPlanType())) {
+                answer = deterministicAnswerRenderer.renderHarnessDiagnosisPlan(state, dp);
+            } else {
+                answer = composeBusinessDiagnosisNoPlanFallback(state);
+            }
         } else if (state.getDiagnosisPlan() != null
                 && DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS.equals(state.getDiagnosisPlan().getPlanType())
-                && (state.isBusinessDiagnosisPath()
-                || DiagnosisPlanBuilder.shouldPreferDiagnosisPlanInComposer(state))) {
-            // 新版 DiagnosisPlan：经营诊断 path 上即使 dishProfitPath 仍为 true（历史标志位）也必须优先
+                && DiagnosisPlanBuilder.shouldPreferDiagnosisPlanInComposer(state)) {
             answer = deterministicAnswerRenderer.renderHarnessDiagnosisPlan(state, state.getDiagnosisPlan());
-        } else if (dishSalesDeterministicEligible(state)) {
-            answer = deterministicAnswerRenderer.renderDishSalesAnswerPlan(state.getDishSalesAnswerPlan());
-        } else if (state.isDishProfitPath()) {
-            // 最终短文由 DeterministicAnswerRenderer.renderDishProfitFallback 组装；其中有 focusRows 的 AnswerPlan 优先于工具 summary。
-            AiDishProfitOverviewResult dp = state.getDishProfitOverviewResult();
-            if (dp != null) {
-                if (dishProfitUseDeterministicSummaryOnly(state) || dishProfitNarrowRankingOrReasonPlan(state)) {
-                    answer = pickLlmSanitized("",
-                            deterministicAnswerRenderer.renderDishProfitFallback(dp, state));
+        } else if (isDishSalesComposerMainline(state)) {
+            if (dishSalesDeterministicEligible(state)) {
+                String dishSalesFromPlan =
+                        deterministicAnswerRenderer.renderDishSalesAnswerPlan(state.getDishSalesAnswerPlan());
+                if (dishSalesFromPlan != null && !dishSalesFromPlan.isBlank()) {
+                    answer = dishSalesFromPlan.trim();
                 } else {
-                    String pidDp = AiPromptIds.COMPOSER_DISH_PROFIT_V1;
-                    state.setComposerPromptRegistryId(pidDp);
-                    String llm = llmGateway.chatSimple(aiPromptService.require(pidDp),
-                            JSON.toJSONString(answerComposerPayloadFactory.buildDishProfitPayload(state, dp)));
-                    answer = pickLlmSanitized(llm, deterministicAnswerRenderer.renderDishProfitFallback(dp, state));
+                    answer = composeDishSalesNoPlanFallback(state);
                 }
             } else {
-                answer = deterministicAnswerRenderer.renderDishProfitFallback(null, state);
+                answer = composeDishSalesNoPlanFallback(state);
             }
-        } else if (state.isRevenueOverviewPath()) {
+        } else if (isDishProfitComposerMainline(state)) {
+            DishProfitAnswerPlan dishProfitPlan = state.getDishProfitAnswerPlan();
+            String dishProfitFromPlan = null;
+            if (dishProfitPlan != null) {
+                String rendered = deterministicAnswerRenderer.renderDishProfitAnswerPlanOneLiner(dishProfitPlan);
+                if (rendered != null && !rendered.isBlank()) {
+                    dishProfitFromPlan = rendered.trim();
+                }
+            }
+            if (dishProfitFromPlan != null && !dishProfitFromPlan.isBlank()) {
+                answer = dishProfitFromPlan;
+            } else {
+                answer = composeDishProfitNoPlanFallback(state);
+            }
+        } else if (isRevenueOverviewComposerMainline(state)) {
             if (AiAnswerBoundary.isRevenuePermissionDenied(state.getPermissionDenials())) {
                 answer = AiAnswerBoundary.revenuePermissionDeniedComposerBody(state);
             } else {
@@ -175,109 +149,48 @@ public class StubAnswerComposerNode implements AgentNode {
                 if (revenueFromPlan != null && !revenueFromPlan.isBlank()) {
                     answer = revenueFromPlan;
                 } else {
-                    answer = deterministicAnswerRenderer.renderRevenueEnvelopeFallback(state);
+                    answer = composeRevenueNoPlanFallback(state);
                 }
             }
-        } else if (businessOverviewMultiAgentFourDomainDeterministicEligible(state)) {
-            answer = composeBusinessOverviewMultiAgentFourDomainMarkdown(state).trim();
-        } else if (classicBusinessOverviewAnswerPlanComposerEligible(state)) {
-            AiBusinessOverviewResult o = state.getBusinessOverviewAnswerPlan().getClassicOverviewResult();
-            boolean skipOverviewLlm =
-                    BusinessOverviewDeterministicSummaryBuilder.hasAuthoritativeBusinessOverviewRevenuePlan(state);
-            if (skipOverviewLlm) {
-                answer = deterministicAnswerRenderer.renderBusinessOverviewFallback(state, o).trim();
+        } else if (isBusinessOverviewMultiAgentMainline(state)) {
+            if (businessOverviewMultiAgentFourDomainDeterministicEligible(state)) {
+                answer = composeBusinessOverviewMultiAgentFourDomainMarkdown(state).trim();
             } else {
-                String pidBo = AiPromptIds.COMPOSER_BUSINESS_OVERVIEW_V1;
-                state.setComposerPromptRegistryId(pidBo);
-                String llm = llmGateway.chatSimple(aiPromptService.require(pidBo),
-                        JSON.toJSONString(answerComposerPayloadFactory.buildBusinessOverviewPayload(state, o)));
-                answer = pickLlmSanitized(llm,
-                        deterministicAnswerRenderer.renderBusinessOverviewFallback(state, o));
+                answer = composeBusinessOverviewMultiAgentNoPlanFallback(state);
             }
-        } else if (state.getBusinessOverviewResult() != null) {
-            AiBusinessOverviewResult o = state.getBusinessOverviewResult();
-            boolean skipOverviewLlm = BusinessOverviewDeterministicSummaryBuilder.hasAuthoritativeBusinessOverviewRevenuePlan(state);
-            if (skipOverviewLlm) {
-                answer = deterministicAnswerRenderer.renderBusinessOverviewFallback(state, o).trim();
+        } else if (isWarehouseStockComposerMainline(state)) {
+            AiTimeWindowTextFormatter.UserPhrases twWarehouse = AiTimeWindowTextFormatter.forAnswer(state);
+            WarehouseAnswerPlan warehousePlan = state.getWarehouseAnswerPlan();
+            String warehouseFromPlan =
+                    composeWarehouseDeterministicFromAnswerPlan(warehousePlan, twWarehouse);
+            if (warehouseFromPlan != null && !warehouseFromPlan.isBlank()) {
+                answer = warehouseFromPlan;
             } else {
-                String pidBo = AiPromptIds.COMPOSER_BUSINESS_OVERVIEW_V1;
-                state.setComposerPromptRegistryId(pidBo);
-                String llm = llmGateway.chatSimple(aiPromptService.require(pidBo),
-                        JSON.toJSONString(answerComposerPayloadFactory.buildBusinessOverviewPayload(state, o)));
-                answer = pickLlmSanitized(llm,
-                        deterministicAnswerRenderer.renderBusinessOverviewFallback(state, o));
+                answer = composeWarehouseStockNoPlanFallback(state);
             }
-        } else if (state.isWarehouseStockOverviewPath()) {
-            Map<String, Object> woForSalutation = extractWarehouseOverviewPayload(state);
-            LinkedHashMap<String, Object> whCtx = answerComposerPayloadFactory.buildWarehouseOverviewPayload(state);
-            state.setWarehouseOverview(buildWarehouseOverviewStructured(state));
-            String fb = deterministicAnswerRenderer.renderWarehouseStockFallback(state);
-            boolean rankTakeover = warehouseStockRankingDeterministicTakeoverEligible(state);
-            if (log.isInfoEnabled()) {
-                log.info(
-                        "[D6-4B-WH-RANKING] composer warehouse branch runId={} rankTakeover={} fbHasTop3Amount={} fbHasTop3Sku={}",
-                        state.getRunId(),
-                        rankTakeover,
-                        fb != null && fb.contains("门店库存金额排行 Top3"),
-                        fb != null && fb.contains("门店库存商品种类排行 Top3"));
-            }
-            if (rankTakeover) {
-                // 与 dishSalesDeterministicEligible 一致：结构化排行由确定性渲染出 Top3，避免 COMPOSER_WAREHOUSE_V1 覆盖 fb。
-                suppressScopeIntentBoundaryHead = true;
-                answer = pickLlmSanitized("", fb);
-            } else {
-                String llmRaw = "";
-                try {
-                    String payload;
-                    try {
-                        payload = JSON.toJSONString(whCtx);
-                    } catch (Exception jsonEx) {
-                        payload = "{}";
-                    }
-                    String pidWh = AiPromptIds.COMPOSER_WAREHOUSE_V1;
-                    state.setComposerPromptRegistryId(pidWh);
-                    llmRaw = llmGateway.chatSimple(aiPromptService.require(pidWh), payload);
-                } catch (Exception ignored) {
-                    llmRaw = "";
-                }
-                String llmUse = llmLooksUnavailable(llmRaw) ? "" : llmRaw;
-                answer = pickLlmSanitized(llmUse, fb);
-            }
-            answer = applyWarehouseSalutationPolicy(answer, state, woForSalutation);
-        } else if (state.isStockReduceQueryPath()) {
-            AiTimeWindowTextFormatter.UserPhrases twStockReduce = AiTimeWindowTextFormatter.forAnswer(state);
+        } else if (isStockReduceComposerMainline(state)) {
+            AiTimeWindowTextFormatter.UserPhrases twStockReduceMainline = AiTimeWindowTextFormatter.forAnswer(state);
+            StockReduceAnswerPlan stockReducePlan = state.getStockReduceAnswerPlan();
             String stockReduceFromPlan = composeStockReduceDeterministicFromAnswerPlan(
-                    state.getStockReduceAnswerPlan(), twStockReduce, state);
+                    stockReducePlan, twStockReduceMainline, state);
             if (stockReduceFromPlan != null && !stockReduceFromPlan.isBlank()) {
                 answer = stockReduceFromPlan;
             } else {
-                answer = deterministicAnswerRenderer.renderStockReduceToolFallback(state);
+                answer = composeStockReduceNoPlanFallback(state);
             }
-        } else if (state.isPurchaseCostInsightPath()) {
-            Map<String, Object> poRaw = extractPurchaseOverviewPayload(state);
-            if (!poRaw.isEmpty()) {
-                state.setPurchaseOverview(new LinkedHashMap<>(poRaw));
-            }
-            AiTimeWindowTextFormatter.UserPhrases twPurchase = AiTimeWindowTextFormatter.forAnswer(state);
-            String purchaseFromPlan = composePurchaseDeterministicFromAnswerPlan(state.getPurchaseAnswerPlan(), twPurchase);
-            if (purchaseFromPlan != null && !purchaseFromPlan.isBlank()) {
-                answer = purchaseFromPlan;
-            } else {
-                boolean deterministicPurchaseOnly = shouldForceDeterministicPurchaseAnswer(state);
-                String llm = "";
-                if (!deterministicPurchaseOnly) {
-                    LinkedHashMap<String, Object> purchaseCtx =
-                            answerComposerPayloadFactory.buildPurchaseOverviewPayload(state);
-                    try {
-                        String pidPo = AiPromptIds.COMPOSER_PURCHASE_OVERVIEW_V1;
-                        state.setComposerPromptRegistryId(pidPo);
-                        llm = llmGateway.chatSimple(aiPromptService.require(pidPo),
-                                JSON.toJSONString(purchaseCtx));
-                    } catch (Exception ignored) {
-                        llm = "";
-                    }
+        } else if (isPurchaseOverviewComposerMainline(state)) {
+            AiTimeWindowTextFormatter.UserPhrases twPurchaseMainline = AiTimeWindowTextFormatter.forAnswer(state);
+            PurchaseAnswerPlan purchasePlan = state.getPurchaseAnswerPlan();
+            if (purchasePlan != null) {
+                String purchaseFromPlan = composePurchaseDeterministicFromAnswerPlan(
+                        purchasePlan, twPurchaseMainline, state.getResolvedQueryContext());
+                if (purchaseFromPlan != null && !purchaseFromPlan.isBlank()) {
+                    answer = purchaseFromPlan;
+                } else {
+                    answer = composePurchaseOverviewNoPlanFallback(state);
                 }
-                answer = pickLlmSanitized(llm, deterministicAnswerRenderer.renderPurchaseCostFallback(state));
+            } else {
+                answer = composePurchaseOverviewNoPlanFallback(state);
             }
         } else if (genericChatBlockedForDishReasonInDiagnosisContext(state)) {
             answer = "这类问题需要对照菜品毛利与成本数据作答。当前未走通数据查询链路，请改用完整提问（例如点明菜名并说明为什么毛利偏低或成本高），"
@@ -285,18 +198,14 @@ public class StubAnswerComposerNode implements AgentNode {
         } else if (composerEmitRevenueDeniedPermissionOnly(state)) {
             answer = AiAnswerBoundary.revenuePermissionDeniedComposerBody(state);
         } else {
-            LinkedHashMap<String, Object> ctx = composeSafeFallbackContext(state);
-            String pidGc = AiPromptIds.COMPOSER_GENERIC_CHAT_V1;
-            state.setComposerPromptRegistryId(pidGc);
-            String llmOnly = llmGateway.chatSimple(aiPromptService.require(pidGc), JSON.toJSONString(ctx));
-            answer = pickLlmSanitized(llmOnly, deterministicAnswerRenderer.genericEmptyLlmFallback());
+            answer = composeGenericComposerFallback(state);
         }
-        if (suppressScopeIntentBoundaryHead) {
-            scopeP = "";
-            intentP = "";
-            boundaryNote = "";
-        } else if (shouldUseStoreCompareIntentHeader(state)) {
+        if (shouldUseStoreCompareIntentHeader(state)) {
             intentP = DiagnosisDeterministicRenderer.storeCompareIntentConvergencePrefix(state.getDiagnosisPlan());
+        } else if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonsDrilldownTurn(state)) {
+            intentP =
+                    AiAnswerBoundary.costIntentConvergencePrefix(
+                            rewriteStorePriorityRankingCostIntentNote(state.getCostIntentConvergenceNote(), state));
         } else if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)) {
             intentP =
                     AiAnswerBoundary.costIntentConvergencePrefix(
@@ -327,7 +236,8 @@ public class StubAnswerComposerNode implements AgentNode {
         if (head.length() > 0) {
             answer = head + (answer.isEmpty() ? "" : "\n" + answer);
         }
-        if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)) {
+        if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)
+                || DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonsDrilldownTurn(state)) {
             answer = DiagnosisDeterministicRenderer.applyStorePrioritySingleStoreScopeDisplayPatches(
                     (answer == null ? "" : answer).trim(), state);
         }
@@ -339,7 +249,6 @@ public class StubAnswerComposerNode implements AgentNode {
                 "displayText", "回答草稿已就绪",
                 "hasStructuredCostDiagnosis", state.getCostDiagnosisResult() != null,
                 "hasDishProfitOverview", state.getDishProfitOverviewResult() != null,
-                "hasBusinessOverview", state.getBusinessOverviewResult() != null,
                 "businessDiagnosisPath", state.isBusinessDiagnosisPath(),
                 "purchaseCostInsightPath", state.isPurchaseCostInsightPath(),
                 "warehouseStockOverviewPath", state.isWarehouseStockOverviewPath(),
@@ -377,7 +286,8 @@ public class StubAnswerComposerNode implements AgentNode {
         if (p == null) {
             return false;
         }
-        if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)) {
+        if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)
+                || DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonsDrilldownTurn(state)) {
             return false;
         }
         if (!DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS.equals(p.getPlanType())) {
@@ -389,24 +299,24 @@ public class StubAnswerComposerNode implements AgentNode {
         return DiagnosisDeterministicRenderer.isStoreCompareEvidenceAnswerTurn(state, p);
     }
 
-    private static String pickLlmSanitized(String llm, String fallback) {
-        String picked = llm == null || llm.isBlank() ? fallback : llm.trim();
-        return AiAnswerBoundary.stripDeveloperFacingLeakage(picked);
-    }
-
     /**
-     * {@link com.nongxinle.ai.DeepSeekCompletionClient} 在 HTTP/解析异常时返回「抱歉…」短句；
-     * 库存链路必须以工具摘要作答，不能把该句当作正式回复。
+     * D-8 菜品销量专线 Composer 主线：须 intent/path 双对齐，避免仅 path 漂移时误入毛利 legacy。
      */
-    private static boolean llmLooksUnavailable(String llm) {
-        if (llm == null || llm.isBlank()) {
-            return true;
+    private static boolean isDishSalesComposerMainline(AiRunState state) {
+        if (state == null) {
+            return false;
         }
-        String t = llm.trim();
-        return t.startsWith("抱歉，AI 服务")
-                || t.contains("AI 服务出现异常")
-                || t.contains("AI 服务暂时不可用")
-                || t.startsWith("AI 未返回有效");
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        String effIntentRaw = rq.getEffectiveIntentCode();
+        String effPathRaw = rq.getEffectivePathCode();
+        if (!StringUtils.hasText(effIntentRaw) || !StringUtils.hasText(effPathRaw)) {
+            return false;
+        }
+        return AiResolvedQueryIntent.DISH_SALES_QUERY.equals(effIntentRaw.trim())
+                && AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(effPathRaw.trim());
     }
 
     private static boolean dishSalesDeterministicEligible(AiRunState state) {
@@ -435,86 +345,181 @@ public class StubAnswerComposerNode implements AgentNode {
         pt = pt.trim();
         return DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_HIGH.equals(pt)
                 || DishSalesAnswerPlan.TYPE_DISH_SALES_AMOUNT_RANKING_HIGH.equals(pt)
-                || DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_LOW.equals(pt);
+                || DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_LOW.equals(pt)
+                || DishSalesAnswerPlan.TYPE_DISH_SALES_SINGLE_DISH.equals(pt);
     }
 
     /**
-     * 库存门店/仓库排行 wire：{@link com.nongxinle.ai.composer.renderer.WarehouseDeterministicRenderer} 已出确定性结论，
-     * Composer 侧禁止再走 LLM，否则会覆盖 Top3（payload Summary 未带排行字段时模型常写总览）。
+     * 与 {@link BusinessDataPlannerNode} / D-2M 审计对齐：
+     * {@code WAREHOUSE_STOCK_OVERVIEW} + {@code warehouse_stock_overview_path} 唯一 Composer 主线（待 {@code WarehouseAnswerPlan}）。
      */
-    private static boolean warehouseStockRankingDeterministicTakeoverEligible(AiRunState state) {
-        if (state == null || state.getResolvedQueryContext() == null) {
-            return false;
-        }
-        AiResolvedQueryContext ctx = state.getResolvedQueryContext();
-        String raw = null;
-        AiResolvedQueryIntent qi = ctx.getQueryIntent();
-        if (qi != null && StringUtils.hasText(qi.getStructuredIntentDetail())) {
-            raw = qi.getStructuredIntentDetail().trim();
-        }
-        if (!StringUtils.hasText(raw)
-                && ctx.getQuerySemanticParse() != null
-                && ctx.getQuerySemanticParse().getMetric() != null) {
-            String rt = ctx.getQuerySemanticParse().getMetric().getRankingType();
-            if (StringUtils.hasText(rt)) {
-                raw = rt.trim();
-            }
-        }
-        String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(raw);
-        String rankingTypeFallback = ctx.getQuerySemanticParse() != null
-                        && ctx.getQuerySemanticParse().getMetric() != null
-                ? ctx.getQuerySemanticParse().getMetric().getRankingType()
-                : null;
-        boolean eligible = AiQuerySemanticLexicon.STRUCTURED_STORE_STOCK_AMOUNT_RANKING.equals(wire)
-                || AiQuerySemanticLexicon.STRUCTURED_STORE_STOCK_ITEM_COUNT_RANKING.equals(wire)
-                || AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_STOCK_AMOUNT_RANKING.equals(wire)
-                || AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_STOCK_ITEM_COUNT_RANKING.equals(wire);
-        if (log.isInfoEnabled()) {
-            log.info(
-                    "[D6-4B-WH-RANKING] takeoverEligible={} runId={} queryIntentStructuredDetail={} metricRankingType={} canonicalWire={}",
-                    eligible,
-                    state.getRunId(),
-                    qi != null ? qi.getStructuredIntentDetail() : null,
-                    rankingTypeFallback,
-                    wire);
-        }
-        return eligible;
-    }
-
-    private static boolean dishProfitUseDeterministicSummaryOnly(AiRunState state) {
+    private static boolean isWarehouseStockComposerMainline(AiRunState state) {
         if (state == null) {
             return false;
         }
-        AiResolvedQueryContext ctx = state.getResolvedQueryContext();
-        var qi = ctx != null ? ctx.getQueryIntent() : null;
-        if (qi == null) {
+        if (state.isWarehouseStockOverviewPath()) {
+            return true;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
             return false;
         }
-        String sid = qi.getStructuredIntentDetail();
-        if (sid == null || sid.isBlank()) {
-            return false;
-        }
-        return AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_OUTBOUND_COST.equals(sid);
+        return AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW.equals(rq.getEffectiveIntentCode())
+                && AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(rq.getEffectivePathCode());
     }
 
-    /**
-     * 排行/原因类子意图：服务端已压缩 summary 与 answerPlan，Composer 走确定性短文，避免总览模板。
-     */
-    private static boolean dishProfitNarrowRankingOrReasonPlan(AiRunState state) {
-        DishProfitAnswerPlan plan = state != null ? state.getDishProfitAnswerPlan() : null;
+    private String composeWarehouseStockNoPlanFallback(AiRunState state) {
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("composerFallback", "warehouse_stock_overview_no_plan");
+        dbg.put("reason", "WarehouseAnswerPlan not mounted");
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        if (rq != null) {
+            dbg.put("effectiveIntentCode", rq.getEffectiveIntentCode());
+            dbg.put("effectivePathCode", rq.getEffectivePathCode());
+            if (rq.getQueryIntent() != null) {
+                dbg.put(
+                        "structuredIntentDetailWire",
+                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                rq.getQueryIntent().getStructuredIntentDetail()));
+            }
+        }
+        if (state != null) {
+            dbg.put("warehouseStockOverviewPath", state.isWarehouseStockOverviewPath());
+            dbg.put("groupWarehouseStockOverview", state.isGroupWarehouseStockOverview());
+            List<String> plan = state.getDataPlanTools();
+            dbg.put("dataPlanToolCount", plan != null ? plan.size() : 0);
+            dbg.put("needClarification", state.isNeedClarification());
+            Map<String, Object> existingMaster = state.getMasterBusinessAgentDebug();
+            if (existingMaster != null && !existingMaster.isEmpty()) {
+                dbg.put("masterBusinessAgentDebugSnapshot", new LinkedHashMap<>(existingMaster));
+            }
+            LinkedHashMap<String, Object> merged = existingMaster != null
+                    ? new LinkedHashMap<>(existingMaster)
+                    : new LinkedHashMap<>();
+            merged.put("composerWarehouseStockNoPlan", dbg);
+            state.setMasterBusinessAgentDebug(merged);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "[StubAnswerComposer] warehouse stock overview mainline no plan runId={} debug={}",
+                        state.getRunId(),
+                        dbg);
+            }
+        }
+        return "库房库存分析计划暂未生成，请稍后重试或缩小范围。";
+    }
+
+    private static String composeWarehouseDeterministicFromAnswerPlan(
+            WarehouseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw) {
         if (plan == null || plan.getPlanType() == null || plan.getPlanType().isBlank()) {
-            return false;
+            return null;
         }
-        String t = plan.getPlanType().trim();
-        return DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_PROFIT_REASON.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_THEORETICAL_COST.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_ACTUAL_OUTBOUND_COST.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_PROFIT_RATE.equals(t)
-                || DishProfitAnswerPlan.TYPE_DISH_COST_GAP.equals(t);
+        AiTimeWindowTextFormatter.UserPhrases p =
+                tw != null ? tw : AiTimeWindowTextFormatter.fromIsoRange(null, null, java.time.LocalDate.now());
+        String type = plan.getPlanType().trim();
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_STORE_AMOUNT_RANKING.equals(type)) {
+            return composeWarehouseStoreAmountRankingFromPlan(plan, p);
+        }
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_GOODS_AMOUNT_RANKING_HIGH.equals(type)) {
+            return composeWarehouseGoodsRankingFromPlan(plan, p, true);
+        }
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_GOODS_AMOUNT_RANKING_LOW.equals(type)) {
+            return composeWarehouseGoodsRankingFromPlan(plan, p, false);
+        }
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_LOW_STOCK_RISK.equals(type)) {
+            return composeWarehouseLowStockFromPlan(plan, p);
+        }
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_STOCK_OVERVIEW.equals(type)) {
+            return composeWarehouseOverviewFromPlan(plan, p);
+        }
+        return null;
     }
 
+    private static String warehousePlanLead(WarehouseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw) {
+        String scope = plan.getScopeLabel() == null ? "" : plan.getScopeLabel().trim();
+        if (scope.isEmpty()) {
+            scope = "当前范围";
+        }
+        return scope + "在" + tw.getTimeSubjectText();
+    }
+
+    private static String composeWarehouseOverviewFromPlan(
+            WarehouseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw) {
+        Map<String, Object> summary = plan.getSummary();
+        String narrative = summary != null && summary.get("narrative") != null
+                ? summary.get("narrative").toString().trim()
+                : "";
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        if (!narrative.isEmpty()) {
+            sb.append(narrative);
+        } else {
+            sb.append(warehousePlanLead(plan, tw)).append("，库存总览数据已汇总。");
+        }
+        Object gap = plan.getDebug() != null ? plan.getDebug().get("warehouseKnownGap") : null;
+        if (gap != null && !gap.toString().isBlank()) {
+            sb.append('\n').append("说明：当前问题在数据层暂无严格专链（").append(gap).append("）。");
+        }
+        return sb.toString();
+    }
+
+    private static String composeWarehouseStoreAmountRankingFromPlan(
+            WarehouseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        if (focus == null || focus.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> top = focus.get(0);
+        String storeName = nz(top.get("storeName"));
+        if (storeName.isEmpty()) {
+            storeName = nz(top.get("scopeName"));
+        }
+        String amt = plainNumericHint(top.get("totalStockAmount"));
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        sb.append(warehousePlanLead(plan, tw)).append("，库存剩余金额较高的门店是 ")
+                .append(storeName.isEmpty() ? "（未命名门店）" : storeName)
+                .append("，约 ").append(amt).append(" 元。");
+        return sb.toString();
+    }
+
+    private static String composeWarehouseGoodsRankingFromPlan(
+            WarehouseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw, boolean high) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        if (focus == null || focus.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> top = focus.get(0);
+        String goods = nz(top.get("goodsName"));
+        String amt = plainNumericHint(top.get("restAmountTotal"));
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        sb.append(warehousePlanLead(plan, tw)).append("，账面库存剩余金额")
+                .append(high ? "最高" : "最低")
+                .append("的商品是 ")
+                .append(goods.isEmpty() ? "（未命名商品）" : goods)
+                .append("，约 ").append(amt).append(" 元。");
+        return sb.toString();
+    }
+
+    private static String composeWarehouseLowStockFromPlan(
+            WarehouseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        sb.append(warehousePlanLead(plan, tw)).append("，以下为账面偏低风险提示（启发式，非严格缺货清单）。");
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        if (focus != null && !focus.isEmpty()) {
+            Map<String, Object> top = focus.get(0);
+            String goods = nz(top.get("goodsName"));
+            if (!goods.isEmpty()) {
+                sb.append(" 例如：").append(goods).append("。");
+            }
+        }
+        Object gap = plan.getDebug() != null ? plan.getDebug().get("warehouseKnownGap") : null;
+        if (gap != null && !gap.toString().isBlank()) {
+            sb.append("（").append(gap).append("）");
+        }
+        return sb.toString();
+    }
 
     private static String nz(String s) {
         return s == null ? "" : s;
@@ -540,33 +545,409 @@ public class StubAnswerComposerNode implements AgentNode {
 
 
 
-    private static boolean shouldForceDeterministicPurchaseAnswer(AiRunState state) {
-        var ctx = state.getResolvedQueryContext();
-        if (ctx == null || ctx.getQueryIntent() == null) {
-            return false;
-        }
-        String sid = ctx.getQueryIntent().getStructuredIntentDetail();
-        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY.equals(sid)) {
-            return true;
-        }
-        if (AiQuerySemanticLexicon.isSupplierAmountRankingDetail(sid)) {
-            return true;
-        }
-        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING.equals(sid)) {
-            return true;
-        }
-        return false;
-    }
-
-    private static boolean classicBusinessOverviewAnswerPlanComposerEligible(AiRunState state) {
+    /**
+     * 与 {@link BusinessDataPlannerNode} / {@link StubOutcomeReviewNode} 对齐：
+     * {@code business_overview_summary/status/compare} + MULTI_AGENT 四域 overview 唯一 Composer 主线。
+     */
+    private static boolean isBusinessOverviewMultiAgentMainline(AiRunState state) {
         if (state == null || !state.isBusinessOverviewPath()) {
             return false;
         }
-        BusinessOverviewAnswerPlan bop = state.getBusinessOverviewAnswerPlan();
-        if (bop == null || bop.getPlanType() == null || bop.getClassicOverviewResult() == null) {
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
             return false;
         }
-        return BusinessOverviewAnswerPlan.PLAN_TYPE_BUSINESS_OVERVIEW_CLASSIC_V1.equals(bop.getPlanType().trim());
+        if (!AiResolvedQueryIntent.BUSINESS_OVERVIEW.equals(rq.getEffectiveIntentCode())) {
+            return false;
+        }
+        if (!AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(rq.getEffectivePathCode())) {
+            return false;
+        }
+        if (!resolvedContextOrchestrationMultiAgentOverview(rq)) {
+            return false;
+        }
+        AiResolvedQueryIntent qi = rq.getQueryIntent();
+        if (qi == null || !StringUtils.hasText(qi.getStructuredIntentDetail())) {
+            return false;
+        }
+        return AiQuerySemanticLexicon.isStructuredBusinessOverviewFourDomainOrchestrationSurface(
+                qi.getStructuredIntentDetail());
+    }
+
+    private static boolean resolvedContextOrchestrationMultiAgentOverview(AiResolvedQueryContext rq) {
+        if (rq == null) {
+            return false;
+        }
+        String tm = rq.getOrchestrationTaskMode();
+        if (tm != null && "MULTI_AGENT".equalsIgnoreCase(tm.trim())) {
+            return true;
+        }
+        return Boolean.TRUE.equals(rq.getOrchestrationMultiAgentRequired());
+    }
+
+    /**
+     * 与 {@link BusinessDataPlannerNode} / {@link StubOutcomeReviewNode} 对齐：
+     * {@code BUSINESS_DIAGNOSIS} + {@code business_diagnosis_path} 唯一 Composer 主线（只读 {@link DiagnosisPlan}）。
+     */
+    private static boolean isBusinessDiagnosisComposerMainline(AiRunState state) {
+        if (state == null || !state.isBusinessDiagnosisPath()) {
+            return false;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        return AiResolvedQueryIntent.BUSINESS_DIAGNOSIS.equals(rq.getEffectiveIntentCode())
+                && AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(rq.getEffectivePathCode());
+    }
+
+    private String composeBusinessDiagnosisNoPlanFallback(AiRunState state) {
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("composerFallback", "business_diagnosis_no_plan");
+        dbg.put("reason", "DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS not mounted");
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        if (rq != null) {
+            dbg.put("effectiveIntentCode", rq.getEffectiveIntentCode());
+            dbg.put("effectivePathCode", rq.getEffectivePathCode());
+            dbg.put("orchestrationTaskMode", rq.getOrchestrationTaskMode());
+            dbg.put("orchestrationMultiAgentRequired", rq.getOrchestrationMultiAgentRequired());
+            if (rq.getQueryIntent() != null) {
+                dbg.put(
+                        "structuredIntentDetailWire",
+                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                rq.getQueryIntent().getStructuredIntentDetail()));
+            }
+        }
+        if (state != null) {
+            List<String> plan = state.getDataPlanTools();
+            dbg.put("dataPlanToolCount", plan != null ? plan.size() : 0);
+            dbg.put("needClarification", state.isNeedClarification());
+            Map<String, Object> existingMaster = state.getMasterBusinessAgentDebug();
+            if (existingMaster != null && !existingMaster.isEmpty()) {
+                dbg.put("masterBusinessAgentDebugSnapshot", new LinkedHashMap<>(existingMaster));
+            }
+            LinkedHashMap<String, Object> merged = existingMaster != null
+                    ? new LinkedHashMap<>(existingMaster)
+                    : new LinkedHashMap<>();
+            merged.put("composerBusinessDiagnosisNoPlan", dbg);
+            state.setMasterBusinessAgentDebug(merged);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "[StubAnswerComposer] business diagnosis mainline no plan runId={} debug={}",
+                        state.getRunId(),
+                        dbg);
+            }
+        }
+        return "经营诊断计划暂未生成，请稍后重试或缩小范围。";
+    }
+
+    /**
+     * 与 {@link BusinessDataPlannerNode} / D-2M 审计对齐：
+     * {@code REVENUE_OVERVIEW} + {@code revenue_overview_path} 唯一 Composer 主线（只读 {@link DailyRevenueAnswerPlan}）。
+     */
+    private static boolean isRevenueOverviewComposerMainline(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        if (state.isRevenueOverviewPath()) {
+            return true;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        return AiResolvedQueryIntent.REVENUE_OVERVIEW.equals(rq.getEffectiveIntentCode())
+                && AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(rq.getEffectivePathCode());
+    }
+
+    /**
+     * 与 {@link BusinessDataPlannerNode} / D-2F 审计对齐：
+     * 采购 Composer 唯一主线（{@code purchase_overview_path} / {@code purchaseCostInsightPath}），只读 {@link PurchaseAnswerPlan}。
+     */
+    private static boolean isPurchaseOverviewComposerMainline(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        if (state.isPurchaseOverviewPath() || state.isPurchaseCostInsightPath()) {
+            return true;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        return AiResolvedQueryIntent.PURCHASE_OVERVIEW.equals(rq.getEffectiveIntentCode())
+                && AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(rq.getEffectivePathCode());
+    }
+
+    private String composePurchaseOverviewNoPlanFallback(AiRunState state) {
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("composerFallback", "purchase_overview_no_plan");
+        dbg.put("reason", "PurchaseAnswerPlan not mounted or compose yielded blank");
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        if (rq != null) {
+            dbg.put("effectiveIntentCode", rq.getEffectiveIntentCode());
+            dbg.put("effectivePathCode", rq.getEffectivePathCode());
+            if (rq.getQueryIntent() != null) {
+                dbg.put(
+                        "structuredIntentDetailWire",
+                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                rq.getQueryIntent().getStructuredIntentDetail()));
+            }
+        }
+        if (state != null) {
+            dbg.put("purchaseOverviewPath", state.isPurchaseOverviewPath());
+            dbg.put("purchaseCostInsightPath", state.isPurchaseCostInsightPath());
+            List<String> plan = state.getDataPlanTools();
+            dbg.put("dataPlanToolCount", plan != null ? plan.size() : 0);
+            dbg.put("needClarification", state.isNeedClarification());
+            Map<String, Object> existingMaster = state.getMasterBusinessAgentDebug();
+            if (existingMaster != null && !existingMaster.isEmpty()) {
+                dbg.put("masterBusinessAgentDebugSnapshot", new LinkedHashMap<>(existingMaster));
+            }
+            LinkedHashMap<String, Object> merged = existingMaster != null
+                    ? new LinkedHashMap<>(existingMaster)
+                    : new LinkedHashMap<>();
+            merged.put("composerPurchaseOverviewNoPlan", dbg);
+            state.setMasterBusinessAgentDebug(merged);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "[StubAnswerComposer] purchase overview mainline no plan runId={} debug={}",
+                        state.getRunId(),
+                        dbg);
+            }
+        }
+        return "采购分析计划暂未生成，请稍后重试或缩小范围。";
+    }
+
+    private String composeRevenueNoPlanFallback(AiRunState state) {
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("composerFallback", "revenue_overview_no_plan");
+        dbg.put("reason", "DailyRevenueAnswerPlan not mounted or compose yielded blank");
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        if (rq != null) {
+            dbg.put("effectiveIntentCode", rq.getEffectiveIntentCode());
+            dbg.put("effectivePathCode", rq.getEffectivePathCode());
+            if (rq.getQueryIntent() != null) {
+                dbg.put(
+                        "structuredIntentDetailWire",
+                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                rq.getQueryIntent().getStructuredIntentDetail()));
+            }
+        }
+        if (state != null) {
+            dbg.put("revenueOverviewPath", state.isRevenueOverviewPath());
+            List<String> plan = state.getDataPlanTools();
+            dbg.put("dataPlanToolCount", plan != null ? plan.size() : 0);
+            dbg.put("needClarification", state.isNeedClarification());
+            Map<String, Object> existingMaster = state.getMasterBusinessAgentDebug();
+            if (existingMaster != null && !existingMaster.isEmpty()) {
+                dbg.put("masterBusinessAgentDebugSnapshot", new LinkedHashMap<>(existingMaster));
+            }
+            LinkedHashMap<String, Object> merged = existingMaster != null
+                    ? new LinkedHashMap<>(existingMaster)
+                    : new LinkedHashMap<>();
+            merged.put("composerRevenueOverviewNoPlan", dbg);
+            state.setMasterBusinessAgentDebug(merged);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "[StubAnswerComposer] revenue overview mainline no plan runId={} debug={}",
+                        state.getRunId(),
+                        dbg);
+            }
+        }
+        return "营业额分析计划暂未生成，请稍后重试或缩小范围。";
+    }
+
+    /**
+     * 与 {@link BusinessDataPlannerNode} / D-2H 审计对齐：
+     * {@code STOCK_REDUCE_QUERY} + {@code stock_reduce_query_path} 唯一 Composer 主线（只读 {@link StockReduceAnswerPlan}）。
+     */
+    private static boolean isStockReduceComposerMainline(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        if (state.isStockReduceQueryPath()) {
+            return true;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        return AiResolvedQueryIntent.STOCK_REDUCE_QUERY.equals(rq.getEffectiveIntentCode())
+                && AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(rq.getEffectivePathCode());
+    }
+
+    /**
+     * 与 {@link BusinessDataPlannerNode} / D-2K 审计对齐：
+     * 菜品毛利 Composer 唯一主线（{@code dish_profit_path}，不含 {@link #isDishSalesComposerMainline} 销量线），只读 {@link DishProfitAnswerPlan}。
+     */
+    private static boolean isDishProfitComposerMainline(AiRunState state) {
+        if (state == null || !state.isDishProfitPath()) {
+            return false;
+        }
+        if (isDishSalesComposerMainline(state)) {
+            return false;
+        }
+        return true;
+    }
+
+    private String composeDishProfitNoPlanFallback(AiRunState state) {
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("composerFallback", "dish_profit_no_plan");
+        dbg.put("reason", "DishProfitAnswerPlan not mounted or compose yielded blank");
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        if (rq != null) {
+            dbg.put("effectiveIntentCode", rq.getEffectiveIntentCode());
+            dbg.put("effectivePathCode", rq.getEffectivePathCode());
+            if (rq.getQueryIntent() != null) {
+                dbg.put(
+                        "structuredIntentDetailWire",
+                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                rq.getQueryIntent().getStructuredIntentDetail()));
+            }
+        }
+        if (state != null) {
+            dbg.put("dishProfitPath", state.isDishProfitPath());
+            List<String> plan = state.getDataPlanTools();
+            dbg.put("dataPlanToolCount", plan != null ? plan.size() : 0);
+            dbg.put("needClarification", state.isNeedClarification());
+            Map<String, Object> existingMaster = state.getMasterBusinessAgentDebug();
+            if (existingMaster != null && !existingMaster.isEmpty()) {
+                dbg.put("masterBusinessAgentDebugSnapshot", new LinkedHashMap<>(existingMaster));
+            }
+            LinkedHashMap<String, Object> merged = existingMaster != null
+                    ? new LinkedHashMap<>(existingMaster)
+                    : new LinkedHashMap<>();
+            merged.put("composerDishProfitNoPlan", dbg);
+            state.setMasterBusinessAgentDebug(merged);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "[StubAnswerComposer] dish profit mainline no plan runId={} debug={}",
+                        state.getRunId(),
+                        dbg);
+            }
+        }
+        return "菜品毛利分析计划暂未生成，请稍后重试或缩小范围。";
+    }
+
+    private String composeDishSalesNoPlanFallback(AiRunState state) {
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("composerFallback", "dish_sales_no_plan");
+        dbg.put("reason", "DishSalesAnswerPlan not mounted or deterministic render yielded blank");
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        if (rq != null) {
+            dbg.put("effectiveIntentCode", rq.getEffectiveIntentCode());
+            dbg.put("effectivePathCode", rq.getEffectivePathCode());
+            if (rq.getQueryIntent() != null) {
+                dbg.put(
+                        "structuredIntentDetailWire",
+                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                rq.getQueryIntent().getStructuredIntentDetail()));
+            }
+        }
+        if (state != null) {
+            dbg.put("hasDishSalesAnswerPlan", state.getDishSalesAnswerPlan() != null);
+            dbg.put("dishProfitPath", state.isDishProfitPath());
+            List<String> plan = state.getDataPlanTools();
+            dbg.put("dataPlanToolCount", plan != null ? plan.size() : 0);
+            dbg.put("needClarification", state.isNeedClarification());
+            Map<String, Object> existingMaster = state.getMasterBusinessAgentDebug();
+            if (existingMaster != null && !existingMaster.isEmpty()) {
+                dbg.put("masterBusinessAgentDebugSnapshot", new LinkedHashMap<>(existingMaster));
+            }
+            LinkedHashMap<String, Object> merged = existingMaster != null
+                    ? new LinkedHashMap<>(existingMaster)
+                    : new LinkedHashMap<>();
+            merged.put("composerDishSalesNoPlan", dbg);
+            state.setMasterBusinessAgentDebug(merged);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "[StubAnswerComposer] dish sales mainline no plan runId={} debug={}",
+                        state.getRunId(),
+                        dbg);
+            }
+        }
+        return "菜品销量分析计划暂未生成，请稍后重试或缩小范围。";
+    }
+
+    private String composeStockReduceNoPlanFallback(AiRunState state) {
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("composerFallback", "stock_reduce_no_plan");
+        dbg.put("reason", "StockReduceAnswerPlan not mounted or compose yielded blank");
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        if (rq != null) {
+            dbg.put("effectiveIntentCode", rq.getEffectiveIntentCode());
+            dbg.put("effectivePathCode", rq.getEffectivePathCode());
+            if (rq.getQueryIntent() != null) {
+                dbg.put(
+                        "structuredIntentDetailWire",
+                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                rq.getQueryIntent().getStructuredIntentDetail()));
+            }
+        }
+        if (state != null) {
+            dbg.put("stockReduceQueryPath", state.isStockReduceQueryPath());
+            dbg.put("groupStockReduceQuery", state.isGroupStockReduceQuery());
+            List<String> plan = state.getDataPlanTools();
+            dbg.put("dataPlanToolCount", plan != null ? plan.size() : 0);
+            dbg.put("needClarification", state.isNeedClarification());
+            Map<String, Object> existingMaster = state.getMasterBusinessAgentDebug();
+            if (existingMaster != null && !existingMaster.isEmpty()) {
+                dbg.put("masterBusinessAgentDebugSnapshot", new LinkedHashMap<>(existingMaster));
+            }
+            LinkedHashMap<String, Object> merged = existingMaster != null
+                    ? new LinkedHashMap<>(existingMaster)
+                    : new LinkedHashMap<>();
+            merged.put("composerStockReduceNoPlan", dbg);
+            state.setMasterBusinessAgentDebug(merged);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "[StubAnswerComposer] stock reduce mainline no plan runId={} debug={}",
+                        state.getRunId(),
+                        dbg);
+            }
+        }
+        return "出库分析计划暂未生成，请稍后重试或缩小范围。";
+    }
+
+    private String composeBusinessOverviewMultiAgentNoPlanFallback(AiRunState state) {
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("composerFallback", "business_overview_multi_agent_no_plan");
+        dbg.put("reason", "PLAN_TYPE_BUSINESS_OVERVIEW_MULTI_AGENT_V1 not mounted");
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        if (rq != null) {
+            dbg.put("effectiveIntentCode", rq.getEffectiveIntentCode());
+            dbg.put("effectivePathCode", rq.getEffectivePathCode());
+            dbg.put("orchestrationTaskMode", rq.getOrchestrationTaskMode());
+            dbg.put("orchestrationMultiAgentRequired", rq.getOrchestrationMultiAgentRequired());
+            if (rq.getQueryIntent() != null) {
+                dbg.put(
+                        "structuredIntentDetailWire",
+                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                rq.getQueryIntent().getStructuredIntentDetail()));
+            }
+        }
+        if (state != null) {
+            List<String> plan = state.getDataPlanTools();
+            dbg.put("dataPlanToolCount", plan != null ? plan.size() : 0);
+            dbg.put("needClarification", state.isNeedClarification());
+            Map<String, Object> existingMaster = state.getMasterBusinessAgentDebug();
+            if (existingMaster != null && !existingMaster.isEmpty()) {
+                dbg.put("masterBusinessAgentDebugSnapshot", new LinkedHashMap<>(existingMaster));
+            }
+            LinkedHashMap<String, Object> merged = existingMaster != null
+                    ? new LinkedHashMap<>(existingMaster)
+                    : new LinkedHashMap<>();
+            merged.put("composerBusinessOverviewMultiNoPlan", dbg);
+            state.setMasterBusinessAgentDebug(merged);
+            if (log.isInfoEnabled()) {
+                log.info(
+                        "[StubAnswerComposer] business overview multi mainline no plan runId={} debug={}",
+                        state.getRunId(),
+                        dbg);
+            }
+        }
+        return "经营概览四域计划暂未生成，请稍后重试或缩小范围。";
     }
 
     private static boolean businessOverviewMultiAgentFourDomainDeterministicEligible(AiRunState state) {
@@ -599,7 +980,9 @@ public class StubAnswerComposerNode implements AgentNode {
         String revenueBlock =
                 nz(BusinessOverviewDeterministicSummaryBuilder.composeRevenueDeterministicFromAnswerPlan(
                         state.getRevenueAnswerPlan(), tw));
-        String purchaseBlock = nz(composePurchaseDeterministicFromAnswerPlan(state.getPurchaseAnswerPlan(), tw));
+        String purchaseBlock =
+                nz(composePurchaseDeterministicFromAnswerPlan(
+                        state.getPurchaseAnswerPlan(), tw, state.getResolvedQueryContext()));
         String stockBlock =
                 nz(composeStockReduceDeterministicFromAnswerPlan(state.getStockReduceAnswerPlan(), tw, state));
         String dishBlock = nz(deterministicAnswerRenderer.renderDishProfitAnswerPlanOneLiner(
@@ -708,10 +1091,10 @@ public class StubAnswerComposerNode implements AgentNode {
     /**
      * 采购 AnswerPlan：排序与选行已在 Builder 完成；此处仅宣读 focusRows / secondaryRows，不重算、不重排。
      *
-     * @return 可展示的确定性正文；不满足条件时返回 {@code null} 交由 summary / LLM fallback。
+     * @return 可展示的确定性正文；plan 缺失或 compose 无法宣读时返回 {@code null}，由 no-plan fallback 兜底。
      */
     private static String composePurchaseDeterministicFromAnswerPlan(PurchaseAnswerPlan plan,
-            AiTimeWindowTextFormatter.UserPhrases tw) {
+            AiTimeWindowTextFormatter.UserPhrases tw, AiResolvedQueryContext rq) {
         if (plan == null || plan.getFocusRows() == null || plan.getPlanType() == null || plan.getPlanType().isBlank()) {
             return null;
         }
@@ -736,10 +1119,69 @@ public class StubAnswerComposerNode implements AgentNode {
         if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING.equals(type)) {
             return composePurchaseSupplierAmountRankingFromPlan(plan, p);
         }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL.equals(type)) {
+            return composePurchaseSupplierGoodsDetailFromPlan(plan, p, rq);
+        }
         if (PurchaseAnswerPlan.TYPE_PURCHASE_STORE_AMOUNT_RANKING.equals(type)) {
             return composePurchaseStoreAmountRankingFromPlan(plan, p);
         }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN.equals(type)) {
+            return composePurchaseGoodsSourceBreakdownFromPlan(plan, p, rq);
+        }
         return null;
+    }
+
+    /**
+     * 商品来源拆桶（Phase2-A）：只读 AnswerPlan.focusRows，不重算、不重排。
+     */
+    private static String composePurchaseGoodsSourceBreakdownFromPlan(
+            PurchaseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw, AiResolvedQueryContext rq) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        if (focus == null || focus.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> row = focus.get(0);
+        if (row == null || row.isEmpty()) {
+            return null;
+        }
+        String goodsName = goodsNameFromPurchasePlanRow(row);
+        if (goodsName.isBlank()) {
+            goodsName = debugString(plan.getDebug(), "followUpTargetEntityName");
+        }
+        if (goodsName.isBlank()) {
+            goodsName = debugString(plan.getDebug(), "inheritedAnchorName");
+        }
+        if (goodsName.isBlank() && rq != null && StringUtils.hasText(rq.getFollowUpTargetEntityName())) {
+            goodsName = rq.getFollowUpTargetEntityName().trim();
+        }
+        if (goodsName.isBlank()) {
+            goodsName = "该商品";
+        }
+        String total = plainNumericHint(row.get("totalPurchaseAmount"));
+        String selfAmt = plainNumericHint(row.get("selfPurchaseAmount"));
+        String supAmt = plainNumericHint(row.get("supplierPurchaseAmount"));
+        int selfLines = intHint(row.get("selfPurchaseLineCount"));
+        int supLines = intHint(row.get("supplierPurchaseLineCount"));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append("\n");
+        sb.append(tw.getDisplayTimeRange()).append("，").append(goodsName).append("采购总额").append(total).append("元");
+        sb.append("：自采").append(selfAmt).append("元");
+        if (selfLines > 0) {
+            sb.append("（").append(selfLines).append("笔）");
+        }
+        sb.append("，供货商订货").append(supAmt).append("元");
+        if (supLines > 0) {
+            sb.append("（").append(supLines).append("笔）");
+        } else {
+            Object supQty = row.get("supplierPurchaseQuantity");
+            if (supQty != null && !supQty.toString().isBlank()
+                    && parseDoubleLoose(supQty) > 1e-9) {
+                sb.append("，数量").append(plainNumericHint(supQty));
+            }
+        }
+        sb.append("。");
+        return sb.toString();
     }
 
     /** 并排门店采购金额（AnswerPlan Builder 已定序）。 */
@@ -840,7 +1282,13 @@ public class StubAnswerComposerNode implements AgentNode {
         if (row == null) {
             return null;
         }
-        Object v = row.get("purchaseTimes");
+        Object v = row.get("orderCount");
+        if (v == null) {
+            v = row.get("recordCount");
+        }
+        if (v == null) {
+            v = row.get("purchaseTimes");
+        }
         if (v == null) {
             v = row.get("purchaseCount");
         }
@@ -873,6 +1321,231 @@ public class StubAnswerComposerNode implements AgentNode {
         String a = plainNumericHint(purchaseGoodsCountFromPlanRow(row));
         String b = plainNumericHint(topCountObj);
         return Objects.equals(a, b);
+    }
+
+    /**
+     * 供货商渠道商品明细：宣读 AnswerPlan 已有行，不重算；供货商名取自 Resolver 下钻字段或 Plan 内锚点。
+     */
+    private static String composePurchaseSupplierGoodsDetailFromPlan(
+            PurchaseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw, AiResolvedQueryContext rq) {
+        Map<String, Object> dbg = plan.getDebug();
+        if (Boolean.TRUE.equals(dbg != null ? dbg.get("purchaseGoodsSupplierDrilldown") : null)) {
+            return composePurchaseGoodsAnchoredSupplierBreakdownFromPlan(plan, tw, rq);
+        }
+        String supplier = resolveSupplierDisplayNameForGoodsDetail(plan, rq);
+        String subject =
+                tw.getTimeSubjectText() != null && !tw.getTimeSubjectText().isBlank()
+                        ? tw.getTimeSubjectText().trim()
+                        : "该统计区间";
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        List<Map<String, Object>> sec =
+                plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append("\n");
+        sb.append("按上文「").append(subject).append("」和「").append(supplier).append("」供货商口径查询。\n\n");
+        if (focus == null || focus.isEmpty()) {
+            sb.append(subject)
+                    .append("向")
+                    .append(supplier)
+                    .append("采购的商品：当前明细行为空（可能与权限范围或入库数据有关）。");
+            return sb.toString().trim();
+        }
+        sb.append(subject).append("向").append(supplier).append("采购的商品如下：\n");
+
+        List<Map<String, Object>> ordered = new ArrayList<>(focus.size() + sec.size());
+        ordered.addAll(focus);
+        ordered.addAll(sec);
+
+        boolean anyPrice = false;
+        for (Map<String, Object> r : ordered) {
+            if (r != null && StringUtils.hasText(unitPriceHintFromPurchaseGoodsRow(r))) {
+                anyPrice = true;
+                break;
+            }
+        }
+
+        int idx = 1;
+        for (Map<String, Object> r : ordered) {
+            if (r == null) {
+                continue;
+            }
+            String name = nz(goodsNameFromPurchasePlanRow(r));
+            if (name.isBlank()) {
+                name = "（未命名商品）";
+            }
+            String amt = plainNumericHint(purchaseGoodsAmountFromPlanRow(r));
+            Object qObj = purchaseGoodsBuyQuantityFromPlanRow(r);
+            boolean hasQty = qObj != null && !"暂无".equals(plainNumericHint(qObj));
+            String price = unitPriceHintFromPurchaseGoodsRow(r);
+
+            sb.append(idx++).append(". ").append(name);
+            if (hasQty) {
+                sb.append("，数量").append(plainNumericHint(qObj));
+            }
+            sb.append("，金额").append(amt).append("元");
+            if (anyPrice && StringUtils.hasText(price)) {
+                sb.append("，单价").append(price).append("元");
+            }
+            sb.append("\n");
+        }
+
+        if (!anyPrice) {
+            sb.append("\n当前明细中暂缺单价字段，仅展示采购金额/数量。");
+        }
+        return sb.toString().trim();
+    }
+
+    /** D-13.4 Phase2：上一 GOODS 锚下，按供应商拆行的供货商采购明细（非供货商商品 Top）。 */
+    private static String composePurchaseGoodsAnchoredSupplierBreakdownFromPlan(
+            PurchaseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw, AiResolvedQueryContext rq) {
+        Map<String, Object> dbg = plan.getDebug();
+        String goodsName = debugString(dbg, "purchaseGoodsDrilldownTargetGoodsName");
+        if (goodsName.isBlank()) {
+            goodsName = debugString(dbg, "requestedGoodsName");
+        }
+        String subject =
+                tw.getTimeSubjectText() != null && !tw.getTimeSubjectText().isBlank()
+                        ? tw.getTimeSubjectText().trim()
+                        : "该统计区间";
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        List<Map<String, Object>> sec =
+                plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append("\n");
+
+        if (focus == null || focus.isEmpty()) {
+            String reason = dbg == null ? "" : debugString(dbg, "purchaseSupplierGoodsDetailNoDataReason");
+            if ("NO_SUPPLIER_PURCHASE_FOR_FOCUSED_GOODS".equals(reason)
+                    || "NO_SUPPLIER_PURCHASE_FOR_GOODS".equals(reason)) {
+                String bracketName = goodsName.isBlank() ? "该商品" : goodsName.trim();
+                sb.append("上文锚定的商品【").append(bracketName).append("】在供货商采购口径下暂未查到采购记录。");
+                if (Boolean.TRUE.equals(dbg != null ? dbg.get("purchaseSupplierGoodsDetailAlternativeHasData") : null)) {
+                    sb.append("但该商品在自采口径下有采购记录，如需查看自采单价，可以继续问‘看自采单价’。");
+                }
+            } else {
+                String gLabel = goodsName.isBlank() ? "该商品" : goodsName;
+                sb.append("上文锚定的商品是 ").append(gLabel).append("。");
+                sb.append(tw.getDisplayTimeRange()).append("在供货商采购口径下没有查询到该商品的挂靠供应商采购明细。");
+                if (Boolean.TRUE.equals(dbg != null ? dbg.get("purchaseSupplierGoodsDetailAlternativeHasData") : null)) {
+                    sb.append(
+                            "\n\n但同一时间范围内存在自采记录，说明该商品本期可能主要来自自采。你可以继续问：这个商品自采单价是多少？");
+                }
+            }
+            return sb.toString().trim();
+        }
+
+        String gHead = goodsName.isBlank() ? nz(goodsNameFromPurchasePlanRow(focus.get(0))) : goodsName;
+        if (gHead.isBlank()) {
+            gHead = "该商品";
+        }
+        sb.append(subject).append("，").append(gHead).append("的供货商采购明细如下：\n\n");
+
+        List<Map<String, Object>> ordered = new ArrayList<>(focus.size() + sec.size());
+        ordered.addAll(focus);
+        ordered.addAll(sec);
+
+        int idx = 1;
+        for (Map<String, Object> r : ordered) {
+            if (r == null) {
+                continue;
+            }
+            String sup = supplierNameFromPurchasePlanRow(r);
+            if (sup.isBlank()) {
+                sup = "（未命名供应商）";
+            }
+            String amt = plainNumericHint(supplierPurchaseAmountFromPlanRow(r));
+            Object qObj = purchaseGoodsBuyQuantityFromPlanRow(r);
+            boolean hasQty = qObj != null && !"暂无".equals(plainNumericHint(qObj));
+            String price = unitPriceHintFromPurchaseGoodsRow(r);
+            String oc = plainNumericHint(purchaseGoodsCountFromPlanRow(r));
+
+            sb.append(idx++).append(". ").append("供应商：").append(sup);
+            sb.append("；采购金额").append(amt).append("元");
+            if (hasQty) {
+                sb.append("；采购数量").append(plainNumericHint(qObj));
+            }
+            if (StringUtils.hasText(price)) {
+                sb.append("；平均单价").append(price).append("元");
+            }
+            if (StringUtils.hasText(oc) && !"0".equals(oc)) {
+                sb.append("；").append(oc).append("笔");
+            }
+            sb.append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private static String debugString(Map<String, Object> dbg, String key) {
+        if (dbg == null || key == null) {
+            return "";
+        }
+        Object v = dbg.get(key);
+        return v == null ? "" : v.toString().trim();
+    }
+
+    private static String resolveSupplierDisplayNameForGoodsDetail(PurchaseAnswerPlan plan, AiResolvedQueryContext rq) {
+        if (rq != null && StringUtils.hasText(rq.getFollowUpTargetEntityName())) {
+            String t = rq.getFollowUpTargetEntityType();
+            if (!StringUtils.hasText(t) || AiResultAnchor.ENTITY_TYPE_SUPPLIER.equalsIgnoreCase(t.trim())) {
+                return rq.getFollowUpTargetEntityName().trim();
+            }
+        }
+        if (plan != null && plan.getResultAnchors() != null) {
+            for (AiResultAnchor a : plan.getResultAnchors()) {
+                if (a == null || !StringUtils.hasText(a.getEntityName())) {
+                    continue;
+                }
+                if (AiResultAnchor.ENTITY_TYPE_SUPPLIER.equalsIgnoreCase(nz(a.getEntityType()))) {
+                    return a.getEntityName().trim();
+                }
+            }
+        }
+        return "上文锚定的供货商";
+    }
+
+    /** 采购商品行上的数量/重量类字段（Tool→Plan 映射未带时可能为空）。 */
+    private static Object purchaseGoodsBuyQuantityFromPlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return null;
+        }
+        String[] keys = {"buyQuantity", "purchaseQuantity", "goodsQuantity", "quantity", "purchaseWeight"};
+        for (String k : keys) {
+            Object v = row.get(k);
+            if (v != null && StringUtils.hasText(v.toString())) {
+                return v;
+            }
+        }
+        return purchaseGoodsCountFromPlanRow(row);
+    }
+
+    private static String unitPriceHintFromPurchaseGoodsRow(Map<String, Object> row) {
+        if (row == null) {
+            return null;
+        }
+        String[] keys = {
+            "unitPrice",
+            "avgUnitPrice",
+            "buyPrice",
+            "avgBuyPrice",
+            "averageBuyPrice",
+            "weightedAvgBuyPrice",
+            "purchaseAvgPrice",
+            "goodsAveragePrice",
+            "gbDgGoodsAveragePrice",
+            "averagePrice"
+        };
+        for (String k : keys) {
+            Object v = row.get(k);
+            if (v != null) {
+                String s = v.toString().trim();
+                if (!s.isEmpty() && !"null".equalsIgnoreCase(s)) {
+                    return s;
+                }
+            }
+        }
+        return null;
     }
 
     private static String composePurchaseGoodsAmountRankingFromPlan(PurchaseAnswerPlan plan,
@@ -997,174 +1670,6 @@ public class StubAnswerComposerNode implements AgentNode {
         return sb.toString();
     }
 
-
-    private static boolean isBusinessToWarehouseStockConvergence(AiRunState state) {
-        Map<String, String> ic = state.getIntentConvergence();
-        return ic != null
-                && "BUSINESS_OVERVIEW".equals(ic.get("from"))
-                && "WAREHOUSE_STOCK_OVERVIEW".equals(ic.get("to"));
-    }
-
-    private static String resolveAiRoleCode(AiRunState state) {
-        AiUserContext ctx = state.getAiUserContext();
-        if (ctx != null && ctx.getRoleCode() != null && !ctx.getRoleCode().isBlank()) {
-            return ctx.getRoleCode().trim();
-        }
-        if (ctx != null && ctx.getSourceAdminRole() != null) {
-            return AiRoleMapper.resolveAdmin(ctx.getSourceAdminRole())
-                    .map(AiRoleMapper.AiRoleDefinition::roleCode)
-                    .orElse("");
-        }
-        return "";
-    }
-
-    private static boolean isPurchasingRoleForWarehouse(String roleCode) {
-        if (roleCode == null || roleCode.isBlank()) {
-            return false;
-        }
-        return AiRoleCodes.STORE_PURCHASER.equals(roleCode)
-                || AiRoleCodes.GROUP_PURCHASER.equals(roleCode)
-                || AiRoleCodes.WAREHOUSE_PURCHASER.equals(roleCode)
-                || AiRoleCodes.CENTRAL_KITCHEN_PURCHASER.equals(roleCode)
-                || AiRoleCodes.REGION_PURCHASER.equals(roleCode);
-    }
-
-    private static boolean isWarehouseStaffRole(String roleCode) {
-        return AiRoleCodes.WAREHOUSE_MANAGER.equals(roleCode)
-                || AiRoleCodes.REGION_WAREHOUSE.equals(roleCode);
-    }
-
-    /**
-     * 是否禁止在库存答复中使用「店长」等称呼（与产品约定一致：仅非集团视角下的店长岗可称店长）。
-     */
-    private static boolean forbidsStoreManagerSalutation(String roleCode, boolean groupScope) {
-        if (groupScope) {
-            return true;
-        }
-        if (roleCode == null || roleCode.isBlank()) {
-            return true;
-        }
-        if (AiRoleCodes.GROUP_MANAGER.equals(roleCode)) {
-            return true;
-        }
-        if (isWarehouseStaffRole(roleCode)) {
-            return true;
-        }
-        if (isPurchasingRoleForWarehouse(roleCode)) {
-            return true;
-        }
-        return !AiRoleCodes.STORE_MANAGER.equals(roleCode);
-    }
-
-    private static boolean warehouseOverviewIndicatesGroupScope(Map<String, Object> wo) {
-        return wo != null && !wo.isEmpty()
-                && "GROUP".equalsIgnoreCase(String.valueOf(wo.get("scopeType")).trim());
-    }
-
-    private static String warehouseSalutationDirective(AiRunState state, Map<String, Object> wo) {
-        String rc = resolveAiRoleCode(state);
-        boolean groupScope = state.isGroupWarehouseStockOverview() || warehouseOverviewIndicatesGroupScope(wo);
-        if (AiRoleCodes.GROUP_MANAGER.equals(rc) || groupScope) {
-            return "【开篇】用「以下是集团范围库存汇总」或等价客观句起首（可接门店名枚举）；禁止「店长」「老板」及「好的，店长」类寒暄；不要反问指定门店。";
-        }
-        if (AiRoleCodes.STORE_MANAGER.equals(rc)) {
-            return "【开篇】可称呼「店长」，也可无称呼直接写库存数据。";
-        }
-        if (isWarehouseStaffRole(rc)) {
-            return "【开篇】用「以下是你当前可查看库房/所属门店」类客观句起首（可与 queryScopeBanner 一致带出门店名）；禁止「店长」「老板」；勿写「店长，本库房…」。";
-        }
-        if (isPurchasingRoleForWarehouse(rc)) {
-            return "【开篇】可用「以下按采购视角分析」起首（再写库存数字）；禁止「店长」「老板」。";
-        }
-        return "【开篇】若不确定对方具体岗位，不要使用老板/店长/库管等称呼；直接写库存客观表述。";
-    }
-
-    private static String applyWarehouseSalutationPolicy(String answer, AiRunState state, Map<String, Object> wo) {
-        if (answer == null || answer.isBlank()) {
-            return answer;
-        }
-        String rc = resolveAiRoleCode(state);
-        boolean groupScope = state.isGroupWarehouseStockOverview() || warehouseOverviewIndicatesGroupScope(wo);
-        if (!forbidsStoreManagerSalutation(rc, groupScope)) {
-            return answer;
-        }
-        String t = answer.trim();
-        for (int i = 0; i < 10; i++) {
-            Matcher m1 = WAREHOUSE_LEADING_SALUTATION.matcher(t);
-            if (m1.find() && m1.start() == 0) {
-                t = t.substring(m1.end()).trim();
-                continue;
-            }
-            Matcher m2 = WAREHOUSE_LEADING_MANAGER_NO_PUNCT.matcher(t);
-            if (m2.find() && m2.start() == 0) {
-                t = t.substring(m2.end()).trim();
-                continue;
-            }
-            break;
-        }
-        return t.isBlank() ? answer : t;
-    }
-
-    private static Map<String, Object> buildWarehouseOverviewStructured(AiRunState state) {
-        Map<String, Object> wo = extractWarehouseOverviewPayload(state);
-        if (!wo.isEmpty()) {
-            return new LinkedHashMap<>(wo);
-        }
-        Map<String, Object> sq = toolDataInnerMap(state, AiBusinessToolIds.STOCK_QUERY);
-        Map<String, Object> stk = toolDataInnerMap(state, AiBusinessToolIds.STOCK_REDUCE_QUERY);
-        LinkedHashMap<String, Object> legacy = new LinkedHashMap<>();
-        List<String> metrics = new ArrayList<>();
-        if (!sq.isEmpty()) {
-            metrics.add("库存批次行数 " + plainNumericHint(sq.get("stockBatchRowCount")));
-            metrics.add("库存剩余金额约 " + plainNumericHint(sq.get("stockRestSubtotal")) + " 元");
-            metrics.add("库存剩余重量 " + fmtStockWeightCn(sq.get("stockRestWeightTotal")));
-            metrics.add("区间内入库金额约 " + plainNumericHint(sq.get("periodInboundSubtotal")) + " 元");
-            metrics.add("区间内入库重量 " + fmtStockWeightCn(sq.get("periodInboundWeightTotal")));
-        }
-        if (!stk.isEmpty()) {
-            metrics.add("核销生产耗用合计 " + plainNumericHint(stk.get("productionTotal")));
-        }
-        legacy.put("keyMetrics", metrics);
-        legacy.put("stockWarnings", new ArrayList<String>());
-        List<String> rec = new ArrayList<>();
-        rec.add("重点核对盘点剩余与核销明细是否闭合；异常批次建议在库存模块复查。");
-        legacy.put("recommendations", rec);
-        String summary = (sq.isEmpty() && stk.isEmpty())
-                ? "暂无可用库房库存汇总数据。"
-                : "已按库房权限汇总库存剩余与区间内入库，并结合核销/出库结构给出摘要（旧版降级字段）。";
-        legacy.put("summary", summary);
-        return legacy;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> extractPurchaseOverviewPayload(AiRunState state) {
-        Map<String, Object> inner = toolDataInnerMap(state, AiBusinessToolIds.PURCHASE_OVERVIEW);
-        Object po = inner.get("purchaseOverview");
-        if (!(po instanceof Map)) {
-            return Map.of();
-        }
-        Map<String, Object> raw = (Map<String, Object>) po;
-        if (raw.isEmpty()) {
-            return Map.of();
-        }
-        return new LinkedHashMap<>(raw);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> extractWarehouseOverviewPayload(AiRunState state) {
-        Map<String, Object> inner = toolDataInnerMap(state, AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
-        Object wo = inner.get("warehouseOverview");
-        if (!(wo instanceof Map)) {
-            return Map.of();
-        }
-        Map<String, Object> raw = (Map<String, Object>) wo;
-        if (raw.isEmpty()) {
-            return Map.of();
-        }
-        return new LinkedHashMap<>(raw);
-    }
-
-
     private static int intHint(Object v) {
         if (v == null) {
             return 0;
@@ -1196,7 +1701,7 @@ public class StubAnswerComposerNode implements AgentNode {
     /**
      * 出库 AnswerPlan：仅宣读 {@link StockReduceAnswerPlan} 的 focusRows / secondaryRows，不重算、不重排、不改口径。
      *
-     * @return 可展示的确定性正文；{@code null} 表示交由出库/核销工具结果确定性朗读。
+     * @return 可展示的确定性正文；{@code null} 表示 plan 缺失或 compose 无法宣读，由 {@link #composeStockReduceNoPlanFallback} 兜底。
      */
     private static String composeStockReduceDeterministicFromAnswerPlan(StockReduceAnswerPlan plan,
             AiTimeWindowTextFormatter.UserPhrases tw, AiRunState state) {
@@ -1584,21 +2089,6 @@ public class StubAnswerComposerNode implements AgentNode {
         return sb.toString();
     }
 
-    /** 出库/核销专线 stub：可读数字 + 分项，避免走错采购/成本话术。 */
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> toolDataInnerMap(AiRunState state, String toolKey) {
-        Object env = state.getToolResults().get(toolKey);
-        if (!(env instanceof Map)) {
-            return Map.of();
-        }
-        Object data = ((Map<String, Object>) env).get("data");
-        if (!(data instanceof Map)) {
-            return Map.of();
-        }
-        return (Map<String, Object>) data;
-    }
-
     /** 经营诊断/菜品毛利上下文中「某菜为什么这么低」：禁止落入泛泛经营建议，引导走 harness。 */
     private static boolean genericChatBlockedForDishReasonInDiagnosisContext(AiRunState state) {
         if (state == null || state.getResolvedQueryContext() == null) {
@@ -1642,21 +2132,22 @@ public class StubAnswerComposerNode implements AgentNode {
         if (!resolvedIntentIsRevenueOverview(state)) {
             return false;
         }
-        if (state.isRevenueOverviewPath()) {
+        if (isRevenueOverviewComposerMainline(state)) {
             return false;
         }
-        if (state.isWarehouseStockOverviewPath()
+        if (isWarehouseStockComposerMainline(state)
                 || state.isStockReduceQueryPath()
                 || state.isPurchaseCostInsightPath()
                 || state.isBusinessDiagnosisPath()
                 || state.isDishProfitPath()
-                || dishSalesDeterministicEligible(state)) {
+                || isDishSalesComposerMainline(state)) {
             return false;
         }
         if (state.getCostDiagnosisResult() != null) {
             return false;
         }
         if (!DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)
+                && !DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonsDrilldownTurn(state)
                 && state.getDiagnosisPlan() != null
                 && DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS.equals(state.getDiagnosisPlan().getPlanType())
                 && (state.isBusinessDiagnosisPath()
@@ -1691,15 +2182,26 @@ public class StubAnswerComposerNode implements AgentNode {
                 && AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(qi.getPathCode().trim());
     }
 
-    /** 不向模型暴露 Workspace、Tool 英文名与原始 trace。 */
-    private static LinkedHashMap<String, Object> composeSafeFallbackContext(AiRunState state) {
-        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
-        m.put("本轮用户输入", nz(state.getNormalizedUserInput()));
-        String start = state.getStatStartDate();
-        String end = state.getStatEndDate();
-        if (start != null && end != null && !start.isBlank() && !end.isBlank()) {
-            m.put("统计口径起止日期", start + " 至 " + end);
+    private String composeGenericComposerFallback(AiRunState state) {
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("composerFallback", "generic_no_business_plan");
+        dbg.put("reason", "no AnswerPlan mainline matched");
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        if (rq != null) {
+            dbg.put("effectiveIntentCode", rq.getEffectiveIntentCode());
+            dbg.put("effectivePathCode", rq.getEffectivePathCode());
         }
-        return m;
+        if (state != null) {
+            Map<String, Object> existingMaster = state.getMasterBusinessAgentDebug();
+            LinkedHashMap<String, Object> merged = existingMaster != null
+                    ? new LinkedHashMap<>(existingMaster)
+                    : new LinkedHashMap<>();
+            merged.put("composerGenericNoPlan", dbg);
+            state.setMasterBusinessAgentDebug(merged);
+            if (log.isInfoEnabled()) {
+                log.info("[StubAnswerComposer] generic no-plan runId={} debug={}", state.getRunId(), dbg);
+            }
+        }
+        return deterministicAnswerRenderer.genericNonBusinessPlanFallback();
     }
 }

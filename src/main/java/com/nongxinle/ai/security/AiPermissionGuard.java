@@ -36,7 +36,8 @@ public class AiPermissionGuard {
             return AiToolInvocationDecision.allow();
         }
         String toolId = request.getToolName();
-        if (AiBusinessToolIds.DISH_PROFIT_ANALYSIS.equals(toolId)) {
+        if (AiBusinessToolIds.DISH_PROFIT_ANALYSIS.equals(toolId)
+                || AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN.equals(toolId)) {
             return evaluateDishProfitAnalysisInvocation(state, request);
         }
         if (AiBusinessToolIds.PURCHASE_OVERVIEW.equals(toolId)) {
@@ -195,14 +196,9 @@ public class AiPermissionGuard {
         }
         return switch (toolId) {
             case AiBusinessToolIds.REVENUE_QUERY -> AiPermissions.VIEW_REVENUE;
-            case AiBusinessToolIds.BUSINESS_OVERVIEW_QUERY -> AiPermissions.VIEW_REVENUE;
-            case AiBusinessToolIds.PURCHASE_QUERY -> AiPermissions.VIEW_PURCHASE;
-            case AiBusinessToolIds.STOCK_QUERY -> AiPermissions.VIEW_STOCK;
+            case AiBusinessToolIds.PURCHASE_OVERVIEW -> AiPermissions.VIEW_PURCHASE;
             case AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW -> AiPermissions.VIEW_STOCK;
             case AiBusinessToolIds.STOCK_REDUCE_QUERY -> AiPermissions.VIEW_STOCK;
-            case AiBusinessToolIds.DISH_SALES_QUERY -> AiPermissions.VIEW_DISH_SALES;
-            case AiBusinessToolIds.GROSS_MARGIN_CALCULATOR -> AiPermissions.VIEW_COST;
-            case "echo_context" -> null;
             default -> null;
         };
     }

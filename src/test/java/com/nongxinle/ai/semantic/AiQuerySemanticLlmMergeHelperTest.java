@@ -13,23 +13,61 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AiQuerySemanticLlmMergeHelperTest {
 
+    private static AiQuerySemanticParseResult.SemanticSlotsPart slots(
+            String structuredIntentDetailWire,
+            String queryObject,
+            String operation,
+            String metric) {
+        return AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                .structuredIntentDetailWire(structuredIntentDetailWire)
+                .queryObject(queryObject)
+                .operation(operation)
+                .metric(metric)
+                .sourceFacet("ALL")
+                .anchorPolicy("IGNORE_PREVIOUS_ANCHOR")
+                .build();
+    }
+
+    /** D-1X-D1：merge 测试须同时写 slots 与 {@code currentTurnStructuredIntentDetailWire}。 */
+    private static AiQuerySemanticParseResult.AiQuerySemanticParseResultBuilder withV2Slots(
+            AiQuerySemanticParseResult.AiQuerySemanticParseResultBuilder b,
+            String wire,
+            String queryObject,
+            String operation,
+            String metric) {
+        return b.semanticSlots(slots(wire, queryObject, operation, metric))
+                .currentTurnStructuredIntentDetailWire(wire);
+    }
+
     @Test
     void mergeOverviewAcceptanceShapes() {
-        AiQuerySemanticParseResult sem = AiQuerySemanticParseResult.builder()
-                .intent("BUSINESS_OVERVIEW")
-                .confidence(0.9)
-                .time(AiQuerySemanticParseResult.TimePart.builder()
-                        .timeType("CURRENT_MONTH")
-                        .needInheritFromPrevious(false)
-                        .build())
-                .requestedScope(AiQuerySemanticParseResult.RequestedScopePart.builder()
-                        .requestedScopeType("GROUP")
-                        .build())
-                .metric(AiQuerySemanticParseResult.MetricPart.builder()
-                        .primaryMetric("BUSINESS_STATUS")
-                        .build())
-                .parseMissing(false)
-                .build();
+        AiQuerySemanticParseResult sem =
+                withV2Slots(
+                                AiQuerySemanticParseResult.builder()
+                                        .intent("BUSINESS_OVERVIEW")
+                                        .confidence(0.9)
+                                        .time(
+                                                AiQuerySemanticParseResult.TimePart.builder()
+                                                        .timeType("CURRENT_MONTH")
+                                                        .startDate("2026-05-01")
+                                                        .endDate("2026-05-13")
+                                                        .timeSource("CURRENT_MESSAGE_EXPLICIT")
+                                                        .needInheritFromPrevious(false)
+                                                        .build())
+                                        .requestedScope(
+                                                AiQuerySemanticParseResult.RequestedScopePart.builder()
+                                                        .requestedScopeType("GROUP")
+                                                        .build())
+                                        .metric(
+                                                AiQuerySemanticParseResult.MetricPart.builder()
+                                                        .primaryMetric("BUSINESS_STATUS")
+                                                        .build())
+                                        .parseMissing(false),
+                                "business_overview_status",
+                                "STORE",
+                                "SUMMARY",
+                                "BUSINESS_STATUS")
+                        .build();
 
         AiResolvedQueryIntent merged =
                 AiQuerySemanticLlmMergeHelper.mergeIntent(null, sem, 0.55);
@@ -55,12 +93,16 @@ class AiQuerySemanticLlmMergeHelperTest {
     }
 
     @Test
-    void mergeTentativeTime_rejectsLlmTodayWithoutUserSayingToday() {
+    void mergeTentativeTime_appliesLlmTodayFromV2TimeOnly_withoutUtteranceLexicon() {
         AiQuerySemanticParseResult sem = AiQuerySemanticParseResult.builder()
                 .intent("REVENUE_OVERVIEW")
                 .confidence(0.9)
+                .timeAction("NEW")
                 .time(AiQuerySemanticParseResult.TimePart.builder()
                         .timeType("TODAY")
+                        .startDate("2026-05-13")
+                        .endDate("2026-05-13")
+                        .timeSource("CURRENT_MESSAGE_EXPLICIT")
                         .needInheritFromPrevious(false)
                         .build())
                 .parseMissing(false)
@@ -70,7 +112,9 @@ class AiQuerySemanticLlmMergeHelperTest {
         LocalDate anchor = LocalDate.of(2026, 5, 13);
         AiResolvedTimeWindow tw = AiQuerySemanticLlmMergeHelper.mergeTentativeTime(
                 null, sem, anchor, 0.55, "哪个门店营业额最高", merged);
-        assertThat(tw).isNull();
+        assertThat(tw).isNotNull();
+        assertThat(tw.getTimeLabel()).isEqualTo(AiResolvedTimeWindow.TODAY);
+        assertThat(tw.getStartDate()).isEqualTo(anchor);
     }
 
     @Test
@@ -80,6 +124,9 @@ class AiQuerySemanticLlmMergeHelperTest {
                 .confidence(0.9)
                 .time(AiQuerySemanticParseResult.TimePart.builder()
                         .timeType("TODAY")
+                        .startDate("2026-05-13")
+                        .endDate("2026-05-13")
+                        .timeSource("CURRENT_MESSAGE_EXPLICIT")
                         .needInheritFromPrevious(false)
                         .build())
                 .parseMissing(false)
@@ -104,6 +151,9 @@ class AiQuerySemanticLlmMergeHelperTest {
                         .time(
                                 AiQuerySemanticParseResult.TimePart.builder()
                                         .timeType("LAST_YEAR")
+                                        .startDate("2025-01-01")
+                                        .endDate("2025-12-31")
+                                        .timeSource("CURRENT_MESSAGE_EXPLICIT")
                                         .needInheritFromPrevious(false)
                                         .build())
                         .parseMissing(false)
@@ -124,7 +174,7 @@ class AiQuerySemanticLlmMergeHelperTest {
     }
 
     @Test
-    void mergeTentativeTime_lastYearSamePeriod_shiftsPreviousTurnWindow() {
+    void mergeTentativeTime_lastYearSamePeriod_usesLlmProvidedDates() {
         AiConversationTurnMemory prev = AiConversationTurnMemory.builder()
                 .lastStartDate("2026-05-01")
                 .lastEndDate("2026-05-13")
@@ -138,6 +188,9 @@ class AiQuerySemanticLlmMergeHelperTest {
                         .time(
                                 AiQuerySemanticParseResult.TimePart.builder()
                                         .timeType("LAST_YEAR_SAME_PERIOD")
+                                        .startDate("2025-05-01")
+                                        .endDate("2025-05-13")
+                                        .timeSource("CURRENT_MESSAGE_EXPLICIT")
                                         .needInheritFromPrevious(false)
                                         .build())
                         .parseMissing(false)
@@ -152,22 +205,29 @@ class AiQuerySemanticLlmMergeHelperTest {
                 AiQuerySemanticLlmMergeHelper.mergeTentativeTime(
                         null, sem, anchor, 0.55, "去年呢", merged, prev);
         assertThat(tw).isNotNull();
-        assertThat(tw.getTimeLabel()).isEqualTo(AiResolvedTimeWindow.LAST_YEAR_SAME_PERIOD);
+        assertThat(tw.getTimeLabel()).isEqualTo("LAST_YEAR_SAME_PERIOD");
         assertThat(tw.getStartDate()).isEqualTo(LocalDate.of(2025, 5, 1));
         assertThat(tw.getEndDate()).isEqualTo(LocalDate.of(2025, 5, 13));
         assertThat(tw.isExplicitTimeMentioned()).isTrue();
     }
 
     @Test
-    void mergeIntent_remapsWarehousePath_whenMetricHasOutboundRankingWire() {
+    void mergeIntent_mapsStockReducePath_fromSemanticSlotsWire() {
         AiQuerySemanticParseResult sem =
                 AiQuerySemanticParseResult.builder()
-                        .intent("WAREHOUSE_STOCK_OVERVIEW")
+                        .intent("STOCK_REDUCE_QUERY")
                         .confidence(0.9)
                         .metric(
                                 AiQuerySemanticParseResult.MetricPart.builder()
                                         .rankingType("goods_outbound_ranking")
                                         .build())
+                        .semanticSlots(
+                                slots(
+                                        "goods_outbound_ranking",
+                                        "GOODS",
+                                        "RANKING",
+                                        "OUTBOUND_AMOUNT"))
+                        .currentTurnStructuredIntentDetailWire("goods_outbound_ranking")
                         .parseMissing(false)
                         .build();
         AiResolvedQueryIntent merged = AiQuerySemanticLlmMergeHelper.mergeIntent(null, sem, 0.55, "");
@@ -177,7 +237,7 @@ class AiQuerySemanticLlmMergeHelperTest {
     }
 
     @Test
-    void mergeIntent_purchaseMultiStore_overridesSupplierRankingWire() {
+    void mergeIntent_purchaseMultiStore_fromSemanticSlotsWire() {
         AiQuerySemanticParseResult sem =
                 AiQuerySemanticParseResult.builder()
                         .intent("PURCHASE_OVERVIEW")
@@ -191,6 +251,13 @@ class AiQuerySemanticLlmMergeHelperTest {
                                 AiQuerySemanticParseResult.MetricPart.builder()
                                         .rankingType("supplier_amount_ranking")
                                         .build())
+                        .semanticSlots(
+                                slots(
+                                        "purchase_store_amount_ranking",
+                                        "STORE",
+                                        "COMPARE",
+                                        "PURCHASE_AMOUNT"))
+                        .currentTurnStructuredIntentDetailWire("purchase_store_amount_ranking")
                         .parseMissing(false)
                         .build();
         AiResolvedQueryIntent merged = AiQuerySemanticLlmMergeHelper.mergeIntent(null, sem, 0.55, "");
@@ -200,47 +267,83 @@ class AiQuerySemanticLlmMergeHelperTest {
     }
 
     @Test
-    void mergeIntent_prefersStockReduceWhenLlmMapsRevenue_forParallelOutboundAmountQuestion() {
-        AiQuerySemanticParseResult sem = AiQuerySemanticParseResult.builder()
-                .intent("REVENUE_OVERVIEW")
-                .confidence(0.9)
-                .parseMissing(false)
-                .build();
+    void mergeIntent_stockReduceFromLlmIntentAndSlots_notLegacyKeywordBaseline() {
+        AiQuerySemanticParseResult sem =
+                AiQuerySemanticParseResult.builder()
+                        .intent("STOCK_REDUCE_QUERY")
+                        .confidence(0.9)
+                        .semanticSlots(
+                                slots(
+                                        "store_outbound_amount_ranking",
+                                        "STORE",
+                                        "COMPARE",
+                                        "OUTBOUND_AMOUNT"))
+                        .parseMissing(false)
+                        .build();
         String q = "AAA和汀兰餐厅哪个出库金额高";
-        AiResolvedQueryIntent keyword = AiResolvedQueryIntent.fromUserMessage(q);
-        assertThat(keyword.getPathCode()).isEqualTo(AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY);
-
-        AiResolvedQueryIntent merged = AiQuerySemanticLlmMergeHelper.mergeIntent(keyword, sem, 0.55, q);
+        AiResolvedQueryIntent merged =
+                AiQuerySemanticLlmMergeHelper.mergeIntent(
+                        AiResolvedQueryIntent.builder().build(), sem, 0.55, q);
         assertThat(merged.getPathCode()).isEqualTo(AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY);
         assertThat(merged.getIntentCode()).isEqualTo(AiResolvedQueryIntent.STOCK_REDUCE_QUERY);
     }
 
     @Test
-    void mergeIntent_prefersPurchaseWhenLlmMapsRevenue_forParallelPurchaseAmountQuestion() {
-        AiQuerySemanticParseResult sem = AiQuerySemanticParseResult.builder()
-                .intent("REVENUE_OVERVIEW")
-                .confidence(0.9)
-                .parseMissing(false)
-                .build();
+    void mergeIntent_purchaseFromLlmIntentAndSlots_notLegacyKeywordBaseline() {
+        AiQuerySemanticParseResult sem =
+                AiQuerySemanticParseResult.builder()
+                        .intent("PURCHASE_OVERVIEW")
+                        .confidence(0.9)
+                        .semanticSlots(
+                                slots(
+                                        "purchase_store_amount_ranking",
+                                        "STORE",
+                                        "COMPARE",
+                                        "PURCHASE_AMOUNT"))
+                        .parseMissing(false)
+                        .build();
         String q = "AAA和汀兰餐厅哪个采购金额高";
-        AiResolvedQueryIntent keyword = AiResolvedQueryIntent.fromUserMessage(q);
-        assertThat(keyword.getPathCode()).isEqualTo(AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW);
-
-        AiResolvedQueryIntent merged = AiQuerySemanticLlmMergeHelper.mergeIntent(keyword, sem, 0.55, q);
+        AiResolvedQueryIntent merged =
+                AiQuerySemanticLlmMergeHelper.mergeIntent(
+                        AiResolvedQueryIntent.builder().build(), sem, 0.55, q);
         assertThat(merged.getPathCode()).isEqualTo(AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW);
         assertThat(merged.getIntentCode()).isEqualTo(AiResolvedQueryIntent.PURCHASE_OVERVIEW);
     }
 
     @Test
-    void mergeIntent_remapsCostDiagnosisToDishProfit_whenMetricHasDishActualCostRankingWire() {
+    void mergeIntent_rankingTypeOnly_doesNotWriteStructuredWireWithoutSlots() {
         AiQuerySemanticParseResult sem =
                 AiQuerySemanticParseResult.builder()
-                        .intent("COST_DIAGNOSIS")
+                        .intent("STOCK_REDUCE_QUERY")
+                        .confidence(0.9)
+                        .metric(
+                                AiQuerySemanticParseResult.MetricPart.builder()
+                                        .rankingType("goods_outbound_ranking")
+                                        .build())
+                        .parseMissing(false)
+                        .build();
+        AiResolvedQueryIntent merged = AiQuerySemanticLlmMergeHelper.mergeIntent(null, sem, 0.55, "");
+        assertThat(merged.getPathCode()).isEqualTo(AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY);
+        assertThat(merged.getStructuredIntentDetail()).isNull();
+    }
+
+    @Test
+    void mergeIntent_dishProfitFromSemanticSlotsWire_notRankingTypeCompat() {
+        AiQuerySemanticParseResult sem =
+                AiQuerySemanticParseResult.builder()
+                        .intent("DISH_PROFIT")
                         .confidence(0.9)
                         .metric(
                                 AiQuerySemanticParseResult.MetricPart.builder()
                                         .rankingType("dish_actual_cost_ranking")
                                         .build())
+                        .semanticSlots(
+                                slots(
+                                        "dish_actual_cost_ranking_high",
+                                        "DISH",
+                                        "RANKING",
+                                        "PROFIT_MARGIN"))
+                        .currentTurnStructuredIntentDetailWire("dish_actual_cost_ranking_high")
                         .parseMissing(false)
                         .build();
         AiResolvedQueryIntent merged = AiQuerySemanticLlmMergeHelper.mergeIntent(null, sem, 0.55, "");
@@ -251,15 +354,22 @@ class AiQuerySemanticLlmMergeHelperTest {
     }
 
     @Test
-    void mergeIntent_residualCostDiagnosisPath_mapsToEvidenceBusinessDiagnosis() {
+    void mergeIntent_businessDiagnosisFromSemanticSlotsWire() {
         AiQuerySemanticParseResult sem =
                 AiQuerySemanticParseResult.builder()
-                        .intent("COST_DIAGNOSIS")
+                        .intent("BUSINESS_DIAGNOSIS")
                         .confidence(0.9)
                         .metric(
                                 AiQuerySemanticParseResult.MetricPart.builder()
                                         .primaryMetric("revenue")
                                         .build())
+                        .semanticSlots(
+                                slots(
+                                        "business_cost_pressure_diagnosis",
+                                        "STORE",
+                                        "DIAGNOSIS",
+                                        "BUSINESS_STATUS"))
+                        .currentTurnStructuredIntentDetailWire("business_cost_pressure_diagnosis")
                         .parseMissing(false)
                         .build();
         AiResolvedQueryIntent merged = AiQuerySemanticLlmMergeHelper.mergeIntent(null, sem, 0.55, "");
@@ -270,10 +380,10 @@ class AiQuerySemanticLlmMergeHelperTest {
     }
 
     @Test
-    void mergeIntent_overviewCompareWithCompareDiagnosisMetric_primary_elevatesToBusinessDiagnosis() {
+    void mergeIntent_businessDiagnosisCompare_fromSemanticSlotsWire() {
         AiQuerySemanticParseResult sem =
                 AiQuerySemanticParseResult.builder()
-                        .intent("BUSINESS_OVERVIEW")
+                        .intent("BUSINESS_DIAGNOSIS")
                         .confidence(0.9)
                         .requestedScope(
                                 AiQuerySemanticParseResult.RequestedScopePart.builder()
@@ -284,6 +394,13 @@ class AiQuerySemanticLlmMergeHelperTest {
                                 AiQuerySemanticParseResult.MetricPart.builder()
                                         .primaryMetric("business_status_compare_diagnosis")
                                         .build())
+                        .semanticSlots(
+                                slots(
+                                        "business_store_status_compare_diagnosis",
+                                        "STORE",
+                                        "COMPARE",
+                                        "BUSINESS_STATUS"))
+                        .currentTurnStructuredIntentDetailWire("business_store_status_compare_diagnosis")
                         .parseMissing(false)
                         .build();
         AiResolvedQueryIntent merged = AiQuerySemanticLlmMergeHelper.mergeIntent(null, sem, 0.55, "");
@@ -294,7 +411,7 @@ class AiQuerySemanticLlmMergeHelperTest {
     }
 
     @Test
-    void mergeIntent_businessDiagnosisMultiStore_fillsStructuredCompare_whenWireBlankOrSummary() {
+    void mergeIntent_businessDiagnosisMultiStore_fromSemanticSlotsWire() {
         AiQuerySemanticParseResult sem =
                 AiQuerySemanticParseResult.builder()
                         .intent("BUSINESS_DIAGNOSIS")
@@ -303,6 +420,13 @@ class AiQuerySemanticLlmMergeHelperTest {
                                 AiQuerySemanticParseResult.RequestedScopePart.builder()
                                         .mentionedStoreNames(List.of("AAA", "汀兰餐厅"))
                                         .build())
+                        .semanticSlots(
+                                slots(
+                                        "business_store_status_compare_diagnosis",
+                                        "STORE",
+                                        "COMPARE",
+                                        "BUSINESS_STATUS"))
+                        .currentTurnStructuredIntentDetailWire("business_store_status_compare_diagnosis")
                         .parseMissing(false)
                         .build();
         AiResolvedQueryIntent merged = AiQuerySemanticLlmMergeHelper.mergeIntent(null, sem, 0.55, "");
@@ -311,7 +435,7 @@ class AiQuerySemanticLlmMergeHelperTest {
     }
 
     @Test
-    void mergeTentativeTime_samePathDishMentionFollowUp_skipsDefaultMonthWhenTimeNotOverridden() {
+    void mergeTentativeTime_samePathDishMentionFollowUp_defersWhenTimeInheritsPrevious() {
         AiConversationTurnMemory prev =
                 AiConversationTurnMemory.builder()
                         .lastPathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT)
@@ -322,12 +446,12 @@ class AiQuerySemanticLlmMergeHelperTest {
                 AiQuerySemanticParseResult.builder()
                         .followUp(true)
                         .mentionedDishName("核桃芽菜西芹")
-                        .timeAction("NEW")
+                        .timeAction("INHERIT_PREVIOUS")
                         .confidence(0.9)
                         .time(
                                 AiQuerySemanticParseResult.TimePart.builder()
                                         .timeType("CURRENT_MONTH")
-                                        .needInheritFromPrevious(false)
+                                        .needInheritFromPrevious(true)
                                         .build())
                         .parseMissing(false)
                         .build();
@@ -380,7 +504,7 @@ class AiQuerySemanticLlmMergeHelperTest {
     }
 
     @Test
-    void mergeTentativeTime_afterDishProfit_llmOverrideThisMonthPlaceholder_withoutUtteranceSource_defers() {
+    void mergeTentativeTime_afterDishProfit_appliesV2OverrideMonthFromStructuredTime() {
         AiConversationTurnMemory prev =
                 AiConversationTurnMemory.builder()
                         .lastPathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT)
@@ -400,6 +524,9 @@ class AiQuerySemanticLlmMergeHelperTest {
                         .time(
                                 AiQuerySemanticParseResult.TimePart.builder()
                                         .timeType("THIS_MONTH")
+                                        .startDate("2026-05-01")
+                                        .endDate("2026-05-13")
+                                        .timeSource("CURRENT_MESSAGE_EXPLICIT")
                                         .needInheritFromPrevious(false)
                                         .build())
                         .requestedScope(
@@ -417,59 +544,14 @@ class AiQuerySemanticLlmMergeHelperTest {
         AiResolvedTimeWindow tw =
                 AiQuerySemanticLlmMergeHelper.mergeTentativeTime(
                         null, sem, anchor, 0.55, "", merged, prev);
-        assertThat(tw).isNull();
+        assertThat(tw).isNotNull();
+        assertThat(tw.getTimeLabel()).isEqualTo(AiResolvedTimeWindow.THIS_MONTH);
+        assertThat(tw.getStartDate()).isEqualTo(LocalDate.of(2026, 5, 1));
+        assertThat(tw.getEndDate()).isEqualTo(anchor);
     }
 
     @Test
-    void canonicalQuerySemanticV2TimeAction_placeholderThisMonth_mapsToInherit() {
-        AiConversationTurnMemory prev =
-                AiConversationTurnMemory.builder()
-                        .lastStartDate("2026-04-01")
-                        .lastEndDate("2026-04-30")
-                        .build();
-        AiQuerySemanticParseResult sem =
-                AiQuerySemanticParseResult.builder()
-                        .parseMissing(false)
-                        .confidence(0.92)
-                        .timeAction("OVERRIDE")
-                        .time(
-                                AiQuerySemanticParseResult.TimePart.builder()
-                                        .timeType("THIS_MONTH")
-                                        .needInheritFromPrevious(false)
-                                        .build())
-                        .build();
-        assertThat(
-                        AiQuerySemanticLlmMergeHelper.canonicalQuerySemanticV2TimeActionForHarness(
-                                sem, prev, 0.55))
-                .isEqualTo("INHERIT_PREVIOUS");
-    }
-
-    @Test
-    void canonicalQuerySemanticV2TimeAction_placeholderThisMonth_explicitMonthPhrase_keepsOverride() {
-        AiConversationTurnMemory prev =
-                AiConversationTurnMemory.builder()
-                        .lastStartDate("2026-04-01")
-                        .lastEndDate("2026-04-30")
-                        .build();
-        AiQuerySemanticParseResult sem =
-                AiQuerySemanticParseResult.builder()
-                        .parseMissing(false)
-                        .confidence(0.92)
-                        .timeAction("OVERRIDE")
-                        .time(
-                                AiQuerySemanticParseResult.TimePart.builder()
-                                        .timeType("THIS_MONTH")
-                                        .needInheritFromPrevious(false)
-                                        .build())
-                        .build();
-        assertThat(
-                        AiQuerySemanticLlmMergeHelper.canonicalQuerySemanticV2TimeActionForHarness(
-                                sem, prev, 0.55, "AAA 这个月营业额多少？"))
-                .isEqualTo("OVERRIDE");
-    }
-
-    @Test
-    void mergeTentativeTime_samePathScopeOverride_thisMonthExplicitPhrase_resolvesMonthToDate() {
+    void mergeTentativeTime_samePathScopeOverride_thisMonthExplicitPhrase_mirrorsLlmDates() {
         AiConversationTurnMemory prev =
                 AiConversationTurnMemory.builder()
                         .lastPathCode(AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW)
@@ -486,6 +568,9 @@ class AiQuerySemanticLlmMergeHelperTest {
                         .time(
                                 AiQuerySemanticParseResult.TimePart.builder()
                                         .timeType("THIS_MONTH")
+                                        .startDate("2026-05-01")
+                                        .endDate("2026-05-14")
+                                        .timeSource("CURRENT_MESSAGE_EXPLICIT")
                                         .needInheritFromPrevious(false)
                                         .build())
                         .build();
@@ -501,35 +586,11 @@ class AiQuerySemanticLlmMergeHelperTest {
         assertThat(tw).isNotNull();
         assertThat(tw.getStartDate()).isEqualTo(LocalDate.of(2026, 5, 1));
         assertThat(tw.getEndDate()).isEqualTo(LocalDate.of(2026, 5, 14));
+        assertThat(tw.isExplicitTimeMentioned()).isTrue();
     }
 
     @Test
-    void canonicalQuerySemanticV2TimeAction_thisMonthWithCurrentMessage_keepsOverride() {
-        AiConversationTurnMemory prev =
-                AiConversationTurnMemory.builder()
-                        .lastStartDate("2026-04-01")
-                        .lastEndDate("2026-04-30")
-                        .build();
-        AiQuerySemanticParseResult sem =
-                AiQuerySemanticParseResult.builder()
-                        .parseMissing(false)
-                        .confidence(0.92)
-                        .timeAction("OVERRIDE")
-                        .time(
-                                AiQuerySemanticParseResult.TimePart.builder()
-                                        .timeType("THIS_MONTH")
-                                        .timeSource("CURRENT_MESSAGE")
-                                        .needInheritFromPrevious(false)
-                                        .build())
-                        .build();
-        assertThat(
-                        AiQuerySemanticLlmMergeHelper.canonicalQuerySemanticV2TimeActionForHarness(
-                                sem, prev, 0.55))
-                .isEqualTo("OVERRIDE");
-    }
-
-    @Test
-    void mergeTentativeTime_followUpPurchase_inheritTime_notForcedToMonthToDate() {
+    void mergeTentativeTime_followUpPurchase_inheritTime_returnsNullWithoutLlmDates() {
         AiConversationTurnMemory prev =
                 AiConversationTurnMemory.builder()
                         .lastPathCode(AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW)
@@ -559,68 +620,7 @@ class AiQuerySemanticLlmMergeHelperTest {
     }
 
     @Test
-    void sanitize_namedDishWithGrossProfitRankingType_clearsRankingAndSetsMetricActionOverride() {
-        AiQuerySemanticParseResult sem =
-                AiQuerySemanticParseResult.builder()
-                        .parseMissing(false)
-                        .confidence(0.9)
-                        .intent("DISH_PROFIT")
-                        .metricAction("INHERIT_PREVIOUS")
-                        .mentionedDishName("核桃芽菜西芹")
-                        .metric(
-                                AiQuerySemanticParseResult.MetricPart.builder()
-                                        .primaryMetric("profit_margin")
-                                        .rankingType("dish_gross_profit_rate_ranking_low")
-                                        .build())
-                        .build();
-        AiQuerySemanticV2DishProfitGate.SanitizeResult r = AiQuerySemanticV2DishProfitGate.sanitize(sem);
-        assertThat(r.semantic().getMetric().getRankingType()).isNull();
-        assertThat(r.semantic().getMetricAction()).isEqualTo("OVERRIDE");
-    }
-
-    @Test
-    void mergeIntent_afterLowMarginRanking_namedDishFollowUp_usesGrossMarginQueryWire() {
-        AiConversationTurnMemory prev =
-                AiConversationTurnMemory.builder()
-                        .lastPathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT)
-                        .lastIntentCode(AiResolvedQueryIntent.DISH_PROFIT)
-                        .lastStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN)
-                        .build();
-        AiQuerySemanticParseResult raw =
-                AiQuerySemanticParseResult.builder()
-                        .parseMissing(false)
-                        .confidence(0.9)
-                        .followUp(true)
-                        .intentAction("INHERIT_PREVIOUS")
-                        .timeAction("INHERIT_PREVIOUS")
-                        .scopeAction("INHERIT_PREVIOUS")
-                        .metricAction("INHERIT_PREVIOUS")
-                        .intent("DISH_PROFIT")
-                        .mentionedDishName("核桃芽菜西芹")
-                        .metric(
-                                AiQuerySemanticParseResult.MetricPart.builder()
-                                        .primaryMetric("profit_margin")
-                                        .rankingType("dish_gross_profit_rate_ranking_low")
-                                        .build())
-                        .time(
-                                AiQuerySemanticParseResult.TimePart.builder()
-                                        .timeType("LAST_MONTH")
-                                        .startDate("2026-04-01")
-                                        .endDate("2026-04-30")
-                                        .timeSource("INHERITED_PREVIOUS")
-                                        .needInheritFromPrevious(true)
-                                        .build())
-                        .build();
-        AiQuerySemanticParseResult sanitized =
-                AiQuerySemanticV2DishProfitGate.sanitize(raw).semantic();
-        AiResolvedQueryIntent merged =
-                AiQuerySemanticLlmMergeHelper.mergeIntent(null, sanitized, 0.55, "", prev);
-        assertThat(merged.getStructuredIntentDetail())
-                .isEqualTo(AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY);
-    }
-
-    @Test
-    void mergeIntent_afterLowMarginRanking_namedDish_rankingTypeNull_replacesInheritedRankingWire() {
+    void mergeIntent_namedDishFollowUp_usesSemanticSlotsWireOverPreviousRanking() {
         AiConversationTurnMemory prev =
                 AiConversationTurnMemory.builder()
                         .lastPathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT)
@@ -632,10 +632,10 @@ class AiQuerySemanticLlmMergeHelperTest {
                         .parseMissing(false)
                         .confidence(0.9)
                         .followUp(true)
-                        .intentAction("INHERIT_PREVIOUS")
+                        .intentAction("OVERRIDE")
                         .timeAction("INHERIT_PREVIOUS")
                         .scopeAction("INHERIT_PREVIOUS")
-                        .metricAction("INHERIT_PREVIOUS")
+                        .metricAction("OVERRIDE")
                         .intent("DISH_PROFIT")
                         .mentionedDishName("核桃芽菜西芹")
                         .metric(
@@ -643,6 +643,13 @@ class AiQuerySemanticLlmMergeHelperTest {
                                         .primaryMetric("profit_margin")
                                         .rankingType(null)
                                         .build())
+                        .semanticSlots(
+                                slots(
+                                        "dish_gross_margin_query",
+                                        "DISH",
+                                        "DETAIL",
+                                        "PROFIT_MARGIN"))
+                        .currentTurnStructuredIntentDetailWire("dish_gross_margin_query")
                         .build();
         AiResolvedQueryIntent merged =
                 AiQuerySemanticLlmMergeHelper.mergeIntent(null, sem, 0.55, "", prev);
@@ -667,6 +674,8 @@ class AiQuerySemanticLlmMergeHelperTest {
                         .time(
                                 AiQuerySemanticParseResult.TimePart.builder()
                                         .timeType("CURRENT_MONTH")
+                                        .startDate("2026-05-01")
+                                        .endDate("2026-05-13")
                                         .timeSource("CURRENT_MESSAGE")
                                         .needInheritFromPrevious(false)
                                         .build())
@@ -683,5 +692,153 @@ class AiQuerySemanticLlmMergeHelperTest {
                         null, sem, anchor, 0.55, "", merged, prev);
         assertThat(tw).isNotNull();
         assertThat(tw.getTimeLabel()).isEqualTo(AiResolvedTimeWindow.THIS_MONTH);
+    }
+
+    @Test
+    void mergeTentativeTime_inheritWithMatchingPreviousDates_mirrorsLlmTimeSource() {
+        AiConversationTurnMemory prev =
+                AiConversationTurnMemory.builder()
+                        .lastPathCode(AiResolvedQueryIntent.PATH_COST_DIAGNOSIS)
+                        .lastStartDate("2026-05-01")
+                        .lastEndDate("2026-05-20")
+                        .build();
+        AiQuerySemanticParseResult sem =
+                AiQuerySemanticParseResult.builder()
+                        .parseMissing(false)
+                        .confidence(0.92)
+                        .intent("WAREHOUSE_STOCK_OVERVIEW")
+                        .intentAction("OVERRIDE")
+                        .timeAction("INHERIT_PREVIOUS")
+                        .time(
+                                AiQuerySemanticParseResult.TimePart.builder()
+                                        .timeType("THIS_MONTH")
+                                        .startDate("2026-05-01")
+                                        .endDate("2026-05-20")
+                                        .timeSource("INHERITED_PREVIOUS")
+                                        .needInheritFromPrevious(true)
+                                        .build())
+                        .build();
+        AiResolvedQueryIntent merged =
+                AiResolvedQueryIntent.builder()
+                        .pathCode(AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK)
+                        .intentCode(AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW)
+                        .build();
+        LocalDate anchor = LocalDate.of(2026, 5, 20);
+        AiResolvedTimeWindow tw =
+                AiQuerySemanticLlmMergeHelper.mergeTentativeTime(
+                        null, sem, anchor, 0.55, "那库房呢", merged, prev);
+        assertThat(tw).isNotNull();
+        assertThat(tw.isInheritedFromPreviousTurn()).isTrue();
+        assertThat(tw.isExplicitTimeMentioned()).isFalse();
+        assertThat(tw.getStartDate()).isEqualTo(LocalDate.of(2026, 5, 1));
+        assertThat(tw.getEndDate()).isEqualTo(LocalDate.of(2026, 5, 20));
+    }
+
+    @Test
+    void semanticTimeContractCheck_passesExplicitThisMonth() {
+        AiQuerySemanticParseResult sem =
+                revenueSemWithTime(
+                        "THIS_MONTH",
+                        "2026-05-01",
+                        "2026-05-20",
+                        "CURRENT_MESSAGE_EXPLICIT",
+                        false);
+        SemanticTimeContractCheck.Result r =
+                SemanticTimeContractCheck.check(sem, null, LocalDate.of(2026, 5, 20));
+        assertThat(r.valid()).isTrue();
+        assertThat(r.normalizedTimeSource())
+                .isEqualTo(SemanticTimeContractCheck.SOURCE_CURRENT_MESSAGE_EXPLICIT);
+    }
+
+    @Test
+    void semanticTimeContractCheck_passesInheritedPrevious() {
+        AiConversationTurnMemory prev =
+                AiConversationTurnMemory.builder()
+                        .lastStartDate("2026-04-01")
+                        .lastEndDate("2026-05-20")
+                        .build();
+        AiQuerySemanticParseResult sem =
+                revenueSemWithTime(
+                        "CUSTOM",
+                        "2026-04-01",
+                        "2026-05-20",
+                        "INHERITED_PREVIOUS",
+                        true);
+        SemanticTimeContractCheck.Result r =
+                SemanticTimeContractCheck.check(sem, prev, LocalDate.of(2026, 5, 20));
+        assertThat(r.valid()).isTrue();
+        assertThat(r.normalizedTimeSource())
+                .isEqualTo(SemanticTimeContractCheck.SOURCE_INHERITED_PREVIOUS);
+    }
+
+    @Test
+    void semanticTimeContractCheck_failsWhenThisQuarterDatesMismatch() {
+        AiQuerySemanticParseResult sem =
+                revenueSemWithTime(
+                        "THIS_QUARTER",
+                        "2026-05-01",
+                        "2026-05-20",
+                        "CURRENT_MESSAGE_EXPLICIT",
+                        false);
+        SemanticTimeContractCheck.Result r =
+                SemanticTimeContractCheck.check(sem, null, LocalDate.of(2026, 5, 20));
+        assertThat(r.valid()).isFalse();
+        assertThat(r.failureReason())
+                .isEqualTo(SemanticTimeContractCheck.FAIL_TIME_TYPE_DATE_MISMATCH);
+        assertThat(r.clarificationQuestion()).contains("不一致");
+    }
+
+    @Test
+    void semanticTimeContractCheck_failsInheritWithoutPrevious() {
+        AiQuerySemanticParseResult sem =
+                revenueSemWithTime(
+                        "THIS_MONTH",
+                        "2026-05-01",
+                        "2026-05-20",
+                        "INHERITED_PREVIOUS",
+                        true);
+        SemanticTimeContractCheck.Result r =
+                SemanticTimeContractCheck.check(sem, null, LocalDate.of(2026, 5, 20));
+        assertThat(r.valid()).isFalse();
+        assertThat(r.failureReason())
+                .isEqualTo(SemanticTimeContractCheck.FAIL_INHERIT_WITHOUT_PREVIOUS);
+    }
+
+    @Test
+    void semanticTimeContractCheck_failsWhenThisMonthEndDateAfterToday() {
+        AiQuerySemanticParseResult sem =
+                revenueSemWithTime(
+                        "THIS_MONTH",
+                        "2026-05-01",
+                        "2026-05-21",
+                        "CURRENT_MESSAGE_EXPLICIT",
+                        false);
+        SemanticTimeContractCheck.Result r =
+                SemanticTimeContractCheck.check(sem, null, LocalDate.of(2026, 5, 20));
+        assertThat(r.valid()).isFalse();
+        assertThat(r.failureReason())
+                .isEqualTo(SemanticTimeContractCheck.FAIL_TIME_TYPE_DATE_MISMATCH);
+    }
+
+    private static AiQuerySemanticParseResult revenueSemWithTime(
+            String timeType,
+            String start,
+            String end,
+            String timeSource,
+            boolean needInherit) {
+        return AiQuerySemanticParseResult.builder()
+                .parseMissing(false)
+                .confidence(0.9)
+                .intent("REVENUE_OVERVIEW")
+                .timeAction(needInherit ? "INHERIT_PREVIOUS" : "NEW")
+                .time(
+                        AiQuerySemanticParseResult.TimePart.builder()
+                                .timeType(timeType)
+                                .startDate(start)
+                                .endDate(end)
+                                .timeSource(timeSource)
+                                .needInheritFromPrevious(needInherit)
+                                .build())
+                .build();
     }
 }

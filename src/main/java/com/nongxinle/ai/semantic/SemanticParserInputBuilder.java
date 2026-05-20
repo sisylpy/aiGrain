@@ -3,6 +3,7 @@ package com.nongxinle.ai.semantic;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
@@ -14,8 +15,7 @@ import java.util.Map;
 /**
  * 组装 {@link SemanticParserInput}（v2 LLM 用户消息 JSON），仅含脱敏字段，不包含任何数据库 ID。
  * <p>
- * 生产主链路仍走 {@link AiQuerySemanticLlmParser#parseUserQuestion(String)}；本类供后续 Resolver / Harness 在切换 v2 时调用。
- * <p>
+ * 由 Resolver 调用 {@link AiQuerySemanticLlmParser#parse(SemanticParserInput)}。
  * <b>缺口</b>：`AiConversationTurnMemory` 未持久化多店点名列表，{@link SemanticParserPreviousTurn#getMentionedStoreNames()}
  * 恒为 {@code null}，仅 {@code mentionedStoreName}（来自 {@code lastMentionedStore}，必要时辅以 {@code lastFocusedStoreName}）。
  */
@@ -74,6 +74,19 @@ public final class SemanticParserInputBuilder {
             p.put("mentionedStoreName", pt.getMentionedStoreName());
             p.put("mentionedStoreNames", pt.getMentionedStoreNames());
             p.put("mentionedDishName", pt.getMentionedDishName());
+            if (pt.getSemanticSlots() != null) {
+                LinkedHashMap<String, Object> ss = new LinkedHashMap<>();
+                var ssv = pt.getSemanticSlots();
+                ss.put("queryObject", blankDbg(ssv.getQueryObject()));
+                ss.put("operation", blankDbg(ssv.getOperation()));
+                ss.put("metric", blankDbg(ssv.getMetric()));
+                ss.put("sourceFacet", blankDbg(ssv.getSourceFacet()));
+                ss.put("anchorPolicy", blankDbg(ssv.getAnchorPolicy()));
+                p.put("semanticSlots", ss);
+            } else {
+                p.put("semanticSlots", null);
+            }
+            p.put("resultAnchorsSummary", pt.getResultAnchorsSummary());
             root.put("previousTurn", p);
         }
         List<Map<String, String>> vis = new ArrayList<>();
@@ -111,7 +124,47 @@ public final class SemanticParserInputBuilder {
                 .mentionedStoreName(mentionedStore)
                 .mentionedStoreNames(null)
                 .mentionedDishName(trimToNull(mem.getLastMentionedDishName()))
+                .semanticSlots(mem.getLastSemanticSlots())
+                .resultAnchorsSummary(summarizeResultAnchorsForSemanticParser(mem.getLastResultAnchors()))
                 .build();
+    }
+
+    private static String blankDbg(String s) {
+        return StringUtils.hasText(s) ? s.trim() : null;
+    }
+
+    private static String summarizeResultAnchorsForSemanticParser(List<AiResultAnchor> anchors) {
+        if (anchors == null || anchors.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (AiResultAnchor a : anchors) {
+            if (a == null) {
+                continue;
+            }
+            String et = trimToNull(a.getEntityType());
+            String nm = trimToNull(a.getEntityName());
+            if (!StringUtils.hasText(nm)) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append("; ");
+            }
+            String id = trimToNull(a.getEntityId());
+            sb.append(et != null ? et : "?")
+                    .append("#")
+                    .append(id != null ? id : "?")
+                    .append(": ")
+                    .append(nm);
+            if (StringUtils.hasText(a.getSourcePlanType())) {
+                sb.append(" [").append(a.getSourcePlanType().trim()).append("]");
+            }
+            Integer rk = a.getRank();
+            if (rk != null) {
+                sb.append(" (rank=").append(rk).append(')');
+            }
+        }
+        return sb.length() > 0 ? sb.toString() : null;
     }
 
     private static List<SemanticParserVisibleStore> mapVisibleStores(AiResolvedOrgScope orgScope) {

@@ -63,7 +63,7 @@
    - 若请求体 **`scopeMode` 非空**：`AiConversationScopeMode.fromApiString(req.getScopeMode())`。  
    - 否则：有 **`departmentId`** → **`STORE`**；仅有 **`distributerId`** → **`GROUP`**；否则抛错（创建会话失败）。
 
-2. **`gbAiChatService.createNewConversationForAgentRun(departmentId, distributerId, mode, userId, …)`**  
+2. **`conversationCoreService.createNewConversationForAgentRun(departmentId, distributerId, mode, userId)`**  
    - 将会话锚点写入 **`gb_ai_conversation`**（与正式 Run 一致），后续同一会话内多轮共用该 **`conversationId`**。
 
 ### 1.3 每一轮 Run
@@ -142,8 +142,8 @@
 | **expected scopeType** | **`STORE`** / **`PURCHASER`** / **`DEPARTMENT`**（以 **`orgScope.scopeType`** 实算为准， **`PERMISSION_MODEL.md` §4**） |
 | **expected visibleStores** | **冻结**：通常 **`[3]`**（仅汀兰） |
 | **expected visibleWarehouseIds** | 环境实测 |
-| **allowed tools** | **`purchase_query`**、**`stock_reduce_query`**（及库存相关在 **`VIEW_STOCK`** 内）；**不规划** **`revenue_query`** / **`business_overview_query`** 作完整经营结论 |
-| **denied tools** | **`revenue_query`**（无 **`VIEW_REVENUE`**）；**`dish_profit_analysis`**（采购拒答路径）；**`CostDiagnosisAgent`**（完整成本诊断）；**`gross_margin_calculator`** 等见 **`PERMISSION_MODEL.md` §7** |
+| **allowed tools** | **`purchase_overview`**、**`stock_reduce_query`**（及库存相关在 **`VIEW_STOCK`** 内）；**不规划** **`revenue_query`** 作完整经营结论（**Historical removed**：`business_overview_query` / `purchase_query` 已删） |
+| **denied tools** | **`revenue_query`**（无 **`VIEW_REVENUE`**）；**`dish_profit_analysis`**（采购拒答路径）；**`CostDiagnosisAgent`**（完整成本诊断，含内部毛利推导）；见 **`PERMISSION_MODEL.md` §7**（**Historical removed**：`gross_margin_calculator` Tool） |
 | **禁止出现的话术** | 权限被拒场景：**营业额数值 / 「金额为 0」/ 「核对月份」/ 「核对门店归属」** 等冒充真实查询；应以 **权限提示 + 可问方向** 为准（**D-11 Composer 收口目标**） |
 
 ### 3.3 WAREHOUSE — 库房（冻结 `userId=1`，角色须为 `WAREHOUSE_MANAGER`，**AAA**）
@@ -157,7 +157,7 @@
 | **expected scopeType** | 常为 **`WAREHOUSE`** / **`DEPARTMENT`**（以 **`orgScope`** 为准） |
 | **expected visibleStores** | **所属门店 / 库房可见范围**（通常窄于集团；**单店或少量门店根**，环境实测） |
 | **expected visibleWarehouseIds** | **`orgScope.visibleWarehouses` / `dataScope.visibleWarehouseIds`** — **环境实测** |
-| **allowed tools** | **`VIEW_STOCK`** / **`VIEW_PURCHASE`** 范围内：**库存快照**、**`purchase_query`**、**`stock_reduce_query`** 等（见 **`PERMISSION_MODEL.md`**） |
+| **allowed tools** | **`VIEW_STOCK`** / **`VIEW_PURCHASE`** 范围内：**库存快照**、**`purchase_overview`**、**`stock_reduce_query`** 等（见 **`PERMISSION_MODEL.md`**） |
 | **denied tools** | **`revenue_query`**；**`dish_profit_analysis`**（库房拒答）；完整 **`CostDiagnosisAgent`** 等 |
 | **禁止出现的话术** | 同采购：**无权限时禁止**假营业额 / 假「数据不足」式经营结论；诊断 path 上 **禁止**「全集团排名 / 综合经营更好」等 **越权经营口吻**（**D-11 诊断降级 Renderer** 目标） |
 

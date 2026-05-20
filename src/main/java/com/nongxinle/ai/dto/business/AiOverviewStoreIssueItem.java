@@ -8,8 +8,7 @@ import lombok.NoArgsConstructor;
 /**
  * 集团经营概览：单店异常/缺口展示项（不包含内部部门 id）。
  *
- * @see AiBusinessOverviewResult#getDataMissingStores()
- * @see AiBusinessOverviewResult#getAttentionStores()
+ * @see com.nongxinle.ai.dto.business.AiDishProfitOverviewResult#getDataMissingStores()
  */
 @Data
 @Builder

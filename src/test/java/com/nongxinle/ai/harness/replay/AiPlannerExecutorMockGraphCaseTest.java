@@ -112,7 +112,7 @@ class AiPlannerExecutorMockGraphCaseTest {
         req.getMessages().add(AiPlannerExecutorMockGraphCase.EXAMPLE_USER_MESSAGE);
 
         AiHarnessReplayResponse resp = AiHarnessReplayPlannerExecutorMock.replay(req);
-        assertTrue(resp.isOverallPass());
+        assertEquals(Boolean.TRUE, resp.getOverallPass());
         @SuppressWarnings("unchecked")
         Map<String, Object> pxt =
                 (Map<String, Object>)
@@ -136,7 +136,7 @@ class AiPlannerExecutorMockGraphCaseTest {
         req.getMessages().add(AiPlannerExecutorMockGraphCase.EXAMPLE_USER_MESSAGE);
 
         AiHarnessReplayResponse resp = AiHarnessReplayPlannerExecutorMock.replay(req);
-        assertTrue(resp.isOverallPass());
+        assertEquals(Boolean.TRUE, resp.getOverallPass());
         assertEquals(0L, resp.getConversationId());
         assertEquals(1, resp.getRounds().size());
         assertTrue(resp.getRounds().get(0).getResolvedQueryContextSummary().containsKey("plannerExecutorTrace"));

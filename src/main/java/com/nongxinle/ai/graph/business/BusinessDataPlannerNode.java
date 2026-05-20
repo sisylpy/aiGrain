@@ -203,6 +203,14 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setRevenueAnswerPlan(null);
             state.setDishProfitPath(true);
             plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_DISH_PROFIT_TOOLS);
+            if (rCtx != null && rqi != null && StringUtils.hasText(rqi.getStructuredIntentDetail())) {
+                String ingWire =
+                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(rqi.getStructuredIntentDetail());
+                if (AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(ingWire)
+                        && !plan.contains(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN)) {
+                    plan.add(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN);
+                }
+            }
             state.setDataPlanTools(plan);
         } else if (stockReduceStandaloneIntent) {
             applyStockReduceQuestionBranch(state);
@@ -235,15 +243,12 @@ public class BusinessDataPlannerNode implements AgentNode {
                 plan = state.getDataPlanTools();
             } else if (overviewIntent) {
                 state.setBusinessOverviewPath(true);
-                if (resolvedContextOrchestrationMultiAgentOverview(rCtx)) {
-                    List<String> mt = buildBusinessOverviewMultiAgentToolsPermissionFiltered(ctx);
-                    if (mt.isEmpty()) {
-                        plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_BUSINESS_OVERVIEW_TOOLS);
-                    } else {
-                        plan = new ArrayList<>(mt);
-                    }
+                if (isBusinessOverviewMultiAgentMainline(rCtx)
+                        || resolvedContextOrchestrationMultiAgentOverview(rCtx)) {
+                    plan = new ArrayList<>(buildBusinessOverviewMultiAgentToolsPermissionFiltered(ctx));
+                    applyGroupWideEmbeddedPurchaseStockFlags(state, plan);
                 } else {
-                    plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_BUSINESS_OVERVIEW_TOOLS);
+                    plan = new ArrayList<>();
                 }
                 state.setDataPlanTools(plan);
             } else {
@@ -273,6 +278,14 @@ public class BusinessDataPlannerNode implements AgentNode {
         payload.put("groupStockReduceQuery", state.isGroupStockReduceQuery());
         payload.put("revenueOverviewPath", state.isRevenueOverviewPath());
         payload.put("tools", plan == null ? List.of() : plan);
+        if (overview && (plan == null || plan.isEmpty())) {
+            if (isBusinessOverviewMultiAgentMainline(rCtx)
+                    || resolvedContextOrchestrationMultiAgentOverview(rCtx)) {
+                payload.put("businessOverviewMultiAgentNoEligibleDomainTools", true);
+            } else {
+                payload.put("businessOverviewClassicPlanSuppressed", true);
+            }
+        }
         if (state.getIntentConvergence() != null && !state.getIntentConvergence().isEmpty()) {
             payload.put("intentConvergence", state.getIntentConvergence());
         }
@@ -316,7 +329,16 @@ public class BusinessDataPlannerNode implements AgentNode {
         } else if (rawCostIntent) {
             displayText = "成本问句已识别，但未编排数据源（请核对权限或联系管理员）";
         } else if (overview) {
-            displayText = "已编排「经营概览」链路 " + plan.size() + " 个数据来源";
+            if (plan == null || plan.isEmpty()) {
+                if (isBusinessOverviewMultiAgentMainline(rCtx)
+                        || resolvedContextOrchestrationMultiAgentOverview(rCtx)) {
+                    displayText = "经营概览四域编排：当前账号无可用数据来源权限，已跳过 Tool 链";
+                } else {
+                    displayText = "经营概览：已不再编排经典六工具链，已跳过 Tool 链";
+                }
+            } else {
+                displayText = "已编排「经营概览」链路 " + plan.size() + " 个数据来源";
+            }
         } else if (inBusinessChat) {
             displayText = "未匹配成本/经营概览关键词，将跳过经营 Tool 链";
         } else {
@@ -524,6 +546,31 @@ public class BusinessDataPlannerNode implements AgentNode {
             return true;
         }
         return Boolean.TRUE.equals(rq.getOrchestrationMultiAgentRequired());
+    }
+
+    /**
+     * {@code business_overview_summary/status/compare} + MULTI_AGENT 唯一主线：只计划四域专线工具，
+     * 权限裁剪为空时保持空 plan，禁止 silent 回退 classic 六工具链（已删除，见 docs/legacy-reference/classic-business-overview-removed.md）。
+     */
+    private static boolean isBusinessOverviewMultiAgentMainline(AiResolvedQueryContext rq) {
+        if (rq == null) {
+            return false;
+        }
+        if (!AiResolvedQueryIntent.BUSINESS_OVERVIEW.equals(rq.getEffectiveIntentCode())) {
+            return false;
+        }
+        if (!AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(rq.getEffectivePathCode())) {
+            return false;
+        }
+        if (!resolvedContextOrchestrationMultiAgentOverview(rq)) {
+            return false;
+        }
+        AiResolvedQueryIntent qi = rq.getQueryIntent();
+        if (qi == null || !StringUtils.hasText(qi.getStructuredIntentDetail())) {
+            return false;
+        }
+        return AiQuerySemanticLexicon.isStructuredBusinessOverviewFourDomainOrchestrationSurface(
+                qi.getStructuredIntentDetail());
     }
 
     /**
@@ -876,6 +923,46 @@ public class BusinessDataPlannerNode implements AgentNode {
     }
 
     /**
+     * 四域内嵌采购/出库 Tool 的集团聚合旗标（经营概览 MULTI、成本诊断全链、与 {@link #applyBusinessDiagnosisBranch} 对齐）。
+     * 单店收窄时不置集团合并；不恢复 classic overview。
+     */
+    private static void applyGroupWideEmbeddedPurchaseStockFlags(AiRunState state, List<String> plannedTools) {
+        if (state == null || plannedTools == null || plannedTools.isEmpty()) {
+            return;
+        }
+        boolean mayPurchase = plannedTools.contains(AiBusinessToolIds.PURCHASE_OVERVIEW);
+        boolean mayStock = plannedTools.contains(AiBusinessToolIds.STOCK_REDUCE_QUERY);
+        if (!mayPurchase && !mayStock) {
+            return;
+        }
+        if (!isGroupWidePurchaseStockScope(state)) {
+            state.setGroupPurchaseOverview(false);
+            state.setGroupStockReduceQuery(false);
+            return;
+        }
+        if (resolvedOrgIsSingleEffectiveStore(state)) {
+            state.setGroupPurchaseOverview(false);
+            state.setGroupStockReduceQuery(false);
+            return;
+        }
+        state.setGroupPurchaseOverview(mayPurchase);
+        state.setGroupStockReduceQuery(mayStock);
+    }
+
+    /** 集团管理员或 orgScope=GROUP：内嵌采购/出库 Tool 可走集团 visibleStores 聚合。 */
+    private static boolean isGroupWidePurchaseStockScope(AiRunState state) {
+        AiUserContext ctx = state != null ? state.getAiUserContext() : null;
+        if (ctx != null && AiRoleMapper.isGroupWideOrgScope(ctx.getRoleCode())) {
+            return true;
+        }
+        if (state == null || state.getResolvedQueryContext() == null) {
+            return false;
+        }
+        AiResolvedOrgScope org = state.getResolvedQueryContext().getOrgScope();
+        return org != null && AiResolvedOrgScope.SCOPE_GROUP.equals(org.getScopeType());
+    }
+
+    /**
      * 解析结果已收窄到单一门店根（点名门店 / 单店 scope）时，即使账号为集团视角也不可再走集团采购合并。
      */
     private static boolean resolvedOrgIsSingleEffectiveStore(AiRunState state) {
@@ -1018,9 +1105,12 @@ public class BusinessDataPlannerNode implements AgentNode {
                 return;
             }
             state.setDataPlanTools(new ArrayList<>(tools));
+            applyGroupWideEmbeddedPurchaseStockFlags(state, tools);
             return;
         }
-        state.setDataPlanTools(new ArrayList<>(AiBusinessToolIds.DEFAULT_COST_INSIGHT_TOOLS));
+        List<String> defaultTools = new ArrayList<>(AiBusinessToolIds.DEFAULT_COST_INSIGHT_TOOLS);
+        state.setDataPlanTools(defaultTools);
+        applyGroupWideEmbeddedPurchaseStockFlags(state, defaultTools);
     }
 
     private void applyCostIntentBranch(AiRunState state, String q) {

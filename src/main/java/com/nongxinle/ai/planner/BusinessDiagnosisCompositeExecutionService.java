@@ -12,9 +12,14 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Composite PlannerExecutor（四域 RealBridge + Hybrid）+ 只读 Composer。
- * {@link BusinessDiagnosisCompositeExecutionMode#HARNESS_ONLY Harness-only} — C-58 Harness {@code GRAPH_RUN}；
- * {@link BusinessDiagnosisCompositeExecutionMode#SHADOW SHADOW} — C-60 普通 {@code /api/ai/runs}（不替换 {@code AiRunState#finalAnswerText}）。
+ * BusinessDiagnosisComposite 执行入口：PlannerExecutor（四域 RealBridge + {@link CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecutor}）
+ * + 只读 Composer。
+ * <p><strong>当前只做 SHADOW / HARNESS_ONLY 旁路观测</strong>，<strong>不替换</strong>
+ * {@link AiRunState#getFinalAnswerText()}，也<strong>不是</strong> Master Graph 用户主回答链。</p>
+ * <ul>
+ *   <li>{@link BusinessDiagnosisCompositeExecutionMode#HARNESS_ONLY} — C-58 Harness {@code GRAPH_RUN}</li>
+ *   <li>{@link BusinessDiagnosisCompositeExecutionMode#SHADOW} — C-60 普通 {@code /api/ai/runs} 异步旁路</li>
+ * </ul>
  */
 @Service
 @RequiredArgsConstructor

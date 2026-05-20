@@ -2,10 +2,13 @@ package com.nongxinle.ai.graph.business;
 
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
+import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
+import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrixRow;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
@@ -75,30 +78,50 @@ public final class DishSalesAnswerPlanBuilder {
         var qi = rq.getQueryIntent();
         DishSalesWireResolution wres = resolveDishSalesWire(rq, qi);
         debug.put("rawStructuredIntentDetail", wres.rawStructuredIntentDetail());
-        debug.put("fallbackMetricRankingType", wres.fallbackMetricRankingType());
+        debug.put("metricRankingTypeCompat", wres.metricRankingTypeCompat());
         debug.put("resolvedDishSalesWire", wres.resolvedCanonicalWire());
 
         String wire = wres.resolvedCanonicalWire();
         if (!StringUtils.hasText(wire)) {
-            debug.put("earlyReturnReason", "no_wire_from_structured_or_metric_ranking_type");
+            debug.put("earlyReturnReason", "no_wire_from_structured_intent");
             log.warn(
-                    "[DishSalesAnswerPlan] early exit: no wire after structuredIntentDetail + metric fallback. runId={}",
+                    "[DishSalesAnswerPlan] early exit: no dish-sales wire from structuredIntentDetail / semanticSlots. runId={}",
                     state.getRunId());
             attachEarlyExitPlan(
                     state,
                     overview,
                     debug,
-                    List.of("未从 structuredIntentDetail 或语义 metric.rankingType 解析到有效的菜品销量排行口径。"));
+                    List.of("未从 structuredIntentDetail 或 V2 structuredIntentDetailWire 解析到有效的菜品销量口径。"));
             return;
+        }
+
+        DishSalesDrilldownMatrixRow matrixRow =
+                DishSalesDrilldownMatrix.resolveMatrixRow(
+                        AiResolvedQueryIntent.PATH_DISH_SALES_QUERY, wire, semantic(rq), rq);
+        String knownGap = DishSalesDrilldownMatrix.knownGapForResolvedRow(matrixRow);
+        if (knownGap != null) {
+            debug.put("dishSalesKnownGap", knownGap);
         }
 
         String planType;
         String metricType;
         String sortKey;
-        if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH.equals(wire)) {
-            planType = DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_HIGH;
-            metricType = DishSalesAnswerPlan.METRIC_COUNT_HIGH;
-            sortKey = "soldPortionsTotal";
+        String matrixPlanType = matrixRow == null ? null : matrixRow.getTargetDishSalesPlanType();
+        if (StringUtils.hasText(matrixPlanType)) {
+            planType = matrixPlanType;
+            if (DishSalesAnswerPlan.TYPE_DISH_SALES_SINGLE_DISH.equals(planType)) {
+                metricType = DishSalesAnswerPlan.METRIC_SINGLE_DISH;
+                sortKey = "soldPortionsTotal";
+            } else if (DishSalesAnswerPlan.TYPE_DISH_SALES_AMOUNT_RANKING_HIGH.equals(planType)) {
+                metricType = DishSalesAnswerPlan.METRIC_AMOUNT_HIGH;
+                sortKey = "listPriceRevenue";
+            } else if (DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_LOW.equals(planType)) {
+                metricType = DishSalesAnswerPlan.METRIC_COUNT_LOW;
+                sortKey = "soldPortionsTotal";
+            } else {
+                metricType = DishSalesAnswerPlan.METRIC_COUNT_HIGH;
+                sortKey = "soldPortionsTotal";
+            }
         } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH.equals(wire)) {
             planType = DishSalesAnswerPlan.TYPE_DISH_SALES_AMOUNT_RANKING_HIGH;
             metricType = DishSalesAnswerPlan.METRIC_AMOUNT_HIGH;
@@ -107,17 +130,21 @@ public final class DishSalesAnswerPlanBuilder {
             planType = DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_LOW;
             metricType = DishSalesAnswerPlan.METRIC_COUNT_LOW;
             sortKey = "soldPortionsTotal";
+        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH.equals(wire)) {
+            planType = DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_HIGH;
+            metricType = DishSalesAnswerPlan.METRIC_COUNT_HIGH;
+            sortKey = "soldPortionsTotal";
         } else {
-            debug.put("earlyReturnReason", "wire_not_accepted_dish_sales_ranking");
+            debug.put("earlyReturnReason", "wire_not_accepted_dish_sales_matrix");
             log.warn(
-                    "[DishSalesAnswerPlan] early exit: canonical wire is not a dish_sales ranking wire: {} runId={}",
+                    "[DishSalesAnswerPlan] early exit: wire not mapped to dish_sales plan: {} runId={}",
                     wire,
                     state.getRunId());
             attachEarlyExitPlan(
                     state,
                     overview,
                     debug,
-                    List.of("当前子意图不是菜品销量/销售额排行（count_high / amount_high / count_low）。"));
+                    List.of("当前子意图不在菜品销量 Matrix P1 支持范围内。"));
             return;
         }
 
@@ -126,9 +153,38 @@ public final class DishSalesAnswerPlanBuilder {
 
         debug.put("rowCount", dishRowsCount);
         debug.put("structuredIntentDetailWire", wire);
-        debug.put("sortKey", sortKey);
+        if (sortKey != null) {
+            debug.put("sortKey", sortKey);
+        }
+        if (matrixRow != null) {
+            debug.put("dishSalesMatrixRowId", matrixRow.getRowId());
+            debug.put("dishSalesSalesFacet", matrixRow.getSalesFacet());
+        }
 
         List<String> limitations = new ArrayList<>();
+        appendKnownGapLimitation(limitations, knownGap);
+
+        if (knownGap != null) {
+            LinkedHashMap<String, Object> cov = new LinkedHashMap<>();
+            cov.put("rowCount", dishRowsCount);
+            cov.put("rankedRowCount", 0);
+            DishSalesAnswerPlan gapPlan =
+                    DishSalesAnswerPlan.builder()
+                            .planType(planType)
+                            .metricType(metricType)
+                            .scopeLabel(scopeLabel)
+                            .timeLabel(timeLabel)
+                            .rankingRows(List.of())
+                            .dataCoverage(cov)
+                            .limitations(limitations)
+                            .summary(null)
+                            .debug(debug)
+                            .build();
+            enrichDishSalesMatrixDebug(gapPlan.getDebug(), rq, planType, wire);
+            state.setDishSalesAnswerPlan(gapPlan);
+            return;
+        }
+
         if (dishRows.isEmpty()) {
             limitations.add("本轮菜品行为空，无法在现有数据上生成销量/销售额排行。");
             debug.put("rankedRowCount", 0);
@@ -148,10 +204,90 @@ public final class DishSalesAnswerPlanBuilder {
                             .summary(null)
                             .debug(debug)
                             .build();
+            enrichDishSalesMatrixDebug(empty.getDebug(), rq, planType, wire);
             state.setDishSalesAnswerPlan(empty);
             return;
         }
 
+        List<Map<String, Object>> rankingRows;
+        if (DishSalesAnswerPlan.TYPE_DISH_SALES_SINGLE_DISH.equals(planType)) {
+            rankingRows = buildSingleDishRows(dishRows, resolveMentionedDishName(state, rq), debug);
+        } else {
+            rankingRows = buildRankingRows(dishRows, metricType, debug);
+        }
+
+        debug.put("rankedRowCount", rankingRows.size());
+        debug.put("earlyReturnReason", null);
+
+        LinkedHashMap<String, Object> cov = new LinkedHashMap<>();
+        cov.put("rowCount", dishRows.size());
+        cov.put("rankedRowCount", rankingRows.size());
+
+        String summary = buildSummary(metricType, rankingRows);
+
+        DishSalesAnswerPlan plan =
+                DishSalesAnswerPlan.builder()
+                        .planType(planType)
+                        .metricType(metricType)
+                        .scopeLabel(scopeLabel)
+                        .timeLabel(timeLabel)
+                        .rankingRows(rankingRows)
+                        .dataCoverage(cov)
+                        .limitations(limitations)
+                        .summary(summary)
+                        .debug(debug)
+                        .build();
+        enrichDishSalesMatrixDebug(plan.getDebug(), rq, planType, wire);
+        state.setDishSalesAnswerPlan(plan);
+    }
+
+    public static void attachIfApplicable(AiRunState state) {
+        attachIfApplicable(state, state != null ? state.getDishProfitOverviewResult() : null);
+    }
+
+    private static void appendKnownGapLimitation(List<String> limitations, String knownGap) {
+        if (!StringUtils.hasText(knownGap)) {
+            return;
+        }
+        if (DishSalesDrilldownMatrix.KNOWN_GAP_CROSS_DOMAIN_DISH_PROFIT_NOT_IN_P1.equals(knownGap)) {
+            limitations.add("菜品销量域暂不承接毛利/毛利率追问，请使用菜品毛利专线。");
+        } else if (DishSalesDrilldownMatrix.KNOWN_GAP_TREND_SERIES_NOT_IMPLEMENTED.equals(knownGap)) {
+            limitations.add("当前不支持菜品销量趋势时间序列，仅可提供排行或单菜销量快照。");
+        }
+    }
+
+    private static List<Map<String, Object>> buildSingleDishRows(
+            List<Map<String, Object>> dishRows, String dishFocus, LinkedHashMap<String, Object> debug) {
+        debug.put("mentionedDishName", dishFocus);
+        if (!StringUtils.hasText(dishFocus)) {
+            return List.of();
+        }
+        String needle = dishFocus.trim();
+        List<Map<String, Object>> matched = new ArrayList<>();
+        for (Map<String, Object> row : dishRows) {
+            if (row == null) {
+                continue;
+            }
+            String name = stringify(row.get("dishName"));
+            if (StringUtils.hasText(name) && name.contains(needle)) {
+                matched.add(row);
+            }
+        }
+        if (matched.isEmpty()) {
+            debug.put("singleDishMatchNote", "no_dish_row_matched_mentioned_name");
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        int rank = 1;
+        for (Map<String, Object> row : matched) {
+            LinkedHashMap<String, Object> m = rowToRankingMap(row, rank++);
+            out.add(m);
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> buildRankingRows(
+            List<Map<String, Object>> dishRows, String metricType, LinkedHashMap<String, Object> debug) {
         List<ScoredRow> scored = new ArrayList<>(dishRows.size());
         for (Map<String, Object> row : dishRows) {
             if (row == null) {
@@ -185,56 +321,33 @@ public final class DishSalesAnswerPlanBuilder {
         List<Map<String, Object>> rankingRows = new ArrayList<>();
         int rank = 1;
         for (ScoredRow sr : scored) {
-            LinkedHashMap<String, Object> m = new LinkedHashMap<>();
-            m.put("rank", rank++);
-            m.put("dishName", stringify(sr.row().get("dishName")));
-            m.put("soldPortionsTotal", stringify(sr.row().get("soldPortionsTotal")));
-            m.put("listPriceRevenue", stringify(sr.row().get("listPriceRevenue")));
-            m.put("grossMarginRate", formatGrossMarginRate(sr.row()));
-            m.put("actualCostAmount", stringify(sr.row().get("actualCostAmount")));
-            m.put("theoryCostAmount", stringify(sr.row().get("theoryCostAmount")));
-            Object fid = sr.row().get("foodId");
-            if (fid != null && StringUtils.hasText(fid.toString())) {
-                m.put("foodId", fid.toString().trim());
-            }
+            LinkedHashMap<String, Object> m = rowToRankingMap(sr.row(), rank++);
             if (!sr.qtyValid() && DishSalesAnswerPlan.METRIC_COUNT_LOW.equals(metricType)) {
                 m.put("note", "销量口径缺失或非数字，不参与「最低销量」解读");
-            } else if (!sr.qtyValid()
-                    && (DishSalesAnswerPlan.METRIC_COUNT_HIGH.equals(metricType))) {
+            } else if (!sr.qtyValid() && DishSalesAnswerPlan.METRIC_COUNT_HIGH.equals(metricType)) {
                 m.put("note", "销量口径缺失或非数字，排在末位");
-            } else if (!sr.qtyValidForAmountSort()
-                    && DishSalesAnswerPlan.METRIC_AMOUNT_HIGH.equals(metricType)) {
+            } else if (!sr.qtyValidForAmountSort() && DishSalesAnswerPlan.METRIC_AMOUNT_HIGH.equals(metricType)) {
                 m.put("note", "销售额口径缺失或非数字，排在末位");
             }
             rankingRows.add(m);
         }
-
-        debug.put("rankedRowCount", rankingRows.size());
-        debug.put("earlyReturnReason", null);
-
-        LinkedHashMap<String, Object> cov = new LinkedHashMap<>();
-        cov.put("rowCount", dishRows.size());
-        cov.put("rankedRowCount", rankingRows.size());
-
-        String summary = buildSummary(metricType, rankingRows);
-
-        DishSalesAnswerPlan plan =
-                DishSalesAnswerPlan.builder()
-                        .planType(planType)
-                        .metricType(metricType)
-                        .scopeLabel(scopeLabel)
-                        .timeLabel(timeLabel)
-                        .rankingRows(rankingRows)
-                        .dataCoverage(cov)
-                        .limitations(limitations)
-                        .summary(summary)
-                        .debug(debug)
-                        .build();
-        state.setDishSalesAnswerPlan(plan);
+        return rankingRows;
     }
 
-    public static void attachIfApplicable(AiRunState state) {
-        attachIfApplicable(state, state != null ? state.getDishProfitOverviewResult() : null);
+    private static LinkedHashMap<String, Object> rowToRankingMap(Map<String, Object> row, int rank) {
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        m.put("rank", rank);
+        m.put("dishName", stringify(row.get("dishName")));
+        m.put("soldPortionsTotal", stringify(row.get("soldPortionsTotal")));
+        m.put("listPriceRevenue", stringify(row.get("listPriceRevenue")));
+        m.put("grossMarginRate", formatGrossMarginRate(row));
+        m.put("actualCostAmount", stringify(row.get("actualCostAmount")));
+        m.put("theoryCostAmount", stringify(row.get("theoryCostAmount")));
+        Object fid = row.get("foodId");
+        if (fid != null && StringUtils.hasText(fid.toString())) {
+            m.put("foodId", fid.toString().trim());
+        }
+        return m;
     }
 
     private record ScoredRow(Map<String, Object> row, BigDecimal qty, BigDecimal amt, boolean qtyValid) {
@@ -257,6 +370,9 @@ public final class DishSalesAnswerPlanBuilder {
         }
         String qty = nzString(top.get("soldPortionsTotal"));
         String rev = nzString(top.get("listPriceRevenue"));
+        if (DishSalesAnswerPlan.METRIC_SINGLE_DISH.equals(metricType)) {
+            return String.format(Locale.CHINA, "%s 本月销量 %s 份，销售额 %s。", name, nzOrDash(qty), nzOrDash(rev));
+        }
         if (DishSalesAnswerPlan.METRIC_AMOUNT_HIGH.equals(metricType)) {
             return String.format(Locale.CHINA, "当前范围内销售额最高的菜品是 %s，销售额 %s，销量 %s 份。", name, nzOrDash(rev), nzOrDash(qty));
         }
@@ -264,6 +380,83 @@ public final class DishSalesAnswerPlanBuilder {
             return String.format(Locale.CHINA, "当前范围内销量最低的菜品是 %s，销量 %s 份，销售额 %s。", name, nzOrDash(qty), nzOrDash(rev));
         }
         return String.format(Locale.CHINA, "当前范围内销量最高的菜品是 %s，销量 %s 份，销售额 %s。", name, nzOrDash(qty), nzOrDash(rev));
+    }
+
+    private static String resolveMentionedDishName(AiRunState state, AiResolvedQueryContext rq) {
+        if (rq != null && StringUtils.hasText(rq.getMentionedDishName())) {
+            return rq.getMentionedDishName().trim();
+        }
+        AiQuerySemanticParseResult sem = rq == null ? null : rq.getQuerySemanticParse();
+        if (sem != null && StringUtils.hasText(sem.getMentionedDishName())) {
+            return sem.getMentionedDishName().trim();
+        }
+        Object env = state.getToolResults() == null ? null : state.getToolResults().get(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        if (env instanceof Map<?, ?> tm) {
+            Object data = tm.get("data");
+            if (data instanceof Map<?, ?> dm) {
+                Object hint = dm.get("dishNameFocusHint");
+                if (hint != null && StringUtils.hasText(hint.toString())) {
+                    return hint.toString().trim();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void enrichDishSalesMatrixDebug(
+            Map<String, Object> dbg,
+            AiResolvedQueryContext rq,
+            String planType,
+            String wire) {
+        if (dbg == null || rq == null) {
+            return;
+        }
+        String path = rq.getEffectivePathCode();
+        if (path == null || path.isBlank()) {
+            path = rq.getQueryIntent() != null ? rq.getQueryIntent().getPathCode() : null;
+        }
+        AiQuerySemanticParseResult sem = semantic(rq);
+        String canonWire =
+                StringUtils.hasText(wire)
+                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim())
+                        : null;
+        DishSalesDrilldownMatrixRow row =
+                DishSalesDrilldownMatrix.resolveMatrixRow(path, canonWire, sem, rq);
+        if (row != null) {
+            dbg.put("dishSalesMatrixRowId", row.getRowId());
+            dbg.put("dishSalesStructuredIntentDetailWire", row.getStructuredIntentDetailWire());
+            dbg.put("dishSalesSalesFacet", row.getSalesFacet());
+            String gap = DishSalesDrilldownMatrix.knownGapForResolvedRow(row);
+            if (gap != null) {
+                dbg.put("dishSalesKnownGap", gap);
+            }
+        } else if (StringUtils.hasText(canonWire)) {
+            dbg.put("dishSalesStructuredIntentDetailWire", canonWire);
+        }
+        if (DishSalesDrilldownMatrix.detectMatrixWireMissing(sem, path, canonWire)) {
+            dbg.put("dishSalesMatrixWireMissing", DishSalesDrilldownMatrix.MATRIX_WIRE_MISSING);
+        }
+        dbg.put("dishSalesAnswerPlanType", planType);
+        String prevWire = prevStructuredWire(rq);
+        if (StringUtils.hasText(prevWire) && StringUtils.hasText(canonWire)) {
+            String leak = DishSalesDrilldownMatrix.detectPriorRankingWireLeak(prevWire, canonWire);
+            if (leak != null) {
+                dbg.put("dishSalesPriorWireLeak", leak);
+            }
+        }
+    }
+
+    private static String prevStructuredWire(AiResolvedQueryContext rq) {
+        AiConversationTurnMemory prev = rq != null ? rq.getPreviousTurn() : null;
+        if (prev == null || !StringUtils.hasText(prev.getLastStructuredIntentDetail())) {
+            return null;
+        }
+        return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                prev.getLastStructuredIntentDetail().trim());
+    }
+
+    private static AiQuerySemanticParseResult semantic(AiResolvedQueryContext rq) {
+        return rq == null ? null : rq.getQuerySemanticParse();
     }
 
     private static String nzOrDash(String s) {
@@ -293,10 +486,6 @@ public final class DishSalesAnswerPlanBuilder {
         return v == null ? "" : v.toString().trim();
     }
 
-    /**
-     * 与 {@link com.nongxinle.utils.GbDepartmentGoodsStockReduceSupport#coerceDecimal} 区分：空串/null/非数字为 null，
-     * 不把缺失销量当成 0（避免「最低销量」误判）。
-     */
     private static BigDecimal coerceDecimalNullable(Object v) {
         if (v == null) {
             return null;
@@ -393,44 +582,80 @@ public final class DishSalesAnswerPlanBuilder {
         return s.trim();
     }
 
-    /**
-     * rawStructuredIntentDetail：queryIntent.structuredIntentDetail 原文；fallbackMetricRankingType：语义 metric.rankingType；
-     * resolvedCanonicalWire：经 {@link AiQuerySemanticLexicon#canonicalStructuredIntentDetailWire} 且仅限三种菜品销量/额排行 wire。
-     */
     private record DishSalesWireResolution(
-            String rawStructuredIntentDetail, String fallbackMetricRankingType, String resolvedCanonicalWire) {}
+            String rawStructuredIntentDetail, String metricRankingTypeCompat, String resolvedCanonicalWire) {}
 
     private static DishSalesWireResolution resolveDishSalesWire(AiResolvedQueryContext rq, AiResolvedQueryIntent qi) {
-        String raw = null;
-        if (qi != null && StringUtils.hasText(qi.getStructuredIntentDetail())) {
-            raw = qi.getStructuredIntentDetail().trim();
-        }
-        String fallbackRanking = null;
-        if (rq != null && rq.getQuerySemanticParse() != null && rq.getQuerySemanticParse().getMetric() != null) {
-            String rt = rq.getQuerySemanticParse().getMetric().getRankingType();
-            if (StringUtils.hasText(rt)) {
-                fallbackRanking = rt.trim();
+        String raw = structuredIntentDetailOrSlotsWireRaw(qi, rq);
+        String norm = rq != null ? rq.getNormalizedQuestion() : null;
+        String merged = qi != null ? qi.getStructuredIntentDetail() : null;
+        String wire =
+                DishSalesDrilldownMatrix.resolveStructuredIntentDetailWire(
+                        semantic(rq),
+                        AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
+                        merged,
+                        norm);
+        if (!StringUtils.hasText(wire)) {
+            if (StringUtils.hasText(raw)) {
+                wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(raw);
+            }
+            if (!acceptedDishSalesWire(wire)) {
+                wire = wireFromMetricRankingType(metricRankingTypeCompatDebug(rq));
             }
         }
-        String wire = null;
-        if (StringUtils.hasText(raw)) {
-            wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(raw);
-        } else if (StringUtils.hasText(fallbackRanking)) {
-            wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(fallbackRanking);
-        }
-        if (!acceptedDishSalesRankingWire(wire)) {
+        if (!acceptedDishSalesWire(wire)) {
             wire = null;
         }
-        return new DishSalesWireResolution(raw, fallbackRanking, wire);
+        return new DishSalesWireResolution(raw, metricRankingTypeCompatDebug(rq), wire);
     }
 
-    private static boolean acceptedDishSalesRankingWire(String wire) {
+    private static String wireFromMetricRankingType(String rankingType) {
+        if (!StringUtils.hasText(rankingType)) {
+            return null;
+        }
+        return switch (rankingType.trim().toUpperCase(Locale.ROOT).replace('-', '_')) {
+            case "RANKING_SALES_COUNT_LOW" -> AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_LOW;
+            case "RANKING_SALES_AMOUNT_HIGH" -> AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH;
+            case "RANKING_SALES", "RANKING_SALES_COUNT_HIGH" ->
+                    AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
+            default -> null;
+        };
+    }
+
+    private static String structuredIntentDetailOrSlotsWireRaw(AiResolvedQueryIntent qi, AiResolvedQueryContext rq) {
+        if (qi != null && StringUtils.hasText(qi.getStructuredIntentDetail())) {
+            return qi.getStructuredIntentDetail().trim();
+        }
+        if (rq == null || rq.getQuerySemanticParse() == null) {
+            return null;
+        }
+        AiQuerySemanticParseResult sem = rq.getQuerySemanticParse();
+        if (StringUtils.hasText(sem.getCurrentTurnStructuredIntentDetailWire())) {
+            return sem.getCurrentTurnStructuredIntentDetailWire().trim();
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
+        if (ss != null && StringUtils.hasText(ss.getStructuredIntentDetailWire())) {
+            return ss.getStructuredIntentDetailWire().trim();
+        }
+        return null;
+    }
+
+    private static String metricRankingTypeCompatDebug(AiResolvedQueryContext rq) {
+        if (rq == null || rq.getQuerySemanticParse() == null || rq.getQuerySemanticParse().getMetric() == null) {
+            return null;
+        }
+        String rt = rq.getQuerySemanticParse().getMetric().getRankingType();
+        return StringUtils.hasText(rt) ? rt.trim() : null;
+    }
+
+    private static boolean acceptedDishSalesWire(String wire) {
         if (!StringUtils.hasText(wire)) {
             return false;
         }
-        return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH.equals(wire)
-                || AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH.equals(wire)
-                || AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_LOW.equals(wire);
+        if (AiQuerySemanticLexicon.isStructuredDishSalesDetail(wire)) {
+            return true;
+        }
+        return AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(wire);
     }
 
     private static void attachEarlyExitPlan(
@@ -443,6 +668,7 @@ public final class DishSalesAnswerPlanBuilder {
         LinkedHashMap<String, Object> cov = new LinkedHashMap<>();
         cov.put("rowCount", rowCount);
         cov.put("rankedRowCount", 0);
+        String wire = debug.get("resolvedDishSalesWire") == null ? "" : debug.get("resolvedDishSalesWire").toString();
         DishSalesAnswerPlan plan =
                 DishSalesAnswerPlan.builder()
                         .planType(null)
@@ -455,6 +681,7 @@ public final class DishSalesAnswerPlanBuilder {
                         .summary(null)
                         .debug(debug)
                         .build();
+        enrichDishSalesMatrixDebug(plan.getDebug(), state.getResolvedQueryContext(), null, wire);
         state.setDishSalesAnswerPlan(plan);
     }
 }

@@ -9,7 +9,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * C-53：Composite 生产 Gate 判定结果；只读上下文产出，不修改 Run、不调 Tool/LLM。
+ * C-53：Composite <b>旁路观测 Gate</b> 判定结果；只读上下文产出，不修改 Run、不调 Tool/LLM。
+ *
+ * <p>BusinessDiagnosisComposite 当前仅服务 {@link BusinessDiagnosisCompositeExecutionMode#SHADOW} /
+ * {@link BusinessDiagnosisCompositeExecutionMode#HARNESS_ONLY} 旁路观测链；<strong>不属于</strong> Master Graph 主回答链；
+ * <strong>不替换</strong> {@link com.nongxinle.ai.core.AiRunState#getFinalAnswerText()}；
+ * <strong>不负责</strong>生产用户正文。{@link BusinessDiagnosisCompositeExecutionMode#PRIMARY} 为预留/未接生产主链。</p>
  */
 @Data
 @Builder

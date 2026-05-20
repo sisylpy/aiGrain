@@ -4,7 +4,7 @@ import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.resolver.AiMultiTurnOrgScopePolicy;
-import com.nongxinle.ai.resolver.AiMultiTurnTimeWindowPolicy;
+import com.nongxinle.ai.context.AiResolvedTimeWindowDisplaySupport;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import org.springframework.util.StringUtils;
 
@@ -29,7 +29,7 @@ public final class AnswerBoundaryNoteComposer {
     }
 
     /**
-     * 修正 Resolver 侧 {@code buildCombinedBoundaryNote} 在「仅时间继承、本句已点名门店」等场景下误用的统一 suffix。
+     * 修正 {@link AiResolvedTimeWindowDisplaySupport#buildCombinedBoundaryNote} 在「仅时间继承、本句已点名门店」等场景下误用的统一 suffix。
      */
     public static String refineUserFacingBoundaryNote(AiResolvedQueryContext ctx, String rawNote) {
         if (ctx == null || !StringUtils.hasText(rawNote) || !rawNote.contains(RESOLVER_COMBINED_BAD_SUFFIX)) {
@@ -38,7 +38,7 @@ public final class AnswerBoundaryNoteComposer {
         boolean timeInherited = "INHERITED_PREVIOUS".equals(ctx.getEffectiveTimeWindowSource());
         boolean scopeInherited = "INHERITED_PREVIOUS".equals(ctx.getEffectiveScopeSource());
         AiResolvedTimeWindow tw = ctx.getTimeWindow();
-        String timeHuman = tw != null ? AiMultiTurnTimeWindowPolicy.humanReadableTimeCarryover(tw) : "上文";
+        String timeHuman = tw != null ? AiResolvedTimeWindowDisplaySupport.humanReadableTimeCarryover(tw) : "上文";
         if (timeInherited && scopeInherited) {
             // 【优化】检测 LLM 返回 scopeAction=OVERRIDE/NEW 但无具体门店名 → "全部店铺"场景
             if (semanticDeclaresGroupScopeOverride(ctx)) {
@@ -156,6 +156,6 @@ public final class AnswerBoundaryNoteComposer {
                 return d;
             }
         }
-        return AiMultiTurnTimeWindowPolicy.humanReadableTimeCarryover(tw);
+        return AiResolvedTimeWindowDisplaySupport.humanReadableTimeCarryover(tw);
     }
 }

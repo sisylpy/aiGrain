@@ -7,6 +7,7 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiSemanticStoreNarrowingDiagnostics;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
+import com.nongxinle.ai.context.AiResolvedTimeWindowDisplaySupport;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AiRunState;
@@ -15,9 +16,14 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiFollowUpResolver;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.agent.business.BusinessDiagnosisAgentV1;
 import com.nongxinle.ai.agent.business.BusinessAgentNames;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
+import com.nongxinle.ai.dto.business.DiagnosisPlan;
+import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.BusinessDrilldownRequestAssembler;
+import com.nongxinle.ai.harness.followup.PurchaseFollowUpSlotSignals;
 import com.nongxinle.ai.followup.AiFollowUpHintSupport;
-import com.nongxinle.ai.followup.FollowUpPathKind;
 import com.nongxinle.ai.harness.AiMultiStoreHarnessTrace;
 import com.nongxinle.ai.security.AiAnswerBoundary;
 import com.nongxinle.ai.security.AiPermissionDenied;
@@ -25,16 +31,10 @@ import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
 import com.nongxinle.ai.scope.AiConversationScopeMode;
 import com.nongxinle.ai.scope.AiQueryScope;
 import com.nongxinle.ai.scope.AiScopeResolver;
-import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
-import com.nongxinle.ai.semantic.AiQuerySemanticLlmParser;
-import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
-import com.nongxinle.ai.semantic.AiQuerySemanticParseResultDebugSerializer;
-import com.nongxinle.ai.semantic.AiQuerySemanticV2BusinessHolisticIntentNormalizer;
-import com.nongxinle.ai.semantic.AiQuerySemanticV2CompareStoreNormalizer;
-import com.nongxinle.ai.semantic.AiQuerySemanticV2DishProfitGate;
-import com.nongxinle.ai.semantic.AiQuerySemanticV2StockReducePurchaseDeconflictNormalizer;
-import com.nongxinle.ai.semantic.SemanticParseFallbackPolicy;
-import com.nongxinle.ai.semantic.SemanticParserInputBuilder;
+import com.nongxinle.ai.semantic.*;
+import com.nongxinle.ai.semantic.frame.CurrentSemanticFrame;
+import com.nongxinle.ai.semantic.frame.CurrentSemanticFrameValidator;
+import com.nongxinle.ai.semantic.frame.SemanticFrameValidationResult;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.util.AiUserMessageSanitizer;
 import com.nongxinle.entity.GbDepartmentEntity;
@@ -59,7 +59,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 统一解析入口：装配 {@link AiResolvedQueryContext}（唯一新业务上下文入口）；规则解析 + 组织树下钻口径由本类集中处理。
+ * 统一解析入口：装配 {@link AiResolvedQueryContext}（唯一新业务上下文入口）。
+ * 主链路：V2 语义 parse → {@link #trySemanticAdoption}（SlotMerge / 采购 frame 校验 / MergeHelper / {@link com.nongxinle.ai.semantic.SemanticTimeContractCheck}）→
+ * FollowUp / Time / Org 策略 → Graph。用户话术不做 Java 关键词语义解析；组织树与门店收窄口径由本类集中处理。
  */
 @Slf4j
 @Component
@@ -73,20 +75,6 @@ public class AiResolvedQueryContextResolver {
 
     @Value("${ai.agent.querySemanticLlm.minConfidence:0.55}")
     private double querySemanticMinConfidence;
-
-    @Value("${ai.agent.querySemanticLlm.enabled:true}")
-    private boolean querySemanticLlmEnabled;
-
-    /**
-     * v2 已采纳时仍调用 v1 仅用于 Harness 对照（多一次 LLM）；默认关闭。
-     */
-    @Value("${ai.agent.querySemanticLlm.v1DebugWhenV2Adopted:false}")
-    private boolean querySemanticV1DebugWhenV2Adopted;
-
-    private record SemanticAdoption(
-            AiQuerySemanticParseResult semantic,
-            AiResolvedQueryIntent mergedIntent,
-            AiResolvedTimeWindow tentativeTime) {}
 
     public AiResolvedQueryContext resolve(AiRunCreateRequest request, AiUserContext userContext) {
         return resolve(null, request, userContext, LocalDate.now());
@@ -128,28 +116,27 @@ public class AiResolvedQueryContextResolver {
 
         Map<String, Object> querySemanticV2InputPreview = null;
         AiQuerySemanticParseResult querySemanticV2Raw = null;
-        AiQuerySemanticParseResult querySemanticV1Raw = null;
-        if (querySemanticLlmEnabled) {
-            try {
-                var v2In = SemanticParserInputBuilder.build(normalized, today, previousTurn, orgScope);
-                querySemanticV2InputPreview = SemanticParserInputBuilder.toDebugPreview(v2In);
-                querySemanticV2Raw = querySemanticLlmParser.parse(v2In);
-            } catch (Exception ex) {
-                log.debug(
-                        "[AiResolvedQueryContextResolver] querySemanticV2 parse failed: {}", ex.toString());
-                querySemanticV2Raw = AiQuerySemanticParseResult.builder()
-                        .parseMissing(true)
-                        .observationJsonParseError(
-                                "resolver_v2_exception:" + ex.getClass().getSimpleName())
-                        .build();
-            }
+        try {
+            var v2In = SemanticParserInputBuilder.build(normalized, today, previousTurn, orgScope);
+            querySemanticV2InputPreview = SemanticParserInputBuilder.toDebugPreview(v2In);
+            querySemanticV2Raw = querySemanticLlmParser.parse(v2In);
+        } catch (Exception ex) {
+            log.debug(
+                    "[AiResolvedQueryContextResolver] querySemanticV2 parse failed: {}", ex.toString());
+            querySemanticV2Raw = AiQuerySemanticParseResult.builder()
+                    .parseMissing(true)
+                    .observationJsonParseError(
+                            "resolver_v2_exception:" + ex.getClass().getSimpleName())
+                    .build();
         }
 
-        /* 显式时间仅来自语义 LLM / 多轮合并（{@link AiResolvedTimeWindow#fromSemanticTimeType}），不再对用户话术做关键词解析。 */
+        /* 显式时间仅来自 V2 LLM time 块 + {@link com.nongxinle.ai.semantic.SemanticTimeContractCheck}，不做 Java 侧 timeType 推算。 */
         AiResolvedTimeWindow explicitTentative = null;
 
-        String semanticPrimaryVersion = querySemanticLlmEnabled ? "v2" : null;
+        String semanticPrimaryVersion = "v2";
+        /** 历史兼容：写入 {@link AiResolvedQueryContext#getSemanticFallbackUsed()}，当前恒 false，不代表 V1 fallback。 */
         Boolean semanticFallbackUsed = Boolean.FALSE;
+        /** V2 拒收原因（time contract / frame validation / parse 失败）；写入 semanticFallbackReason，非 V1 fallback。 */
         String semanticFallbackReason = null;
         String semanticAdoptedFrom = null;
         List<String> semanticAdoptedFields = null;
@@ -158,107 +145,52 @@ public class AiResolvedQueryContextResolver {
         String semanticMetricNormalizedFrom = null;
         String semanticMetricNormalizedTo = null;
         Map<String, Object> semanticV2AbstractIntentNormalizationNotes = null;
-        Map<String, Object> querySemanticV1Map = null;
 
-        SemanticAdoption adoption = null;
-        if (querySemanticLlmEnabled) {
-            AiQuerySemanticParseResult v2Pipeline = querySemanticV2Raw;
-            if (v2Pipeline != null && !v2Pipeline.isParseMissing()) {
-                AiQuerySemanticV2StockReducePurchaseDeconflictNormalizer.Result sr =
-                        AiQuerySemanticV2StockReducePurchaseDeconflictNormalizer.apply(v2Pipeline);
-                v2Pipeline = sr.semantic();
-                if (sr.notes() != null) {
-                    semanticV2AbstractIntentNormalizationNotes = new LinkedHashMap<>(sr.notes());
-                }
-            }
-            if (v2Pipeline != null && !v2Pipeline.isParseMissing()) {
-                AiQuerySemanticV2CompareStoreNormalizer.Result cmp =
-                        AiQuerySemanticV2CompareStoreNormalizer.apply(v2Pipeline);
-                v2Pipeline = cmp.semantic();
-                if (cmp.notes() != null) {
-                    if (semanticV2AbstractIntentNormalizationNotes == null) {
-                        semanticV2AbstractIntentNormalizationNotes = new LinkedHashMap<>();
-                    }
-                    semanticV2AbstractIntentNormalizationNotes.putAll(cmp.notes());
-                }
-            }
-            if (v2Pipeline != null && !v2Pipeline.isParseMissing()) {
-                AiQuerySemanticV2BusinessHolisticIntentNormalizer.Result bh =
-                        AiQuerySemanticV2BusinessHolisticIntentNormalizer.apply(v2Pipeline);
-                v2Pipeline = bh.semantic();
-                if (bh.notes() != null) {
-                    if (semanticV2AbstractIntentNormalizationNotes == null) {
-                        semanticV2AbstractIntentNormalizationNotes = new LinkedHashMap<>();
-                    }
-                    semanticV2AbstractIntentNormalizationNotes.putAll(bh.notes());
-                }
-            }
-            AiQuerySemanticParseResult v2ForAdoption = v2Pipeline;
-            AiQuerySemanticV2DishProfitGate.SanitizeResult v2Sanitize = null;
-            if (v2Pipeline != null && !v2Pipeline.isParseMissing()) {
-                v2Sanitize = AiQuerySemanticV2DishProfitGate.sanitize(v2Pipeline);
-                if (!v2Sanitize.adoptable()) {
-                    v2ForAdoption = null;
-                    semanticAdoptionRejectedFields = v2Sanitize.semanticAdoptionRejectedFields() == null
-                            ? null
-                            : new ArrayList<>(v2Sanitize.semanticAdoptionRejectedFields());
-                    semanticAdoptionRejectedReason = blankToNullSemantic(v2Sanitize.semanticAdoptionRejectedReason());
-                } else {
-                    v2ForAdoption = v2Sanitize.semantic();
-                    if (StringUtils.hasText(v2Sanitize.normalizedMetricFrom())) {
-                        semanticMetricNormalizedFrom = v2Sanitize.normalizedMetricFrom();
-                        semanticMetricNormalizedTo = v2Sanitize.normalizedMetricTo();
-                    }
-                }
-            }
-            if (v2ForAdoption != null && !v2ForAdoption.isParseMissing()) {
-                v2ForAdoption = augmentV2SemanticWithInheritedHarnessMultiStores(v2ForAdoption, previousTurn);
-            }
-            adoption = trySemanticAdoption(v2ForAdoption, previousTurn, normalized, today, explicitTentative);
-            if (adoption != null) {
-                semanticAdoptedFrom = "v2";
-                semanticAdoptedFields = describeAdoptedSemanticFields(adoption.semantic());
-                if (querySemanticV1DebugWhenV2Adopted) {
-                    querySemanticV1Raw = querySemanticLlmParser.parseUserQuestion(normalized);
-                    querySemanticV1Map = safeSemanticMap(querySemanticV1Raw);
-                }
-            } else {
-                if (StringUtils.hasText(semanticAdoptionRejectedReason)) {
-                    semanticFallbackReason = semanticAdoptionRejectedReason;
-                } else {
-                    semanticFallbackReason = explainV2NonAdoption(querySemanticV2Raw);
-                }
-                querySemanticV1Raw = querySemanticLlmParser.parseUserQuestion(normalized);
-                querySemanticV1Map = safeSemanticMap(querySemanticV1Raw);
-                adoption = trySemanticAdoption(querySemanticV1Raw, previousTurn, normalized, today, explicitTentative);
-                if (adoption != null) {
-                    semanticAdoptedFrom = "v1";
-                    semanticFallbackUsed = Boolean.TRUE;
-                    semanticAdoptedFields = describeAdoptedSemanticFields(adoption.semantic());
-                }
-            }
+        SemanticAdoptionAttempt adoption = null;
+        AiQuerySemanticParseResult v2ForAdoption =
+                querySemanticV2Raw != null && !querySemanticV2Raw.isParseMissing()
+                        ? querySemanticV2Raw
+                        : null;
+        adoption = trySemanticAdoption(v2ForAdoption, previousTurn, normalized, today, explicitTentative);
+        boolean timeContractFailed =
+                adoption != null
+                        && adoption.timeContract() != null
+                        && !adoption.timeContract().valid();
+        boolean frameClarificationRequired =
+                adoption != null && adoption.frameClarificationRequired();
+        boolean clarificationRequired =
+                adoption == null || timeContractFailed || frameClarificationRequired;
+        com.nongxinle.ai.semantic.SemanticTimeContractCheck.Result timeContractResult =
+                adoption != null ? adoption.timeContract() : null;
+
+        if (adoption != null && adoption.adopted()) {
+            semanticAdoptedFrom = "v2";
+            semanticAdoptedFields = describeAdoptedSemanticFields(adoption.semantic());
+        } else if (timeContractFailed) {
+            semanticFallbackReason =
+                    "time_contract:" + blankToNullSemantic(adoption.timeContract().failureReason());
+        } else if (frameClarificationRequired) {
+            semanticFallbackReason =
+                    "frame_validation:" + blankToNullSemantic(adoption.rejectionReason());
         } else {
-            querySemanticV1Raw = querySemanticLlmParser.parseUserQuestion(normalized);
-            querySemanticV1Map = safeSemanticMap(querySemanticV1Raw);
-            adoption = trySemanticAdoption(querySemanticV1Raw, previousTurn, normalized, today, explicitTentative);
-            if (adoption != null) {
-                semanticAdoptedFrom = "v1";
-                semanticPrimaryVersion = "v1";
-                semanticAdoptedFields = describeAdoptedSemanticFields(adoption.semantic());
-            }
+            semanticFallbackReason = explainV2NonAdoption(querySemanticV2Raw);
+        }
+
+        if (adoption != null
+                && adoption.semantic() != null
+                && Boolean.TRUE.equals(adoption.semantic().getPurchaseSemanticFramePrimaryMerge())) {
+            semanticFallbackUsed = Boolean.FALSE;
         }
 
         AiQuerySemanticParseResult semanticLlm =
-                adoption != null ? adoption.semantic() : preferReadableSemantic(querySemanticV2Raw, querySemanticV1Raw);
+                adoption != null ? adoption.semantic() : querySemanticV2Raw;
 
         AiResolvedQueryIntent mergedIntentStem =
-                adoption != null
+                adoption != null && !timeContractFailed
                         ? adoption.mergedIntent()
                         : AiResolvedQueryIntent.builder().build();
         AiResolvedTimeWindow tentativeTimeMerged =
-                adoption != null ? adoption.tentativeTime() : explicitTentative;
-
-        boolean clarificationRequired = adoption == null;
+                adoption != null && !timeContractFailed ? adoption.tentativeTime() : explicitTentative;
 
         AiResolvedTimeWindow tentativeTime =
                 clarificationRequired ? explicitTentative : tentativeTimeMerged;
@@ -271,7 +203,13 @@ public class AiResolvedQueryContextResolver {
                         && semanticLlm.isUsableForMerge(querySemanticMinConfidence);
 
         String semanticClarificationQuestion =
-                clarificationRequired ? SemanticParseFallbackPolicy.clarificationQuestion() : null;
+                timeContractFailed
+                        ? adoption.timeContract().clarificationQuestion()
+                        : frameClarificationRequired
+                                ? adoption.semanticClarificationQuestion().trim()
+                                : clarificationRequired
+                                        ? resolveSemanticClarificationQuestion(semanticLlm)
+                                        : null;
 
         AiFollowUpResolution followUp =
                 clarificationRequired
@@ -283,22 +221,26 @@ public class AiResolvedQueryContextResolver {
         AiResolvedQueryIntent queryIntent = followUp.getMergedQueryIntent() != null
                 ? followUp.getMergedQueryIntent()
                 : AiResolvedQueryIntent.builder().build();
-        AiResolvedTimeWindow rawTw =
-                followUp.getMergedTimeWindow() != null ? followUp.getMergedTimeWindow() : tentativeTime;
 
         AiResolvedTimeWindow timeWindow;
         String effectiveTimeSource;
         if (clarificationRequired) {
             timeWindow = explicitTentative;
-            effectiveTimeSource =
-                    timeWindow != null
-                            ? AiMultiTurnTimeWindowPolicy.resolveEffectiveTimeWindowSource(explicitTentative, timeWindow)
-                            : "UNRESOLVED";
-        } else {
+            effectiveTimeSource = "UNRESOLVED";
+        } else if (timeContractResult != null && timeContractResult.valid()) {
+            AiQuerySemanticParseResult.TimePart tp =
+                    semanticLlm != null ? semanticLlm.getTime() : null;
             timeWindow =
-                    AiMultiTurnTimeWindowPolicy.finalizeTimeWindow(rawTw, explicitTentative, previousTurn, today);
-            effectiveTimeSource =
-                    AiMultiTurnTimeWindowPolicy.resolveEffectiveTimeWindowSource(explicitTentative, timeWindow);
+                    timeContractResult.toTimeWindow(tp != null ? tp.getTimeType() : null);
+            effectiveTimeSource = timeContractResult.normalizedTimeSource();
+        } else {
+            // 防御：不应在 Production 主链落到这里；不做 Java 时间兜底或 tentative!=null 归因。
+            timeWindow = explicitTentative;
+            effectiveTimeSource = "UNRESOLVED";
+            log.warn(
+                    "[AiResolvedQueryContext] time contract missing on non-clarification path runId={} conversationId={}",
+                    runId,
+                    convId);
         }
         if (followUp != null) {
             followUp.setMergedTimeWindow(timeWindow);
@@ -307,6 +249,8 @@ public class AiResolvedQueryContextResolver {
         AiResolvedOrgScope mergedOrg = followUp != null && followUp.getMergedOrgScope() != null
                 ? followUp.getMergedOrgScope()
                 : orgScope;
+
+        BusinessDrilldownRequestAssembler.Phase1PurchaseApplyResult phase1Purchase = null;
 
         if (!clarificationRequired) {
             String dishReasonScopeProbe =
@@ -372,27 +316,13 @@ public class AiResolvedQueryContextResolver {
         }
 
         if (!clarificationRequired) {
-            normalizeStockReduceStructuredRouting(queryIntent);
-            normalizePurchaseStructuredRouting(queryIntent);
-            upgradePurchaseSupplierDimensionFromResolverSignals(queryIntent, semanticLlm, normalized);
-            normalizeRevenueIntentRouting(queryIntent);
-            alignFollowUpEffectiveRoutingWithQueryIntent(followUp, queryIntent);
-            repairInheritedIntentPathAfterBroadScopeFollowUpLeak(
-                    normalized,
-                    previousTurn,
-                    followUp,
-                    queryIntent,
-                    semanticLlm,
-                    applyStructuralLlm,
-                    querySemanticMinConfidence);
-            stabilizeDishProfitFollowUpStructuredIntent(normalized, followUp, previousTurn, queryIntent);
-            if (upgradePurchaseStoreRankingAfterRevenueFollowUp(queryIntent, mergedOrg, previousTurn, followUp)) {
-                if (semanticV2AbstractIntentNormalizationNotes != null) {
-                    semanticV2AbstractIntentNormalizationNotes.remove("degradedToPurchaseOverview");
-                    semanticV2AbstractIntentNormalizationNotes.remove("mentionedStoreCount");
-                }
-                followUp.setPurchaseStructuredIntent(queryIntent.getStructuredIntentDetail());
-            }
+            phase1Purchase =
+                    BusinessDrilldownRequestAssembler.applyPhase1PurchaseCapabilities(
+                            normalized,
+                            followUp,
+                            previousTurn,
+                            queryIntent,
+                            semanticLlm);
         }
 
         AiResolvedDataScope dataScope = buildDataScope(mergedOrg);
@@ -407,7 +337,7 @@ public class AiResolvedQueryContextResolver {
 
         String banner = mergedOrg != null ? mergedOrg.getQueryScopeBanner() : null;
         String timeLabel = timeWindow != null ? timeWindow.getDisplayText() : null;
-        String answerBoundaryNote = buildCombinedBoundaryNote(
+        String answerBoundaryNote = AiResolvedTimeWindowDisplaySupport.buildCombinedBoundaryNote(
                 effectiveTimeSource, followUp != null ? followUp.getEffectiveScopeSource() : null,
                 timeWindow, mergedOrg, previousTurn);
 
@@ -419,7 +349,8 @@ public class AiResolvedQueryContextResolver {
                                 previousTurn,
                                 mergedOrg,
                                 followUp,
-                                semanticLlm);
+                                semanticLlm,
+                                phase1Purchase);
         String dishProfitMetricType =
                 AiQuerySemanticLexicon.dishProfitMetricTypeFromStructuredWire(
                         queryIntent != null ? queryIntent.getStructuredIntentDetail() : null);
@@ -543,16 +474,18 @@ public class AiResolvedQueryContextResolver {
         if (!clarificationRequired && businessOverviewEffectiveRouting && odPart != null) {
             if (Boolean.TRUE.equals(orchestrationClarificationRequiredFlag)) {
                 clarificationRequired = true;
-                semanticClarificationQuestion =
-                        StringUtils.hasText(orchestrationClarificationQuestionField)
-                                ? orchestrationClarificationQuestionField
-                                : SemanticParseFallbackPolicy.clarificationQuestion();
+                if (StringUtils.hasText(orchestrationClarificationQuestionField)) {
+                    semanticClarificationQuestion = orchestrationClarificationQuestionField;
+                } else if (!StringUtils.hasText(semanticClarificationQuestion)) {
+                    semanticClarificationQuestion = SemanticParseFallbackPolicy.clarificationQuestion();
+                }
             } else if (Boolean.TRUE.equals(orchestrationApprovalRequired)) {
                 clarificationRequired = true;
-                semanticClarificationQuestion =
-                        StringUtils.hasText(orchestrationReasonField)
-                                ? "该操作需要确认：" + orchestrationReasonField.trim()
-                                : "该操作需要确认后才能继续。";
+                if (StringUtils.hasText(orchestrationReasonField)) {
+                    semanticClarificationQuestion = "该操作需要确认：" + orchestrationReasonField.trim();
+                } else if (!StringUtils.hasText(semanticClarificationQuestion)) {
+                    semanticClarificationQuestion = "该操作需要确认后才能继续。";
+                }
             }
         }
 
@@ -574,6 +507,44 @@ public class AiResolvedQueryContextResolver {
                                 && StringUtils.hasText(storeScopeNarrowDiag.getMatchedSemanticStoreMention())
                         ? storeScopeNarrowDiag.getMatchedSemanticStoreMention().trim()
                         : null;
+
+        LinkedHashMap<String, Object> businessFollowUpCapDebug = new LinkedHashMap<>();
+        if (phase1Purchase != null && phase1Purchase.capabilityDebug() != null) {
+            businessFollowUpCapDebug.putAll(phase1Purchase.capabilityDebug());
+        }
+        String effFollowUpAction =
+                phase1Purchase != null ? phase1Purchase.proposedFollowUpAction() : null;
+        String effFollowUpTargetType =
+                phase1Purchase != null
+                        ? blankToNullSemantic(phase1Purchase.proposedFollowUpTargetEntityType())
+                        : null;
+        String effFollowUpTargetName =
+                phase1Purchase != null
+                        ? blankToNullSemantic(phase1Purchase.proposedFollowUpTargetEntityName())
+                        : null;
+        String effFollowUpTargetId =
+                phase1Purchase != null
+                        ? blankToNullSemantic(phase1Purchase.proposedFollowUpTargetEntityId())
+                        : null;
+        String effFollowUpDetail =
+                phase1Purchase != null ? phase1Purchase.proposedFollowUpDetailWanted() : null;
+        String effFollowUpSourcePlan =
+                phase1Purchase != null ? phase1Purchase.proposedFollowUpSourcePlanType() : null;
+
+        if (!StringUtils.hasText(effFollowUpAction)
+                && queryIntent != null
+                && AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(queryIntent.getPathCode())) {
+            BusinessDiagnosisDrilldownMatrix.DiagnosisStoreRiskFollowUpProbe diagRiskFollowUp =
+                    BusinessDiagnosisDrilldownMatrix.probeStoreRiskReasonsInheritedFollowUp(
+                            previousTurn, queryIntent, normalized);
+            if (diagRiskFollowUp != null) {
+                effFollowUpAction = diagRiskFollowUp.followUpAction();
+                effFollowUpTargetType = diagRiskFollowUp.followUpTargetEntityType();
+                effFollowUpTargetName = diagRiskFollowUp.followUpTargetEntityName();
+                effFollowUpDetail = BusinessDiagnosisAgentV1.DIAGNOSIS_QUESTION_STORE_RISK_REASONS;
+                effFollowUpSourcePlan = DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS;
+            }
+        }
 
         AiResolvedQueryContext built = AiResolvedQueryContext.builder()
                 .runId(runId)
@@ -609,12 +580,20 @@ public class AiResolvedQueryContextResolver {
                 .harnessSingleStoreNarrowingBlocked(singleStoreNarrowingBlocked)
                 .needSemanticClarification(clarificationRequired)
                 .semanticClarificationQuestion(semanticClarificationQuestion)
+                .timeContractValid(
+                        timeContractResult != null ? timeContractResult.valid() : null)
+                .timeContractFailureReason(
+                        timeContractResult != null && !timeContractResult.valid()
+                                ? blankToNullSemantic(timeContractResult.failureReason())
+                                : null)
                 .semanticStoreNarrowingDebug(storeScopeNarrowDiag)
                 .resolvedMatchedSemanticStoreMention(blankToNullSemantic(resolvedMatchedSemanticStoreMention))
                 .semanticPrimaryVersion(blankToNullSemantic(semanticPrimaryVersion))
-                .semanticFallbackUsed(querySemanticLlmEnabled ? semanticFallbackUsed : null)
+                .semanticFallbackUsed(semanticFallbackUsed)
                 .semanticFallbackReason(blankToNullSemantic(semanticFallbackReason))
                 .semanticAdoptedFrom(blankToNullSemantic(semanticAdoptedFrom))
+                .purchaseSemanticFramePrimaryMerge(
+                        semanticLlm != null ? semanticLlm.getPurchaseSemanticFramePrimaryMerge() : null)
                 .semanticAdoptedFields(
                         semanticAdoptedFields == null || semanticAdoptedFields.isEmpty()
                                 ? null
@@ -631,51 +610,28 @@ public class AiResolvedQueryContextResolver {
                                 || semanticV2AbstractIntentNormalizationNotes.isEmpty()
                                 ? null
                                 : new LinkedHashMap<>(semanticV2AbstractIntentNormalizationNotes))
-                .querySemanticV1(querySemanticV1Map)
                 .querySemanticV2InputPreview(querySemanticV2InputPreview)
                 .querySemanticV2(
-                        querySemanticV2Raw == null
+                        semanticLlm == null
                                 ? null
-                                : AiQuerySemanticParseResultDebugSerializer.toSafeMap(querySemanticV2Raw))
-                .querySemanticV2ParseMissing(
-                        querySemanticV2Raw == null ? null : querySemanticV2Raw.isParseMissing())
-                .querySemanticV2Confidence(
-                        querySemanticV2Raw == null ? null : querySemanticV2Raw.getConfidence())
+                                : AiQuerySemanticParseResultDebugSerializer.toSafeMap(semanticLlm))
+                .querySemanticV2ParseMissing(semanticLlm == null ? null : semanticLlm.isParseMissing())
+                .querySemanticV2Confidence(semanticLlm == null ? null : semanticLlm.getConfidence())
                 .querySemanticV2TimeAction(
-                        querySemanticV2Raw == null
-                                ? null
-                                : blankToNullSemantic(
-                                        AiQuerySemanticLlmMergeHelper.canonicalQuerySemanticV2TimeActionForHarness(
-                                                querySemanticV2Raw,
-                                                previousTurn,
-                                                querySemanticMinConfidence,
-                                                normalized)))
+                        semanticLlm == null ? null : blankToNullSemantic(semanticLlm.getTimeAction()))
                 .querySemanticV2ScopeAction(
-                        querySemanticV2Raw == null
-                                ? null
-                                : blankToNullSemantic(querySemanticV2Raw.getScopeAction()))
+                        semanticLlm == null ? null : blankToNullSemantic(semanticLlm.getScopeAction()))
                 .querySemanticV2IntentAction(
-                        querySemanticV2Raw == null
-                                ? null
-                                : blankToNullSemantic(querySemanticV2Raw.getIntentAction()))
+                        semanticLlm == null ? null : blankToNullSemantic(semanticLlm.getIntentAction()))
                 .querySemanticV2MetricAction(
-                        querySemanticV2Raw == null
-                                ? null
-                                : blankToNullSemantic(querySemanticV2Raw.getMetricAction()))
-                .querySemanticV2MentionedStoreNames(
-                        querySemanticV2EffectiveStoreNames(querySemanticV2Raw))
+                        semanticLlm == null ? null : blankToNullSemantic(semanticLlm.getMetricAction()))
+                .querySemanticV2MentionedStoreNames(querySemanticV2EffectiveStoreNames(semanticLlm))
                 .querySemanticV2MentionedDishName(
-                        querySemanticV2Raw == null
-                                ? null
-                                : blankToNullSemantic(querySemanticV2Raw.getMentionedDishName()))
+                        semanticLlm == null ? null : blankToNullSemantic(semanticLlm.getMentionedDishName()))
                 .querySemanticV2RawText(
-                        querySemanticV2Raw == null
-                                ? null
-                                : blankToNullSemantic(querySemanticV2Raw.getObservationLlmRawText()))
+                        semanticLlm == null ? null : blankToNullSemantic(semanticLlm.getObservationLlmRawText()))
                 .querySemanticV2ParseError(
-                        querySemanticV2Raw == null
-                                ? null
-                                : blankToNullSemantic(querySemanticV2Raw.getObservationJsonParseError()))
+                        semanticLlm == null ? null : blankToNullSemantic(semanticLlm.getObservationJsonParseError()))
                 .orchestrationTaskMode(orchestrationTaskMode)
                 .orchestrationSelectedAgents(orchestrationSelectedAgents)
                 .orchestrationSelectedTools(orchestrationSelectedTools)
@@ -686,6 +642,14 @@ public class AiResolvedQueryContextResolver {
                 .orchestrationClarificationQuestion(orchestrationClarificationQuestionField)
                 .orchestrationConfidence(orchestrationConfidenceField)
                 .orchestrationReason(orchestrationReasonField)
+                .followUpAction(blankToNullSemantic(effFollowUpAction))
+                .followUpTargetEntityType(blankToNullSemantic(effFollowUpTargetType))
+                .followUpTargetEntityId(blankToNullSemantic(effFollowUpTargetId))
+                .followUpTargetEntityName(blankToNullSemantic(effFollowUpTargetName))
+                .followUpDetailWanted(blankToNullSemantic(effFollowUpDetail))
+                .followUpSourcePlanType(blankToNullSemantic(effFollowUpSourcePlan))
+                .businessFollowUpCapabilityDebug(
+                        businessFollowUpCapDebug.isEmpty() ? null : businessFollowUpCapDebug)
                 .build();
         logIntentResolutionDiagnostics(runId, convId, message, previousTurn, mergedIntentStem, followUp, built);
         logFollowUpDiagnostics(runId, convId, previousTurn, followUp, built);
@@ -789,28 +753,6 @@ public class AiResolvedQueryContextResolver {
         }
     }
 
-    private static String buildCombinedBoundaryNote(
-            String effectiveTimeWindowSource,
-            String effectiveScopeSource,
-            AiResolvedTimeWindow tw,
-            AiResolvedOrgScope org,
-            AiConversationTurnMemory previousTurn) {
-        boolean timeInh = "INHERITED_PREVIOUS".equals(effectiveTimeWindowSource);
-        boolean scopeInh = "INHERITED_PREVIOUS".equals(effectiveScopeSource);
-        List<String> hints = new ArrayList<>();
-        if (scopeInh) {
-            AiMultiTurnOrgScopePolicy.singleVisibleStoreName(org).ifPresent(hints::add);
-        }
-        if (timeInh && tw != null) {
-            hints.add(AiMultiTurnTimeWindowPolicy.humanReadableTimeCarryover(tw));
-        }
-        if (!hints.isEmpty()) {
-            return "按上文「" + String.join(" + ", hints) + "」口径查询；本句未指定新的时间和门店。若需调整请直接说明。";
-        }
-        return AiMultiTurnTimeWindowPolicy.buildAnswerBoundaryNote(
-                effectiveTimeWindowSource, tw, previousTurn);
-    }
-
     private static boolean semanticDeclaresStoreFocusForLogging(
             AiQuerySemanticParseResult sem, AiResolvedOrgScope groupLikeOrg) {
         if (sem == null || sem.isParseMissing() || groupLikeOrg == null
@@ -830,14 +772,14 @@ public class AiResolvedQueryContextResolver {
             String rawMessage,
             AiConversationTurnMemory previousTurn,
             AiResolvedOrgScope permissionBaselineOrg,
-            AiResolvedQueryIntent currentKeywordIntent,
+            AiResolvedQueryIntent mergedIntentStemForLog,
             boolean currentExplicitTimeMentioned,
             AiFollowUpResolution followUp,
             AiResolvedQueryContext ctx) {
         if (!log.isInfoEnabled()) {
             return;
         }
-        var cur = currentKeywordIntent;
+        var cur = mergedIntentStemForLog;
         var tw = ctx.getTimeWindow();
         var effOrg = ctx.getOrgScope();
         var qi = ctx.getQueryIntent();
@@ -945,11 +887,9 @@ public class AiResolvedQueryContextResolver {
                     .expandedSqlDepartmentIds(new ArrayList<>(whInt))
                     .visibleStoreIds(new ArrayList<>())
                     .storeRootDepartmentIds(new ArrayList<>())
-                    .targetStoreIds(new ArrayList<>())
                     .explicitChildDepartmentIds(new ArrayList<>())
                     .expandedChildDepartmentIds(new ArrayList<>())
                     .visibleWarehouseIds(new ArrayList<>(whIds))
-                    .targetWarehouseIds(whIds)
                     .targetDepartmentIds(new ArrayList<>(whIds))
                     .queryScopeMode(AiResolvedDataScope.QUERY_SCOPE_WAREHOUSE_DEPARTMENT)
                     .allVisibleStores(false)
@@ -1004,11 +944,9 @@ public class AiResolvedQueryContextResolver {
                         .expandedSqlDepartmentIds(new ArrayList<>())
                         .visibleStoreIds(new ArrayList<>())
                         .storeRootDepartmentIds(new ArrayList<>())
-                        .targetStoreIds(new ArrayList<>())
                         .explicitChildDepartmentIds(new ArrayList<>())
                         .expandedChildDepartmentIds(new ArrayList<>())
                         .visibleWarehouseIds(new ArrayList<>())
-                        .targetWarehouseIds(new ArrayList<>())
                         .targetDepartmentIds(new ArrayList<>())
                         .queryScopeMode(AiResolvedDataScope.QUERY_SCOPE_EMPTY)
                         .allVisibleStores(false)
@@ -1028,482 +966,14 @@ public class AiResolvedQueryContextResolver {
                 .expandedSqlDepartmentIds(new ArrayList<>(expandedSqlInt))
                 .visibleStoreIds(new ArrayList<>(rootsCopy))
                 .storeRootDepartmentIds(new ArrayList<>(rootsCopy))
-                .targetStoreIds(new ArrayList<>(rootsCopy))
                 .explicitChildDepartmentIds(new ArrayList<>())
                 .expandedChildDepartmentIds(expandedChildren)
                 .visibleWarehouseIds(new ArrayList<>())
-                .targetWarehouseIds(new ArrayList<>())
                 .targetDepartmentIds(new ArrayList<>())
                 .queryScopeMode(AiResolvedDataScope.QUERY_SCOPE_MODE_STORE)
                 .allVisibleStores(allStores)
                 .allVisibleWarehouses(false)
                 .build();
-    }
-
-    /**
-     * 词典仅写出库结构化子意图、path 仍空时，补全 {@code stock_reduce_query_path}，避免追问仅带「损耗呢」时 effective* 断档。
-     */
-    private static void normalizeStockReduceStructuredRouting(AiResolvedQueryIntent qi) {
-        if (qi == null) {
-            return;
-        }
-        String sid = qi.getStructuredIntentDetail();
-        boolean wants = AiQuerySemanticLexicon.isStructuredStockReduceDetail(sid);
-        String path = qi.getPathCode();
-        if (path != null && !path.isBlank()) {
-            if (!AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(path)) {
-                return;
-            }
-            if (!StringUtils.hasText(qi.getIntentCode())) {
-                qi.setIntentCode(AiResolvedQueryIntent.STOCK_REDUCE_QUERY);
-            }
-            return;
-        }
-        if (!wants) {
-            return;
-        }
-        qi.setPathCode(AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY);
-        qi.setIntentCode(AiResolvedQueryIntent.STOCK_REDUCE_QUERY);
-        if (!StringUtils.hasText(qi.getTopic())) {
-            qi.setTopic("出库/核销查询");
-        }
-    }
-
-    private static void normalizePurchaseStructuredRouting(AiResolvedQueryIntent qi) {
-        if (qi == null) {
-            return;
-        }
-        String sid = qi.getStructuredIntentDetail();
-        boolean ranking = AiQuerySemanticLexicon.isSupplierAmountRankingDetail(sid);
-        boolean needsPurchasePath = ranking
-                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING.equals(sid)
-                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_OVERVIEW_SUMMARY.equals(sid)
-                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_SUMMARY.equals(sid)
-                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY.equals(sid)
-                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(sid);
-        if (!needsPurchasePath && (qi.getPurchaseSourceType() == null || qi.getPurchaseSourceType().isBlank())) {
-            return;
-        }
-        if (qi.getPathCode() != null && !qi.getPathCode().isBlank()) {
-            return;
-        }
-        qi.setPathCode(AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW);
-        qi.setIntentCode(AiResolvedQueryIntent.PURCHASE_OVERVIEW);
-        if (ranking) {
-            qi.setTopic("采购概览（供货商排行）");
-        } else if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING.equals(sid)) {
-            qi.setTopic("采购概览（并排门店金额）");
-        } else if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY.equals(sid)) {
-            qi.setTopic("采购概览（来源金额）");
-        } else if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(sid)) {
-            qi.setTopic("采购概览（来源商品）");
-        } else if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_OVERVIEW_SUMMARY.equals(sid)) {
-            qi.setTopic("采购概览");
-        } else {
-            qi.setTopic("采购概览（来源聚焦）");
-        }
-    }
-
-    /**
-     * 采购专线已落在 {@link AiResolvedQueryIntent#PATH_PURCHASE_OVERVIEW}，但结构化子口径仍为泛化 summary、且
-     * 语义 JSON / 归一化话术已明确供货商维度时，补齐 wire 与 {@code purchaseSourceType}，以便
-     * {@link com.nongxinle.ai.agent.business.MasterBusinessAgent} 路由到 {@link com.nongxinle.ai.agent.business.SupplierAnalysisAgent}。
-     * <p>
-     * 不放行：自采固化、≥2 店并排采购（由 merge 层写门店对比 wire）、已为供货商/商品子口径者。
-     */
-    private static void upgradePurchaseSupplierDimensionFromResolverSignals(
-            AiResolvedQueryIntent qi,
-            AiQuerySemanticParseResult semanticLlm,
-            String normalizedUserMessage) {
-        if (qi == null) {
-            return;
-        }
-        if (!AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(qi.getPathCode())) {
-            return;
-        }
-        if (StringUtils.hasText(qi.getIntentCode())
-                && !AiResolvedQueryIntent.PURCHASE_OVERVIEW.equals(qi.getIntentCode())) {
-            return;
-        }
-        String selfWire = AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE;
-        String qiPst = qi.getPurchaseSourceType();
-        if (StringUtils.hasText(qiPst) && selfWire.equals(qiPst.trim().toUpperCase(Locale.ROOT).replace('-', '_'))) {
-            return;
-        }
-        if (semanticLlm != null && semanticLlm.getMetric() != null) {
-            String mPst = semanticLlm.getMetric().getPurchaseSourceType();
-            if (StringUtils.hasText(mPst) && selfWire.equals(mPst.trim().toUpperCase(Locale.ROOT).replace('-', '_'))) {
-                return;
-            }
-        }
-        PurchaseSupplierTextSignals txt = parsePurchaseSupplierTextSignals(normalizedUserMessage);
-        boolean forceSupplierWireFromExplicitUserText =
-                txt.supplierChannel() && (txt.rankingish() || txt.situational());
-
-        String canonSid =
-                StringUtils.hasText(qi.getStructuredIntentDetail())
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail().trim())
-                        : null;
-        if (StringUtils.hasText(canonSid) && AiQuerySemanticLexicon.isSupplierAmountRankingDetail(canonSid)) {
-            return;
-        }
-        if (StringUtils.hasText(canonSid)
-                && AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING.equals(canonSid)) {
-            if (!forceSupplierWireFromExplicitUserText) {
-                return;
-            }
-        }
-        if (StringUtils.hasText(canonSid) && AiQuerySemanticLexicon.isStructuredPurchaseGoodsFocusedDetail(canonSid)) {
-            if (!forceSupplierWireFromExplicitUserText) {
-                return;
-            }
-        }
-        if (StringUtils.hasText(canonSid)
-                && AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY.equals(canonSid)) {
-            if (!forceSupplierWireFromExplicitUserText) {
-                return;
-            }
-        }
-        if (StringUtils.hasText(canonSid)
-                && AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(canonSid)) {
-            boolean allowOverrideSourceGoods =
-                    forceSupplierWireFromExplicitUserText
-                            && !purchaseUserMessageMentionsGoodsDrilldown(normalizedUserMessage);
-            if (!allowOverrideSourceGoods) {
-                return;
-            }
-        }
-        if (!forceSupplierWireFromExplicitUserText
-                && !purchaseStructuredSidEligibleForSupplierOverviewUpgrade(canonSid)) {
-            return;
-        }
-        if (semanticLlm != null && semanticLlm.effectiveMentionedStoreNames().size() >= 2) {
-            return;
-        }
-
-        boolean signalMetricSupplierPst = metricPurchaseSourceSuggestsSupplier(semanticLlm);
-        boolean signalMetricSupplierRanking = metricRankingTypeSuggestsSupplierAmountRanking(semanticLlm);
-        boolean signalOrch = orchestrationSuggestsSupplierAgent(semanticLlm);
-
-        if (!signalMetricSupplierPst
-                && !signalMetricSupplierRanking
-                && !signalOrch
-                && !txt.supplierChannel()) {
-            return;
-        }
-
-        boolean strongRanking =
-                signalMetricSupplierRanking
-                        || signalOrch
-                        || txt.rankingish()
-                        || (signalMetricSupplierPst && txt.rankingish());
-
-        if (!strongRanking && !signalMetricSupplierPst && !txt.situational()) {
-            return;
-        }
-
-        if (strongRanking) {
-            qi.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_SUPPLIER_AMOUNT_RANKING);
-            if (!StringUtils.hasText(qi.getTopic()) || "采购概览".equals(qi.getTopic())) {
-                qi.setTopic("采购概览（供货商排行）");
-            }
-        } else {
-            qi.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY);
-            if (!StringUtils.hasText(qi.getTopic()) || "采购概览".equals(qi.getTopic())) {
-                qi.setTopic("采购概览（供货商维度）");
-            }
-        }
-        qi.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE);
-        if (!StringUtils.hasText(qi.getIntentCode())) {
-            qi.setIntentCode(AiResolvedQueryIntent.PURCHASE_OVERVIEW);
-        }
-    }
-
-    private record PurchaseSupplierTextSignals(boolean supplierChannel, boolean rankingish, boolean situational) {}
-
-    private static PurchaseSupplierTextSignals parsePurchaseSupplierTextSignals(String normalizedUserMessage) {
-        if (!StringUtils.hasText(normalizedUserMessage)) {
-            return new PurchaseSupplierTextSignals(false, false, false);
-        }
-        String n = normalizedUserMessage.replace(" ", "").replace("\u3000", "");
-        boolean textSupplierChannel =
-                n.contains("供应商") || n.contains("供货商") || n.contains("供货方");
-        boolean textRankingish = false;
-        boolean textSituational = false;
-        if (textSupplierChannel) {
-            textRankingish =
-                    n.contains("最高")
-                            || n.contains("最多")
-                            || n.contains("排行")
-                            || n.contains("排名")
-                            || n.contains("第一")
-                            || n.contains("榜首")
-                            || n.contains("哪一家")
-                            || n.contains("哪家")
-                            || n.contains("哪个")
-                            || n.contains("谁");
-            textSituational = n.contains("情况") || n.contains("分析");
-        }
-        return new PurchaseSupplierTextSignals(textSupplierChannel, textRankingish, textSituational);
-    }
-
-    /**
-     * 用户明确要求「供应商供了哪些货 / 商品」时，应保留 {@link AiQuerySemanticLexicon#STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY}，
-     * 不因出现「供应商」字样误升为金额排行。
-     */
-    private static boolean purchaseUserMessageMentionsGoodsDrilldown(String normalizedUserMessage) {
-        if (!StringUtils.hasText(normalizedUserMessage)) {
-            return false;
-        }
-        String n = normalizedUserMessage.replace(" ", "").replace("\u3000", "").toLowerCase(Locale.ROOT);
-        return n.contains("商品")
-                || n.contains("货品")
-                || n.contains("单品")
-                || n.contains("sku")
-                || n.contains("哪些货")
-                || n.contains("什么货");
-    }
-
-    private static boolean purchaseStructuredSidEligibleForSupplierOverviewUpgrade(String canonSid) {
-        if (!StringUtils.hasText(canonSid)) {
-            return true;
-        }
-        return AiQuerySemanticLexicon.STRUCTURED_PURCHASE_OVERVIEW_SUMMARY.equals(canonSid)
-                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_SUMMARY.equals(canonSid);
-    }
-
-    private static boolean metricPurchaseSourceSuggestsSupplier(AiQuerySemanticParseResult sem) {
-        if (sem == null || sem.getMetric() == null) {
-            return false;
-        }
-        String pst = sem.getMetric().getPurchaseSourceType();
-        if (!StringUtils.hasText(pst)) {
-            return false;
-        }
-        String n = pst.trim().toUpperCase(Locale.ROOT).replace('-', '_');
-        return AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equals(n);
-    }
-
-    private static boolean metricRankingTypeSuggestsSupplierAmountRanking(AiQuerySemanticParseResult sem) {
-        if (sem == null || sem.getMetric() == null) {
-            return false;
-        }
-        String rt = sem.getMetric().getRankingType();
-        if (!StringUtils.hasText(rt)) {
-            return false;
-        }
-        return AiQuerySemanticLexicon.isSupplierAmountRankingDetail(rt);
-    }
-
-    private static boolean orchestrationSuggestsSupplierAgent(AiQuerySemanticParseResult sem) {
-        if (sem == null || sem.getOrchestrationDecisionCandidate() == null) {
-            return false;
-        }
-        List<String> agents = sem.getOrchestrationDecisionCandidate().getSelectedAgents();
-        if (agents == null || agents.isEmpty()) {
-            return false;
-        }
-        for (String raw : agents) {
-            if (!StringUtils.hasText(raw)) {
-                continue;
-            }
-            String t = raw.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
-            if (BusinessAgentNames.SUPPLIER_ANALYSIS.equals(t)) {
-                return true;
-            }
-            if (t.contains("supplier") && (t.contains("analysis") || t.contains("rank"))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** path 已为营收专线但 intent 缺失时补齐，避免 Harness effectiveIntentCode 断档。 */
-    private static void normalizeRevenueIntentRouting(AiResolvedQueryIntent qi) {
-        if (qi == null) {
-            return;
-        }
-        if (!AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(qi.getPathCode())) {
-            return;
-        }
-        if (!StringUtils.hasText(qi.getIntentCode())) {
-            qi.setIntentCode(AiResolvedQueryIntent.REVENUE_OVERVIEW);
-        }
-        if (!StringUtils.hasText(qi.getTopic())) {
-            qi.setTopic("营业额/营收");
-        }
-    }
-
-    /**
-     * 承接「多店营业额对比」后的短追问（如只切换采购指标）：合并后 org 已继承上轮 2+ 店可见子集，
-     * 但若 v2 仅给出 {@code purchase_overview_summary}（点名店名未再输出），在此处升成门店采购金额排行 wire。
-     * 仅依赖 path / 结构化字段 / 上一 path / org 可见门店数，不解析用户原文。
-     */
-    private static boolean upgradePurchaseStoreRankingAfterRevenueFollowUp(
-            AiResolvedQueryIntent qi,
-            AiResolvedOrgScope org,
-            AiConversationTurnMemory previousTurn,
-            AiFollowUpResolution followUp) {
-        if (qi == null || org == null || previousTurn == null || followUp == null) {
-            return false;
-        }
-        if (!"SEMANTIC_STRUCTURAL_MERGE".equals(followUp.getFollowUpType())) {
-            return false;
-        }
-        if (!AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(qi.getPathCode())) {
-            return false;
-        }
-        if (!AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(previousTurn.getLastPathCode())) {
-            return false;
-        }
-        if (org.getVisibleStores() == null) {
-            return false;
-        }
-        long vis =
-                org.getVisibleStores().stream()
-                        .filter(s -> s != null && s.getStoreDepartmentId() != null)
-                        .count();
-        if (vis < 2) {
-            return false;
-        }
-        String sidRaw = qi.getStructuredIntentDetail();
-        if (AiQuerySemanticLexicon.isSupplierAmountRankingDetail(sidRaw)) {
-            return false;
-        }
-        String canon =
-                StringUtils.hasText(sidRaw)
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(sidRaw.trim())
-                        : null;
-        String effective = StringUtils.hasText(canon) ? canon : (StringUtils.hasText(sidRaw) ? sidRaw.trim() : null);
-        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING.equals(effective)) {
-            return false;
-        }
-        if (effective != null
-                && !AiQuerySemanticLexicon.STRUCTURED_PURCHASE_OVERVIEW_SUMMARY.equals(effective)) {
-            return false;
-        }
-        qi.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING);
-        return true;
-    }
-
-    /**
-     * {@link #normalizePurchaseStructuredRouting} 在本类后段补全 intent/path（如仅含 {@code purchaseSourceType}），
-     * 而 {@link com.nongxinle.ai.conversation.AiFollowUpResolver} 内 {@code fillSources} 已写过一轮 {@code effective*}，
-     * 必须把二者对齐，否则 Harness / Replay 会看到 effectiveIntentCode 为空。
-     * <p>
-     * 「全部门店呢」会先被误认为店名片语且无 DB 命中，此处按「大范围重置用语」兜底补全 intent/path/effective*；
-     * 意图叠加上一轮记忆仅在语义 LLM {@code intentAction=INHERIT_PREVIOUS} 且达合并阈值时允许。
-     */
-    private void repairInheritedIntentPathAfterBroadScopeFollowUpLeak(
-            String normalized,
-            AiConversationTurnMemory previousTurn,
-            AiFollowUpResolution followUp,
-            AiResolvedQueryIntent queryIntent,
-            AiQuerySemanticParseResult semanticLlm,
-            boolean applyStructuralLlm,
-            double querySemanticMinConfidence) {
-        if (!StringUtils.hasText(normalized) || previousTurn == null || queryIntent == null || followUp == null) {
-            return;
-        }
-        if (!applyStructuralLlm
-                || semanticLlm == null
-                || semanticLlm.isParseMissing()
-                || !semanticLlm.isUsableForMerge(querySemanticMinConfidence)) {
-            return;
-        }
-        if (!intentActionIsInheritPrevious(semanticLlm)) {
-            return;
-        }
-        if (!StringUtils.hasText(previousTurn.getLastPathCode())) {
-            return;
-        }
-        if (!AiMultiTurnOrgScopePolicy.messageDeclaresBroadGroupReset(normalized)) {
-            return;
-        }
-        if (StringUtils.hasText(queryIntent.getPathCode()) && StringUtils.hasText(queryIntent.getIntentCode())) {
-            return;
-        }
-        if (AiFollowUpHintSupport.currentMessageDeclaresDomainPath(normalized)) {
-            return;
-        }
-        FollowUpPathKind lk = followUpPathKindFrom(previousTurn.getLastPathCode());
-        if (lk == null || AiFollowUpHintSupport.pathTopicConflict(normalized, lk)) {
-            return;
-        }
-        applyInheritedIntentOverlayFromMemory(previousTurn, queryIntent);
-        normalizeStockReduceStructuredRouting(queryIntent);
-        normalizePurchaseStructuredRouting(queryIntent);
-        normalizeRevenueIntentRouting(queryIntent);
-        alignFollowUpEffectiveRoutingWithQueryIntent(followUp, queryIntent);
-        if (!followUp.isFollowUp()) {
-            followUp.setFollowUp(true);
-            followUp.setFollowUpType("GROUP_SCOPE_EXPAND_FOLLOW_UP");
-            followUp.setInheritIntent(true);
-            followUp.setEffectiveIntentSource("INHERITED_PREVIOUS");
-            followUp.setEffectiveScopeSource("CURRENT_MESSAGE_GROUP_EXPAND");
-        }
-    }
-
-    private static boolean intentActionIsInheritPrevious(AiQuerySemanticParseResult sem) {
-        if (sem == null || !StringUtils.hasText(sem.getIntentAction())) {
-            return false;
-        }
-        return "INHERIT_PREVIOUS".equals(
-                sem.getIntentAction().trim().toUpperCase(Locale.ROOT).replace('-', '_'));
-    }
-
-    private static void applyInheritedIntentOverlayFromMemory(
-            AiConversationTurnMemory prev, AiResolvedQueryIntent qi) {
-        if (prev == null || qi == null || !StringUtils.hasText(prev.getLastPathCode())) {
-            return;
-        }
-        if (StringUtils.hasText(qi.getPathCode()) && StringUtils.hasText(qi.getIntentCode())) {
-            return;
-        }
-        AiResolvedQueryIntent fromMem = AiFollowUpResolver.inheritIntentFromMemory(prev, "");
-        if (!StringUtils.hasText(qi.getPathCode())) {
-            qi.setPathCode(fromMem.getPathCode());
-        }
-        if (!StringUtils.hasText(qi.getIntentCode())) {
-            qi.setIntentCode(fromMem.getIntentCode());
-        }
-        if (!StringUtils.hasText(qi.getStructuredIntentDetail())) {
-            qi.setStructuredIntentDetail(fromMem.getStructuredIntentDetail());
-        }
-        if (!StringUtils.hasText(qi.getPurchaseSourceType())) {
-            qi.setPurchaseSourceType(fromMem.getPurchaseSourceType());
-        }
-        qi.setInheritedFromPreviousTurn(true);
-    }
-
-    private static FollowUpPathKind followUpPathKindFrom(String pathCode) {
-        if (!StringUtils.hasText(pathCode)) {
-            return null;
-        }
-        return switch (pathCode) {
-            case AiResolvedQueryIntent.PATH_DISH_PROFIT -> FollowUpPathKind.DISH_PROFIT;
-            case AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW -> FollowUpPathKind.BUSINESS_OVERVIEW;
-            case AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK -> FollowUpPathKind.WAREHOUSE_STOCK;
-            case AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW -> FollowUpPathKind.PURCHASE_OVERVIEW;
-            case AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW -> FollowUpPathKind.REVENUE_OVERVIEW;
-            case AiResolvedQueryIntent.PATH_COST_DIAGNOSIS -> FollowUpPathKind.COST_INSIGHT;
-            case AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY -> FollowUpPathKind.STOCK_REDUCE_QUERY;
-            case AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS -> FollowUpPathKind.BUSINESS_DIAGNOSIS;
-            default -> null;
-        };
-    }
-
-    private static void alignFollowUpEffectiveRoutingWithQueryIntent(
-            AiFollowUpResolution followUp, AiResolvedQueryIntent qi) {
-        if (followUp == null || qi == null) {
-            return;
-        }
-        if (StringUtils.hasText(qi.getIntentCode())) {
-            followUp.setEffectiveIntentCode(qi.getIntentCode());
-        }
-        if (StringUtils.hasText(qi.getPathCode())) {
-            followUp.setEffectivePathCode(qi.getPathCode());
-        }
     }
 
     private AiResolvedOrgScope resolveOrgScope(AiUserContext ctx, Long requestDepartmentId, AiRunCreateRequest request) {
@@ -2297,7 +1767,8 @@ public class AiResolvedQueryContextResolver {
             AiConversationTurnMemory previousTurn,
             AiResolvedOrgScope mergedOrg,
             AiFollowUpResolution followUp,
-            AiQuerySemanticParseResult semLlm) {
+            AiQuerySemanticParseResult semLlm,
+            BusinessDrilldownRequestAssembler.Phase1PurchaseApplyResult phase1Purchase) {
         if (qi == null) {
             return null;
         }
@@ -2313,6 +1784,13 @@ public class AiResolvedQueryContextResolver {
             if (StringUtils.hasText(dish)) {
                 return AiQuerySemanticLexicon.finalizeMentionedDishNameForDishProfit(dish);
             }
+        }
+        if (phase1Purchase != null
+                && AiResultAnchor.ENTITY_TYPE_DISH.equalsIgnoreCase(
+                        blankToNullSemantic(phase1Purchase.proposedFollowUpTargetEntityType()))
+                && StringUtils.hasText(phase1Purchase.proposedFollowUpTargetEntityName())) {
+            return AiQuerySemanticLexicon.finalizeMentionedDishNameForDishProfit(
+                    phase1Purchase.proposedFollowUpTargetEntityName().trim());
         }
         if (AiQuerySemanticLexicon.isDishProfitRankingStructuredDetail(qi.getStructuredIntentDetail())) {
             return null;
@@ -2350,53 +1828,6 @@ public class AiResolvedQueryContextResolver {
         return dishHint;
     }
 
-    /**
-     * 时间/门店/集团范围类短追问：防止 mergeDishProfitCuesInto 等写入 overview 或空白，冲掉上一轮「单菜指标 / 原因」子意图。
-     */
-    private static void stabilizeDishProfitFollowUpStructuredIntent(
-            String normalized,
-            AiFollowUpResolution followUp,
-            AiConversationTurnMemory previousTurn,
-            AiResolvedQueryIntent queryIntent) {
-        if (!StringUtils.hasText(normalized) || followUp == null || !followUp.isFollowUp()
-                || previousTurn == null || queryIntent == null) {
-            return;
-        }
-        if ("NEED_SEMANTIC_CLARIFICATION".equals(followUp.getFollowUpType())) {
-            return;
-        }
-        if (!AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(queryIntent.getPathCode())) {
-            return;
-        }
-        String furType = followUp.getFollowUpType();
-        if (!"TIME_SHIFT".equals(furType)
-                && !"STORE_SCOPE_FOLLOW_UP".equals(furType)
-                && !"GROUP_SCOPE_EXPAND_FOLLOW_UP".equals(furType)
-                && !"SEMANTIC_STRUCTURAL_MERGE".equals(furType)) {
-            return;
-        }
-        String prevSid = previousTurn.getLastStructuredIntentDetail();
-        if (!AiQuerySemanticLexicon.isSingleDishMetricOrReasonStructuredDetail(prevSid)) {
-            return;
-        }
-        String cur = queryIntent.getStructuredIntentDetail();
-        String curWire =
-                StringUtils.hasText(cur) ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(cur.trim()) : "";
-        boolean weak = !StringUtils.hasText(curWire)
-                || AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_OVERVIEW.equals(curWire)
-                || !AiQuerySemanticLexicon.isSingleDishMetricOrReasonStructuredDetail(cur);
-        if (StringUtils.hasText(curWire) && AiQuerySemanticLexicon.isDishProfitRankingStructuredDetail(curWire)) {
-            weak = false;
-        }
-        if (!weak) {
-            return;
-        }
-        queryIntent.setStructuredIntentDetail(prevSid);
-        log.info(
-                "[AiResolvedQueryContext] stabilizeDishProfitFollowUpStructuredIntent followUpType={} restoredStructured={}",
-                furType,
-                prevSid);
-    }
 
     private static boolean equalsNormalizedStoreLabel(String dishHint, String storeLabel) {
         if (!StringUtils.hasText(dishHint) || !StringUtils.hasText(storeLabel)) {
@@ -2407,14 +1838,302 @@ public class AiResolvedQueryContextResolver {
         return !a.isEmpty() && a.equals(b);
     }
 
-    private SemanticAdoption trySemanticAdoption(
+    private static String resolveSemanticClarificationQuestion(AiQuerySemanticParseResult semanticLlm) {
+        if (semanticLlm != null
+                && Boolean.TRUE.equals(semanticLlm.getNeedClarification())
+                && StringUtils.hasText(semanticLlm.getClarificationQuestion())) {
+            return semanticLlm.getClarificationQuestion().trim();
+        }
+        return SemanticParseFallbackPolicy.clarificationQuestion();
+    }
+
+    /**
+     * V2 解析失败（如 LLM 返回 prose）时，Matrix 钉住门店+单菜销量明细（R6），避免 intent/path=null。
+     */
+    private SemanticAdoptionAttempt tryDishSalesMatrixStoreSingleDishAdoption(
+            AiConversationTurnMemory previousTurn,
+            String normalized,
+            LocalDate today,
+            AiResolvedTimeWindow explicitTentative) {
+        AiResolvedQueryIntent merged =
+                AiQuerySemanticLlmMergeHelper.buildDishSalesMatrixStoreSingleDishIntent(
+                        previousTurn, null, normalized);
+        if (merged == null || !StringUtils.hasText(merged.getPathCode())) {
+            return null;
+        }
+        AiQuerySemanticParseResult syntheticSem =
+                AiQuerySemanticLlmMergeHelper.buildSyntheticSemanticForDishSalesStoreSingleDish(
+                        normalized, previousTurn, today);
+        return dishSalesMatrixAdoptionFromSynthetic(syntheticSem, merged, today, explicitTentative);
+    }
+
+    /** V2/LLM 不可用时，诊断 Matrix 多轮子域归因 / 改进行动收养（须留在 business_diagnosis_path）。 */
+    private SemanticAdoptionAttempt tryBusinessDiagnosisDrilldownMatrixContinuationAdoption(
+            AiConversationTurnMemory previousTurn,
+            String normalized,
+            LocalDate today,
+            AiResolvedTimeWindow explicitTentative) {
+        AiResolvedQueryIntent merged =
+                AiQuerySemanticLlmMergeHelper.buildBusinessDiagnosisDrilldownContinuationIntent(
+                        previousTurn, normalized);
+        if (merged == null || !StringUtils.hasText(merged.getPathCode())) {
+            return null;
+        }
+        AiQuerySemanticParseResult syntheticSem =
+                AiQuerySemanticLlmMergeHelper.buildSyntheticSemanticForBusinessDiagnosisDrilldownContinuation(
+                        normalized, previousTurn, today);
+        if (syntheticSem == null || syntheticSem.getTime() == null) {
+            return null;
+        }
+        SemanticTimeContractCheck.Result timeContract =
+                SemanticTimeContractCheck.check(syntheticSem, null, today);
+        if (timeContract == null || !timeContract.valid()) {
+            SemanticTimeContractCheck.Result inherited =
+                    SemanticTimeContractCheck.inheritFromPreviousTurn(previousTurn);
+            if (inherited == null || !inherited.valid()) {
+                return null;
+            }
+            timeContract = inherited;
+        }
+        AiResolvedTimeWindow tentative = timeContract.toTimeWindow(
+                syntheticSem.getTime().getTimeType() != null
+                        ? syntheticSem.getTime().getTimeType()
+                        : AiResolvedTimeWindow.THIS_MONTH);
+        if (tentative == null) {
+            tentative = explicitTentative;
+        }
+        return new SemanticAdoptionAttempt(syntheticSem, merged, tentative, timeContract, null, null);
+    }
+
+    /** V2/LLM 不可用时，Matrix 问句形态收养（首轮排行等，建立 dish_sales_query_path）。 */
+    private SemanticAdoptionAttempt tryDishSalesMatrixUtterancePinAdoption(
+            AiConversationTurnMemory previousTurn,
+            String normalized,
+            LocalDate today,
+            AiResolvedTimeWindow explicitTentative) {
+        AiResolvedQueryIntent merged =
+                AiQuerySemanticLlmMergeHelper.buildDishSalesMatrixUtterancePinIntent(
+                        previousTurn, null, normalized);
+        if (merged == null || !StringUtils.hasText(merged.getPathCode())) {
+            return null;
+        }
+        AiQuerySemanticParseResult syntheticSem =
+                AiQuerySemanticLlmMergeHelper.buildSyntheticSemanticForDishSalesMatrixUtterancePin(
+                        normalized, previousTurn, today);
+        return dishSalesMatrixAdoptionFromSynthetic(syntheticSem, merged, today, explicitTentative);
+    }
+
+    /** V2 解析失败时，Matrix 钉住集团口径单菜销量明细（R4）。 */
+    private SemanticAdoptionAttempt tryDishSalesMatrixGroupSingleDishAdoption(
+            AiConversationTurnMemory previousTurn,
+            String normalized,
+            LocalDate today,
+            AiResolvedTimeWindow explicitTentative) {
+        AiResolvedQueryIntent merged =
+                AiQuerySemanticLlmMergeHelper.buildDishSalesMatrixGroupSingleDishIntent(
+                        previousTurn, null, normalized);
+        if (merged == null || !StringUtils.hasText(merged.getPathCode())) {
+            return null;
+        }
+        AiQuerySemanticParseResult syntheticSem =
+                AiQuerySemanticLlmMergeHelper.buildSyntheticSemanticForDishSalesGroupSingleDish(
+                        normalized, previousTurn, today);
+        return dishSalesMatrixAdoptionFromSynthetic(syntheticSem, merged, today, explicitTentative);
+    }
+
+    /**
+     * V2 解析失败（如 LLM 返回 prose）时，Matrix 钉住销量排行追问，避免落入 NEED_SEMANTIC_CLARIFICATION。
+     */
+    private SemanticAdoptionAttempt tryDishSalesMatrixRankingFollowUpAdoption(
+            AiConversationTurnMemory previousTurn,
+            String normalized,
+            LocalDate today,
+            AiResolvedTimeWindow explicitTentative) {
+        AiResolvedQueryIntent merged =
+                AiQuerySemanticLlmMergeHelper.buildDishSalesMatrixRankingFollowUpIntent(previousTurn, normalized);
+        if (merged == null || !StringUtils.hasText(merged.getPathCode())) {
+            return null;
+        }
+        SemanticTimeContractCheck.Result timeContract =
+                SemanticTimeContractCheck.inheritFromPreviousTurn(previousTurn);
+        if (timeContract == null || !timeContract.valid()) {
+            return null;
+        }
+        AiQuerySemanticParseResult syntheticSem =
+                AiQuerySemanticLlmMergeHelper.buildSyntheticSemanticForDishSalesRankingFollowUp(
+                        normalized, previousTurn);
+        AiResolvedTimeWindow tentative =
+                timeContract.toTimeWindow(
+                        previousTurn != null && StringUtils.hasText(previousTurn.getLastTimeLabel())
+                                ? previousTurn.getLastTimeLabel()
+                                : null);
+        if (tentative == null) {
+            tentative = explicitTentative;
+        }
+        return new SemanticAdoptionAttempt(syntheticSem, merged, tentative, timeContract, null, null);
+    }
+
+    private SemanticAdoptionAttempt tryDishSalesMatrixCrossDomainProfitFollowUpAdoption(
+            AiConversationTurnMemory previousTurn,
+            String normalized,
+            LocalDate today,
+            AiResolvedTimeWindow explicitTentative) {
+        AiResolvedQueryIntent merged =
+                AiQuerySemanticLlmMergeHelper.buildDishSalesMatrixCrossDomainProfitFollowUpIntent(
+                        previousTurn, normalized);
+        if (merged == null || !StringUtils.hasText(merged.getPathCode())) {
+            return null;
+        }
+        SemanticTimeContractCheck.Result timeContract =
+                SemanticTimeContractCheck.inheritFromPreviousTurn(previousTurn);
+        if (timeContract == null || !timeContract.valid()) {
+            return null;
+        }
+        String wire = merged.getStructuredIntentDetail();
+        AiQuerySemanticParseResult syntheticSem =
+                AiQuerySemanticParseResult.builder()
+                        .parseMissing(false)
+                        .confidence(1.0d)
+                        .followUp(true)
+                        .intent(AiResolvedQueryIntent.DISH_SALES_QUERY)
+                        .intentAction("INHERIT_PREVIOUS")
+                        .timeAction("INHERIT_PREVIOUS")
+                        .semanticSlots(
+                                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                                        .queryObject("DISH")
+                                        .operation("DETAIL")
+                                        .metric("GROSS_MARGIN")
+                                        .structuredIntentDetailWire(wire)
+                                        .build())
+                        .time(
+                                AiQuerySemanticParseResult.TimePart.builder()
+                                        .timeType(
+                                                StringUtils.hasText(previousTurn.getLastTimeLabel())
+                                                        ? previousTurn.getLastTimeLabel()
+                                                        : AiResolvedTimeWindow.CUSTOM)
+                                        .startDate(previousTurn.getLastStartDate())
+                                        .endDate(previousTurn.getLastEndDate())
+                                        .timeSource(SemanticTimeContractCheck.SOURCE_INHERITED_PREVIOUS)
+                                        .needInheritFromPrevious(true)
+                                        .build())
+                        .build();
+        AiResolvedTimeWindow tentative =
+                timeContract.toTimeWindow(
+                        previousTurn != null && StringUtils.hasText(previousTurn.getLastTimeLabel())
+                                ? previousTurn.getLastTimeLabel()
+                                : null);
+        if (tentative == null) {
+            tentative = explicitTentative;
+        }
+        return new SemanticAdoptionAttempt(syntheticSem, merged, tentative, timeContract, null, null);
+    }
+
+    private SemanticAdoptionAttempt dishSalesMatrixAdoptionFromSynthetic(
+            AiQuerySemanticParseResult syntheticSem,
+            AiResolvedQueryIntent merged,
+            LocalDate today,
+            AiResolvedTimeWindow explicitTentative) {
+        if (syntheticSem == null || syntheticSem.getTime() == null) {
+            return null;
+        }
+        SemanticTimeContractCheck.Result timeContract =
+                SemanticTimeContractCheck.check(syntheticSem, null, today);
+        if (timeContract == null || !timeContract.valid()) {
+            return null;
+        }
+        AiResolvedTimeWindow tentative =
+                timeContract.toTimeWindow(
+                        syntheticSem.getTime().getTimeType() != null
+                                ? syntheticSem.getTime().getTimeType()
+                                : AiResolvedTimeWindow.THIS_MONTH);
+        if (tentative == null) {
+            tentative = explicitTentative;
+        }
+        return new SemanticAdoptionAttempt(syntheticSem, merged, tentative, timeContract, null, null);
+    }
+
+    private SemanticAdoptionAttempt trySemanticAdoption(
             AiQuerySemanticParseResult sem,
             AiConversationTurnMemory previousTurn,
             String normalized,
             LocalDate today,
             AiResolvedTimeWindow explicitTentative) {
+        if (sem != null
+                && Boolean.TRUE.equals(sem.getNeedClarification())
+                && PurchaseFollowUpSlotSignals.isPurchaseOverviewSummaryScopeTimePivotFollowUp(
+                        sem, previousTurn, normalized)) {
+            sem.setNeedClarification(false);
+            sem.setClarificationQuestion(null);
+        }
+        SemanticAdoptionAttempt diagnosisDrilldownContinuation =
+                tryBusinessDiagnosisDrilldownMatrixContinuationAdoption(
+                        previousTurn, normalized, today, explicitTentative);
+        if (diagnosisDrilldownContinuation != null) {
+            return diagnosisDrilldownContinuation;
+        }
+        SemanticAdoptionAttempt matrixStoreSingleDish =
+                tryDishSalesMatrixStoreSingleDishAdoption(previousTurn, normalized, today, explicitTentative);
+        if (matrixStoreSingleDish != null) {
+            return matrixStoreSingleDish;
+        }
+        SemanticAdoptionAttempt matrixGroupSingleDish =
+                tryDishSalesMatrixGroupSingleDishAdoption(previousTurn, normalized, today, explicitTentative);
+        if (matrixGroupSingleDish != null) {
+            return matrixGroupSingleDish;
+        }
+        SemanticAdoptionAttempt matrixUtterancePin =
+                tryDishSalesMatrixUtterancePinAdoption(previousTurn, normalized, today, explicitTentative);
+        if (matrixUtterancePin != null) {
+            return matrixUtterancePin;
+        }
+        SemanticAdoptionAttempt matrixRankingFollowUp =
+                tryDishSalesMatrixRankingFollowUpAdoption(previousTurn, normalized, today, explicitTentative);
+        if (matrixRankingFollowUp != null) {
+            return matrixRankingFollowUp;
+        }
+        SemanticAdoptionAttempt matrixCrossDomainProfit =
+                tryDishSalesMatrixCrossDomainProfitFollowUpAdoption(
+                        previousTurn, normalized, today, explicitTentative);
+        if (matrixCrossDomainProfit != null) {
+            return matrixCrossDomainProfit;
+        }
         if (sem == null || SemanticParseFallbackPolicy.needSemanticParseClarification(sem, querySemanticMinConfidence)) {
             return null;
+        }
+        boolean purchaseFrameAdoption =
+                !AiQuerySemanticLlmMergeHelper.currentTurnMapsToExplicitNonPurchasePath(sem)
+                        && (AiQuerySemanticLlmMergeHelper.shouldUsePurchaseSemanticFrameAdoption(sem)
+                                || PurchaseFollowUpSlotSignals.isEffectiveStructuralPurchaseFollowUp(
+                                        sem, previousTurn, normalized))
+                        && !AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem);
+        if (purchaseFrameAdoption) {
+            sem =
+                    AiQuerySemanticSlotMerge.applyPreviousFrameInheritanceIfTemporalPurchaseFollowUp(
+                            sem, previousTurn, normalized);
+            // sourceFacet 主语义 → metric.purchaseSourceType，须在 Validator 前 reconcile，避免 compat 字段误伤。
+            sem = AiQuerySemanticSlotMerge.reconcileMetricWithSourceFacet(sem);
+            sem = CurrentSemanticFrame.canonicalizePurchaseFollowUp(sem, previousTurn);
+            CurrentSemanticFrame frame = CurrentSemanticFrame.buildFrame(sem);
+            SemanticFrameValidationResult frameVal =
+                    CurrentSemanticFrameValidator.validate(frame, sem, previousTurn, normalized);
+            if (frameVal.needSemanticClarification()) {
+                sem.setNeedClarification(true);
+                String frameQuestion = frameVal.semanticClarificationQuestion();
+                if (StringUtils.hasText(frameQuestion)) {
+                    sem.setClarificationQuestion(frameQuestion);
+                }
+                List<String> frameCodes = frameVal.violationCodes();
+                String frameRejectReason =
+                        frameCodes != null && !frameCodes.isEmpty()
+                                ? String.join(",", frameCodes)
+                                : "frame_validation";
+                return new SemanticAdoptionAttempt(
+                        sem, null, null, null, frameRejectReason, frameQuestion);
+            }
+            sem = AiQuerySemanticSlotMerge.applyPreviousFrameInheritance(sem, previousTurn, normalized, false);
+            sem.setPurchaseSemanticFramePrimaryMerge(true);
+        } else {
+            sem = AiQuerySemanticSlotMerge.applyPreviousFrameInheritance(sem, previousTurn, normalized, true);
         }
         AiResolvedQueryIntent baseline = AiResolvedQueryIntent.builder().build();
         AiResolvedQueryIntent merged =
@@ -2422,6 +2141,12 @@ public class AiResolvedQueryContextResolver {
                         baseline, sem, querySemanticMinConfidence, normalized, previousTurn);
         if (!StringUtils.hasText(merged.getPathCode())) {
             return null;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart alignedSlots =
+                AiQuerySemanticSlotMerge.alignSemanticSlotsForTurnMemoryPersistence(
+                        sem.getSemanticSlots(), merged.getStructuredIntentDetail());
+        if (alignedSlots != sem.getSemanticSlots()) {
+            sem = sem.toBuilder().semanticSlots(alignedSlots).build();
         }
         AiResolvedTimeWindow tentative =
                 AiQuerySemanticLlmMergeHelper.mergeTentativeTime(
@@ -2432,13 +2157,12 @@ public class AiResolvedQueryContextResolver {
                         normalized,
                         merged,
                         previousTurn);
-        return new SemanticAdoption(sem, merged, tentative);
+        com.nongxinle.ai.semantic.SemanticTimeContractCheck.Result timeContract =
+                com.nongxinle.ai.semantic.SemanticTimeContractCheck.check(sem, previousTurn, today);
+        return new SemanticAdoptionAttempt(sem, merged, tentative, timeContract, null, null);
     }
 
     private String explainV2NonAdoption(AiQuerySemanticParseResult v2) {
-        if (!querySemanticLlmEnabled) {
-            return null;
-        }
         if (v2 == null) {
             return "v2_null";
         }
@@ -2465,6 +2189,9 @@ public class AiResolvedQueryContextResolver {
         List<String> keys = new ArrayList<>();
         if (StringUtils.hasText(r.getIntent())) {
             keys.add("intent");
+        }
+        if (StringUtils.hasText(r.getSemanticDomain())) {
+            keys.add("domain");
         }
         if (StringUtils.hasText(r.getMentionedDishName())) {
             keys.add("mentionedDishName");
@@ -2496,27 +2223,16 @@ public class AiResolvedQueryContextResolver {
         if (r.getMetric() != null && StringUtils.hasText(r.getMetric().getRankingType())) {
             keys.add("metric.rankingType");
         }
+        if (r.getSemanticSlots() != null) {
+            keys.add("semanticSlots");
+        }
         return keys.isEmpty() ? null : keys;
-    }
-
-    private static AiQuerySemanticParseResult preferReadableSemantic(
-            AiQuerySemanticParseResult v2, AiQuerySemanticParseResult v1) {
-        if (v2 != null && !v2.isParseMissing()) {
-            return v2;
-        }
-        if (v1 != null && !v1.isParseMissing()) {
-            return v1;
-        }
-        return v2 != null ? v2 : v1;
-    }
-
-    private static Map<String, Object> safeSemanticMap(AiQuerySemanticParseResult r) {
-        return r == null ? null : AiQuerySemanticParseResultDebugSerializer.toSafeMap(r);
     }
 
     private static String blankToNullSemantic(String s) {
         return StringUtils.hasText(s) ? s.trim() : null;
     }
+
 
     private static List<String> querySemanticV2EffectiveStoreNames(AiQuerySemanticParseResult r) {
         if (r == null) {
@@ -2526,57 +2242,7 @@ public class AiResolvedQueryContextResolver {
         return e == null || e.isEmpty() ? null : new ArrayList<>(e);
     }
 
-    private static AiQuerySemanticParseResult augmentV2SemanticWithInheritedHarnessMultiStores(
-            AiQuerySemanticParseResult sem, AiConversationTurnMemory previousTurn) {
-        if (sem == null || sem.isParseMissing() || previousTurn == null) {
-            return sem;
-        }
-        if (!"INHERIT_PREVIOUS".equals(normalizeSemanticV2ActionToken(sem.getScopeAction()))) {
-            return sem;
-        }
-        List<String> prevStores = previousTurn.getLastHarnessMultiStoreMatchedStores();
-        if (prevStores == null || prevStores.isEmpty()) {
-            prevStores = AiConversationTurnMemory.readHarnessMultiStoreFromToolSummary(previousTurn.getLastToolSummary());
-        }
-        if (prevStores == null || prevStores.size() < 2) {
-            return sem;
-        }
-        if (sem.effectiveMentionedStoreNames().size() >= 2) {
-            return sem;
-        }
-        AiQuerySemanticParseResult.RequestedScopePart rs = sem.getRequestedScope();
-        LinkedHashSet<String> merged = new LinkedHashSet<>();
-        if (rs != null && rs.getMentionedStoreNames() != null) {
-            for (String n : rs.getMentionedStoreNames()) {
-                String t = AiQuerySemanticParseResult.sanitizeMentionedStoreNameToken(n);
-                if (t != null) {
-                    merged.add(t);
-                }
-            }
-        }
-        for (String n : prevStores) {
-            String t = AiQuerySemanticParseResult.sanitizeMentionedStoreNameToken(n);
-            if (t != null) {
-                merged.add(t);
-            }
-        }
-        if (merged.size() < 2) {
-            return sem;
-        }
-        AiQuerySemanticParseResult.RequestedScopePart rsNew =
-                AiQuerySemanticParseResult.RequestedScopePart.builder()
-                        .requestedScopeType(rs != null ? rs.getRequestedScopeType() : null)
-                        .mentionedStoreName(rs != null ? rs.getMentionedStoreName() : null)
-                        .mentionedStoreNames(new ArrayList<>(merged))
-                        .mentionedDepartmentName(rs != null ? rs.getMentionedDepartmentName() : null)
-                        .mentionedWarehouseName(rs != null ? rs.getMentionedWarehouseName() : null)
-                        .scopeSource(rs != null ? rs.getScopeSource() : null)
-                        .needInheritFromPrevious(rs != null ? rs.getNeedInheritFromPrevious() : null)
-                        .build();
-        return sem.toBuilder().requestedScope(rsNew).build();
-    }
-
-    /** 语义 v2：四域经营概览追问仅挪时间时应保持四专线编排，补齐候选里可能被 LLM 截断的子 Agent/tool。 */
+    /** V2 四域经营概览：仅换时间窗且 intent 继承时，补齐 orchestration 候选里可能被 LLM 截断的子 Agent/tool 列表。 */
     private static boolean shouldCanonicalizeOrchestrationForSemanticTimeFollowUpBizOverview(
             AiQuerySemanticParseResult sem, AiConversationTurnMemory previousTurn) {
         if (sem == null) {
@@ -2633,6 +2299,7 @@ public class AiResolvedQueryContextResolver {
                 || AiQuerySemanticLexicon.STRUCTURED_STORE_OUTBOUND_AMOUNT_RANKING.equals(wire)
                 || AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_RANKING.equals(wire);
     }
+
 
     private static List<String> visibleStoreNamesForHarness(AiResolvedOrgScope org) {
         if (org == null || org.getVisibleStores() == null) {

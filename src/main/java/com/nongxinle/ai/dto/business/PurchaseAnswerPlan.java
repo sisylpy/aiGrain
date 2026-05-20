@@ -30,8 +30,19 @@ public class PurchaseAnswerPlan {
     public static final String TYPE_PURCHASE_GOODS_COUNT_RANKING = "PURCHASE_GOODS_COUNT_RANKING";
     public static final String TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING = "PURCHASE_SUPPLIER_AMOUNT_RANKING";
 
+    /** 供货商渠道：按上一锚点或语义追问商品/单价明细（不重跑排行 SQL；商品行来自 Tool 已有列表）。 */
+    public static final String TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL = "PURCHASE_SUPPLIER_GOODS_DETAIL";
+
+    /** 自采渠道：承接 {@code purchase_source_goods_query} + {@code SELF_PURCHASE} 的商品列表明细（与供货商明细共用 Tool 载荷键）。 */
+    public static final String TYPE_PURCHASE_SELF_GOODS_DETAIL = "PURCHASE_SELF_GOODS_DETAIL";
+
     /** 多店范围内：按门店采购金额对比/排序（数据来自采购 Tool 的门店覆盖行，不重跑 SQL）。 */
     public static final String TYPE_PURCHASE_STORE_AMOUNT_RANKING = "PURCHASE_STORE_AMOUNT_RANKING";
+
+    /**
+     * Phase2-A：单一 {@code disGoodsId} + 时间窗 + 权限范围下，按采购记录行 legacy 桶拆自采/供货商/其它（ALL 口径）。
+     */
+    public static final String TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN = "PURCHASE_GOODS_SOURCE_BREAKDOWN";
 
     /** JSON：{@code type}（与文档及前端对齐） */
     @JSONField(name = "type")
@@ -57,4 +68,8 @@ public class PurchaseAnswerPlan {
 
     @Builder.Default
     private Map<String, Object> debug = new LinkedHashMap<>();
+
+    /** 本轮可继承的下钻锚点（由 Builder 从 Tool 已有行抽取，不重算）。 */
+    @Builder.Default
+    private List<AiResultAnchor> resultAnchors = new ArrayList<>();
 }

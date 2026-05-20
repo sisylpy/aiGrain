@@ -39,18 +39,32 @@ public class AiHarnessReplayRequest {
 
     /**
      * 可选：{@code RESOLVER_ONLY}（默认）、{@link AiHarnessReplayMode#GRAPH_RUN}、
-     * {@link AiHarnessReplayMode#PLANNER_EXECUTOR_MOCK}、{@link AiHarnessReplayMode#PLANNER_EXECUTOR_PURCHASE_ADAPTER}、{@link AiHarnessReplayMode#PLANNER_EXECUTOR_REVENUE_ADAPTER}、{@link AiHarnessReplayMode#PLANNER_EXECUTOR_STOCK_REDUCE_ADAPTER}、{@link AiHarnessReplayMode#PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER}。
+     * {@link AiHarnessReplayMode#PLANNER_EXECUTOR_MOCK}（含 Composite strict C-35 / C-48 / C-42）。
      * 未传且 {@link #caseId} 为 {@link AiHarnessBuiltinCases#BUSINESS_DIAGNOSIS_V1_CORE_3}、
      * {@link AiHarnessBuiltinCases#BUSINESS_OVERVIEW_MULTI_AGENT_CORE_3}、或四个单域
      * {@code *_AGENT_GRAPH_CORE} 时，服务端默认 {@code GRAPH_RUN}；
      * {@link AiHarnessBuiltinCases#isPlannerExecutorMockHarnessCase(String)} 为 true 时入口短路为 PlannerExecutor DB-free
-     * （mock 系默认推断 {@code PLANNER_EXECUTOR_MOCK}；采购 / 营收 / 出库 / 菜品毛利 Adapter 系 caseId 分别推断 {@code PLANNER_EXECUTOR_PURCHASE_ADAPTER}、{@code PLANNER_EXECUTOR_REVENUE_ADAPTER}、{@code PLANNER_EXECUTOR_STOCK_REDUCE_ADAPTER}、{@code PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER}）。
+     * （PlannerExecutor Harness case 均推断 {@code PLANNER_EXECUTOR_MOCK}；P1-B Final 已摘除单域 Adapter 专用 replayMode）。
      */
     private String replayMode;
+
+    /**
+     * 可选 dry-run 阶段：{@link AiHarnessReplayDryRunStage#RESOLVED_CONTEXT_ONLY} 时，即使 {@code replayMode}
+     * 为 {@link AiHarnessReplayMode#GRAPH_RUN} 也仅跑 Resolver + 摘要 + TurnMemory、不进同步业务图。
+     * {@link AiHarnessBuiltinCases#BUSINESS_SEMANTIC_1B_RESOLVED_CONTEXT}、
+     * {@link AiHarnessBuiltinCases#STOCK_REDUCE_SEMANTIC_1C_RESOLVED_CONTEXT} 在 {@code dryRunStage} 未传时，服务端会默认设为
+     * {@link AiHarnessReplayDryRunStage#RESOLVED_CONTEXT_ONLY}。
+     * {@link AiHarnessReplayDryRunStage#FULL} 与 {@code null}（未传）等价：不强制缩短，行为与改动前一致。
+     */
+    private AiHarnessReplayDryRunStage dryRunStage;
 
     /** 自定义预期，长度应与 messages 相同；优先级高于 {@link #caseId} */
     private List<AiHarnessReplayExpectedRound> expectations = new ArrayList<>();
 
+    /**
+     * 多轮用户问句。显式非空时直接使用；若为空且 {@link #caseId} 为带固定问句的内置 case，由
+     * {@link AiHarnessReplayService} 调用 {@link AiHarnessBuiltinCases#builtinMessagesForCaseIdOrNull(String)} 补全。
+     */
     private List<String> messages = new ArrayList<>();
 
     /**

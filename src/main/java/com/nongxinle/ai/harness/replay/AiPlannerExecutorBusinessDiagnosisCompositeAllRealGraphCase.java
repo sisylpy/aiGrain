@@ -8,8 +8,7 @@ import com.nongxinle.ai.dto.business.BusinessDiagnosisCompositeAnswerPlan;
 import com.nongxinle.ai.dto.business.BusinessDiagnosisCompositeComposeResult;
 import com.nongxinle.ai.planner.BusinessDiagnosisCompositeReadonlyComposer;
 import com.nongxinle.ai.planner.CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecutor;
-import com.nongxinle.ai.planner.CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor;
-import com.nongxinle.ai.planner.CompositeBusinessDiagnosisRevenuePurchaseStockHybridPlannerStepExecutor;
+import com.nongxinle.ai.planner.CompositeBusinessDiagnosisStepIds;
 import com.nongxinle.ai.planner.DishProfitPlannerAgentAdapter;
 import com.nongxinle.ai.planner.DishProfitPlannerExecutionContext;
 import com.nongxinle.ai.planner.DishProfitPlannerReadRequest;
@@ -38,7 +37,7 @@ import java.util.Map;
  * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE}（C-35）：四域 Hydrated
  * RealBridge（营收 / 采购 / 出库 / 菜品毛利）；诊断 / 建议仍为 mock（无 LLM / 无生产 Action）。
  *
- * @see AiPlannerExecutorBusinessDiagnosisCompositeRevenuePurchaseStockGraphCase
+ * @see PlannerCompositeHarnessContext
  */
 public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
 
@@ -62,20 +61,20 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
     /** 四域 Hydrated 与各单域 Hydrated GraphCase 同构；诊断 / 建议两步 mock。 */
     public static PlannerExecutionPlan buildPlan() {
         RevenuePlannerReadRequest revenueSlice =
-                AiPlannerExecutorRevenueAdapterRealBridgeHydratedGraphCase.buildFullHarnessRevenueReadRequest();
+                PlannerCompositeHarnessContext.RevenueStore.buildFullHarnessRevenueReadRequest();
         AiResolvedQueryContext revenueRq =
-                AiPlannerExecutorRevenueAdapterRealBridgeHydratedGraphCase.buildHydratedResolvedQueryContext();
+                PlannerCompositeHarnessContext.RevenueStore.buildHydratedResolvedQueryContext();
         AiRunState revenueRun =
-                AiPlannerExecutorRevenueAdapterRealBridgeHydratedGraphCase.buildHydratedRunState(revenueRq);
+                PlannerCompositeHarnessContext.RevenueStore.buildHydratedRunState(revenueRq);
         PlannerRevenueExecutionContext revenueExec =
                 PlannerRevenueExecutionContext.builder()
                         .runState(revenueRun)
                         .resolvedQueryContext(revenueRq)
                         .resolvedQueryContextRef(
-                                AiPlannerExecutorRevenueAdapterRealBridgeHydratedGraphCase.HARNESS_RESOLVED_CONTEXT_REF)
+                                PlannerCompositeHarnessContext.RevenueStore.HARNESS_RESOLVED_CONTEXT_REF)
                         .userId(1L)
                         .departmentId(
-                                AiPlannerExecutorRevenueAdapterRealBridgeHydratedGraphCase.HARNESS_STORE_DEPARTMENT_ID)
+                                PlannerCompositeHarnessContext.RevenueStore.HARNESS_STORE_DEPARTMENT_ID)
                         .distributerId(null)
                         .conversationId("0")
                         .runId(Long.toString(HARNESS_SYNTHETIC_RUN_ID))
@@ -83,44 +82,44 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
                         .build();
 
         PurchasePlannerReadRequest purchaseSlice =
-                AiPlannerExecutorPurchaseAdapterRealBridgeHydratedGraphCase.buildFullHarnessPurchaseReadRequest();
+                PlannerCompositeHarnessContext.PurchaseStore.buildFullHarnessPurchaseReadRequest();
         AiResolvedQueryContext purchaseRq =
-                AiPlannerExecutorPurchaseAdapterRealBridgeHydratedGraphCase.buildHydratedResolvedQueryContext();
+                PlannerCompositeHarnessContext.PurchaseStore.buildHydratedResolvedQueryContext();
         AiRunState purchaseRun =
-                AiPlannerExecutorPurchaseAdapterRealBridgeHydratedGraphCase.buildHydratedRunState(purchaseRq);
+                PlannerCompositeHarnessContext.PurchaseStore.buildHydratedRunState(purchaseRq);
         PurchasePlannerExecutionContext purchaseExec =
                 PurchasePlannerExecutionContext.builder()
                         .runState(purchaseRun)
                         .resolvedQueryContext(purchaseRq)
                         .resolvedQueryContextRef(
-                                AiPlannerExecutorPurchaseAdapterRealBridgeHydratedGraphCase.HARNESS_RESOLVED_CONTEXT_REF)
+                                PlannerCompositeHarnessContext.PurchaseStore.HARNESS_RESOLVED_CONTEXT_REF)
                         .userId(1L)
                         .departmentId(
-                                AiPlannerExecutorPurchaseAdapterRealBridgeHydratedGraphCase.HARNESS_STORE_DEPARTMENT_ID)
+                                PlannerCompositeHarnessContext.PurchaseStore.HARNESS_STORE_DEPARTMENT_ID)
                         .distributerId(
-                                AiPlannerExecutorPurchaseAdapterRealBridgeHydratedGraphCase.HARNESS_PURCHASE_DISTRIBUTER_ID)
+                                PlannerCompositeHarnessContext.PurchaseStore.HARNESS_PURCHASE_DISTRIBUTER_ID)
                         .conversationId("0")
                         .runId(Long.toString(HARNESS_SYNTHETIC_RUN_ID))
                         .plannerReadRequest(purchaseSlice)
                         .build();
 
         StockReducePlannerReadRequest stockSlice =
-                AiPlannerExecutorStockReduceAdapterRealBridgeHydratedGraphCase.buildFullHarnessStockReduceReadRequest();
+                PlannerCompositeHarnessContext.StockReduceStore.buildFullHarnessStockReduceReadRequest();
         AiResolvedQueryContext stockRq =
-                AiPlannerExecutorStockReduceAdapterRealBridgeHydratedGraphCase.buildHydratedResolvedQueryContext();
+                PlannerCompositeHarnessContext.StockReduceStore.buildHydratedResolvedQueryContext();
         AiRunState stockRun =
-                AiPlannerExecutorStockReduceAdapterRealBridgeHydratedGraphCase.buildHydratedRunState(stockRq);
+                PlannerCompositeHarnessContext.StockReduceStore.buildHydratedRunState(stockRq);
         StockReducePlannerExecutionContext stockExec =
                 StockReducePlannerExecutionContext.builder()
                         .runState(stockRun)
                         .resolvedQueryContext(stockRq)
                         .resolvedQueryContextRef(
-                                AiPlannerExecutorStockReduceAdapterRealBridgeHydratedGraphCase.HARNESS_RESOLVED_CONTEXT_REF)
+                                PlannerCompositeHarnessContext.StockReduceStore.HARNESS_RESOLVED_CONTEXT_REF)
                         .userId(1L)
                         .departmentId(
-                                AiPlannerExecutorStockReduceAdapterRealBridgeHydratedGraphCase.HARNESS_STORE_DEPARTMENT_ID)
+                                PlannerCompositeHarnessContext.StockReduceStore.HARNESS_STORE_DEPARTMENT_ID)
                         .distributerId(
-                                AiPlannerExecutorStockReduceAdapterRealBridgeHydratedGraphCase
+                                PlannerCompositeHarnessContext.StockReduceStore
                                         .HARNESS_STOCK_REDUCE_DISTRIBUTER_ID)
                         .conversationId("0")
                         .runId(Long.toString(HARNESS_SYNTHETIC_RUN_ID))
@@ -128,22 +127,22 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
                         .build();
 
         DishProfitPlannerReadRequest dishSlice =
-                AiPlannerExecutorDishProfitAdapterRealBridgeHydratedGraphCase.buildFullHarnessDishProfitReadRequest();
+                PlannerCompositeHarnessContext.DishProfitStore.buildFullHarnessDishProfitReadRequest();
         AiResolvedQueryContext dishRq =
-                AiPlannerExecutorDishProfitAdapterRealBridgeHydratedGraphCase.buildHydratedResolvedQueryContext();
+                PlannerCompositeHarnessContext.DishProfitStore.buildHydratedResolvedQueryContext();
         AiRunState dishRun =
-                AiPlannerExecutorDishProfitAdapterRealBridgeHydratedGraphCase.buildHydratedRunState(dishRq);
+                PlannerCompositeHarnessContext.DishProfitStore.buildHydratedRunState(dishRq);
         DishProfitPlannerExecutionContext dishExec =
                 DishProfitPlannerExecutionContext.builder()
                         .runState(dishRun)
                         .resolvedQueryContext(dishRq)
                         .resolvedQueryContextRef(
-                                AiPlannerExecutorDishProfitAdapterRealBridgeHydratedGraphCase.HARNESS_RESOLVED_CONTEXT_REF)
+                                PlannerCompositeHarnessContext.DishProfitStore.HARNESS_RESOLVED_CONTEXT_REF)
                         .userId(1L)
                         .departmentId(
-                                AiPlannerExecutorDishProfitAdapterRealBridgeHydratedGraphCase.HARNESS_STORE_DEPARTMENT_ID)
+                                PlannerCompositeHarnessContext.DishProfitStore.HARNESS_STORE_DEPARTMENT_ID)
                         .distributerId(
-                                AiPlannerExecutorDishProfitAdapterRealBridgeHydratedGraphCase.HARNESS_DISH_PROFIT_DISTRIBUTER_ID)
+                                PlannerCompositeHarnessContext.DishProfitStore.HARNESS_DISH_PROFIT_DISTRIBUTER_ID)
                         .conversationId("0")
                         .runId(Long.toString(HARNESS_SYNTHETIC_RUN_ID))
                         .plannerReadRequest(dishSlice)
@@ -152,8 +151,7 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
         List<PlannerStep> steps = new ArrayList<>();
         steps.add(
                 PlannerStep.builder()
-                        .stepId(CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor
-                                .COMPOSITE_STEP_ID_REVENUE_HYDRATED)
+                        .stepId(CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_REVENUE_HYDRATED)
                         .stepName("revenue_hydrated_real")
                         .order(1)
                         .targetAgent(BusinessAgentNames.REVENUE_OVERVIEW)
@@ -163,13 +161,12 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
                         .acceptanceCriteria("真实 revenue_query；失败仅诚实 DEGRADED，不假 SUCCESS")
                         .mockExecutionStatus(null)
                         .answerPlanRef(
-                                AiPlannerExecutorRevenueAdapterRealBridgeHydratedGraphCase
+                                PlannerCompositeHarnessContext.RevenueStore
                                         .HARNESS_ANSWER_PLAN_REF_AFTER_REVENUE)
                         .build());
         steps.add(
                 PlannerStep.builder()
-                        .stepId(CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor
-                                .COMPOSITE_STEP_ID_PURCHASE_HYDRATED)
+                        .stepId(CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_PURCHASE_HYDRATED)
                         .stepName("purchase_hydrated_real")
                         .order(2)
                         .targetAgent(PurchasePlannerAgentAdapter.TARGET_AGENT)
@@ -179,13 +176,12 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
                         .acceptanceCriteria("真实 purchase_overview；失败仅诚实 DEGRADED，不假 SUCCESS")
                         .mockExecutionStatus(null)
                         .answerPlanRef(
-                                AiPlannerExecutorPurchaseAdapterRealBridgeHydratedGraphCase
+                                PlannerCompositeHarnessContext.PurchaseStore
                                         .HARNESS_ANSWER_PLAN_REF_AFTER_PURCHASE)
                         .build());
         steps.add(
                 PlannerStep.builder()
-                        .stepId(CompositeBusinessDiagnosisRevenuePurchaseStockHybridPlannerStepExecutor
-                                .COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED)
+                        .stepId(CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED)
                         .stepName("stock_reduce_hydrated_real")
                         .order(3)
                         .targetAgent(StockReducePlannerAgentAdapter.TARGET_AGENT)
@@ -196,7 +192,7 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
                         .acceptanceCriteria("真实 stock_reduce_query；失败仅诚实 DEGRADED，不假 SUCCESS")
                         .mockExecutionStatus(null)
                         .answerPlanRef(
-                                AiPlannerExecutorStockReduceAdapterRealBridgeHydratedGraphCase
+                                PlannerCompositeHarnessContext.StockReduceStore
                                         .HARNESS_ANSWER_PLAN_REF_AFTER_STOCK_REDUCE)
                         .build());
         steps.add(
@@ -213,7 +209,7 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
                         .acceptanceCriteria("真实 dish_profit_analysis；失败仅诚实 DEGRADED，不假 SUCCESS")
                         .mockExecutionStatus(null)
                         .answerPlanRef(
-                                AiPlannerExecutorDishProfitAdapterRealBridgeHydratedGraphCase
+                                PlannerCompositeHarnessContext.DishProfitStore
                                         .HARNESS_ANSWER_PLAN_REF_AFTER_DISH_PROFIT)
                         .build());
         steps.add(
@@ -232,7 +228,7 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
                         .acceptanceCriteria(
                                 "确定性 compose；usedTools=mock_diagnosis_compose；非生产诊断推理")
                         .mockExecutionStatus(PlannerStepMockExecutionStatus.SUCCESS)
-                        .answerPlanRef(AiPlannerExecutorBusinessDiagnosisCompositeGraphCase.DIAGNOSIS_ANSWER_PLAN_REF)
+                        .answerPlanRef(PlannerCompositeHarnessContext.DIAGNOSIS_ANSWER_PLAN_REF)
                         .build());
         steps.add(
                 mockTailStep(
@@ -251,7 +247,7 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
                 .steps(steps)
                 .failureStrategy(PlannerFailureStrategy.CONTINUE_WITH_DEGRADED)
                 .resolvedContextRef(
-                        AiPlannerExecutorRevenueAdapterRealBridgeHydratedGraphCase.HARNESS_RESOLVED_CONTEXT_REF)
+                        PlannerCompositeHarnessContext.RevenueStore.HARNESS_RESOLVED_CONTEXT_REF)
                 .revenueReadRequest(revenueSlice)
                 .revenueExecutionContext(revenueExec)
                 .purchaseReadRequest(purchaseSlice)
@@ -260,7 +256,7 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
                 .stockReduceExecutionContext(stockExec)
                 .dishProfitReadRequest(dishSlice)
                 .dishProfitExecutionContext(dishExec)
-                .finalAnswerPlanType(AiPlannerExecutorBusinessDiagnosisCompositeGraphCase.FINAL_ANSWER_PLAN_TYPE)
+                .finalAnswerPlanType(PlannerCompositeHarnessContext.FINAL_ANSWER_PLAN_TYPE)
                 .build();
     }
 
@@ -292,7 +288,7 @@ public final class AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase {
                 new LinkedHashMap<>(
                         AiPlannerExecutorMockGraphCase.toHarnessSummary(
                                 result, replayMessage, runId, conversationId, CASE_ID));
-        root.put("harnessReplayMode", AiHarnessReplayMode.PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER.name());
+        root.put("harnessReplayMode", AiHarnessReplayMode.PLANNER_EXECUTOR_MOCK.name());
         root.put("plannerCompositeHonesty", PLANNER_COMPOSITE_HONESTY_ALL_DATA_REAL_DIAGNOSIS_MOCK);
         root.put("plannerCompositeNote", PLANNER_COMPOSITE_NOTE_ALL_DATA_REAL);
         if (result != null && result.getTrace() != null && result.getTrace().getStepResults() != null) {

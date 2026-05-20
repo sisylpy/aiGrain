@@ -106,7 +106,7 @@
 | **hasStockReduceData** | `stock_reduce_query` 成功且存在可用聚合或商品行。 |
 | **hasPerGoodsPurchaseRows** | **（建议 Phase 1 显式化）** 是否存在 **可展示的商品级采购 Top 行**（与仅有订单级汇总区分）。 |
 | **hasPerGoodsOutboundRows** | **（建议 Phase 1 显式化）** 是否存在 **商品级出库 Top/排名行**（诊断 overview narrative 下常为 false）；与仅有类型汇总区分。 |
-| **hasInventorySnapshotData** | 是否在本轮 **toolResults** 中具备可引用的库存快照（如 `stock_query` / `warehouse_stock_overview` 成功且结构可读）；**默认可为 false**。 |
+| **hasInventorySnapshotData** | 是否在本轮 **toolResults** 中具备可引用的库存快照（**`warehouse_stock_overview`** 成功且结构可读；**Historical**：曾含 `stock_query`，P2 已删）；**默认可为 false**。 |
 | **hasFreshnessShelfLifeData** | 是否具备保鲜期、效期等字段；**默认可为 false**。 |
 | **hasBatchStockData** | 是否具备批次级库存；**默认可为 false**。 |
 

@@ -182,7 +182,6 @@ public class AiConversationHistoryServiceImpl implements AiConversationHistorySe
             dto.setTags(tagsByConv.getOrDefault(cid, List.of()));
             dto.setNotebooks(nbByConv.getOrDefault(cid, List.of()));
             dto.setNoteSummary(summarizeNotes(notesByConv.get(cid)));
-            dto.setConversationType(c.getGbAiConversationType());
             items.add(dto);
         }
 
@@ -213,7 +212,6 @@ public class AiConversationHistoryServiceImpl implements AiConversationHistorySe
                     new AiConversationMessageDTO(
                             mid,
                             m.getGbAiMessageRole(),
-                            m.getGbAiMessageType(),
                             m.getGbAiMessageContent(),
                             m.getGbAiMessageStatus(),
                             m.getGbAiMessageRunId(),

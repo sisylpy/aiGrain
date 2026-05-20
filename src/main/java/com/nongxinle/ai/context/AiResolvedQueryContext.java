@@ -57,10 +57,16 @@ public class AiResolvedQueryContext {
     private String effectiveIntentSource;
 
     /**
+     * Harness：镜像 {@link AiQuerySemanticParseResult#getPurchaseSemanticFramePrimaryMerge()}；
+     * 为 true 时表示本轮采纳语义走采购 CurrentSemanticFrame 主合并路径（与 {@link #semanticAdoptedFrom} 是否为 v2 独立）。
+     */
+    private Boolean purchaseSemanticFramePrimaryMerge;
+
+    /**
      * 菜品毛利：用户话术中点名的菜名（或多轮继承）；仅用于收窄 Tool/答复，非 SQL 部门列表。
      */
     private String mentionedDishName;
-    /** Harness/Debug：由 structuredIntentDetail（wire）推导的指标类别，见 {@link AiQuerySemanticLexicon#dishProfitMetricTypeFromStructuredWire}。 */
+    /** Harness/Debug：由 structuredIntentDetail（wire）推导的指标类别，见 {@link com.nongxinle.ai.conversation.AiQuerySemanticLexicon#dishProfitMetricTypeFromStructuredWire}。 */
     private String dishProfitMetricType;
 
     /**
@@ -97,17 +103,22 @@ public class AiResolvedQueryContext {
     /** Harness：多店并排范围来源（仅观测）：{@code SEMANTIC_SUBSET} / {@code INHERITED_PREVIOUS}。 */
     private String harnessMultiStoreScopeSource;
 
-    // ── QuerySemanticParser：v2 为主入口；v1 为 fallback / 对照观测 ──
+    // ── QuerySemanticParser：v2 唯一主入口 ──
 
     /**
-     * Harness：主链路语义解析协议版本；启用语义 LLM 时为 {@code v2}（优先 v2 输入），关闭时为 null。
+     * Harness：主链路语义解析协议版本；启用语义 LLM 时为 {@code v2}，关闭时为 null。
      */
     private String semanticPrimaryVersion;
-    /** 是否因 v2 未采纳而回落到 v1。 */
+    /**
+     * 历史兼容字段（Harness/debug 契约）；当前 v2 主链路恒为 {@code false}，<b>不代表</b> V1 语义 fallback 或 Java 关键词回退。
+     */
     private Boolean semanticFallbackUsed;
-    /** v2 未采纳原因（如 parse_missing、low_confidence、no_routable_path）；未回落时为 null。 */
+    /**
+     * V2 语义未采纳时的拒收原因（如 {@code time_contract:…}、{@code frame_validation:…}、{@code parse_missing}）；
+     * 采纳成功时为 null。<b>不是</b> V1 fallback 标记。
+     */
     private String semanticFallbackReason;
-    /** 与 {@link #querySemanticParse} 一致的来源：{@code v2} / {@code v1} / 澄清失败时 null。 */
+    /** 与 {@link #querySemanticParse} 一致的来源：{@code v2} 或澄清失败时 null。 */
     private String semanticAdoptedFrom;
     /** 采纳解析结果中非空语义字段键（Harness）。 */
     private List<String> semanticAdoptedFields;
@@ -125,8 +136,11 @@ public class AiResolvedQueryContext {
      * v2：抽象意图（如 COMPARE_STORE）归一至业务 intent 的 Harness 附注（如 fromIntent、toIntent、degradedToPurchaseOverview）。
      */
     private Map<String, Object> semanticV2AbstractIntentNormalizationNotes;
-    /** v1 解析安全摘要（无 ID）；未调用 v1 时为 null。 */
-    private Map<String, Object> querySemanticV1;
+
+    /** D-TIME-CONTRACT：V2 时间输出合同是否通过（仅结构校验；false 时 {@link #needSemanticClarification} 为 true）。 */
+    private Boolean timeContractValid;
+    /** 合同失败原因码：MISSING_TIME_FIELDS、TIME_TYPE_DATE_MISMATCH 等。 */
+    private String timeContractFailureReason;
 
     /** 脱敏 v2 输入预览：currentUserMessage、today、previousTurn、visibleStores（仅 storeName）。 */
     private Map<String, Object> querySemanticV2InputPreview;
@@ -156,4 +170,20 @@ public class AiResolvedQueryContext {
     private String orchestrationClarificationQuestion;
     private Double orchestrationConfidence;
     private String orchestrationReason;
+
+    // ── 多轮下钻（锚点）：Resolver 合并层写入，仅观测 / Harness ──
+
+    /** 如 OBJECT_DRILLDOWN、DETAIL_DRILLDOWN */
+    private String followUpAction;
+    private String followUpTargetEntityType;
+    /** GOODS 锚 {@code disGoodsId} 等（Phase2-A 追问贯通）。 */
+    private String followUpTargetEntityId;
+    private String followUpTargetEntityName;
+    private String followUpDetailWanted;
+    private String followUpSourcePlanType;
+
+    /**
+     * D-13 Registry / Frame Composer Phase 1：扁平 Debug（matchedCapabilityId、queryMode、frame 镜像等）。
+     */
+    private Map<String, Object> businessFollowUpCapabilityDebug;
 }

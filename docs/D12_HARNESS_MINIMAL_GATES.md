@@ -52,7 +52,7 @@
 
 - **共用**：`effectiveIntentCode`、`effectivePathCode`、`structuredIntentDetailWire`（或 `structuredIntentDetail`）、`scopeType`、`visibleStores`、`startDate` / `endDate`、`effectiveTimeWindowSource`。
 - **V2**：`semanticAdoptedFrom`、`querySemanticV2*`、`harnessReplayPlanSource`、`harnessReplay*AnswerPlanType`、多店标志 `multiStoreScopeApplied` 等（详见 **`docs/AI_HARNESS_REPLAY_CASES.md`** · Case V2）。
-- **GRAPH_RUN（概览 / 诊断）**：`orchestrationTaskMode`、`consumedAnswerPlans` / `missingAnswerPlans`、`businessOverviewSuccessfulDomains`（概览）、`dataPlanTools` / `usedTools`、`permissionDenials`、`diagnosisPlanExists`、`businessDiagnosisPlanExists`、`businessDiagnosisPath`、`finalAnswerTextBlank`。
+- **GRAPH_RUN（概览 / 诊断）**：`orchestrationTaskMode`、`consumedAnswerPlans` / `missingAnswerPlans`、`businessOverviewSuccessfulDomains`（概览）、`dataPlanTools` / `usedTools`、`permissionDenials`、`diagnosisPlanExists` / `diagnosisPlanType`（**推荐**）、`businessDiagnosisPlanExists`（**deprecated compat**，同义）、`businessDiagnosisPath`、`finalAnswerTextBlank`。
 - **单域 GRAPH**：`usedTools` 含对应 tool id、`master*ToolResultSuccess`、对应 AnswerPlan 类型探针；**禁止** `effectiveIntentCode` 落 `BUSINESS_OVERVIEW` / `BUSINESS_DIAGNOSIS`（内置已对单域 case 做约束）。
 
 ## D-11 Permission Boundary Spot Gates（第一版）
@@ -87,7 +87,7 @@
 - **路由与结构化**：`effectiveIntentCode`、`effectivePathCode`、`structuredIntentDetailWire`
 - **范围**：`scopeType`、`visibleStores`
 - **工具与计划**：`dataPlanTools`、`usedTools`、`harnessReplayPlanSource`、`harnessReplay*AnswerPlanType`（如 `harnessReplayRevenueAnswerPlanType` 等）
-- **诊断 / 对比**：`diagnosisPlanExists`、`businessDiagnosisPlanExists`、`harnessReplayStorePriorityRankingRowsLen`（及 Summarizer 摊平的同类键）、`harnessReplayStoreCompareEvidenceRowsLen` / `businessStoreCompareEvidenceRowsLen`
+- **诊断 / 对比**：`diagnosisPlanExists`、`diagnosisPlanType`（推荐）；`businessDiagnosisPlanExists`、`harnessReplayBusinessDiagnosisPlanType`（deprecated compat）；`harnessReplayStorePriorityRankingRowsLen`（及 Summarizer 摊平的 `storePriorityRanking*` 同类键）、`harnessReplayStoreCompareEvidenceRowsLen` / `businessStoreCompareEvidenceRowsLen`
 - **权限与产出**：`permissionDenials`、`finalAnswerTextBlank`
 
 **禁止**：对 **`finalAnswerText`** 做**全文 diff**（数据与口径随环境变）。仅可做 **轻量**检查：是否空文本、是否含已知**禁串**、权限场景是否出现**权限提示**而非越权数值等。

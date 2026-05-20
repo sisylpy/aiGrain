@@ -5,7 +5,7 @@ import com.nongxinle.ai.core.AiWorkspaceMode;
 import org.springframework.util.StringUtils;
 
 /**
- * Run 结束后由 {@link AiRunService} 调用，从 {@link AiRunState} 构建可持久化的 {@link AiFollowUpIntentSnapshot}，
+ * Run 结束后由 {@link com.nongxinle.ai.platform.AiRunService} 调用，从 {@link AiRunState} 构建可持久化的 {@link AiFollowUpIntentSnapshot}，
  * 供下一轮 {@link com.nongxinle.ai.resolver.AiResolvedQueryContextResolver} 与会话 memory 加载。
  */
 public final class AiFollowUpIntentSnapshotSupport {

@@ -16,12 +16,16 @@ import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.alibaba.fastjson2.JSON;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -195,6 +199,7 @@ public final class DiagnosisPlanBuilder {
 
         List<Map<String, Object>> storeCompareEvidence =
                 buildStoreCompareEvidenceIfApplicable(state, debug);
+        String storeCompareConclusion = finalizeStoreCompareEvidence(storeCompareEvidence);
 
         DiagnosisPlan plan = DiagnosisPlan.builder()
                 .planType(DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS)
@@ -205,6 +210,7 @@ public final class DiagnosisPlanBuilder {
                 .focusFindings(focusFindings)
                 .evidenceRows(evidence)
                 .storeCompareEvidence(storeCompareEvidence)
+                .storeCompareConclusion(storeCompareConclusion)
                 .debug(debug)
                 .build();
 
@@ -331,7 +337,7 @@ public final class DiagnosisPlanBuilder {
         if (state.isBusinessDiagnosisPath()) {
             return true;
         }
-        // 经营概览表面：对白内容走 BusinessOverviewAgent 与经营卡片，不向用户宣读 DiagnosisPlan 内部骨架文案。
+        // 经营概览 MULTI_AGENT 表面：对白走四域 AnswerPlan / Composer，不向用户宣读 DiagnosisPlan 内部骨架文案。
         if (state.isBusinessOverviewPath()) {
             return false;
         }
@@ -576,6 +582,166 @@ public final class DiagnosisPlanBuilder {
         }
         diagDebug.put("storeCompareEvidenceRows", out.size());
         return out;
+    }
+
+    /**
+     * 门店对比 Plan 物化：稳定排序、预计算采购/营业额比、生成谨慎结论（Composer 只宣读，不重算）。
+     *
+     * @return 谨慎结论文本；无证据行时 {@code null}
+     */
+    private static String finalizeStoreCompareEvidence(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        rows.removeIf(Objects::isNull);
+        rows.sort(Comparator.comparing(
+                        DiagnosisPlanBuilder::storeCompareRowRevenueAmount,
+                        Comparator.nullsFirst(Double::compareTo))
+                .reversed()
+                .thenComparing(DiagnosisPlanBuilder::storeCompareRowLabel));
+        for (Map<String, Object> row : rows) {
+            if (row != null) {
+                row.put("purchaseToRevenueRatioLine", formatStoreComparePurchaseToRevenueRatioLine(row));
+            }
+        }
+        return buildStoreCompareCautiousConclusion(rows);
+    }
+
+    private static Double storeCompareRowRevenueAmount(Map<String, Object> row) {
+        return parseDoubleLoose(row == null ? null : row.get("revenueAmount"));
+    }
+
+    private static String storeCompareRowLabel(Map<String, Object> row) {
+        if (row == null) {
+            return "";
+        }
+        Object name = row.get("storeName");
+        if (name != null && !name.toString().isBlank()) {
+            return name.toString().trim();
+        }
+        Object id = row.get("storeDepartmentId");
+        return id != null ? ("门店 " + id) : "未知门店";
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> storeCompareRowCoverage(Map<String, Object> row) {
+        if (row == null) {
+            return Collections.emptyMap();
+        }
+        Object dc = row.get("dataCoverage");
+        if (dc instanceof Map<?, ?> m) {
+            return (Map<String, Object>) m;
+        }
+        return Collections.emptyMap();
+    }
+
+    private static String formatStoreComparePurchaseToRevenueRatioLine(Map<String, Object> row) {
+        Map<String, Object> dc = storeCompareRowCoverage(row);
+        boolean revOk = Boolean.TRUE.equals(dc.get("revenueAvailable"));
+        boolean purOk = Boolean.TRUE.equals(dc.get("purchaseAvailable"));
+        Double rev = parseDoubleLoose(row.get("revenueAmount"));
+        Double pur = parseDoubleLoose(row.get("purchaseAmount"));
+        if (!revOk || !purOk || rev == null || pur == null || rev <= 0) {
+            return "暂无法计算（营业额或采购缺失，或营业额≤0）";
+        }
+        double pct = pur / rev * 100.0;
+        return String.format(Locale.CHINA, "约 %.1f%%", pct);
+    }
+
+    private static String buildStoreCompareCautiousConclusion(List<Map<String, Object>> rows) {
+        String bestRevName = null;
+        Double bestRev = null;
+        final class RatioPick {
+            String name;
+            double ratio;
+        }
+        List<RatioPick> ratioPicks = new ArrayList<>();
+        boolean anyStockStoreLevel = false;
+
+        for (Map<String, Object> row : rows) {
+            if (row == null) {
+                continue;
+            }
+            Map<String, Object> dc = storeCompareRowCoverage(row);
+            Double rev = parseDoubleLoose(row.get("revenueAmount"));
+            if (Boolean.TRUE.equals(dc.get("revenueAvailable")) && rev != null) {
+                if (bestRev == null || rev > bestRev) {
+                    bestRev = rev;
+                    bestRevName = storeCompareRowLabel(row);
+                }
+            }
+            Double pur = parseDoubleLoose(row.get("purchaseAmount"));
+            if (Boolean.TRUE.equals(dc.get("revenueAvailable"))
+                    && Boolean.TRUE.equals(dc.get("purchaseAvailable"))
+                    && rev != null
+                    && rev > 0
+                    && pur != null) {
+                RatioPick p = new RatioPick();
+                p.name = storeCompareRowLabel(row);
+                p.ratio = pur / rev;
+                ratioPicks.add(p);
+            }
+            if (Boolean.TRUE.equals(dc.get("stockReduceAvailable"))) {
+                anyStockStoreLevel = true;
+            }
+        }
+
+        StringBuilder c = new StringBuilder();
+        if (bestRevName != null && bestRev != null) {
+            String y = storeCompareFmtYuan(bestRev);
+            c.append("从营业额看，").append(bestRevName).append("更高（约 ").append(y != null ? y : bestRev).append(" 元）。");
+        }
+
+        if (ratioPicks.size() >= 2) {
+            RatioPick lowest = ratioPicks.get(0);
+            for (RatioPick p : ratioPicks) {
+                if (p.ratio < lowest.ratio) {
+                    lowest = p;
+                }
+            }
+            if (c.length() > 0) {
+                c.append(" ");
+            }
+            c.append("从采购占营业额比例看，").append(lowest.name).append("占比更低（约 ")
+                    .append(String.format(Locale.CHINA, "%.1f%%", lowest.ratio * 100.0))
+                    .append("），相对采购压力更小。");
+        } else if (ratioPicks.size() == 1) {
+            RatioPick only = ratioPicks.get(0);
+            if (c.length() > 0) {
+                c.append(" ");
+            }
+            c.append(only.name).append(" 的采购占营业额比例约 ")
+                    .append(String.format(Locale.CHINA, "%.1f%%", only.ratio * 100.0))
+                    .append("（仅单店可算，不做门店间优劣排序）。");
+        }
+
+        if (c.length() > 0) {
+            c.append('\n');
+        }
+        if (!anyStockStoreLevel) {
+            c.append("本轮缺少可靠的门店级出库合计，无法把出库压力纳入门店对比。\n");
+        } else {
+            c.append("出库虽有个别门店级合计，仍建议结合完整出库明细再做判断。\n");
+        }
+        c.append("菜品毛利仅集团/范围汇总，没有门店级拆分，不能用于门店对比。\n");
+        c.append("因此不宜仅凭营业额判断哪家「经营更好」，也不宜在缺少完备门店级证据时得出完整经营优劣定论。");
+        return c.toString().trim();
+    }
+
+    private static String storeCompareFmtYuan(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Number n) {
+            BigDecimal b = n instanceof BigDecimal bd ? bd : BigDecimal.valueOf(n.doubleValue());
+            b = b.setScale(2, RoundingMode.HALF_UP);
+            if (b.stripTrailingZeros().scale() <= 0) {
+                return b.stripTrailingZeros().toPlainString();
+            }
+            return b.toPlainString();
+        }
+        String s = v.toString().trim();
+        return s.isEmpty() ? null : s;
     }
 
     private static Map<String, Object> buildOneStoreCompareRow(

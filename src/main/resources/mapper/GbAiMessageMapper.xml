@@ -8,7 +8,6 @@
 		<result column="gb_ai_message_role" property="gbAiMessageRole" />
 		<result column="gb_ai_message_content" property="gbAiMessageContent" />
 		<result column="gb_ai_message_token_count" property="gbAiMessageTokenCount" />
-		<result column="gb_ai_message_memory_extracted" property="gbAiMessageMemoryExtracted" />
 		<result column="gb_ai_message_create_time" property="gbAiMessageCreateTime" />
 	</resultMap>
 
@@ -21,11 +20,9 @@
 		INSERT INTO gb_ai_message (
 			gb_ai_message_conversation_id,
 			gb_ai_message_user_id,
-			gb_ai_message_type,
 			gb_ai_message_role,
 			gb_ai_message_content,
 			gb_ai_message_token_count,
-			gb_ai_message_memory_extracted,
 			gb_ai_message_run_id,
 			gb_ai_message_status,
 			gb_ai_message_create_time,
@@ -33,10 +30,8 @@
 		) VALUES (
 			#{conversationId},
 			#{userId},
-			#{messageType},
 			#{role},
 			#{content},
-			0,
 			0,
 			#{runId},
 			#{status},

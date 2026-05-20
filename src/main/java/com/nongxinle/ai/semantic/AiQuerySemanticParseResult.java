@@ -34,6 +34,8 @@ public class AiQuerySemanticParseResult {
         private String endDate;
         private String timeSource;
         private Boolean needInheritFromPrevious;
+        /** LLM 对时间窗如何得出的简短说明（Harness 观测）。 */
+        private String reason;
     }
 
     @Data
@@ -54,7 +56,7 @@ public class AiQuerySemanticParseResult {
     }
 
     @Data
-    @Builder
+    @Builder(toBuilder = true)
     @NoArgsConstructor
     @AllArgsConstructor
     public static class MetricPart {
@@ -85,7 +87,39 @@ public class AiQuerySemanticParseResult {
         private String reason;
     }
 
+    /**
+     * D-13 Phase1：与 {@code metric} 对象并列的抽象查询槽位（采购排行 / 来源 facet / 锚点策略）；不包含 ID。
+     * LLM JSON 键名 {@code semanticSlots}。
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SemanticSlotsPart {
+        /** GOODS / SUPPLIER / STORE / DISH / ORDER / UNKNOWN */
+        private String queryObject;
+        /** SUMMARY / RANKING / DETAIL / TREND / COMPARE / DIAGNOSIS */
+        private String operation;
+        /** PURCHASE_AMOUNT / PURCHASE_COUNT / UNIT_PRICE / … */
+        private String metric;
+        /** ALL / SELF_PURCHASE / SUPPLIER_PURCHASE；可与 {@link MetricPart#getPurchaseSourceType()} 对齐 */
+        private String sourceFacet;
+        /** USE_PREVIOUS_ANCHOR / IGNORE_PREVIOUS_ANCHOR / REQUIRE_CLARIFICATION */
+        private String anchorPolicy;
+        /** 采购追问明细槽：GOODS_DETAIL / GOODS_UNIT_PRICE / SUPPLIER_UNIT_PRICE / SOURCE_BREAKDOWN 等；由 LLM 输出 */
+        private String detailWanted;
+        /**
+         * 与 {@link com.nongxinle.ai.conversation.AiQuerySemanticLexicon#canonicalStructuredIntentDetailWire} 对齐的采购子口径
+         * wire；业务意图源，禁止由 {@link MetricPart#getRankingType()} 反推。
+         */
+        private String structuredIntentDetailWire;
+    }
+
     private String intent;
+    /**
+     * LLM 顶层 {@code domain}（如 PURCHASE）；仅当模型显式输出时使用，服务端不用 rankingType / 上一帧路径推断业务域。
+     */
+    private String semanticDomain;
     /** DISH_PROFIT/BUSINESS_DIAGNOSIS 等：用户在原文中点到的一道菜名称（口述，非 ID）。 */
     private String mentionedDishName;
     private Double confidence;
@@ -100,6 +134,21 @@ public class AiQuerySemanticParseResult {
     private TimePart time;
     private RequestedScopePart requestedScope;
     private MetricPart metric;
+
+    /** 可选；与 {@link #metric} 并存时以槽位与 metric 互校准 {@code purchaseSourceType}。 */
+    private SemanticSlotsPart semanticSlots;
+
+    /**
+     * D-1X-D1：{@link AiQuerySemanticSlotMerge#applyPreviousFrameInheritance} 在 inherit 前快照的本轮 LLM
+     * {@code semanticSlots.structuredIntentDetailWire}；null 表示本轮 JSON 未显式给出 wire（inherit 回填不算）。
+     */
+    private String currentTurnStructuredIntentDetailWire;
+
+    /**
+     * Resolver：已通过 CurrentSemanticFrame 校验且走采购帧收养路径；{@link AiQuerySemanticLlmMergeHelper#mergeIntent}
+     * 不得再用 metric.rankingType / SurfaceSignals / 供货商 summary 类启发覆盖本轮 structuredIntentDetail / purchaseSourceType。
+     */
+    private Boolean purchaseSemanticFramePrimaryMerge;
 
     private OrchestrationDecisionCandidatePart orchestrationDecisionCandidate;
 
@@ -118,6 +167,12 @@ public class AiQuerySemanticParseResult {
      * 观测：JSON 未产出、无法抽取对象或解析失败时的简短原因码；不参与 merge。
      */
     private String observationJsonParseError;
+
+    /**
+     * Java-only：采购 GOODS 锚矩阵 canonical 原因码（见 {@link com.nongxinle.ai.harness.followup.PurchaseDrilldownMatrix}）；
+     * 非 LLM 字段，供 debug / Harness 审计。
+     */
+    private List<String> purchaseMatrixCanonicalReasons;
 
     /**
      * Harness：本轮若实际走了语义解析 LLM，则为对应 {@link com.nongxinle.ai.prompt.AiPromptRegistry} promptId；
@@ -140,25 +195,7 @@ public class AiQuerySemanticParseResult {
         return c >= minConfidence;
     }
 
-    /**
-     * 是否允许跳过 {@link com.nongxinle.ai.conversation.AiFollowUpResolver} 的 Java 规则追问入口：
-     * 置信度过关且至少有一项结构化路由信号（intent、各 action、或语义 followUp 标记）。
-     */
-    public boolean bypassesJavaKeywordFollowUpGate(double minConfidence) {
-        if (!isStructuralConfidenceOk(minConfidence)) {
-            return false;
-        }
-        if (Boolean.TRUE.equals(followUp)) {
-            return true;
-        }
-        if (StringUtils.hasText(intentAction)
-                || StringUtils.hasText(timeAction)
-                || StringUtils.hasText(scopeAction)
-                || StringUtils.hasText(metricAction)) {
-            return true;
-        }
-        return StringUtils.hasText(intent);
-    }
+
 
     /** 参与语义 scope/门店收窄等：置信度过关且有意向或口述范围/多轮动作信号。 */
     public boolean isUsableForMerge(double minConfidence) {
@@ -182,6 +219,15 @@ public class AiQuerySemanticParseResult {
                 || StringUtils.hasText(timeAction)
                 || StringUtils.hasText(scopeAction)
                 || StringUtils.hasText(metricAction)) {
+            return true;
+        }
+        SemanticSlotsPart ss = semanticSlots;
+        if (ss != null
+                && (StringUtils.hasText(ss.getQueryObject())
+                        || StringUtils.hasText(ss.getOperation())
+                        || StringUtils.hasText(ss.getMetric())
+                        || StringUtils.hasText(ss.getSourceFacet())
+                        || StringUtils.hasText(ss.getAnchorPolicy()))) {
             return true;
         }
         return false;

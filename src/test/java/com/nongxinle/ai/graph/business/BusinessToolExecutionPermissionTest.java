@@ -7,6 +7,7 @@ import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContextResolver;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.graph.business.toolrequest.BusinessToolExecutionRequestResolver;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
 import com.nongxinle.ai.security.AiPermissionGuard;
 import com.nongxinle.ai.scope.AiScopeResolver;
@@ -42,7 +43,7 @@ class BusinessToolExecutionPermissionTest {
 
     private static MasterBusinessAgent masterSkipped() {
         MasterBusinessAgent master = mock(MasterBusinessAgent.class);
-        when(master.tryOrchestrateClassicBusinessOverview(any())).thenReturn(MasterBusinessAgentResult.skipped("test"));
+        when(master.tryOrchestrateBusinessOverviewMultiAgent(any())).thenReturn(MasterBusinessAgentResult.skipped("test"));
         when(master.tryOrchestrateRevenueOverview(any())).thenReturn(MasterBusinessAgentResult.skipped("test"));
         when(master.tryOrchestratePurchaseOverview(any())).thenReturn(MasterBusinessAgentResult.skipped("test"));
         when(master.tryOrchestrateStockReduceQuery(any())).thenReturn(MasterBusinessAgentResult.skipped("test"));
@@ -107,11 +108,11 @@ class BusinessToolExecutionPermissionTest {
                 revenueExec,
                 stockExec,
                 dishExec,
-                masterSkipped());
+                masterSkipped(),
+                mock(BusinessToolExecutionRequestResolver.class));
         node.run(state);
 
         assertThat(executeCount.get()).isEqualTo(AiBusinessToolIds.DEFAULT_COST_INSIGHT_TOOLS.size());
-        assertThat(state.getToolResults()).containsKey(AiBusinessToolIds.GROSS_MARGIN_CALCULATOR);
         assertThat(state.getPermissionDenials()).isEmpty();
     }
 
@@ -168,7 +169,8 @@ class BusinessToolExecutionPermissionTest {
                 revenueExec,
                 stockExec,
                 dishExec,
-                masterSkipped());
+                masterSkipped(),
+                mock(BusinessToolExecutionRequestResolver.class));
         node.run(state);
 
         assertThat(state.getPermissionDenials()).isNotEmpty();

@@ -29,8 +29,8 @@
 
 | 组件 | 作用 |
 |------|------|
-| **`AiQuerySemanticLlmParser`** | 在用户消息上做 **语义 LLM 解析**（v2：`parse(SemanticParserInputBuilder)`；失败或不可采纳时退回 v1 `parseUserQuestion`）。配置开关：`ai.agent.querySemanticLlm.enabled`（默认 true）。 |
-| **v2 归一化器** | `AiQuerySemanticV2StockReducePurchaseDeconflictNormalizer`、`AiQuerySemanticV2CompareStoreNormalizer`、`AiQuerySemanticV2BusinessHolisticIntentNormalizer`、`AiQuerySemanticV2DishProfitGate` 等在 Resolver 内对 **parse 结果**做修正再 **采纳**。 |
+| **`AiQuerySemanticLlmParser`** | 在用户消息上做 **语义 LLM 解析（v2）**：`parse(SemanticParserInput)`；Resolver 内再经归一化与采纳；**无总开关关闭路径**。 |
+| **v2 语义主链** | **`AiQuerySemanticLlmParser`** 解析后由 Resolver **`trySemanticAdoption`** 直接采纳（D-1X-B：已移除 Resolver 内 legacy Normalizer / DishProfitGate）。 |
 | **上一轮记忆** | `AiConversationMemoryService#load` → `AiConversationTurnMemory`，供语义合并与 Harness 日志。 |
 
 **明示**： Resolver 注释写明 **显式时间**来自语义 LLM / 多轮合并，**不对用户话术做 Java 关键词时间解析**。这与 **Gate**、**D-2 路由文档**「禁止用户原文 contains/regex 路由」一致。

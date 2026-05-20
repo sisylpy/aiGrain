@@ -22,10 +22,6 @@ public class GbAiMessageEntity implements Serializable {
 	@TableId(type = IdType.AUTO)
 	private Long gbAiMessageId;
 	/**
-	 *  消息类型 (0=普通消息, 1=促销活动/销售额, 2=公众号相关)
-	 */
-	private Integer gbAiMessageType;
-	/**
 	 *  对话ID
 	 */
 	private Long gbAiMessageConversationId;
@@ -45,10 +41,6 @@ public class GbAiMessageEntity implements Serializable {
 	 *  token数量
 	 */
 	private Integer gbAiMessageTokenCount;
-	/**
-	 *  是否提取到记忆
-	 */
-	private Integer gbAiMessageMemoryExtracted;
 
 	/** 多智能体 Run 锚点（Run 落库任务写入） */
 	private Long gbAiMessageRunId;

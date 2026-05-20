@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * v2「用户语义解析」LLM 输入协议：JSON 序列化后作为 user 消息正文；
- * 与生产主链路 {@link AiQuerySemanticLlmParser#parseUserQuestion(String)} 解耦，供后续 Resolver 切换接入。
+ * 生产 Resolver 调用 {@link AiQuerySemanticLlmParser#parse(SemanticParserInput)}（v2）。
  */
 @Data
 @Builder

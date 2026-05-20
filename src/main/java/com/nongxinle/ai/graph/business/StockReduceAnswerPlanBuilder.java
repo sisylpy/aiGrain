@@ -5,9 +5,13 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
+import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrixRow;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.alibaba.fastjson2.JSON;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -163,6 +167,8 @@ public final class StockReduceAnswerPlanBuilder {
             dbg.put("sortDirection", null);
         }
 
+        enrichStockReduceMatrixDebug(dbg, rq, planType, wire);
+
         return StockReduceAnswerPlan.builder()
                 .planType(planType)
                 .scopeLabel(scopeLabel)
@@ -264,6 +270,9 @@ public final class StockReduceAnswerPlanBuilder {
         if (AiQuerySemanticLexicon.STRUCTURED_STORE_OUTBOUND_AMOUNT_RANKING.equals(w)) {
             return StockReduceAnswerPlan.TYPE_STOCK_REDUCE_STORE_AMOUNT_RANKING;
         }
+        if (AiQuerySemanticLexicon.STRUCTURED_STORE_PRIORITY_RANKING.equals(w)) {
+            return StockReduceAnswerPlan.TYPE_STOCK_REDUCE_STORE_AMOUNT_RANKING;
+        }
         if (AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_COUNT_RANKING.equals(w)) {
             return StockReduceAnswerPlan.TYPE_STOCK_REDUCE_GOODS_COUNT_RANKING;
         }
@@ -311,6 +320,45 @@ public final class StockReduceAnswerPlanBuilder {
             return "";
         }
         return qi.getStructuredIntentDetail().trim();
+    }
+
+    private static void enrichStockReduceMatrixDebug(
+            LinkedHashMap<String, Object> dbg,
+            AiResolvedQueryContext rq,
+            String planType,
+            String wire) {
+        if (dbg == null || rq == null) {
+            return;
+        }
+        String path = rq.getEffectivePathCode();
+        if (path == null || path.isBlank()) {
+            path = rq.getQueryIntent() != null ? rq.getQueryIntent().getPathCode() : null;
+        }
+        AiQuerySemanticParseResult sem = rq.getQuerySemanticParse();
+        String canonWire =
+                StringUtils.hasText(wire)
+                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim())
+                        : null;
+        StockReduceDrilldownMatrixRow row =
+                StockReduceDrilldownMatrix.resolveMatrixRow(path, canonWire, sem);
+        if (row != null) {
+            dbg.put("stockReduceMatrixRowId", row.getRowId());
+            dbg.put("stockReduceStructuredIntentDetailWire", row.getStructuredIntentDetailWire());
+            String gap = StockReduceDrilldownMatrix.knownGapForResolvedRow(row);
+            if (gap != null) {
+                dbg.put("stockReduceKnownGap", gap);
+            }
+        } else if (StringUtils.hasText(canonWire)) {
+            dbg.put("stockReduceStructuredIntentDetailWire", canonWire);
+        }
+        if (StockReduceDrilldownMatrix.detectMatrixWireMissing(sem, path, canonWire)) {
+            dbg.put("stockReduceMatrixWireMissing", StockReduceDrilldownMatrix.MATRIX_WIRE_MISSING);
+        }
+        dbg.put("stockReduceAnswerPlanType", planType);
+        dbg.put("stockReduceReduceType", resolveReduceType(planType));
+        if (sem != null && sem.getMetric() != null && sem.getMetric().getStockReduceType() != null) {
+            dbg.put("stockReduceTypeFacetDebug", sem.getMetric().getStockReduceType().trim());
+        }
     }
 
     private static String resolveScopeLabel(Map<String, Object> inner, AiResolvedQueryContext rq) {

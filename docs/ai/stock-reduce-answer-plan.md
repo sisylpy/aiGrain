@@ -31,6 +31,8 @@
 
 **后续约定**：出库 / 核销 **AnswerPlan + Composer** 收口交付完成后，**仅 bugfix**；扩需求走新立项。
 
+**Renderer 清理（非 classic 经营概览）**：`StockReduceDeterministicRenderer` 与 `DeterministicAnswerRenderer.renderStockReduceToolFallback` 已移除；无计划兜底改为 `StubAnswerComposerNode.composeStockReduceNoPlanFallback`。索引见 `docs/legacy-reference/stock-reduce-deterministic-renderer-removed.md`。
+
 ---
 
 ## 1. 从现状到目标架构

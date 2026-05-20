@@ -32,11 +32,10 @@ public class AiConversationCoreServiceImpl implements AiConversationCoreService 
             Long departmentId,
             Long distributerId,
             AiConversationScopeMode scopeMode,
-            Long userId,
-            Integer type) {
+            Long userId) {
         AiConversationScopeMode mode = scopeMode != null ? scopeMode : AiConversationScopeMode.STORE;
-        log.info("[AgentRun] createNewConversation mode={} departmentId={} distributerId={} userId={} type={}",
-                mode, departmentId, distributerId, userId, type);
+        log.info("[AgentRun] createNewConversation mode={} departmentId={} distributerId={} userId={}",
+                mode, departmentId, distributerId, userId);
 
         Long effDistributerId = distributerId;
         if (mode == AiConversationScopeMode.GROUP) {
@@ -64,7 +63,6 @@ public class AiConversationCoreServiceImpl implements AiConversationCoreService 
         conv.setGbAiConversationTitle("新对话");
         conv.setGbAiConversationCreateTime(new Date());
         conv.setGbAiConversationUpdateTime(new Date());
-        conv.setGbAiConversationType(type != null ? type : 0);
 
         conversationMapper.insert(conv);
         log.info("[AgentRun] 创建新对话成功 - conversationId={} mode={}", conv.getGbAiConversationId(), mode);
@@ -157,7 +155,6 @@ public class AiConversationCoreServiceImpl implements AiConversationCoreService 
         conv.setGbAiConversationTitle(StrUtil.blankToDefault(conversationTitle, "顾问对话"));
         conv.setGbAiConversationCreateTime(new Date());
         conv.setGbAiConversationUpdateTime(new Date());
-        conv.setGbAiConversationType(0);
         conv.setGbAiConversationAdvisorId(advisorId);
         conv.setGbAiConversationThreadKind(AiAdvisorConversationConstants.THREAD_KIND_ADVISOR);
 

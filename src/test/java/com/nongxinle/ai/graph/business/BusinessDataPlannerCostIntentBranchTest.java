@@ -1,5 +1,7 @@
 package com.nongxinle.ai.graph.business;
 
+import com.nongxinle.ai.context.AiResolvedQueryContext;
+import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.core.AiWorkspaceMode;
@@ -31,7 +33,7 @@ class BusinessDataPlannerCostIntentBranchTest {
     }
 
     @Test
-    void groupManager_costQuestion_fullInsightPath_andFiveTools() {
+    void groupManager_costQuestion_fullInsightPath_andFourTools() {
         AiUserContext ctx = AiUserContext.builder()
                 .roleCode(AiRoleCodes.GROUP_MANAGER)
                 .permissions(new ArrayList<>(AiRoleMapper.permissionsForAiRole(AiRoleCodes.GROUP_MANAGER)))
@@ -41,6 +43,7 @@ class BusinessDataPlannerCostIntentBranchTest {
                 .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
                 .normalizedUserInput("本月成本怎么样？")
                 .aiUserContext(ctx)
+                .resolvedQueryContext(costDiagnosisContext())
                 .build();
         node.run(st);
 
@@ -48,6 +51,9 @@ class BusinessDataPlannerCostIntentBranchTest {
         assertThat(st.isPurchaseCostInsightPath()).isFalse();
         assertThat(st.isCouponCostInsightBlocked()).isFalse();
         assertThat(st.getDataPlanTools()).isEqualTo(AiBusinessToolIds.DEFAULT_COST_INSIGHT_TOOLS);
+        assertThat(st.getDataPlanTools()).hasSize(4);
+        assertThat(st.isGroupPurchaseOverview()).isTrue();
+        assertThat(st.isGroupStockReduceQuery()).isTrue();
         assertThat(st.getScopeConvergenceNote()).isNull();
     }
 
@@ -62,11 +68,15 @@ class BusinessDataPlannerCostIntentBranchTest {
                 .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
                 .normalizedUserInput("集团成本怎么样")
                 .aiUserContext(ctx)
+                .resolvedQueryContext(costDiagnosisContext())
                 .build();
 
         node.run(st);
 
         assertThat(st.isCostInsightPath()).isTrue();
+        assertThat(st.getDataPlanTools()).isEqualTo(AiBusinessToolIds.DEFAULT_COST_INSIGHT_TOOLS);
+        assertThat(st.isGroupPurchaseOverview()).isFalse();
+        assertThat(st.isGroupStockReduceQuery()).isFalse();
         assertThat(st.getScopeConvergenceNote())
                 .contains("本门店");
     }
@@ -82,6 +92,7 @@ class BusinessDataPlannerCostIntentBranchTest {
                 .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
                 .normalizedUserInput("本月采购成本咋样")
                 .aiUserContext(ctx)
+                .resolvedQueryContext(costDiagnosisContext())
                 .build();
 
         node.run(st);
@@ -89,6 +100,7 @@ class BusinessDataPlannerCostIntentBranchTest {
         assertThat(st.isPurchaseCostInsightPath()).isTrue();
         assertThat(st.isCostInsightPath()).isFalse();
         assertThat(st.getDataPlanTools()).isEqualTo(AiBusinessToolIds.DEFAULT_PURCHASE_COST_INSIGHT_TOOLS);
+        assertThat(st.getDataPlanTools()).doesNotContain(AiBusinessToolIds.REVENUE_QUERY);
         assertThat(st.getCostIntentConvergenceNote()).contains("采购角色");
     }
 
@@ -103,6 +115,7 @@ class BusinessDataPlannerCostIntentBranchTest {
                 .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
                 .normalizedUserInput("这个月成本还好吗")
                 .aiUserContext(ctx)
+                .resolvedQueryContext(costDiagnosisContext())
                 .build();
 
         node.run(st);
@@ -111,5 +124,12 @@ class BusinessDataPlannerCostIntentBranchTest {
         assertThat(st.getDataPlanTools()).isEmpty();
         assertThat(st.getPermissionDenials()).hasSize(1);
         assertThat(st.getPermissionDenials().get(0).getReason()).contains("没有查看成本分析");
+    }
+
+    private static AiResolvedQueryContext costDiagnosisContext() {
+        return AiResolvedQueryContext.builder()
+                .effectiveIntentCode(AiResolvedQueryIntent.COST_DIAGNOSIS)
+                .effectivePathCode(AiResolvedQueryIntent.PATH_COST_DIAGNOSIS)
+                .build();
     }
 }

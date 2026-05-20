@@ -29,7 +29,7 @@
 
 -- ========== 扩展 gb_ai_conversation（⚠ 仅首次执行；重复执行会报错） ==========
 ALTER TABLE gb_ai_conversation
-    ADD COLUMN gb_ai_conversation_archived TINYINT NOT NULL DEFAULT 0 COMMENT '0 正常 1 归档' AFTER gb_ai_conversation_type,
+    ADD COLUMN gb_ai_conversation_archived TINYINT NOT NULL DEFAULT 0 COMMENT '0 正常 1 归档' AFTER gb_ai_conversation_status,
     ADD COLUMN gb_ai_conversation_last_run_id BIGINT DEFAULT NULL COMMENT '最近 Run（追溯）' AFTER gb_ai_conversation_archived,
     ADD COLUMN gb_ai_conversation_last_message_id BIGINT DEFAULT NULL AFTER gb_ai_conversation_last_run_id,
     ADD COLUMN gb_ai_conversation_last_intent VARCHAR(128) DEFAULT NULL AFTER gb_ai_conversation_last_message_id,
@@ -37,7 +37,7 @@ ALTER TABLE gb_ai_conversation
 
 -- ========== 扩展 gb_ai_message（⚠ 仅首次执行；重复执行会报错） ==========
 ALTER TABLE gb_ai_message
-    ADD COLUMN gb_ai_message_run_id BIGINT DEFAULT NULL COMMENT '多智能体 Run 锚点（后续 Run 落库任务写入）' AFTER gb_ai_message_memory_extracted,
+    ADD COLUMN gb_ai_message_run_id BIGINT DEFAULT NULL COMMENT '多智能体 Run 锚点（后续 Run 落库任务写入）' AFTER gb_ai_message_token_count,
     ADD COLUMN gb_ai_message_status VARCHAR(32) DEFAULT NULL COMMENT 'PENDING/RUNNING/COMPLETED/FAILED' AFTER gb_ai_message_run_id,
     ADD COLUMN gb_ai_message_update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER gb_ai_message_create_time;
 

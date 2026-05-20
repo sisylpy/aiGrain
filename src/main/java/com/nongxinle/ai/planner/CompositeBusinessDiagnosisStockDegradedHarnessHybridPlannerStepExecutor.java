@@ -5,14 +5,12 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * C-42 Harness：与 {@link CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecutor} 同构，但
+ * C-42 **Harness-only partial hybrid**：与 {@link CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecutor} 同构，但
  * {@code step_stock_reduce_hydrated} <strong>不</strong>调用真实 {@code stock_reduce_query}，固定返回
  * {@link PlannerStepStatus#DEGRADED}，用于验证 Composite 降级诚实性。营收 / 采购 / 菜品仍走注入的
  * {@link PlannerStepExecutor}（真实 Bridge）；诊断 compose / 建议仍为 mock。
- * <p>
- * <strong>仅</strong>用于 {@code PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_STOCK_DEGRADED_CORE}；生产
- * ALL_REAL 路径不得使用本类。
- * </p>
+ * <p><strong>不是</strong>生产主链；<strong>仅</strong>用于 {@code PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_STOCK_DEGRADED_CORE}。
+ * 生产 SHADOW / ALL_REAL 路径使用 {@link CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecutor}。</p>
  */
 public final class CompositeBusinessDiagnosisStockDegradedHarnessHybridPlannerStepExecutor implements PlannerStepExecutor {
 
@@ -56,7 +54,7 @@ public final class CompositeBusinessDiagnosisStockDegradedHarnessHybridPlannerSt
         if (step == null || step.getStepId() == null) {
             return false;
         }
-        if (!CompositeBusinessDiagnosisRevenuePurchaseStockHybridPlannerStepExecutor.COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED
+        if (!CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED
                 .equals(step.getStepId().trim())) {
             return false;
         }

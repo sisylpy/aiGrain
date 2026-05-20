@@ -15,7 +15,24 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * C-53：经营诊断 Composite 生产入口 Gate — <b>只读</b>结构化字段，不接 Master、不跑 PlannerExecutor、不执行 Tool、不调 LLM、不改 {@link AiRunState}。
+ * C-53：Composite <b>旁路观测 Gate</b> — <b>只读</b>结构化字段，不接 Master、不跑 PlannerExecutor、
+ * 不执行 Tool、不调 LLM、不改 {@link AiRunState}。
+ *
+ * <p><b>旁路边界（读类注释时优先遵守）</b></p>
+ * <ul>
+ *   <li>BusinessDiagnosisComposite 当前是 {@link BusinessDiagnosisCompositeExecutionMode#SHADOW} /
+ *       {@link BusinessDiagnosisCompositeExecutionMode#HARNESS_ONLY} <strong>旁路观测链</strong>（经
+ *       {@link BusinessDiagnosisCompositeExecutionService}），供 SSE / 调试对照。</li>
+ *   <li><strong>不属于</strong> Master Graph 主回答链；<strong>不替换</strong>
+ *       {@link AiRunState#getFinalAnswerText()}；<strong>不负责</strong>生产用户正文。</li>
+ *   <li>类名中的 {@code Production} 指「是否允许在<strong>生产 Run 环境</strong>中做 Composite 旁路观测判定」，
+ *       <strong>不是</strong>替换用户回答或接入主链 Planner。</li>
+ *   <li>{@link BusinessDiagnosisCompositeExecutionMode#PRIMARY} 为预留值，当前 ExecutionService <strong>不执行</strong>
+ *       PRIMARY，<strong>未接</strong>生产主回答链。</li>
+ * </ul>
+ *
+ * <p>现网 {@code business_diagnosis_path} 用户答覆见 {@link com.nongxinle.ai.graph.business.DiagnosisPlanBuilder} +
+ * {@link com.nongxinle.ai.agent.business.BusinessDiagnosisAgentV1}。</p>
  *
  * <p>判定规则对齐 {@code docs/ai/business-diagnosis-production-gate-design.md} C-52 / C-52.1。</p>
  *

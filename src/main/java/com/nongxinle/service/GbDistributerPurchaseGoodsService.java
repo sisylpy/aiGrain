@@ -159,4 +159,14 @@ public interface GbDistributerPurchaseGoodsService extends IService<GbDistribute
      */
     List<Map<String, Object>> queryGbPurchaseSupplierSpendTop(Map<String, Object> map);
 
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件；单商品（{@code disGoodsId}）按供应商拆行（供货商采购口径由 map 内 legacy 聚焦控制）。
+     */
+    List<Map<String, Object>> queryGbPurchaseSupplierAggRowsForFocusedDisGoods(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件；单一供货商按商品聚合（{@code supplierId} 必填）。
+     */
+    List<Map<String, Object>> queryGbPurchaseGoodsAggRowsForFocusedSupplier(Map<String, Object> map);
+
 }

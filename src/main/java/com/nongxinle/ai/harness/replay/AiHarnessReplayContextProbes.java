@@ -196,7 +196,7 @@ public final class AiHarnessReplayContextProbes {
             return "dishProfitAnswerPlan";
         }
         if (AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(path)) {
-            return HARNESS_PLAN_SOURCE_DISH_SALES_REUSES_DISH_PROFIT_TOOL;
+            return "dishSalesAnswerPlan";
         }
         return null;
     }
@@ -213,6 +213,9 @@ public final class AiHarnessReplayContextProbes {
         }
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(wire)) {
             return DishProfitAnswerPlan.TYPE_DISH_PROFIT_RATE;
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(wire)) {
+            return DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN;
         }
         return null;
     }
@@ -261,8 +264,16 @@ public final class AiHarnessReplayContextProbes {
             }
             return PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW;
         }
-        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_SUMMARY.equals(w)
-                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(w)) {
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(w)) {
+            if (sup) {
+                return PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL;
+            }
+            if (self) {
+                return PurchaseAnswerPlan.TYPE_PURCHASE_SELF_GOODS_DETAIL;
+            }
+            return PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW;
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_SUMMARY.equals(w)) {
             if (self) {
                 return PurchaseAnswerPlan.TYPE_PURCHASE_SELF_OVERVIEW;
             }
@@ -371,7 +382,10 @@ public final class AiHarnessReplayContextProbes {
             return null;
         }
         return switch (wire) {
-            case AiQuerySemanticLexicon.STRUCTURED_REVENUE_OVERVIEW_SUMMARY -> DailyRevenueAnswerPlan.TYPE_REVENUE_OVERVIEW;
+            case AiQuerySemanticLexicon.STRUCTURED_REVENUE_OVERVIEW_SUMMARY,
+                    AiQuerySemanticLexicon.STRUCTURED_REVENUE_SINGLE_STORE_OVERVIEW,
+                    AiQuerySemanticLexicon.STRUCTURED_REVENUE_PERIOD_COMPARE,
+                    AiQuerySemanticLexicon.STRUCTURED_REVENUE_TREND -> DailyRevenueAnswerPlan.TYPE_REVENUE_OVERVIEW;
             case AiQuerySemanticLexicon.STRUCTURED_REVENUE_DINE_IN_OVERVIEW ->
                     DailyRevenueAnswerPlan.TYPE_REVENUE_DINE_IN_OVERVIEW;
             case AiQuerySemanticLexicon.STRUCTURED_REVENUE_TAKEOUT_OVERVIEW ->

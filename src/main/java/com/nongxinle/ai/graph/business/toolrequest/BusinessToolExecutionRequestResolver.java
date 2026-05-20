@@ -470,41 +470,9 @@ public class BusinessToolExecutionRequestResolver {
         return null;
     }
 
-    /**
-     * {@code AiResolvedTimeWindow} 已存在但仅有 {@code timeLabel}（结构化）而无起止日时，用语义 timeType API 落成日期；
-     * 不涉及用户话术 regex。
-     */
+    /** Resolver 已解析时间窗；不在 Tool 请求层根据 timeLabel 推算起止日。 */
     private static AiResolvedTimeWindow effectiveTimeWindowForResolution(AiResolvedQueryContext rqCtx) {
-        if (rqCtx == null) {
-            return null;
-        }
-        AiResolvedTimeWindow tw = rqCtx.getTimeWindow();
-        if (tw == null) {
-            return null;
-        }
-        if (tw.getStartDate() != null && tw.getEndDate() != null) {
-            return tw;
-        }
-        String label = tw.getTimeLabel();
-        if (label == null || label.isBlank()) {
-            return tw;
-        }
-        AiResolvedTimeWindow previous = null;
-        if (rqCtx.getPreviousTurn() != null
-                && rqCtx.getPreviousTurn().getLastStartDate() != null
-                && rqCtx.getPreviousTurn().getLastEndDate() != null) {
-            LocalDate ps = AiResolvedTimeWindow.parseIsoDateOrNull(rqCtx.getPreviousTurn().getLastStartDate());
-            LocalDate pe = AiResolvedTimeWindow.parseIsoDateOrNull(rqCtx.getPreviousTurn().getLastEndDate());
-            if (ps != null && pe != null) {
-                previous = AiResolvedTimeWindow.builder().startDate(ps).endDate(pe).build();
-            }
-        }
-        AiResolvedTimeWindow materialized =
-                AiResolvedTimeWindow.fromSemanticTimeType(label.trim(), LocalDate.now(), previous);
-        if (materialized == null || materialized.getStartDate() == null || materialized.getEndDate() == null) {
-            return tw;
-        }
-        return materialized;
+        return rqCtx != null ? rqCtx.getTimeWindow() : null;
     }
 
     private static String classifyTimeWindowSource(AiResolvedQueryContext rqCtx, AiRunState state) {
@@ -512,11 +480,6 @@ public class BusinessToolExecutionRequestResolver {
             AiResolvedTimeWindow tw = rqCtx.getTimeWindow();
             if (tw.getStartDate() != null && tw.getEndDate() != null) {
                 return "resolvedQueryContext.timeWindow.explicitDates";
-            }
-            AiResolvedTimeWindow eff = effectiveTimeWindowForResolution(rqCtx);
-            if (eff != null && eff.getStartDate() != null && eff.getEndDate() != null
-                    && (tw.getStartDate() == null || tw.getEndDate() == null)) {
-                return "resolvedQueryContext.timeWindow.materializedFromStructuredTimeLabel";
             }
             return "resolvedQueryContext.timeWindow.incomplete_dates";
         }

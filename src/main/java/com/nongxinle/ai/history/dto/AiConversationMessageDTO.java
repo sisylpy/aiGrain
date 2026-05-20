@@ -13,8 +13,6 @@ public class AiConversationMessageDTO {
 
     private String role;
 
-    private Integer messageType;
-
     private String content;
 
     /** PENDING / RUNNING / COMPLETED / FAILED；可为 null */

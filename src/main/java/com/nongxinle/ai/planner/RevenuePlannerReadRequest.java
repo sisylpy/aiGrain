@@ -33,8 +33,7 @@ public class RevenuePlannerReadRequest {
     private LocalDate timeEnd;
 
     /**
-     * 可选人类可读时间标签（与 Resolver 口径一致）；若与起止二选一满足，
-     * adapter 接受「成对起止」或「非空 {@code timeLabel}」作为时间充分条件。
+     * 可选人类可读时间标签（展示/metadata）；Adapter 判定「有时间窗」仅认 {@link #timeStart} + {@link #timeEnd} 成对非空。
      */
     private String timeLabel;
 

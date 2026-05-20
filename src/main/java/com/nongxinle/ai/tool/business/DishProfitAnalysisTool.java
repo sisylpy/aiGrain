@@ -1,6 +1,5 @@
 package com.nongxinle.ai.tool.business;
 
-import com.nongxinle.ai.context.AiResolvedDataScope;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.tool.AiTool;
 import com.nongxinle.ai.tool.ToolRequest;
@@ -22,28 +21,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import com.nongxinle.constants.AiInsightDishProfitScope;
-
 import java.util.Collection;
 import java.util.Collections;
 
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_AI_ROLE_CODE;
-import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_DEPARTMENT_FATHER_ID;
-import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_DIS_ID;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS;
-import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_START_DATE;
-import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_STOP_DATE;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_DISH_NAME_FOCUS_HINT;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_DISH_PROFIT_STRUCTURED_DETAIL;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_QUERY_DISTRIBUTER_ID;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_QUERY_REAL_DEPARTMENT_IDS;
-import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_QUERY_SCOPE_KIND;
-import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_QUERY_STORE_IDS;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_STORE_TO_DEPARTMENT_IDS;
 
 /**
  * 菜品毛利/经营透视：直接复用 {@link GbDepFoodBusinessInsightService#buildInsight}，
- * 供 {@code dish_profit_path} 结构化汇总（与通用 {@link DishSalesQueryTool} 分列，避免和业务概览链混淆）。
+ * 供 {@code dish_profit_path}、{@code dish_sales_query_path}（D-8）与成本链结构化汇总。
+ * Historical removed：独立 {@code dish_sales_query} Tool（{@code DishSalesQueryTool}）已删除，D-8 与成本链均执行本 Tool。
  */
 @Slf4j
 @Component
@@ -61,16 +53,17 @@ public class DishProfitAnalysisTool implements AiTool {
     @Override
     @SuppressWarnings("unchecked")
     public ToolResult execute(ToolRequest request) {
-        Map<String, Object> args = request.getArgs() == null ? Map.of() : request.getArgs();
-        Long dept = toLong(args.get(ARG_DEPARTMENT_FATHER_ID));
-        Long disLong = toLong(args.get(ARG_DIS_ID));
-        String start = str(args.get(ARG_START_DATE));
-        String stop = str(args.get(ARG_STOP_DATE));
+        DishProfitToolScopeSupport.BaseArgs base = DishProfitToolScopeSupport.parseBaseArgs(request);
+        Map<String, Object> args = base.args();
+        Long dept = base.departmentFatherId();
+        Long disLong = base.disId();
+        String start = base.startDate();
+        String stop = base.stopDate();
         String hint = str(args.get(AiBusinessToolIds.ARG_USER_QUESTION_HINT));
         String structuredDetail = str(args.get(ARG_DISH_PROFIT_STRUCTURED_DETAIL));
         String dishFocus = str(args.get(ARG_DISH_NAME_FOCUS_HINT));
 
-        if (dept == null || disLong == null || start.isEmpty() || stop.isEmpty()) {
+        if (base.missingRequired()) {
             Map<String, Object> data = new LinkedHashMap<>();
             return ToolResult.builder()
                     .success(false)
@@ -80,16 +73,12 @@ public class DishProfitAnalysisTool implements AiTool {
                     .build();
         }
 
-        int disId = disLong.intValue();
-        int depFatherIdInt = dept.intValue();
-        String qsk = str(args.get(ARG_QUERY_SCOPE_KIND));
-        List<Integer> qStoreIdsArg = normalizeResolvedDeptIds(args.get(ARG_QUERY_STORE_IDS));
-        if (AiResolvedDataScope.QUERY_SCOPE_KIND_STORE.equals(qsk) && qStoreIdsArg.size() == 1) {
-            depFatherIdInt = qStoreIdsArg.get(0);
-            dept = (long) depFatherIdInt;
-        }
-        boolean groupWideAgg = AiInsightDishProfitScope.isGroupWideMendianAggregateUnderDis(depFatherIdInt);
-        List<Integer> resolvedAllow = normalizeResolvedDeptIds(args.get(ARG_RESOLVED_DEPARTMENT_IDS));
+        DishProfitToolScopeSupport.ResolvedScope scope = DishProfitToolScopeSupport.resolveScope(disLong, dept, args);
+        int disId = scope.disId();
+        int depFatherIdInt = scope.depFatherIdInt();
+        dept = scope.departmentFatherId();
+        boolean groupWideAgg = scope.groupWideMendianAggregate();
+        List<Integer> resolvedAllow = DishProfitToolScopeSupport.normalizeResolvedDeptIds(args.get(ARG_RESOLVED_DEPARTMENT_IDS));
         Collection<Integer> scopeAllow = resolvedAllow.isEmpty() ? null : resolvedAllow;
         String aiRoleCodeLog = str(args.get(ARG_AI_ROLE_CODE));
 
@@ -185,14 +174,14 @@ public class DishProfitAnalysisTool implements AiTool {
 
             Map<String, Object> bir = new LinkedHashMap<>();
             bir.put("storeRootDepartmentFatherId", depFatherIdInt);
-            bir.put("queryScopeKind", qsk.isEmpty() ? null : qsk);
-            bir.put("queryStoreIds", new ArrayList<>(qStoreIdsArg));
+            bir.put("queryScopeKind", scope.queryScopeKind().isEmpty() ? null : scope.queryScopeKind());
+            bir.put("queryStoreIds", new ArrayList<>(scope.queryStoreIds()));
             bir.put("queryRealDepartmentIds",
-                    new ArrayList<>(normalizeResolvedDeptIds(args.get(ARG_QUERY_REAL_DEPARTMENT_IDS))));
+                    new ArrayList<>(DishProfitToolScopeSupport.normalizeResolvedDeptIds(args.get(ARG_QUERY_REAL_DEPARTMENT_IDS))));
             bir.put("queryDistributerId", toIntegerOrNull(args.get(ARG_QUERY_DISTRIBUTER_ID)));
             bir.put("storeToDepartmentIds", args.get(ARG_STORE_TO_DEPARTMENT_IDS));
             bir.put("buildInsightInputStoreRootIds",
-                    qStoreIdsArg.isEmpty() ? List.of(depFatherIdInt) : new ArrayList<>(qStoreIdsArg));
+                    scope.queryStoreIds().isEmpty() ? List.of(depFatherIdInt) : new ArrayList<>(scope.queryStoreIds()));
             bir.put("buildInsightInputDepartmentIdsAllowFilter",
                     scopeAllow == null ? Collections.emptyList() : new ArrayList<>(scopeAllow));
             bir.put("disId", disId);
@@ -282,10 +271,20 @@ public class DishProfitAnalysisTool implements AiTool {
             // 与 AnswerPlan / Harness 对齐：signed(actual - theory)，DESC = 实际高于理论最多优先
             cmp = Comparator.comparing(DishProfitAnalysisTool::theoryActualGapSignedAmount,
                     Comparator.nullsLast(Comparator.naturalOrder())).reversed();
-        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_RANKING.equals(sw)) {
+        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_RANKING.equals(sw)
+                || AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH.equals(sw)
+                || AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_RANKING_HIGH.equals(sw)) {
             cmp = Comparator.comparing((Map<String, Object> m) ->
                     GbDepartmentGoodsStockReduceSupport.coerceDecimal(m.get("soldPortionsTotal")))
                     .reversed();
+        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH.equals(sw)) {
+            cmp = Comparator.comparing((Map<String, Object> m) ->
+                    GbDepartmentGoodsStockReduceSupport.coerceDecimal(m.get("listPriceRevenue")))
+                    .reversed();
+        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_LOW.equals(sw)
+                || AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_RANKING_LOW.equals(sw)) {
+            cmp = Comparator.comparing((Map<String, Object> m) ->
+                    GbDepartmentGoodsStockReduceSupport.coerceDecimal(m.get("soldPortionsTotal")));
         }
         if (cmp != null) {
             work.sort(cmp);
@@ -333,20 +332,6 @@ public class DishProfitAnalysisTool implements AiTool {
         return v == null ? "" : v.toString().trim();
     }
 
-    private static Long toLong(Object v) {
-        if (v == null) {
-            return null;
-        }
-        if (v instanceof Number n) {
-            return n.longValue();
-        }
-        try {
-            return Long.parseLong(v.toString().trim());
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     private static Integer toIntegerOrNull(Object v) {
         if (v == null) {
             return null;
@@ -369,31 +354,6 @@ public class DishProfitAnalysisTool implements AiTool {
         @SuppressWarnings("unchecked")
         Map<String, Object> cast = (Map<String, Object>) raw;
         return cast;
-    }
-
-    private static List<Integer> normalizeResolvedDeptIds(Object raw) {
-        if (raw == null) {
-            return List.of();
-        }
-        if (!(raw instanceof List<?> list)) {
-            return List.of();
-        }
-        ArrayList<Integer> out = new ArrayList<>(list.size());
-        for (Object x : list) {
-            if (x == null) {
-                continue;
-            }
-            if (x instanceof Number n) {
-                out.add(n.intValue());
-            } else {
-                try {
-                    out.add(Integer.parseInt(x.toString().trim()));
-                } catch (Exception ignored) {
-                    // skip
-                }
-            }
-        }
-        return out;
     }
 
     private static List<String> flattenStoreNames(Object raw) {

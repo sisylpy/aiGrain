@@ -27,15 +27,5 @@ public final class AiFollowUpHintSupport {
         return StringUtils.hasText(rawMessage.trim()) && SWITCH_TOPIC_HINT.matcher(rawMessage.replace(" ", "")).find();
     }
 
-    /**
-     * 供 Resolver 等无法注入 Bean 的场景复用。
-     * 语义切换由 QuerySemanticParser 负责；此处恒不阻断（与迁出前一致）。
-     */
-    public static boolean pathTopicConflict(String cur, FollowUpPathKind last) {
-        return topicConflict(cur, last);
-    }
 
-    private static boolean topicConflict(String cur, FollowUpPathKind last) {
-        return false;
-    }
 }

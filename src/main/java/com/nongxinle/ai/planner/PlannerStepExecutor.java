@@ -5,9 +5,8 @@ package com.nongxinle.ai.planner;
  * <strong>不</strong>直接依赖 Domain Agent / Tool 实现类（C-5）。
  * <p>
  * 后续可由 Spring Bean 提供真实实现，内部再分派到各业务 Agent 与 Tool；v1 仅 {@link MockPlannerStepExecutor}。
+ * 目标 Tool / Agent 键名对照见 {@code docs/ai/planner-executor-v1-design.md} §14.4（文档表格，无 Java 常量类）。
  * </p>
- *
- * @see PlannerAdapterToolKeys
  */
 @FunctionalInterface
 public interface PlannerStepExecutor {

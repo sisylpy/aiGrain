@@ -120,12 +120,17 @@
 | Tool id | permission |
 |---------|------------|
 | `revenue_query` | `VIEW_REVENUE` |
-| `business_overview_query` | `VIEW_REVENUE` |
-| `purchase_query` | `VIEW_PURCHASE` |
+| `purchase_overview` | `VIEW_PURCHASE`（Planner **`requiredPermissionForTool`** + 专用 **`evaluateToolInvocation`**） |
+| `warehouse_stock_overview` | `VIEW_STOCK` |
 | `stock_reduce_query` | `VIEW_STOCK` |
-| `dish_sales_query` | `VIEW_DISH_SALES` |
-| `dish_profit_analysis` | **`VIEW_DISH_SALES`** 且 **`VIEW_COST`**（专用 **`evaluateDishProfitAnalysisInvocation`**，非 `requiredPermissionForTool` OR 语义）。另有 **角色拒答**：采购类（**`CostInsightIntentConvergence#isProcurementCostConvergenceRole`**）→ **`forDishProfitPurchaserDenied`**；**`WAREHOUSE_MANAGER` / `REGION_WAREHOUSE`** → **`forDishProfitWarehouseDenied`**；**`DELIVERY_SUPPLIER` / `DELIVERY_DRIVER` / `COUPON_OPERATOR`** → **`forDishProfitUnsupportedRoleDenied`** |
-| `gross_margin_calculator` | `VIEW_COST` |
+| `dish_profit_analysis` | **`VIEW_DISH_SALES`** 且 **`VIEW_COST`**（专用 **`evaluateDishProfitAnalysisInvocation`**，非 `requiredPermissionForTool` OR 语义）。**D-8** `dish_sales_query_path` 与 **成本链**（`cost_diagnosis_path`）第 4 步均执行本品；标价收入读 **`businessInsightSummary.totalListPriceRevenue`**。另有 **角色拒答**：采购类（**`CostInsightIntentConvergence#isProcurementCostConvergenceRole`**）→ **`forDishProfitPurchaserDenied`**；**`WAREHOUSE_MANAGER` / `REGION_WAREHOUSE`** → **`forDishProfitWarehouseDenied`**；**`DELIVERY_SUPPLIER` / `DELIVERY_DRIVER` / `COUPON_OPERATOR`** → **`forDishProfitUnsupportedRoleDenied`** |
+> **Historical removed（D-CLEAN-GROSS-MARGIN-P2B）**：`gross_margin_calculator` / **`GrossMarginCalculatorTool`** 已删除；毛利权限收敛到 **`CostDiagnosisAgent`**（`VIEW_COST`）+ **`CostMarginDerivation`** 内部推导，**无**独立 Tool 权限表项。
+
+> **Historical removed（D-CLEAN-BOV-TOOL-DELETE）**：`business_overview_query` / **`BusinessOverviewQueryTool`** 已删除，**不再**有活跃 Tool 权限表项。现网 **`BUSINESS_OVERVIEW` / `business_overview_path`** 仅 **MULTI_AGENT 四域**：**`revenue_query` + `purchase_overview` + `stock_reduce_query` + `dish_profit_analysis`** → **`BusinessOverviewAnswerPlan.MULTI_AGENT_V1`** → **`StubAnswerComposerNode` 确定性 Composer**（前端以 **`answer_delta.data.text`** 为准）。classic 六工具链见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)。
+
+> **Historical removed（D-CLEAN-STOCK-QUERY-P2）**：`stock_query` / **`StockQueryTool`** 已删除；库存/库房执行 Tool 权限仅 **`warehouse_stock_overview` → `VIEW_STOCK`**（上表）。语义 wire **`"STOCK_QUERY"`** 仍映射到 **`WAREHOUSE_STOCK_OVERVIEW`**，**不**恢复独立 Tool 权限项。
+
+> **Historical removed（D-CLEAN-PURCHASE-QUERY-P2）**：`purchase_query` / **`PurchaseQueryTool`** 已删除；采购快照与成本链第 2 步统一 **`purchase_overview` → `VIEW_PURCHASE`**（上表）。
 
 **`CostDiagnosisAgent`**：`VIEW_COST`。  
 **`DishProfitAgent`**：无额外 Guard；其上游 **`dish_profit_analysis`** 已做鉴权。
@@ -145,9 +150,9 @@
 
 | `roleCode` / 条件 | 数据范围（与 §4 一致） | Tool / Agent | 说明 |
 |-------------------|------------------------|--------------|------|
-| `GROUP_MANAGER`（`GROUP_MANAGER_APP`） | `GROUP`，可查集团口径 | **5 Tool + `CostDiagnosisAgent`** | 需 **`VIEW_COST`** 等与 §3 所列全链权限 |
-| `STORE_MANAGER` 等门店锚点账号 | `STORE` / `DEPARTMENT`，仅本门店/挂靠部门 | 同上 **5 Tool + CostDiagnosis** | 权限含 **`VIEW_COST`、`VIEW_REVENUE`、`VIEW_PURCHASE`/`VIEW_STOCK`、`VIEW_DISH_SALES`**；问句中出现 **「集团」+成本类词** 时 **不扩展为集团查询**，仅在答复前追加 **【查询范围】** 说明：*你当前账号只能查看本门店数据。下面是本门店本月成本情况。* |
-| **`STORE_PURCHASER`、`GROUP_PURCHASER`、`WAREHOUSE_PURCHASER`、`CENTRAL_KITCHEN_PURCHASER`、`REGION_PURCHASER`** | 各自的采购/库区锚点（§4） | **`purchase_query` + `stock_reduce_query`（权限允许时）**；**不调** **`revenue_query`、`gross_margin_calculator`、不把 `CostDiagnosisAgent`** | 前置 **【意图说明】**：采购角色不可看完整经营成本/毛利，仅从采购视角分析 |
+| `GROUP_MANAGER`（`GROUP_MANAGER_APP`） | `GROUP`，可查集团口径 | **4 Tool + `CostDiagnosisAgent`**（第 4 步 **`dish_profit_analysis`**；毛利 **不** 再编排 **`gross_margin_calculator`**） | 需 **`VIEW_COST`** 等与 §3 所列全链权限；执行 **`dish_profit_analysis`** 另需 **`VIEW_DISH_SALES`**（BTEN **`evaluateDishProfitAnalysisInvocation`**） |
+| `STORE_MANAGER` 等门店锚点账号 | `STORE` / `DEPARTMENT`，仅本门店/挂靠部门 | 同上 **4 Tool + CostDiagnosis** | 权限含 **`VIEW_COST`、`VIEW_REVENUE`、`VIEW_PURCHASE`/`VIEW_STOCK`、`VIEW_DISH_SALES`**；问句中出现 **「集团」+成本类词** 时 **不扩展为集团查询**，仅在答复前追加 **【查询范围】** 说明：*你当前账号只能查看本门店数据。下面是本门店本月成本情况。* |
+| **`STORE_PURCHASER`、`GROUP_PURCHASER`、`WAREHOUSE_PURCHASER`、`CENTRAL_KITCHEN_PURCHASER`、`REGION_PURCHASER`** | 各自的采购/库区锚点（§4） | **`purchase_overview` + `stock_reduce_query`（权限允许时）**；**不调** **`revenue_query`、不把 `CostDiagnosisAgent`** | 前置 **【意图说明】**：采购角色不可看完整经营成本/毛利，仅从采购视角分析 |
 | `COUPON_OPERATOR`（`COUPON_APP`） | 营销挂靠部门 | **不拉取 Tool** | **`AiAnswerBoundary.forCouponOperatorCostInsight()`**（无成本权限提示，引导营销话术） |
 
 **实现类**：**`CostInsightIntentConvergence`**（规则表）、**`BusinessDataPlannerNode`**（写 **`AiRunState`：`costInsightPath` / `purchaseCostInsightPath` / `couponCostInsightBlocked` / `costIntentConvergenceNote`**）、**`StubAnswerComposerNode`**（范围前缀 / 意图说明 / 权限提示 / 采购摘要）。
@@ -166,6 +171,10 @@
 
 | 日期 | 说明 |
 |------|------|
+| 2026-05-20 | **D-CLEAN-GROSS-MARGIN-P2B**：删除 **`GrossMarginCalculatorTool`** / **`gross_margin_calculator`**；毛利仅 **`CostDiagnosisAgentNode` + `CostMarginDerivation`**。 |
+| 2026-05-20 | **D-CLEAN-GROSS-MARGIN-P2A**：**`DEFAULT_COST_INSIGHT_TOOLS`** 移除 **`gross_margin_calculator`**（四步链）；毛利由 **`CostDiagnosisAgentNode` + `CostMarginDerivation`** 内部推导。 |
+| 2026-05-20 | **D-CLEAN-COST-P1**：**`DEFAULT_COST_INSIGHT_TOOLS`** 第 4 步 **`dish_sales_query` → `dish_profit_analysis`**。 |
+| 2026-05-20 | **D-CLEAN-DISH-SALES-P2**：**`DishSalesQueryTool`** / Tool id **`dish_sales_query`** 已删除；**`AiResolvedQueryIntent.DISH_SALES_QUERY`** / **`PATH_DISH_SALES_QUERY`** 保留；D-8 与成本链均执行 **`dish_profit_analysis`**。 |
 | 2026-05-10 | **`dish_profit_analysis`**：双权限 **`VIEW_DISH_SALES`+`VIEW_COST`** + 采购/库房/配送/优惠券角色拒答话术；Planner **`dish_profit_path`** 先于泛泛「毛利」成本意图。**`AnswerComposer`** / **`answer_delta.data.dishProfitOverview`**。关联文档：**`API_INTEGRATION`、`LEGACY_AI_ANSWER_ASSETS`、`TODO`**。 |
 | 2026-05-10 | 首版：文档化 `admin` → `roleCode` → `AiPermissions` → `AiOrgScope`；与 `AiRoleMapper` / `AiUserContextResolver` 对齐。 |
 | 2026-05-10 | 「本月成本怎么样」：**成本意图收敛**（集团门店/采购/优惠券）；**`STORE_MANAGER`** 增补 **`VIEW_PURCHASE`**（与 Tool 链一致）。 |

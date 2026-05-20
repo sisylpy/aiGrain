@@ -19,7 +19,7 @@ public class AiFollowUpResolution {
 
     /** 是否判定为「追问」语义（继承或局部覆盖） */
     private boolean followUp;
-    /** 如 TIME_SHIFT、SCOPE_SHIFT、PURCHASE_SEMANTIC */
+    /** 如 SEMANTIC_STRUCTURAL_MERGE、STORE_SCOPE_FOLLOW_UP、GROUP_SCOPE_EXPAND_FOLLOW_UP */
     private String followUpType;
 
     private boolean inheritIntent;
@@ -34,7 +34,7 @@ public class AiFollowUpResolution {
     private Long overrideStoreId;
     private String overrideFocusName;
 
-    /** 已在 {@link com.nongxinle.ai.platform.AiRunService#startRun} 写入 {@link com.nongxinle.ai.core.AiRunState#normalizedUserInput} */
+    /** 已在 {@link com.nongxinle.ai.platform.AiRunService#startRun} 写入 {@link com.nongxinle.ai.core.AiRunState#getNormalizedUserInput()} */
     private String expandedNormalizedQuestion;
     @Builder.Default
     private boolean normalizedInputExpandedAtResolvePhase = false;

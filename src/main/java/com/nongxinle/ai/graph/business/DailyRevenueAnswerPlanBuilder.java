@@ -6,7 +6,11 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
+import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrixRow;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
+import org.springframework.util.StringUtils;
 import com.alibaba.fastjson2.JSON;
 import lombok.extern.slf4j.Slf4j;
 
@@ -98,7 +102,10 @@ public final class DailyRevenueAnswerPlanBuilder {
         baseDiag.put("previousPlanType", inheritedPlanType);
         baseDiag.put("structuredIntentDetailWire", wire.isEmpty() ? null : wire);
 
-        String planType = resolvePlanType(wire, inheritedPlanType);
+        String norm = rq != null ? rq.getNormalizedQuestion() : null;
+        String planType =
+                resolvePlanType(
+                        wire, inheritedPlanType, rq != null ? rq.getQuerySemanticParse() : null, norm);
         baseDiag.put("resolvedPlanType", planType);
         baseDiag.put("inheritedPlanType",
                 inheritedPlanType != null && inheritedPlanType.equals(planType) ? planType : null);
@@ -132,10 +139,17 @@ public final class DailyRevenueAnswerPlanBuilder {
         String wire = resolveWire(rq);
         String prevWire = prevStructuredWire(rq);
         String inherited = prevInheritedPlanType(rq);
-        String planType = resolvePlanType(wire, inherited);
+        String planType =
+                resolvePlanType(
+                        wire,
+                        inherited,
+                        rq != null ? rq.getQuerySemanticParse() : null,
+                        rq != null ? rq.getNormalizedQuestion() : null);
         diag.put("resolvedPlanType", planType);
         diag.put("focusRowsSize", 0);
         diag.put("secondaryRowsSize", 0);
+        LinkedHashMap<String, Object> failDbg = new LinkedHashMap<>(diag);
+        enrichRevenueMatrixDebug(failDbg, rq, planType, wire);
         DailyRevenueAnswerPlan plan = DailyRevenueAnswerPlan.builder()
                 .planType(planType)
                 .revenueChannel(DailyRevenueAnswerPlan.CHANNEL_ALL)
@@ -144,7 +158,7 @@ public final class DailyRevenueAnswerPlanBuilder {
                 .summary(new LinkedHashMap<>())
                 .focusRows(new ArrayList<>())
                 .secondaryRows(new ArrayList<>())
-                .debug(new LinkedHashMap<>(diag))
+                .debug(failDbg)
                 .build();
         state.setRevenueAnswerPlan(plan);
         log.info("[DailyRevenueAnswerPlan] attachFailure runId={} reason={}", state.getRunId(), reasonCode);
@@ -158,6 +172,8 @@ public final class DailyRevenueAnswerPlanBuilder {
         LinkedHashMap<String, Object> dbg = new LinkedHashMap<>(debug);
         dbg.put("sourceToolKey", AiBusinessToolIds.REVENUE_QUERY);
         dbg.put("resolvedPlanType", planType);
+        String wire = resolveWire(rq);
+        dbg.put("structuredIntentDetailWire", wire.isEmpty() ? null : wire);
 
         BigDecimal totalRev = nz(inner.get("totalRevenue"));
         int days = inner.get("days") instanceof Number ? Math.max(((Number) inner.get("days")).intValue(), 0) : 0;
@@ -391,6 +407,8 @@ public final class DailyRevenueAnswerPlanBuilder {
         dbg.put("focusRowsSize", focusRows.size());
         dbg.put("secondaryRowsSize", secondaryRows.size());
 
+        enrichRevenueMatrixDebug(dbg, rq, planType, wire);
+
         return DailyRevenueAnswerPlan.builder()
                 .planType(planType)
                 .scopeLabel(scopeLabel)
@@ -451,12 +469,61 @@ public final class DailyRevenueAnswerPlanBuilder {
         return "DESC";
     }
 
+    private static void enrichRevenueMatrixDebug(
+            LinkedHashMap<String, Object> dbg,
+            AiResolvedQueryContext rq,
+            String planType,
+            String wire) {
+        if (dbg == null || rq == null) {
+            return;
+        }
+        String path = rq.getEffectivePathCode();
+        if (path == null || path.isBlank()) {
+            path = rq.getQueryIntent() != null ? rq.getQueryIntent().getPathCode() : null;
+        }
+        AiQuerySemanticParseResult sem = rq.getQuerySemanticParse();
+        String canonWire =
+                StringUtils.hasText(wire)
+                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim())
+                        : null;
+        RevenueDrilldownMatrixRow row =
+                RevenueDrilldownMatrix.resolveMatrixRow(path, canonWire, sem);
+        if (row != null) {
+            dbg.put("revenueMatrixRowId", row.getRowId());
+            dbg.put("revenueStructuredIntentDetailWire", row.getStructuredIntentDetailWire());
+            String gap = RevenueDrilldownMatrix.knownGapForResolvedRow(row);
+            if (gap != null) {
+                dbg.put("revenueKnownGap", gap);
+            }
+        } else if (StringUtils.hasText(canonWire)) {
+            dbg.put("revenueStructuredIntentDetailWire", canonWire);
+        }
+        if (RevenueDrilldownMatrix.detectMatrixWireMissing(sem, path, canonWire)) {
+            dbg.put("revenueMatrixWireMissing", RevenueDrilldownMatrix.MATRIX_WIRE_MISSING);
+        }
+        dbg.put("revenueAnswerPlanType", planType);
+        String prevWire = prevStructuredWire(rq);
+        if (StringUtils.hasText(prevWire) && StringUtils.hasText(canonWire)) {
+            String leak = RevenueDrilldownMatrix.detectPriorCompareOrRankingWireLeak(prevWire, canonWire);
+            if (leak != null) {
+                dbg.put("revenuePriorWireLeak", leak);
+            }
+        }
+    }
+
     private static String resolveWire(AiResolvedQueryContext rq) {
         if (rq == null || rq.getQueryIntent() == null) {
             return "";
         }
-        String w = rq.getQueryIntent().getStructuredIntentDetail();
-        return w == null ? "" : w.trim();
+        String merged = rq.getQueryIntent().getStructuredIntentDetail();
+        String norm = rq.getNormalizedQuestion();
+        String resolved =
+                RevenueDrilldownMatrix.resolveStructuredIntentDetailWire(
+                        rq.getQuerySemanticParse(), safePath(rq), merged, norm);
+        if (StringUtils.hasText(resolved)) {
+            return resolved.trim();
+        }
+        return merged == null ? "" : merged.trim();
     }
 
     private static String prevStructuredWire(AiResolvedQueryContext rq) {
@@ -473,17 +540,39 @@ public final class DailyRevenueAnswerPlanBuilder {
         return wireToPlanType(c != null ? c : pw);
     }
 
-    /**
-     * 仅 structuredIntentDetail wire（及上一轮继承的 planType）驱动；禁止读取用户原文选排行口径。
-     */
     static String resolvePlanType(String wire, String inheritedPlanType) {
+        return resolvePlanType(wire, inheritedPlanType, null, null);
+    }
+
+    static String resolvePlanType(
+            String wire, String inheritedPlanType, AiQuerySemanticParseResult sem) {
+        return resolvePlanType(wire, inheritedPlanType, sem, null);
+    }
+
+    /**
+     * structuredIntentDetail wire + Matrix 行驱动 planType；问句仅用于时间/排行追问形状，不扩门店排行。
+     */
+    static String resolvePlanType(
+            String wire,
+            String inheritedPlanType,
+            AiQuerySemanticParseResult sem,
+            String normalizedUserMessage) {
         String c = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire);
         String w = c != null ? c : (wire == null ? "" : wire.trim());
+        RevenueDrilldownMatrixRow matrixRow =
+                RevenueDrilldownMatrix.resolveMatrixRow(
+                        AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW, w, sem, normalizedUserMessage);
+        if (matrixRow != null && StringUtils.hasText(matrixRow.getTargetRevenuePlanType())) {
+            return matrixRow.getTargetRevenuePlanType();
+        }
         String fromWire = wireToPlanType(w);
         if (fromWire != null) {
             return fromWire;
         }
         if (inheritedPlanType != null && !inheritedPlanType.isBlank()) {
+            if (sem != null && RevenueDrilldownMatrix.isTimeFollowupShape(sem)) {
+                return DailyRevenueAnswerPlan.TYPE_REVENUE_OVERVIEW;
+            }
             return inheritedPlanType;
         }
         return DailyRevenueAnswerPlan.TYPE_REVENUE_OVERVIEW;
@@ -494,7 +583,12 @@ public final class DailyRevenueAnswerPlanBuilder {
             return null;
         }
         return switch (wire) {
-            case AiQuerySemanticLexicon.STRUCTURED_REVENUE_OVERVIEW_SUMMARY -> DailyRevenueAnswerPlan.TYPE_REVENUE_OVERVIEW;
+            case AiQuerySemanticLexicon.STRUCTURED_REVENUE_OVERVIEW_SUMMARY,
+                    AiQuerySemanticLexicon.STRUCTURED_REVENUE_OVERVIEW,
+                    AiQuerySemanticLexicon.STRUCTURED_REVENUE_SINGLE_STORE_OVERVIEW,
+                    AiQuerySemanticLexicon.STRUCTURED_REVENUE_PERIOD_COMPARE,
+                    AiQuerySemanticLexicon.STRUCTURED_REVENUE_TREND -> DailyRevenueAnswerPlan.TYPE_REVENUE_OVERVIEW;
+            case AiQuerySemanticLexicon.STRUCTURED_REVENUE_STORE_COMPARE -> DailyRevenueAnswerPlan.TYPE_REVENUE_STORE_AMOUNT_RANKING;
             case AiQuerySemanticLexicon.STRUCTURED_REVENUE_DINE_IN_OVERVIEW ->
                     DailyRevenueAnswerPlan.TYPE_REVENUE_DINE_IN_OVERVIEW;
             case AiQuerySemanticLexicon.STRUCTURED_REVENUE_TAKEOUT_OVERVIEW ->
@@ -507,9 +601,12 @@ public final class DailyRevenueAnswerPlanBuilder {
                     DailyRevenueAnswerPlan.TYPE_REVENUE_CUSTOMER_COUNT_OVERVIEW;
             case AiQuerySemanticLexicon.STRUCTURED_REVENUE_AVERAGE_ORDER_VALUE ->
                     DailyRevenueAnswerPlan.TYPE_REVENUE_AVERAGE_ORDER_VALUE;
-            case AiQuerySemanticLexicon.STRUCTURED_REVENUE_DAILY_AMOUNT_RANKING ->
+            case AiQuerySemanticLexicon.STRUCTURED_REVENUE_DAILY_AMOUNT_RANKING,
+                    AiQuerySemanticLexicon.STRUCTURED_REVENUE_DAILY_RANKING ->
                     DailyRevenueAnswerPlan.TYPE_REVENUE_DAILY_AMOUNT_RANKING;
             case AiQuerySemanticLexicon.STRUCTURED_REVENUE_STORE_AMOUNT_RANKING ->
+                    DailyRevenueAnswerPlan.TYPE_REVENUE_STORE_AMOUNT_RANKING;
+            case AiQuerySemanticLexicon.STRUCTURED_STORE_PRIORITY_RANKING ->
                     DailyRevenueAnswerPlan.TYPE_REVENUE_STORE_AMOUNT_RANKING;
             case AiQuerySemanticLexicon.STRUCTURED_REVENUE_CHANNEL_BREAKDOWN ->
                     DailyRevenueAnswerPlan.TYPE_REVENUE_CHANNEL_BREAKDOWN;

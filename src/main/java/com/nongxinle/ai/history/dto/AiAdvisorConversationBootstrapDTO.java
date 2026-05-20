@@ -20,8 +20,8 @@ public class AiAdvisorConversationBootstrapDTO {
     private Long conversationId;
 
     /**
-     * 与 {@link com.nongxinle.entity.GbAiConversationEntity#getGbAiConversationThreadKind()} 语义一致，
-     * 顾问长期线程固定 {@code ADVISOR}。（与整数 {@code gbAiConversationType} 无关。）
+     * 与 {@link com.nongxinle.entity.GbAiConversationEntity#getGbAiConversationThreadKind()} 对齐的展示字段；
+     * 顾问恢复场景固定 {@code ADVISOR}。
      */
     private String conversationType;
 

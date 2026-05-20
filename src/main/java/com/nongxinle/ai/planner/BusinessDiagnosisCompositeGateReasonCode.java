@@ -1,7 +1,12 @@
 package com.nongxinle.ai.planner;
 
 /**
- * C-53：经营诊断 Composite 生产入口 Gate 的稳定拒绝/放行原因码（监控与日志；不含用户原文）。
+ * C-53：Composite <b>旁路观测 Gate</b> 的稳定拒绝/放行原因码（监控与日志；不含用户原文）。
+ *
+ * <p>仅用于 BusinessDiagnosisComposite {@link BusinessDiagnosisCompositeExecutionMode#SHADOW} /
+ * {@link BusinessDiagnosisCompositeExecutionMode#HARNESS_ONLY} 旁路观测链；<strong>不属于</strong> Master Graph 主回答链；
+ * <strong>不替换</strong> {@link com.nongxinle.ai.core.AiRunState#getFinalAnswerText()}；
+ * <strong>不负责</strong>生产用户正文。{@link BusinessDiagnosisCompositeExecutionMode#PRIMARY} 为预留/未接生产主链。</p>
  */
 public enum BusinessDiagnosisCompositeGateReasonCode {
 

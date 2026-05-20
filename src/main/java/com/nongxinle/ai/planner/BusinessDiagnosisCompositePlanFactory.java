@@ -18,8 +18,19 @@ import java.util.Objects;
 import org.springframework.stereotype.Component;
 
 /**
- * C-58：依据真实 {@link AiRunState}、{@link AiResolvedQueryContext}、Gate 通过的 {@link BusinessDiagnosisCompositeGateResult}
- * 生成 Composite 六步 {@link PlannerExecutionPlan}。**不**调用 Harness GraphCase **不**写死租户/门店/时间。
+ * C-58：依据真实 {@link AiRunState}、{@link AiResolvedQueryContext}、旁路 Gate 通过的
+ * {@link BusinessDiagnosisCompositeGateResult} 生成 Composite 六步 {@link PlannerExecutionPlan}。
+ * **不**调用 Harness GraphCase、**不**写死租户/门店/时间。
+ *
+ * <p><b>旁路边界</b>：本工厂服务 BusinessDiagnosisComposite
+ * {@link BusinessDiagnosisCompositeExecutionMode#SHADOW} 与
+ * {@link BusinessDiagnosisCompositeExecutionMode#HARNESS_ONLY} <strong>两条旁路观测链</strong>；
+ * <strong>不属于</strong> Master Graph 主回答链；<strong>不替换</strong>
+ * {@link AiRunState#getFinalAnswerText()}；<strong>不负责</strong>生产用户正文。
+ * {@link BusinessDiagnosisCompositeExecutionMode#PRIMARY} 为预留/未接生产主链。</p>
+ *
+ * <p>常量 {@code PLAN_* … HARNESS_EXEC …} 为历史命名，<strong>同时</strong>被 SHADOW 与 HARNESS_ONLY 使用，
+ * <strong>不得</strong>误解为 Master 主链 Planner 或仅 Harness 专用主链。</p>
  */
 @Component
 public final class BusinessDiagnosisCompositePlanFactory {
@@ -172,8 +183,7 @@ public final class BusinessDiagnosisCompositePlanFactory {
         List<PlannerStep> steps = new ArrayList<>();
         steps.add(
                 PlannerStep.builder()
-                        .stepId(
-                                CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor.COMPOSITE_STEP_ID_REVENUE_HYDRATED)
+                        .stepId(CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_REVENUE_HYDRATED)
                         .stepName("revenue_hydrated_real_" + scopePhrase.toLowerCase(Locale.ROOT))
                         .order(1)
                         .targetAgent(BusinessAgentNames.REVENUE_OVERVIEW)
@@ -186,8 +196,7 @@ public final class BusinessDiagnosisCompositePlanFactory {
                         .build());
         steps.add(
                 PlannerStep.builder()
-                        .stepId(
-                                CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor.COMPOSITE_STEP_ID_PURCHASE_HYDRATED)
+                        .stepId(CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_PURCHASE_HYDRATED)
                         .stepName("purchase_hydrated_real_" + scopePhrase.toLowerCase(Locale.ROOT))
                         .order(2)
                         .targetAgent(PurchasePlannerAgentAdapter.TARGET_AGENT)
@@ -200,9 +209,7 @@ public final class BusinessDiagnosisCompositePlanFactory {
                         .build());
         steps.add(
                 PlannerStep.builder()
-                        .stepId(
-                                CompositeBusinessDiagnosisRevenuePurchaseStockHybridPlannerStepExecutor
-                                        .COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED)
+                        .stepId(CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED)
                         .stepName("stock_reduce_hydrated_real_" + scopePhrase.toLowerCase(Locale.ROOT))
                         .order(3)
                         .targetAgent(StockReducePlannerAgentAdapter.TARGET_AGENT)

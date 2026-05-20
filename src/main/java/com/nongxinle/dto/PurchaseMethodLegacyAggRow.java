@@ -15,4 +15,6 @@ public class PurchaseMethodLegacyAggRow {
     private String methodBucket;
     private Integer lineCount;
     private BigDecimal lineSubtotal;
+    /** ∑{@code gb_DPG_buy_quantity}，与 {@code lineSubtotal} 同桶。 */
+    private BigDecimal lineQuantity;
 }

@@ -7,12 +7,13 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * C-35：经营诊断 Composite — 四数据步真实 Registry（{@code revenue_query}、{@code purchase_overview}、
- * {@code stock_reduce_query}、{@code dish_profit_analysis}）；{@code step_diagnosis_compose} /
- * {@code step_recommendation} 仍 {@link MockPlannerStepExecutor}。
- * <p>
- * <strong>不</strong>解析用户原文；匹配键仅 {@link PlannerStep#getStepId()} 与 {@link PlannerStep#getTargetTool()}。
- * </p>
+ * C-35：Composite SHADOW / HARNESS 使用的真实四域桥 — 四数据步经 Registry 走
+ * {@code revenue_query}、{@code purchase_overview}、{@code stock_reduce_query}、{@code dish_profit_analysis}；
+ * {@code step_diagnosis_compose} / {@code step_recommendation} 仍 {@link MockPlannerStepExecutor}。
+ * <p><strong>不是</strong> Master Graph 主回答链：由 {@link BusinessDiagnosisCompositeExecutionService} 在
+ * {@link BusinessDiagnosisCompositeExecutionMode#SHADOW} / {@link BusinessDiagnosisCompositeExecutionMode#HARNESS_ONLY}
+ * 旁路调用；不替换 {@link com.nongxinle.ai.core.AiRunState#getFinalAnswerText()}。</p>
+ * <p><strong>不</strong>解析用户原文；匹配键仅 {@link PlannerStep#getStepId()} 与 {@link PlannerStep#getTargetTool()}。</p>
  */
 public final class CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecutor implements PlannerStepExecutor {
 
@@ -89,7 +90,7 @@ public final class CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecuto
         if (step == null || step.getStepId() == null) {
             return false;
         }
-        if (!CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor.COMPOSITE_STEP_ID_REVENUE_HYDRATED.equals(
+        if (!CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_REVENUE_HYDRATED.equals(
                 step.getStepId().trim())) {
             return false;
         }
@@ -101,8 +102,8 @@ public final class CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecuto
         if (step == null || step.getStepId() == null) {
             return false;
         }
-        if (!CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor.COMPOSITE_STEP_ID_PURCHASE_HYDRATED
-                .equals(step.getStepId().trim())) {
+        if (!CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_PURCHASE_HYDRATED.equals(
+                step.getStepId().trim())) {
             return false;
         }
         String tool = trimToNull(step.getTargetTool());
@@ -113,8 +114,8 @@ public final class CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecuto
         if (step == null || step.getStepId() == null) {
             return false;
         }
-        if (!CompositeBusinessDiagnosisRevenuePurchaseStockHybridPlannerStepExecutor.COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED
-                .equals(step.getStepId().trim())) {
+        if (!CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED.equals(
+                step.getStepId().trim())) {
             return false;
         }
         String tool = trimToNull(step.getTargetTool());

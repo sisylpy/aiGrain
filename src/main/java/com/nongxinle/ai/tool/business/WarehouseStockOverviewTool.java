@@ -99,7 +99,7 @@ public class WarehouseStockOverviewTool implements AiTool {
             Map<String, Object> wo = buildWarehouseOverviewForFather(dept.intValue(), disId.intValue(), start, stop,
                     null);
             boolean reduceMock = Boolean.TRUE.equals(wo.remove("_reduceMock"));
-            wo.remove("_byGoods");
+            attachGoodsStockAmountRankings(wo, wo.remove("_byGoods"));
             wo.put("scopeType", "STORE");
             wo.put("scopeName", "单门店/库房范围");
             applyResolvedScopeFromArgs(wo, args);
@@ -343,6 +343,7 @@ public class WarehouseStockOverviewTool implements AiTool {
             wo.put("wasteAmount", round2(wasteSum.doubleValue()));
             wo.put("returnAmount", round2(returnSum.doubleValue()));
             wo.put("produceAmount", round2(produceSum.doubleValue()));
+            attachGoodsStockAmountRankings(wo, mergedGoods);
             wo.put("lowStockItems", tagItemsWithScope(lowStock, "集团汇总"));
             wo.put("overStockItems", tagItemsWithScope(overStock, "集团汇总"));
             wo.put("inactiveStockItems", mergedInactive);
@@ -654,7 +655,7 @@ public class WarehouseStockOverviewTool implements AiTool {
                     }
                     it.put("restWeightTotal", round2(g.restWeight));
                     it.put("restAmountTotal", round2(g.restAmount));
-                    // 【关键】填充商品真实单位，渲染层 WarehouseDeterministicRenderer 会优先使用此字段
+                    // 【关键】填充商品真实单位，Composer 宣读 WarehouseAnswerPlan 时优先使用此字段（非已删 Renderer）
                     if (g.weightUnit != null && !g.weightUnit.isBlank()) {
                         it.put("weightDisplayUnit", g.weightUnit);
                     }
@@ -682,7 +683,7 @@ public class WarehouseStockOverviewTool implements AiTool {
                     }
                     it.put("restAmountTotal", round2(g.restAmount));
                     it.put("restWeightTotal", round2(g.restWeight));
-                    // 【关键】填充商品真实单位，渲染层 WarehouseDeterministicRenderer 会优先使用此字段
+                    // 【关键】填充商品真实单位，Composer 宣读 WarehouseAnswerPlan 时优先使用此字段（非已删 Renderer）
                     if (g.weightUnit != null && !g.weightUnit.isBlank()) {
                         it.put("weightDisplayUnit", g.weightUnit);
                     }
@@ -880,6 +881,73 @@ public class WarehouseStockOverviewTool implements AiTool {
         return out;
     }
 
+    @SuppressWarnings("unchecked")
+    private static void attachGoodsStockAmountRankings(Map<String, Object> wo, Object byGoodsObj) {
+        if (wo == null) {
+            return;
+        }
+        if (!(byGoodsObj instanceof Map<?, ?> raw) || raw.isEmpty()) {
+            wo.put("goodsStockAmountRanking", List.of());
+            wo.put("goodsStockAmountRankingAsc", List.of());
+            return;
+        }
+        Map<Integer, GoodAgg> byGoods = (Map<Integer, GoodAgg>) raw;
+        List<GoodAgg> goods = new ArrayList<>(byGoods.values());
+        goods.sort(Comparator.comparingDouble((GoodAgg g) -> g.restAmount).reversed()
+                .thenComparing(g -> g.name == null ? "" : g.name));
+        List<Map<String, Object>> desc = new ArrayList<>();
+        int rank = 1;
+        for (GoodAgg g : goods) {
+            if (g.restAmount <= 0) {
+                continue;
+            }
+            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+            row.put("rank", rank);
+            row.put("goodsName", g.name);
+            if (g.goodsId > 0) {
+                row.put("goodsId", g.goodsId);
+            }
+            row.put("restAmountTotal", round2(g.restAmount));
+            row.put("restWeightTotal", round2(g.restWeight));
+            if (g.weightUnit != null && !g.weightUnit.isBlank()) {
+                row.put("weightDisplayUnit", g.weightUnit);
+            }
+            desc.add(row);
+            rank++;
+            if (rank > 10) {
+                break;
+            }
+        }
+        List<GoodAgg> ascGoods = new ArrayList<>(goods);
+        ascGoods.sort(Comparator.comparingDouble((GoodAgg g) -> g.restAmount)
+                .thenComparing(g -> g.name == null ? "" : g.name));
+        List<Map<String, Object>> asc = new ArrayList<>();
+        int rankAsc = 1;
+        for (GoodAgg g : ascGoods) {
+            if (g.restAmount <= 0) {
+                continue;
+            }
+            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+            row.put("rank", rankAsc);
+            row.put("goodsName", g.name);
+            if (g.goodsId > 0) {
+                row.put("goodsId", g.goodsId);
+            }
+            row.put("restAmountTotal", round2(g.restAmount));
+            row.put("restWeightTotal", round2(g.restWeight));
+            if (g.weightUnit != null && !g.weightUnit.isBlank()) {
+                row.put("weightDisplayUnit", g.weightUnit);
+            }
+            asc.add(row);
+            rankAsc++;
+            if (rankAsc > 10) {
+                break;
+            }
+        }
+        wo.put("goodsStockAmountRanking", desc);
+        wo.put("goodsStockAmountRankingAsc", asc);
+    }
+
     private static boolean warehouseOverviewHasSignal(Map<String, Object> wo) {
         int sku = intHint(wo.get("stockItemCount"));
         int rows = intHint(wo.get("stockBatchRowCount"));
@@ -931,8 +999,8 @@ public class WarehouseStockOverviewTool implements AiTool {
 
         /**
          * 汇总时取第一个非空单位。
-         * 后续渲染层 {@link com.nongxinle.ai.composer.renderer.WarehouseDeterministicRenderer}
-         * 会优先使用此字段而非统一写死的「斤」。
+         * 后续 Composer 宣读 {@link com.nongxinle.ai.dto.business.WarehouseAnswerPlan} 时
+         * 会优先使用此字段而非统一写死的「斤」（已移除 WarehouseDeterministicRenderer）。
          */
         void mergeFrom(GbDepartmentGoodsStockEntity e) {
             this.restWeight += parseDoubleLoose(e.getGbDgsRestWeight());

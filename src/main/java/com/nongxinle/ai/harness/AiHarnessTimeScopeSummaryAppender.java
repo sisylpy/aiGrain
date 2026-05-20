@@ -1,0 +1,452 @@
+package com.nongxinle.ai.harness;
+
+import com.nongxinle.ai.context.AiResolvedDataScope;
+import com.nongxinle.ai.context.AiResolvedOrgScope;
+import com.nongxinle.ai.context.AiResolvedQueryContext;
+import com.nongxinle.ai.context.AiResolvedQueryIntent;
+import com.nongxinle.ai.context.AiResolvedTimeWindow;
+import com.nongxinle.ai.context.AiSemanticStoreNarrowingDiagnostics;
+import com.nongxinle.ai.context.AiStoreScopeDTO;
+import com.nongxinle.ai.conversation.AiConversationTurnMemory;
+import com.nongxinle.ai.conversation.AiFollowUpResolution;
+import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrixRow;
+import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrixRow;
+import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrixRow;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import org.springframework.util.StringUtils;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 时间窗 / 组织范围 / dataScope / queryIntent 路径探针 / mentionedStore。
+ */
+final class AiHarnessTimeScopeSummaryAppender {
+
+    private AiHarnessTimeScopeSummaryAppender() {
+    }
+
+    static void appendTimeAndScopeFields(LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx) {
+        // ── Time Merge Debug：LLM 原始时间 + 合并过程追踪 ──
+        appendTimeMergeDebugFields(out, ctx);
+
+        AiResolvedTimeWindow tw = ctx.getTimeWindow();
+        LinkedHashMap<String, Object> timeBlock = new LinkedHashMap<>();
+        if (tw != null) {
+            out.put("startDate", tw.getStartDate() != null ? tw.getStartDate().toString() : null);
+            out.put("endDate", tw.getEndDate() != null ? tw.getEndDate().toString() : null);
+            out.put("timeLabel", AiHarnessSummaryUtils.blankToNull(tw.getTimeLabel()));
+            out.put("timeDisplayText", AiHarnessSummaryUtils.blankToNull(tw.getDisplayText()));
+            out.put("timeInheritedFromPrevious", tw.isInheritedFromPreviousTurn());
+            out.put("timeExplicitInMessage", AiHarnessSummaryUtils.harnessTimeExplicitForSummary(ctx, tw));
+            timeBlock.put("start", tw.getStartDate() != null ? tw.getStartDate().toString() : null);
+            timeBlock.put("end", tw.getEndDate() != null ? tw.getEndDate().toString() : null);
+            timeBlock.put("label", AiHarnessSummaryUtils.blankToNull(tw.getTimeLabel()));
+            timeBlock.put("displayText", AiHarnessSummaryUtils.blankToNull(tw.getDisplayText()));
+        } else {
+            out.put("startDate", null);
+            out.put("endDate", null);
+            out.put("timeLabel", null);
+        }
+        out.put("time", timeBlock);
+
+        AiResolvedOrgScope org = ctx.getOrgScope();
+        out.put("scopeType", org != null ? AiHarnessSummaryUtils.blankToNull(org.getScopeType()) : null);
+        out.put("scopeLabel", org != null ? AiHarnessSummaryUtils.blankToNull(org.getQueryScopeBanner()) : null);
+        out.put("visibleStores", summarizeStores(org));
+
+        AiSemanticStoreNarrowingDiagnostics narrowDiag = ctx.getSemanticStoreNarrowingDebug();
+        if (narrowDiag != null) {
+            out.put(
+                    "semanticMentionedStoreNames",
+                    narrowDiag.getSemanticMentionedStoreNames() == null
+                            ? new ArrayList<String>()
+                            : new ArrayList<>(narrowDiag.getSemanticMentionedStoreNames()));
+            out.put(
+                    "storeRootCandidates",
+                    narrowDiag.getStoreRootCandidates() == null
+                            ? new ArrayList<String>()
+                            : new ArrayList<>(narrowDiag.getStoreRootCandidates()));
+            out.put(
+                    "visibleStoreCandidates",
+                    narrowDiag.getVisibleStoreCandidates() == null
+                            ? new ArrayList<String>()
+                            : new ArrayList<>(narrowDiag.getVisibleStoreCandidates()));
+            out.put("matchedStoreCandidate", AiHarnessSummaryUtils.blankToNull(narrowDiag.getMatchedStoreCandidate()));
+            out.put("narrowingFailureReason", AiHarnessSummaryUtils.blankToNull(narrowDiag.getNarrowingFailureReason()));
+        } else {
+            out.put("semanticMentionedStoreNames", null);
+            out.put("storeRootCandidates", null);
+            out.put("visibleStoreCandidates", null);
+            out.put("matchedStoreCandidate", null);
+            out.put("narrowingFailureReason", null);
+        }
+
+        AiResolvedDataScope ds = ctx.getDataScope();
+        if (ds != null) {
+            List<Long> roots = AiHarnessSummaryUtils.longList(ds.getVisibleStoreRootIds());
+            List<Long> childOnly = AiHarnessSummaryUtils.longList(ds.getChildDepartmentIds());
+            List<Long> sqlExpanded = AiHarnessSummaryUtils.longList(ds.getEffectiveSqlDepartmentIds());
+            String qsm = AiHarnessSummaryUtils.blankToNull(ds.getQueryScopeMode());
+
+            out.put("queryScopeKind", AiHarnessSummaryUtils.blankToNull(ds.getQueryScopeKind()));
+            out.put("queryStoreIds", AiHarnessSummaryUtils.intList(ds.getQueryStoreIds()));
+            out.put("queryRealDepartmentIds", AiHarnessSummaryUtils.intList(ds.getQueryRealDepartmentIds()));
+            out.put("queryDistributerId", ds.getQueryDistributerId());
+            out.put("storeToDepartmentIds", stringifyStoreToDeptMap(ds.getStoreToDepartmentIds()));
+
+            out.put("visibleStoreRootIds", new ArrayList<>(roots));
+            out.put("storeRootDepartmentIds", new ArrayList<>(roots));
+            out.put("childDepartmentIds", new ArrayList<>(childOnly));
+            out.put("expandedChildDepartmentIds", new ArrayList<>(childOnly));
+            out.put("expandedSqlDepartmentIds", new ArrayList<>(sqlExpanded));
+            out.put("revenueSqlDepartmentIds", AiHarnessSummaryUtils.longList(ds.getSqlDepartmentIdsForDomain(AiResolvedDataScope.SQL_DOMAIN_REVENUE)));
+            out.put("purchaseSqlDepartmentIds", AiHarnessSummaryUtils.longList(ds.getSqlDepartmentIdsForDomain(AiResolvedDataScope.SQL_DOMAIN_PURCHASE)));
+            out.put("stockSqlDepartmentIds", AiHarnessSummaryUtils.longList(ds.getSqlDepartmentIdsForDomain(AiResolvedDataScope.SQL_DOMAIN_STOCK)));
+            out.put("dishProfitSqlDepartmentIds", AiHarnessSummaryUtils.longList(ds.getSqlDepartmentIdsForDomain(AiResolvedDataScope.SQL_DOMAIN_DISH_PROFIT)));
+            out.put("stockReduceSqlDepartmentIds", AiHarnessSummaryUtils.longList(ds.getSqlDepartmentIdsForDomain(AiResolvedDataScope.SQL_DOMAIN_STOCK_REDUCE)));
+
+            out.put("visibleStoreIds", AiHarnessSummaryUtils.longList(ds.getVisibleStoreIds()));
+            out.put("visibleWarehouseIds", AiHarnessSummaryUtils.longList(ds.getVisibleWarehouseIds()));
+            out.put("explicitChildDepartmentIds", AiHarnessSummaryUtils.longList(ds.getExplicitChildDepartmentIds()));
+            out.put("queryScopeMode", qsm);
+            out.put("queryLevel", qsm);
+            out.put("storeToChildDepartmentIds", stringifyStoreChildMap(ds.getStoreToChildDepartmentIds()));
+            out.put("departmentScopeModelNote",
+                    "主查询维度：queryScopeKind=STORE 用 queryStoreIds（门店根）；DEPARTMENT 用 queryRealDepartmentIds（仅真实部门）；"
+                            + "DISTRIBUTER 用 queryDistributerId。业务表 department_id IN 用 expandedSqlDepartmentIds（根∪子），"
+                            + "勿与门店列表混淆。storeToDepartmentIds 仅结构说明。");
+        } else {
+            out.put("visibleStoreIds", null);
+            out.put("visibleStoreRootIds", null);
+            out.put("storeRootDepartmentIds", null);
+            out.put("childDepartmentIds", null);
+            out.put("expandedChildDepartmentIds", null);
+            out.put("queryScopeKind", null);
+            out.put("queryStoreIds", null);
+            out.put("queryRealDepartmentIds", null);
+            out.put("queryDistributerId", null);
+            out.put("storeToDepartmentIds", null);
+            out.put("expandedSqlDepartmentIds", null);
+            out.put("revenueSqlDepartmentIds", null);
+            out.put("purchaseSqlDepartmentIds", null);
+            out.put("stockSqlDepartmentIds", null);
+            out.put("dishProfitSqlDepartmentIds", null);
+            out.put("stockReduceSqlDepartmentIds", null);
+            out.put("visibleWarehouseIds", null);
+            out.put("explicitChildDepartmentIds", null);
+            out.put("queryScopeMode", null);
+            out.put("queryLevel", null);
+            out.put("storeToChildDepartmentIds", null);
+            out.put("departmentScopeModelNote", null);
+        }
+
+        AiResolvedQueryIntent qi = ctx.getQueryIntent();
+        String pst = qi != null ? AiHarnessSummaryUtils.blankToNull(qi.getPurchaseSourceType()) : null;
+        String sidWireRaw = qi != null ? AiHarnessSummaryUtils.blankToNull(qi.getStructuredIntentDetail()) : null;
+        String sidWire = sidWireRaw;
+        AiQuerySemanticParseResult sem = ctx.getQuerySemanticParse();
+        if (!StringUtils.hasText(sidWire) && sem != null) {
+            AiQuerySemanticParseResult.SemanticSlotsPart slots = sem.getSemanticSlots();
+            if (slots != null && StringUtils.hasText(slots.getStructuredIntentDetailWire())) {
+                sidWire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                        slots.getStructuredIntentDetailWire().trim());
+            }
+        }
+        String sidCode = AiQuerySemanticLexicon.toStructuredIntentDetailDebugCode(sidWire);
+        // 调试/UI：structuredIntentDetail 为人类可读枚举名（如 SUPPLIER_AMOUNT_RANKING）；wire 放 structuredIntentDetailWire 供 Harness 比对。
+        String sidDisplay = sidCode != null ? sidCode : sidWire;
+        // 供货商金额排行：queryIntent 可能未带 purchaseSourceType（或仍为 ALL），Debug 与采购 Tool 语义对齐为 SUPPLIER_PURCHASE。
+        if (AiQuerySemanticLexicon.isSupplierAmountRankingDetail(sidWire)
+                || "SUPPLIER_AMOUNT_RANKING".equals(sidCode)) {
+            if (!StringUtils.hasText(pst) || AiQuerySemanticLexicon.SOURCE_ALL.equalsIgnoreCase(pst)) {
+                pst = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE;
+            }
+        }
+        out.put("purchaseSourceType", pst);
+        out.put("structuredIntentDetailWire", sidWire);
+        out.put("structuredIntentDetail", sidDisplay);
+        out.put("structuredIntentDetailCode", sidCode);
+        out.put("structuredIntentDetailPresent", sidWire != null && !sidWire.isBlank());
+
+        AiQuerySemanticParseResult.SemanticSlotsPart slotPart = sem != null ? sem.getSemanticSlots() : null;
+        if (slotPart != null) {
+            out.put("queryObject", AiHarnessSummaryUtils.blankToNull(slotPart.getQueryObject()));
+            out.put("operation", AiHarnessSummaryUtils.blankToNull(slotPart.getOperation()));
+            out.put("metric", AiHarnessSummaryUtils.blankToNull(slotPart.getMetric()));
+            out.put("sourceFacet", AiHarnessSummaryUtils.blankToNull(slotPart.getSourceFacet()));
+            out.put("anchorPolicy", AiHarnessSummaryUtils.blankToNull(slotPart.getAnchorPolicy()));
+        } else {
+            out.put("queryObject", null);
+            out.put("operation", null);
+            out.put("metric", null);
+            out.put("sourceFacet", null);
+            out.put("anchorPolicy", null);
+        }
+        String canonStructuredWire =
+                qi != null && StringUtils.hasText(qi.getStructuredIntentDetail())
+                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                qi.getStructuredIntentDetail().trim())
+                        : null;
+        out.put("canonicalStructuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(canonStructuredWire));
+
+        String effectivePath = AiHarnessSummaryUtils.blankToNull(ctx.getEffectivePathCode());
+        boolean stockReduceStructured = AiQuerySemanticLexicon.isStructuredStockReduceDetail(sidWire);
+        // Run Debug：与 structuredIntentDetail / structuredIntentDetailCode 对齐；出库 path 下用枚举名便于比对 GOODS_OUTBOUND_RANKING、PRODUCE_CONSUME 等
+        String stockReduceTypeVal = null;
+        if (AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(effectivePath) && sidCode != null) {
+            stockReduceTypeVal = sidCode;
+        } else if (stockReduceStructured && sidDisplay != null) {
+            stockReduceTypeVal = sidDisplay;
+        }
+        out.put("stockReduceType", stockReduceTypeVal);
+
+        if (AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(effectivePath)) {
+            out.put("stockReduceStructuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(canonStructuredWire));
+            StockReduceDrilldownMatrixRow matrixRow =
+                    StockReduceDrilldownMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem);
+            out.put("stockReduceMatrixRowId", matrixRow == null ? null : matrixRow.getRowId());
+            out.put(
+                    "stockReduceMatrixWireMissing",
+                    StockReduceDrilldownMatrix.detectMatrixWireMissing(sem, effectivePath, canonStructuredWire)
+                            ? StockReduceDrilldownMatrix.MATRIX_WIRE_MISSING
+                            : null);
+            String matrixGap = StockReduceDrilldownMatrix.knownGapForResolvedRow(matrixRow);
+            out.put("stockReduceKnownGap", AiHarnessSummaryUtils.blankToNull(matrixGap));
+            if (matrixRow != null) {
+                out.put("stockReduceReduceType", AiHarnessSummaryUtils.blankToNull(matrixRow.getReduceTypeLabel()));
+            } else {
+                out.put("stockReduceReduceType", stockReduceTypeVal);
+            }
+        } else {
+            out.put("stockReduceStructuredIntentDetailWire", null);
+            out.put("stockReduceMatrixRowId", null);
+            out.put("stockReduceMatrixWireMissing", null);
+            out.put("stockReduceKnownGap", null);
+        }
+
+        if (AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(effectivePath)) {
+            out.put("revenueStructuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(canonStructuredWire));
+            RevenueDrilldownMatrixRow revenueRow =
+                    RevenueDrilldownMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem);
+            out.put("revenueMatrixRowId", revenueRow == null ? null : revenueRow.getRowId());
+            out.put(
+                    "revenueMatrixWireMissing",
+                    RevenueDrilldownMatrix.detectMatrixWireMissing(sem, effectivePath, canonStructuredWire)
+                            ? RevenueDrilldownMatrix.MATRIX_WIRE_MISSING
+                            : null);
+            out.put("revenueKnownGap", AiHarnessSummaryUtils.blankToNull(
+                    RevenueDrilldownMatrix.knownGapForResolvedRow(revenueRow)));
+        } else {
+            out.put("revenueStructuredIntentDetailWire", null);
+            out.put("revenueMatrixRowId", null);
+            out.put("revenueMatrixWireMissing", null);
+            out.put("revenueKnownGap", null);
+        }
+
+        if (AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(effectivePath)) {
+            out.put("warehouseStructuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(canonStructuredWire));
+            com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrixRow warehouseRow =
+                    com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.resolveMatrixRow(
+                            effectivePath, canonStructuredWire, sem, ctx);
+            out.put("warehouseMatrixRowId", warehouseRow == null ? null : warehouseRow.getRowId());
+            out.put(
+                    "warehouseMatrixWireMissing",
+                    com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.detectMatrixWireMissing(
+                                    sem, effectivePath, canonStructuredWire)
+                            ? com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.MATRIX_WIRE_MISSING
+                            : null);
+            out.put(
+                    "warehouseKnownGap",
+                    AiHarnessSummaryUtils.blankToNull(
+                            com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.knownGapForResolvedRow(
+                                    warehouseRow)));
+        } else {
+            out.put("warehouseStructuredIntentDetailWire", null);
+            out.put("warehouseMatrixRowId", null);
+            out.put("warehouseMatrixWireMissing", null);
+            out.put("warehouseKnownGap", null);
+        }
+
+        boolean dishStructuredProbe = AiQuerySemanticLexicon.isNonOverviewDishProfitStructuredDetail(sidWire);
+        String dishProfitStructuredDetailVal = null;
+        if (AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(effectivePath) && sidCode != null) {
+            dishProfitStructuredDetailVal = sidCode;
+        } else if (dishStructuredProbe && sidDisplay != null) {
+            dishProfitStructuredDetailVal = sidDisplay;
+        }
+        out.put("dishProfitStructuredDetail", dishProfitStructuredDetailVal);
+
+        out.put("mentionedDishName", AiHarnessSummaryUtils.blankToNull(ctx.getMentionedDishName()));
+        out.put("dishName", AiHarnessSummaryUtils.blankToNull(ctx.getMentionedDishName()));
+        out.put("dishProfitMetricType", AiHarnessSummaryUtils.blankToNull(ctx.getDishProfitMetricType()));
+        if (AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(effectivePath)) {
+            out.put(
+                    "dishProfitMatrixWireMissing",
+                    DishProfitDrilldownMatrix.detectMatrixWireMissing(
+                                    ctx.getQuerySemanticParse(), effectivePath, canonStructuredWire)
+                            ? DishProfitDrilldownMatrix.MATRIX_WIRE_MISSING
+                            : null);
+        } else {
+            out.put("dishProfitMatrixWireMissing", null);
+        }
+
+        if (AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(effectivePath)) {
+            out.put("dishSalesStructuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(canonStructuredWire));
+            DishSalesDrilldownMatrixRow dishSalesRow =
+                    DishSalesDrilldownMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem, ctx);
+            out.put("dishSalesMatrixRowId", dishSalesRow == null ? null : dishSalesRow.getRowId());
+            out.put(
+                    "dishSalesMatrixWireMissing",
+                    DishSalesDrilldownMatrix.detectMatrixWireMissing(sem, effectivePath, canonStructuredWire)
+                            ? DishSalesDrilldownMatrix.MATRIX_WIRE_MISSING
+                            : null);
+            out.put(
+                    "dishSalesKnownGap",
+                    AiHarnessSummaryUtils.blankToNull(DishSalesDrilldownMatrix.knownGapForResolvedRow(dishSalesRow)));
+        } else {
+            out.put("dishSalesStructuredIntentDetailWire", null);
+            out.put("dishSalesMatrixRowId", null);
+            out.put("dishSalesMatrixWireMissing", null);
+            out.put("dishSalesKnownGap", null);
+        }
+
+        out.put("mentionedStore", resolveMentionedStore(ctx));
+    }
+
+    private static Map<String, List<Integer>> stringifyStoreToDeptMap(Map<Integer, List<Integer>> raw) {
+        Map<String, List<Integer>> out = new LinkedHashMap<>();
+        if (raw == null || raw.isEmpty()) {
+            return out;
+        }
+        for (Map.Entry<Integer, List<Integer>> e : raw.entrySet()) {
+            if (e.getKey() == null) {
+                continue;
+            }
+            String k = String.valueOf(e.getKey());
+            List<Integer> v = e.getValue();
+            out.put(k, v != null ? new ArrayList<>(v) : new ArrayList<>());
+        }
+        return out;
+    }
+
+    /**
+     * JSON 友好的 {@code {"1":[2,5],"3":[4]}} 形式（字符串键更易读）。
+     */
+    private static Map<String, List<Long>> stringifyStoreChildMap(Map<Long, List<Long>> raw) {
+        Map<String, List<Long>> out = new LinkedHashMap<>();
+        if (raw == null || raw.isEmpty()) {
+            return out;
+        }
+        for (Map.Entry<Long, List<Long>> e : raw.entrySet()) {
+            if (e.getKey() == null) {
+                continue;
+            }
+            String k = String.valueOf(e.getKey());
+            List<Long> v = e.getValue();
+            out.put(k, v != null ? new ArrayList<>(v) : new ArrayList<>());
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> summarizeStores(AiResolvedOrgScope org) {
+        List<Map<String, Object>> list = new ArrayList<>();
+        if (org == null || org.getVisibleStores() == null) {
+            return list;
+        }
+        for (AiStoreScopeDTO s : org.getVisibleStores()) {
+            if (s == null) {
+                continue;
+            }
+            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+            row.put("storeDepartmentId", s.getStoreDepartmentId());
+            row.put("storeName", s.getStoreName());
+            list.add(row);
+        }
+        return list;
+    }
+
+    private static String resolveMentionedStore(AiResolvedQueryContext ctx) {
+        if (StringUtils.hasText(ctx.getResolvedMatchedSemanticStoreMention())) {
+            return ctx.getResolvedMatchedSemanticStoreMention().trim();
+        }
+        AiFollowUpResolution fur = ctx.getFollowUpResolution();
+        if (fur != null && StringUtils.hasText(fur.getStoreScopeFollowUpMentionedName())) {
+            return fur.getStoreScopeFollowUpMentionedName().trim();
+        }
+        AiResolvedOrgScope org = ctx.getOrgScope();
+        if (org != null && org.getVisibleStores() != null && org.getVisibleStores().size() == 1) {
+            AiStoreScopeDTO s = org.getVisibleStores().get(0);
+            if (s != null && StringUtils.hasText(s.getStoreName())) {
+                return s.getStoreName().trim();
+            }
+        }
+        return null;
+    }
+    static void overlayReplayResolvedExecutionMirrorsFromDataScope(
+            LinkedHashMap<String, Object> out, AiResolvedDataScope ds) {
+        if (ds == null) {
+            return;
+        }
+        List<Long> roots = AiHarnessSummaryUtils.longList(ds.getVisibleStoreRootIds());
+        if (!roots.isEmpty()) {
+            out.put("resolvedVisibleStoreRootIds", new ArrayList<>(roots));
+        }
+        List<Long> sqlExpanded = AiHarnessSummaryUtils.longList(ds.getEffectiveSqlDepartmentIds());
+        if (!sqlExpanded.isEmpty()) {
+            out.put("resolvedEffectiveSqlDepartmentIds", new ArrayList<>(sqlExpanded));
+        }
+        List<Long> dishSql =
+                AiHarnessSummaryUtils.longList(ds.getSqlDepartmentIdsForDomain(AiResolvedDataScope.SQL_DOMAIN_DISH_PROFIT));
+        out.put("resolvedDishProfitSqlDepartmentIds", new ArrayList<>(dishSql));
+        Object hintObj = out.get("departmentIdSemanticsHint");
+        if (!(hintObj instanceof String h && StringUtils.hasText(h.trim()))) {
+            out.put(
+                    "departmentIdSemanticsHint",
+                    "门店展示=visibleStores/queryStoreIds；department_id IN=expandedSqlDepartmentIds；语义部门=queryRealDepartmentIds（仅 DEPARTMENT 口径）");
+        }
+    }
+    private static void appendTimeMergeDebugFields(LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx) {
+        if (ctx == null) {
+            return;
+        }
+        AiQuerySemanticParseResult sem = ctx.getQuerySemanticParse();
+        AiQuerySemanticParseResult.TimePart tp = sem != null ? sem.getTime() : null;
+        AiConversationTurnMemory prev = ctx.getPreviousTurn();
+        AiResolvedTimeWindow tw = ctx.getTimeWindow();
+
+        out.put("llmTimeAction", sem != null ? AiHarnessSummaryUtils.blankToNull(sem.getTimeAction()) : null);
+        out.put("llmTimeType", tp != null ? AiHarnessSummaryUtils.blankToNull(tp.getTimeType()) : null);
+        out.put("llmTimeSource", tp != null ? AiHarnessSummaryUtils.blankToNull(tp.getTimeSource()) : null);
+        out.put("llmStartDate", tp != null ? AiHarnessSummaryUtils.blankToNull(tp.getStartDate()) : null);
+        out.put("llmEndDate", tp != null ? AiHarnessSummaryUtils.blankToNull(tp.getEndDate()) : null);
+        out.put(
+                "llmNeedInheritFromPrevious",
+                tp != null && tp.getNeedInheritFromPrevious() != null
+                        ? tp.getNeedInheritFromPrevious()
+                        : null);
+        out.put("llmTimeReason", tp != null ? AiHarnessSummaryUtils.blankToNull(tp.getReason()) : null);
+        out.put("previousStartDate", prev != null ? AiHarnessSummaryUtils.blankToNull(prev.getLastStartDate()) : null);
+        out.put("previousEndDate", prev != null ? AiHarnessSummaryUtils.blankToNull(prev.getLastEndDate()) : null);
+        out.put("timeContractValid", ctx.getTimeContractValid());
+        out.put("timeContractFailureReason", AiHarnessSummaryUtils.blankToNull(ctx.getTimeContractFailureReason()));
+        out.put("finalTimeSource", AiHarnessSummaryUtils.blankToNull(ctx.getEffectiveTimeWindowSource()));
+        out.put("finalStartDate", tw != null && tw.getStartDate() != null ? tw.getStartDate().toString() : null);
+        out.put("finalEndDate", tw != null && tw.getEndDate() != null ? tw.getEndDate().toString() : null);
+        out.put("needSemanticClarification", ctx.isNeedSemanticClarification());
+        out.put("semanticClarificationQuestion", AiHarnessSummaryUtils.blankToNull(ctx.getSemanticClarificationQuestion()));
+
+        // 兼容旧 probe 键名
+        out.put("rawTimeAction", sem != null ? AiHarnessSummaryUtils.blankToNull(sem.getTimeAction()) : null);
+        out.put("rawTimeType", tp != null ? AiHarnessSummaryUtils.blankToNull(tp.getTimeType()) : null);
+        out.put("rawTimeSignal", tp != null ? AiHarnessSummaryUtils.blankToNull(tp.getTimeSource()) : null);
+        out.put("effectiveTimeWindowSource", AiHarnessSummaryUtils.blankToNull(ctx.getEffectiveTimeWindowSource()));
+    }
+}

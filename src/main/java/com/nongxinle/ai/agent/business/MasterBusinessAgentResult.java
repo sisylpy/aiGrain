@@ -69,10 +69,6 @@ public class MasterBusinessAgentResult {
     @Builder.Default
     private boolean businessOverviewMultiAgentAnyDomainSuccess = false;
 
-    /** 经典六工具经营概况由 Master → {@link com.nongxinle.ai.agent.business.BusinessOverviewAgent} 执行后，BTEN 应跳过重复工具循环。 */
-    @Builder.Default
-    private boolean classicBusinessOverviewMasterPath = false;
-
     public static MasterBusinessAgentResult skipped(String reason) {
         return MasterBusinessAgentResult.builder()
                 .masterAgentEnabled(false)

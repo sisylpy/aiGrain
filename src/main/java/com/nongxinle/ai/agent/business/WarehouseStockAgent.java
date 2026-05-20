@@ -3,7 +3,9 @@ package com.nongxinle.ai.agent.business;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
 import com.nongxinle.ai.graph.business.ToolDepartmentResolutionSupport;
+import com.nongxinle.ai.graph.business.WarehouseAnswerPlanBuilder;
 import com.nongxinle.ai.graph.business.WarehouseStockOverviewToolExecutor;
 import com.nongxinle.ai.tool.ToolResult;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +20,7 @@ import java.util.UUID;
 /**
  * 库房库存概览专线：仅 {@link AiResolvedQueryIntent#WAREHOUSE_STOCK_OVERVIEW} +
  * {@link AiResolvedQueryIntent#PATH_WAREHOUSE_STOCK}；内部独占调用
- * {@link AiBusinessToolIds#WAREHOUSE_STOCK_OVERVIEW}。
+ * {@link com.nongxinle.ai.tool.business.AiBusinessToolIds#WAREHOUSE_STOCK_OVERVIEW}。
  */
 @Component
 @RequiredArgsConstructor
@@ -60,7 +62,7 @@ public class WarehouseStockAgent implements BusinessSubAgent {
         long t0 = System.nanoTime();
         AiRunState state = request == null ? null : request.getExecutionContext();
         if (state == null) {
-            return failureEnvelope("missing_execution_context", AgentResultStatus.FAILED, t0);
+            return failureEnvelope(t0);
         }
         long rid = state.getRunId();
         AiResolvedQueryContext rqCtx = request.getResolvedQueryContext();
@@ -100,10 +102,18 @@ public class WarehouseStockAgent implements BusinessSubAgent {
                     .build();
         }
 
+        WarehouseAnswerPlan plan = null;
+        if (executed.isSuccess()) {
+            WarehouseAnswerPlanBuilder.attachIfApplicable(state);
+            plan = state.getWarehouseAnswerPlan();
+        }
+
         AgentResultStatus st = executed.isSuccess() ? AgentResultStatus.SUCCESS : AgentResultStatus.FAILED;
         return AgentResultEnvelope.builder()
                 .agentName(agentName())
                 .status(st)
+                .resultType(plan != null ? plan.getPlanType() : null)
+                .answerPlan(plan)
                 .warnings(new ArrayList<>())
                 .errors(executed.isSuccess() ? new ArrayList<>() : List.of(
                         executed.getMessage() == null ? "warehouse_stock_tool_failed" : executed.getMessage()))
@@ -113,11 +123,11 @@ public class WarehouseStockAgent implements BusinessSubAgent {
                 .build();
     }
 
-    private static AgentResultEnvelope failureEnvelope(String err, AgentResultStatus status, long t0) {
+    private static AgentResultEnvelope failureEnvelope(long t0) {
         return AgentResultEnvelope.builder()
                 .agentName(BusinessAgentNames.WAREHOUSE_STOCK)
-                .status(status)
-                .errors(List.of(err))
+                .status(AgentResultStatus.FAILED)
+                .errors(List.of("missing_execution_context"))
                 .warnings(new ArrayList<>())
                 .durationMs(elapsedMs(t0))
                 .traceId("no-run")

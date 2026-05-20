@@ -33,4 +33,10 @@ public class AiHarnessReplayResponse {
 
     @Builder.Default
     private List<AiHarnessReplayRoundResult> rounds = new ArrayList<>();
+
+    /**
+     * 摊平的断言失败列表（与 {@code rounds[*].failedFields} 元素相同引用，带 {@code roundIndex}），便于一次 jq 查看。
+     */
+    @Builder.Default
+    private List<AiHarnessMismatch> expectationFailures = new ArrayList<>();
 }

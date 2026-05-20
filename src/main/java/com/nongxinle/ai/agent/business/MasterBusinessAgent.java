@@ -254,121 +254,6 @@ public class MasterBusinessAgent {
     }
 
     /**
-     * 经典经营概况（六工具Planner链）：{@link BusinessOverviewAgent} 独占编排拉数并挂载
-     * {@link BusinessOverviewAnswerPlan#PLAN_TYPE_BUSINESS_OVERVIEW_CLASSIC_V1}；非 MULTI_AGENT 四域。
-     */
-    public MasterBusinessAgentResult tryOrchestrateClassicBusinessOverview(AiRunState state) {
-        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
-        dbg.put("classicBusinessOverviewMasterEnabled", false);
-        if (!eligibleForClassicBusinessOverview(state)) {
-            return MasterBusinessAgentResult.builder()
-                    .masterAgentEnabled(false)
-                    .masterAgentUsed(false)
-                    .fallbackUsed(false)
-                    .fallbackReason("not_eligible_for_classic_business_overview")
-                    .classicBusinessOverviewMasterPath(false)
-                    .agentResults(List.of())
-                    .debug(dbg)
-                    .build();
-        }
-        dbg.put("classicBusinessOverviewMasterEnabled", true);
-        dbg.put("planSource", "MasterBusinessAgent");
-        Optional<BusinessSubAgent> agentOpt = registry.getAgent(BusinessAgentNames.BUSINESS_OVERVIEW);
-        if (agentOpt.isEmpty()) {
-            dbg.put("classicBusinessOverviewReason", "business_overview_agent_not_registered");
-            return MasterBusinessAgentResult.builder()
-                    .masterAgentEnabled(true)
-                    .masterAgentUsed(false)
-                    .fallbackUsed(true)
-                    .fallbackReason("business_overview_agent_not_registered")
-                    .classicBusinessOverviewMasterPath(false)
-                    .agentResults(List.of())
-                    .debug(dbg)
-                    .build();
-        }
-        AiResolvedQueryContext rq = state.getResolvedQueryContext();
-        BusinessAgentRequest request = BusinessAgentRequest.builder()
-                .runId(state.getRunId())
-                .conversationId(state.getConversationId())
-                .userId(state.getUserId())
-                .distributerId(state.getDistributerId())
-                .resolvedQueryContext(rq)
-                .semanticResult(rq != null ? rq.getQuerySemanticParse() : null)
-                .executionContext(state)
-                .orchestratedBusinessOverviewMultiAgent(false)
-                .debugOptions(new LinkedHashMap<>())
-                .build();
-        BusinessSubAgent agent = agentOpt.get();
-        if (!agent.supports(request)) {
-            dbg.put("classicBusinessOverviewReason", "supports_false");
-            return MasterBusinessAgentResult.builder()
-                    .masterAgentEnabled(true)
-                    .masterAgentUsed(false)
-                    .fallbackUsed(false)
-                    .fallbackReason("business_overview_agent_supports_false")
-                    .classicBusinessOverviewMasterPath(false)
-                    .agentResults(List.of())
-                    .debug(dbg)
-                    .build();
-        }
-        try {
-            AgentResultEnvelope env = agent.execute(request);
-            boolean ok = env.getStatus() != null
-                    && (env.getStatus() == AgentResultStatus.SUCCESS
-                            || env.getStatus() == AgentResultStatus.PARTIAL_SUCCESS
-                            || env.getStatus() == AgentResultStatus.DEGRADED);
-            dbg.put("classicBusinessOverviewAgentStatus",
-                    env.getStatus() != null ? env.getStatus().name() : null);
-            if (env.getWarnings() != null && !env.getWarnings().isEmpty()) {
-                dbg.put("classicBusinessOverviewWarnings", new ArrayList<>(env.getWarnings()));
-            }
-            return MasterBusinessAgentResult.builder()
-                    .masterAgentEnabled(true)
-                    .masterAgentUsed(ok)
-                    .fallbackUsed(!ok)
-                    .fallbackReason(ok ? null : "classic_business_overview_agent_failed")
-                    .classicBusinessOverviewMasterPath(true)
-                    .agentResults(List.of(env))
-                    .debug(dbg)
-                    .build();
-        } catch (Exception ex) {
-            log.warn("[MasterBusinessAgent] classic business overview orchestration failed runId={}",
-                    state.getRunId(), ex);
-            dbg.put("classicBusinessOverviewException", ex.getClass().getSimpleName());
-            return MasterBusinessAgentResult.builder()
-                    .masterAgentEnabled(true)
-                    .masterAgentUsed(false)
-                    .fallbackUsed(true)
-                    .fallbackReason("classic_business_overview_exception:" + ex.getClass().getSimpleName())
-                    .classicBusinessOverviewMasterPath(true)
-                    .agentResults(List.of())
-                    .debug(dbg)
-                    .build();
-        }
-    }
-
-    public static boolean eligibleForClassicBusinessOverview(AiRunState state) {
-        if (state == null || !state.isBusinessOverviewPath()) {
-            return false;
-        }
-        if (eligibleForBusinessOverviewMultiAgentOrchestration(state)) {
-            return false;
-        }
-        AiResolvedQueryContext rq = state.getResolvedQueryContext();
-        if (rq == null) {
-            return false;
-        }
-        if (!AiResolvedQueryIntent.BUSINESS_OVERVIEW.equals(rq.getEffectiveIntentCode())) {
-            return false;
-        }
-        if (!AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(rq.getEffectivePathCode())) {
-            return false;
-        }
-        List<String> plan = state.getDataPlanTools();
-        return plan != null && !plan.isEmpty();
-    }
-
-    /**
      * 在 Tool 循环前调用：仅 REVENUE_OVERVIEW 专线且计划仅为 revenue_query 时尝试编排。
      */
     public MasterBusinessAgentResult tryOrchestrateRevenueOverview(AiRunState state) {
@@ -510,7 +395,7 @@ public class MasterBusinessAgent {
     }
 
     /**
-     * 采购总览专线：仅 PURCHASE_OVERVIEW + purchase_overview_path + 计划仅 {@link AiBusinessToolIds#PURCHASE_OVERVIEW}。
+     * 采购总览专线：仅 PURCHASE_OVERVIEW + purchase_overview_path + 计划仅 {@link com.nongxinle.ai.tool.business.AiBusinessToolIds#PURCHASE_OVERVIEW}。
      */
     public MasterBusinessAgentResult tryOrchestratePurchaseOverview(AiRunState state) {
         LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
@@ -694,7 +579,7 @@ public class MasterBusinessAgent {
     }
 
     /**
-     * 出库/核销专线：仅 STOCK_REDUCE_QUERY + stock_reduce_query_path + 计划仅 {@link AiBusinessToolIds#STOCK_REDUCE_QUERY}。
+     * 出库/核销专线：仅 STOCK_REDUCE_QUERY + stock_reduce_query_path + 计划仅 {@link com.nongxinle.ai.tool.business.AiBusinessToolIds#STOCK_REDUCE_QUERY}。
      */
     public MasterBusinessAgentResult tryOrchestrateStockReduceQuery(AiRunState state) {
         LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
@@ -848,7 +733,7 @@ public class MasterBusinessAgent {
     }
 
     /**
-     * 菜品毛利专线：仅 DISH_PROFIT + dish_profit_path + 计划仅 {@link AiBusinessToolIds#DISH_PROFIT_ANALYSIS}；
+     * 菜品毛利专线：仅 DISH_PROFIT + dish_profit_path + 计划仅 {@link com.nongxinle.ai.tool.business.AiBusinessToolIds#DISH_PROFIT_ANALYSIS}；
      * 不包含 {@link AiRunState#isBusinessDiagnosisPath()}。
      */
     public MasterBusinessAgentResult tryOrchestrateDishProfitAnalysis(AiRunState state) {
@@ -1046,7 +931,7 @@ public class MasterBusinessAgent {
 
     /**
      * 库房库存概览：WAREHOUSE_STOCK_OVERVIEW + warehouse_stock_overview_path + 计划仅
-     * {@link AiBusinessToolIds#WAREHOUSE_STOCK_OVERVIEW}。
+     * {@link com.nongxinle.ai.tool.business.AiBusinessToolIds#WAREHOUSE_STOCK_OVERVIEW}。
      */
     public MasterBusinessAgentResult tryOrchestrateWarehouseStockOverview(AiRunState state) {
         LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();

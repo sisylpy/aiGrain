@@ -52,16 +52,5 @@ public class AiResolvedQueryIntent {
         return AiResolvedQueryIntent.builder().build();
     }
 
-    /** Planner 等与历史 Harness 对齐的入口；已由语义解析替代。 */
-    public static boolean messageLooksLikeBusinessDiagnosis(String rawMessage) {
-        return false;
-    }
 
-    public static boolean messageDeclaresStandaloneStockReduce(String rawMessage) {
-        return false;
-    }
-
-    public static boolean messageDeclaresStandaloneRevenueOverview(String rawMessage) {
-        return false;
-    }
 }

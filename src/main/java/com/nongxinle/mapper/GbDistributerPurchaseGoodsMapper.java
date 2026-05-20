@@ -121,4 +121,14 @@ public interface GbDistributerPurchaseGoodsMapper extends BaseMapper<GbDistribut
      */
     List<Map<String, Object>> queryGbPurchaseSupplierSpendTop(Map<String, Object> map);
 
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件；在 {@code disGoodsId} 已收窄时按供货商聚合采购金额/数量/笔数/均价（D-13.4 商品锚下钻）。
+     */
+    List<Map<String, Object>> queryGbPurchaseSupplierAggRowsForFocusedDisGoods(Map<String, Object> map);
+
+    /**
+     * 与 {@link #queryGbPurchaseGoodsCount} 同条件；单一供货商（{@code supplierId}）按分销商品聚合采购行（供货商采购口径由 map 内 legacy 聚焦控制）。
+     */
+    List<Map<String, Object>> queryGbPurchaseGoodsAggRowsForFocusedSupplier(Map<String, Object> map);
+
 }

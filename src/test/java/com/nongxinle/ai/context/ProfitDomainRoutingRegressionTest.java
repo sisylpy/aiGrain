@@ -11,10 +11,10 @@ import org.junit.jupiter.api.Test;
 class ProfitDomainRoutingRegressionTest {
 
     @Test
-    void fromUserMessage_maps_standalone_profit_question_to_dish_profit() {
+    void fromUserMessage_isDeprecatedStub_noKeywordRouting() {
         AiResolvedQueryIntent qi = AiResolvedQueryIntent.fromUserMessage("AAA 利润怎么样？");
-        Assertions.assertThat(qi.getPathCode()).isEqualTo(AiResolvedQueryIntent.PATH_DISH_PROFIT);
-        Assertions.assertThat(qi.getIntentCode()).isEqualTo(AiResolvedQueryIntent.DISH_PROFIT);
+        Assertions.assertThat(qi.getPathCode()).isNull();
+        Assertions.assertThat(qi.getIntentCode()).isNull();
         Assertions.assertThat(qi.getPurchaseSourceType()).isNull();
     }
 

@@ -29,6 +29,7 @@ public final class AiQuerySemanticParseResultDebugSerializer {
         m.put("scopeAction", blankToNull(r.getScopeAction()));
         m.put("metricAction", blankToNull(r.getMetricAction()));
         m.put("intent", blankToNull(r.getIntent()));
+        m.put("domain", blankToNull(r.getSemanticDomain()));
         m.put("mentionedDishName", blankToNull(r.getMentionedDishName()));
         m.put("confidence", r.getConfidence());
         if (r.getTime() != null) {
@@ -38,6 +39,7 @@ public final class AiQuerySemanticParseResultDebugSerializer {
             t.put("endDate", blankToNull(r.getTime().getEndDate()));
             t.put("timeSource", blankToNull(r.getTime().getTimeSource()));
             t.put("needInheritFromPrevious", r.getTime().getNeedInheritFromPrevious());
+            t.put("reason", blankToNull(r.getTime().getReason()));
             m.put("time", t);
         } else {
             m.put("time", null);
@@ -68,6 +70,20 @@ public final class AiQuerySemanticParseResultDebugSerializer {
         } else {
             m.put("metric", null);
         }
+        if (r.getSemanticSlots() != null) {
+            AiQuerySemanticParseResult.SemanticSlotsPart ss = r.getSemanticSlots();
+            LinkedHashMap<String, Object> slot = new LinkedHashMap<>();
+            slot.put("queryObject", blankToNull(ss.getQueryObject()));
+            slot.put("operation", blankToNull(ss.getOperation()));
+            slot.put("metric", blankToNull(ss.getMetric()));
+            slot.put("sourceFacet", blankToNull(ss.getSourceFacet()));
+            slot.put("anchorPolicy", blankToNull(ss.getAnchorPolicy()));
+            slot.put("detailWanted", blankToNull(ss.getDetailWanted()));
+            slot.put("structuredIntentDetailWire", blankToNull(ss.getStructuredIntentDetailWire()));
+            m.put("semanticSlots", slot);
+        } else {
+            m.put("semanticSlots", null);
+        }
         m.put("needClarification", r.getNeedClarification());
         m.put("clarificationQuestion", blankToNull(r.getClarificationQuestion()));
         m.put("reason", blankToNull(r.getReason()));
@@ -89,6 +105,7 @@ public final class AiQuerySemanticParseResultDebugSerializer {
             m.put("orchestrationDecisionCandidate", null);
         }
         m.put("mentionedStoreNames", emptyToNullCopy(r.effectiveMentionedStoreNames()));
+        m.put("purchaseSemanticFramePrimaryMerge", r.getPurchaseSemanticFramePrimaryMerge());
         m.put("promptRegistryId", blankToNull(r.getPromptRegistryId()));
         return m;
     }

@@ -109,6 +109,7 @@ public class PurchaseOverviewToolExecutor {
                 m.put(AiBusinessToolIds.ARG_PURCHASE_NARRATIVE_MODE, nar);
             }
         }
+        PurchaseOverviewGoodsDrilldownArgs.putIntoToolArgsIfApplicable(m, purCtx);
         return m;
     }
 
@@ -198,7 +199,7 @@ public class PurchaseOverviewToolExecutor {
         if (state == null || m == null) {
             return;
         }
-        String banner = buildPurchaseQueryScopeBanner(state);
+        String banner = buildPurchaseOverviewScopeBanner(state);
         if (banner != null && !banner.isBlank()) {
             m.put(AiBusinessToolIds.ARG_QUERY_SCOPE_BANNER, banner.trim());
         }
@@ -226,7 +227,7 @@ public class PurchaseOverviewToolExecutor {
         }
     }
 
-    static String buildPurchaseQueryScopeBanner(AiRunState state) {
+    static String buildPurchaseOverviewScopeBanner(AiRunState state) {
         AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
         if (rq == null || rq.getOrgScope() == null) {
             return null;

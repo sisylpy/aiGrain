@@ -226,6 +226,8 @@
 | **诚实摘要** | 成功：**`plannerPurchaseAdapterHonesty=REAL_BRIDGE_HYDRATED_PURCHASE_GROUP_TOOL_OK`**；失败：**`…_GROUP_TOOL_DEGRADED`** |
 | **观测摘要**（Replay 根级） | **`harnessPurchaseGroupVisibleStoreRootDepartmentIds`**；**`harnessPurchaseOverviewEnvelopePresent`**；**`harnessPurchaseAnswerPlanType`**；**`harnessPurchaseQueryTotalPurchaseAmount`** / **`harnessPurchaseQueryPurchaseOrderCount`**；**`harnessPurchaseFocusRowsSize`** / **`harnessPurchaseSecondaryRowsSize`**；**`harnessPurchaseFocusRowStoreDepartmentIds`**（若排行行含门店 id） |
 
+> **`harnessPurchaseQueryTotalPurchaseAmount`** / **`harnessPurchaseQueryPurchaseOrderCount`** 为历史命名的 Harness 观测键；当前数据来源为 **`purchase_overview`** 的 **`purchaseOverview`** 汇总，**不代表** 已删除的 **`purchase_query`** Tool。
+
 **注册**：与 **C-19** 同 **`PLANNER_EXECUTOR_PURCHASE_ADAPTER`** replay 族。
 
 ---

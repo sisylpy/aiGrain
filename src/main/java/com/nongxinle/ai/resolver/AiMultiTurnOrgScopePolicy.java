@@ -5,6 +5,7 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolver;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import org.springframework.util.StringUtils;
 
@@ -90,6 +91,10 @@ public final class AiMultiTurnOrgScopePolicy {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
         if (messageDeclaresBroadGroupReset(rawMessage)) {
+            return new OrgScopeApplyOutcome(baselineOrg, false);
+        }
+        if (DishSalesDrilldownMatrix.shouldSuppressStoreScopeInheritanceForTrend(
+                structuredIntentDetailWire, rawMessage, semanticLlm)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
         if (semanticDeclaresStoreFocus(semanticLlm, baselineOrg)) {
@@ -220,7 +225,14 @@ public final class AiMultiTurnOrgScopePolicy {
     /**
      * 用户显式要求回到集团/全量门店视角（如「全部门店呢」「集团呢」），
      * 需先于其它范围策略处理。
+     * <p>
+     * <b>历史过渡逻辑</b>：仍对清洗后用户原文做 Java {@code contains} 匹配固定中文短语，
+     * 命中时会阻断 {@link #applyInheritedEffectiveOrgScope} 对上一轮 visibleStoreIds 的继承。
+     * 后续应迁移至 LLM {@code scopeAction} / structured scope contract，而非在此扩展关键词。
+     *
+     * @deprecated 禁止在此新增中文关键词；待 scope 契约迁移后移除。
      */
+    @Deprecated
     public static boolean messageDeclaresBroadGroupReset(String norm) {
         if (!StringUtils.hasText(norm)) {
             return false;

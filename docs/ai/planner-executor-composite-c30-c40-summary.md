@@ -6,14 +6,25 @@
 
 ---
 
+## 0. P1-B 验收分层（P1-B Final 已落地）
+
+| 分层 | caseId / 组件 | 状态 |
+|------|----------------|------|
+| **当前主验收** | **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`**（C-35）、**`…_GROUP_CORE`**（C-48）、**`…_STOCK_DEGRADED_CORE`**（C-42）、**`DISH_PROFIT_MATRIX_P1`** | **保留** |
+| **Removed（P1-B2a）** | 四域 **`*_ADAPTER_CORE`**、**`*_ADAPTER_REAL_BRIDGE_CORE`**（8 个） | 已删 |
+| **Removed（P1-B Final）** | 四域 **`*_FAKE_OK_CORE`** / **`*_HYDRATED_CORE`** / **`*_GROUP_HYDRATED_CORE`**（12 个）；**C-31** **`…_COMPOSITE_CORE`**；**`Fake*PlannerReadBridge`** | 已删；物化见 **`PlannerCompositeHarnessContext`** |
+| **说明** | 勿再 curl 单域 Adapter caseId；Composite strict 为 Planner 主验收轴 |
+
+---
+
 ## 1. 阶段路线（C-30～C-40）
 
 | 阶段 | 主题 | 要点 |
 |:----:|------|------|
 | **C-30** | Composite Plan **设计** | 固定多步计划、同一 STORE + `timeWindow`、六步编排、失败策略与诚实性；**不接** LLM 自由规划。 |
-| **C-31** | Composite **skeleton** | Harness **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`**：前四步 **全 MOCK**，根 **`plannerCompositeHonesty=COMPOSITE_SKELETON_ONLY`**。 |
+| **C-31** | Composite **skeleton** | **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`**：**Historical / Retired candidate（P1-B B1）**；前四步全 MOCK；主验收已迁至 **C-35 / C-48 / C-42**。 |
 | **C-31.1** | skeleton **trace 口径** | 前四步 **`targetTool=mock_*_hydrated_adapter`**，trace **`usedTools`** **不含**生产 **`revenue_query`** 等，避免误读为已真实执行。 |
-| **C-32** | **Revenue real** | **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_CORE`**：仅 **`step_revenue_hydrated`** → **`revenue_query`**；其余 mock。 |
+| **C-32** | **Revenue real** | **Historical / Retired（P1-A）** — 原 `PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_CORE`；由 **C-35** ALL_REAL / **C-48** GROUP strict case 覆盖。 |
 | **C-33** | **Revenue + Purchase real** | **`…_REVENUE_PURCHASE_CORE`**：**`revenue_query`** + **`purchase_overview`**。 |
 | **C-34** | **+ StockReduce real** | **`…_REVENUE_PURCHASE_STOCK_CORE`**：再接入 **`stock_reduce_query`**。 |
 | **C-35** | **四域 real，诊断/建议 mock** | **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`**：前四步四生产 Tool；**`step_diagnosis_compose` / `step_recommendation`** 仍为 **`mock_*`**。 |
@@ -26,13 +37,31 @@
 
 ---
 
-## 2. 最终已验收 caseId（curl / Replay）
+## 2. 当前主验收 caseId（curl / Replay，P1-B）
+
+**Composite strict（PlannerExecutor 短路）**
+
+| caseId | 说明 |
+|--------|------|
+| **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`** | C-35 STORE |
+| **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_GROUP_CORE`** | C-48 GROUP |
+| **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_STOCK_DEGRADED_CORE`** | C-42 出库降级 |
+
+**GRAPH 矩阵**
+
+| caseId | 说明 |
+|--------|------|
+| **`DISH_PROFIT_MATRIX_P1`** | 菜品四轮下钻矩阵 |
+
+---
+
+## 2.1 最终已验收 caseId 详情（C-35 示例）
 
 **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`**（**C-35**）
 
 - **GraphCase**：`AiPlannerExecutorBusinessDiagnosisCompositeAllRealGraphCase`  
 - **诚实性根字段**：**`plannerCompositeHonesty=COMPOSITE_ALL_DATA_REAL_DIAGNOSIS_MOCK`**  
-- **`harnessReplayMode`**：**`PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER`**
+- **`harnessReplayMode`**：**`PLANNER_EXECUTOR_MOCK`**（P1-B Final：已摘除单域 Adapter 专用 replayMode）
 
 ---
 

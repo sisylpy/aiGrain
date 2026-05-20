@@ -1,20 +1,23 @@
 # Purchase Planner Adapter — C-15 梳理 + C-16 骨架 + C-18 设计 + C-19 已验收
 
-**状态**：**C-16** 已落地 Planner 侧 **DTO + Bridge 骨架 + Harness CORE/FAKE_OK**；**C-17** 未 Hydrate 的 RealBridge CORE；**C-19** **`PurchasePlannerRealReadBridge` + `PLANNER_EXECUTOR_PURCHASE_ADAPTER_REAL_BRIDGE_HYDRATED_CORE`** 已 **curl Harness 验收**：真实 **`purchase_overview`** / **`PurchaseOverviewToolExecutor`**，STORE 单店；**§12** 为收口摘要（**§11** 仍为字段权威表）。  
+> **Removed（P1-B Final）**：单域 Harness caseId（**`*_ADAPTER_*`**、**`*_FAKE_OK_*`**、**`*_HYDRATED_*`**）与 **`FakePurchasePlannerReadBridge`** 已删。Planner 主验收请用 Composite strict（C-35 / C-48 / C-42）；Hydrated 物化见 **`PlannerCompositeHarnessContext`**。下文 curl 单域 case 仅作历史参考。
+
+**状态**：**C-16** 已落地 Planner 侧 **DTO + Bridge 骨架**；**C-19** 生产 **`PurchasePlannerRealReadBridge`** 仍用于 Composite strict。  
 **对标 / 模板**：营收 **`RevenuePlannerRealReadBridge`** Hydrated（`planner-executor-v1-design.md` §22）；后续 **StockReduce / DishProfit** RealBridge 应对称本 Adapter 模式（§12.5）。
 
 ---
 
 ## 1. 现有采购能力一览（代码事实）
 
-### 1.1 两条易混工具
+### 1.1 现网采购 Tool（唯一）
 
 | Tool ID | 类 | 作用 | 与 Planner 专线关系 |
 |---------|-----|------|---------------------|
-| **`purchase_overview`** | `PurchaseOverviewTool` | `purchase_overview_path` 主链路：按组织范围 + 时间窗聚合入库金额、单量、采购方式拆分、Top 商品/门店/供货商等 | **`PurchaseAgent`**、经营诊断/多 Agent 组合、**拟议 Purchase Planner Adapter 应对齐此工具** |
-| **`purchase_query`** | `PurchaseQueryTool` | 较窄：**采购额/重量**汇总（`purchaseRowCount` / `purchaseSubTotal` / `purchaseWeightTotal`） | **成本洞察** (`DEFAULT_COST_INSIGHT_TOOLS`)、经营看板组合；**非** `PurchaseAgent` 当前执行路径 |
+| **`purchase_overview`** | `PurchaseOverviewTool` | `purchase_overview_path` 主链路 + **成本链第 2 步**：按组织范围 + 时间窗聚合入库金额、单量、采购方式拆分、Top 商品/门店/供货商等 | **`PurchaseAgent`**、经营诊断/多 Agent 组合、**Purchase Planner RealBridge** |
 
-**C-15 结论**：Planner 侧「采购专线 RealBridge」与 **`PurchaseAgent` 生产对齐**时，应桥接 **`PURCHASE_OVERVIEW`** + **`PurchaseOverviewToolExecutor`**，而不是 `purchase_query`。
+> **Historical removed（D-CLEAN-PURCHASE-QUERY-P2）**：`purchase_query` / **`PurchaseQueryTool`** 已删除（曾为窄口径 count/subTotal）；**禁止** 与 **`purchase_overview`** 混用。
+
+**C-15 结论**：Planner 侧「采购专线 RealBridge」与 **`PurchaseAgent` 生产对齐**时，桥接 **`PURCHASE_OVERVIEW`** + **`PurchaseOverviewToolExecutor`**。
 
 ### 1.2 关键类与方法（便于实现阶段导航）
 
@@ -168,9 +171,9 @@
 
 | caseId | 类 | 行为 |
 |--------|----|------|
-| `PLANNER_EXECUTOR_PURCHASE_ADAPTER_CORE` | `AiPlannerExecutorPurchaseAdapterGraphCase` | 无 `PurchasePlannerReadBridge`；首步 `DEGRADED`；`plannerPurchaseAdapterHonesty=ADAPTER_NO_REAL_CONTEXT` |
+| `PLANNER_EXECUTOR_PURCHASE_ADAPTER_CORE` | — | **Removed（P1-B2a）**；原 `AiPlannerExecutorPurchaseAdapterGraphCase` 已删；替代：FAKE_OK / HYDRATED / GROUP / Composite strict |
 | `PLANNER_EXECUTOR_PURCHASE_ADAPTER_FAKE_OK_CORE` | `AiPlannerExecutorPurchaseAdapterFakeOkGraphCase` | `FakePurchasePlannerReadBridge`；首步 `SUCCESS`；`plannerPurchaseAdapterHonesty=FAKE_READ_BRIDGE_OK` |
-| `PLANNER_EXECUTOR_PURCHASE_ADAPTER_REAL_BRIDGE_CORE` | `AiPlannerExecutorPurchaseAdapterRealBridgeGraphCase` | `PurchasePlannerRealReadBridge` **骨架**；计划故意不 Hydrate `AiRunState`/`AiResolvedQueryContext` → `ADAPTER_NO_RUN_STATE` 等；`plannerPurchaseAdapterHonesty=REAL_BRIDGE_HARNESS_INCOMPLETE_CONTEXT`；**不**调用 `PurchaseOverviewToolExecutor` |
+| `PLANNER_EXECUTOR_PURCHASE_ADAPTER_REAL_BRIDGE_CORE` | — | **Removed（P1-B2a）**；原 `AiPlannerExecutorPurchaseAdapterRealBridgeGraphCase` 已删；替代：`PLANNER_EXECUTOR_PURCHASE_ADAPTER_REAL_BRIDGE_HYDRATED_CORE` / GROUP / Composite strict |
 | `PLANNER_EXECUTOR_PURCHASE_ADAPTER_REAL_BRIDGE_HYDRATED_CORE` | `AiPlannerExecutorPurchaseAdapterRealBridgeHydratedGraphCase` | **C-19**：物化最小上下文 + 真实 **`purchase_overview`**；摘要 `plannerPurchaseAdapterHonesty` = `REAL_BRIDGE_HYDRATED_PURCHASE_TOOL_OK` / `REAL_BRIDGE_HYDRATED_PURCHASE_TOOL_DEGRADED` |
 | `PLANNER_EXECUTOR_PURCHASE_ADAPTER_GROUP_HYDRATED_CORE` | `AiPlannerExecutorPurchaseAdapterGroupHydratedGraphCase` | **C-45**：**GROUP** + **`groupPurchaseOverview=true`** + 真实 **`purchase_overview`**；摘要 **`REAL_BRIDGE_HYDRATED_PURCHASE_GROUP_TOOL_OK` / `…_GROUP_TOOL_DEGRADED`** |
 
@@ -180,10 +183,9 @@
 
 ---
 
-## 8. 与 `purchase_query` 的边界
+## 8. ~~与 `purchase_query` 的边界~~（Historical removed）
 
-- **默认不纳入** Purchase Planner RealBridge v1；若未来「成本洞察」要进 Planner，需 **单独** Adapter/Tool 键（避免与 overview 混用）。
-- 文档目的：避免把 **`purchase_query`** 误当成 **`PurchaseAgent`** 的等价物。
+**D-CLEAN-PURCHASE-QUERY-P2**：`purchase_query` Tool 已删；成本链与采购主线均仅 **`purchase_overview`**。
 
 ---
 
@@ -193,10 +195,9 @@
 - `com.nongxinle.ai.graph.business.PurchaseOverviewToolExecutor`
 - `com.nongxinle.ai.graph.business.toolrequest.BusinessToolExecutionRequestResolver#buildPurchaseRequestContext`
 - `com.nongxinle.ai.tool.business.PurchaseOverviewTool`
-- `com.nongxinle.ai.tool.business.PurchaseQueryTool`
 - `com.nongxinle.ai.graph.business.PurchaseAnswerPlanBuilder`
 - `com.nongxinle.ai.dto.business.PurchaseAnswerPlan`
-- `com.nongxinle.ai.planner.PurchasePlannerRealReadBridge`、`AiPlannerExecutorPurchaseAdapterRealBridgeGraphCase`（C-17 骨架）
+- `com.nongxinle.ai.planner.PurchasePlannerRealReadBridge`（C-17 骨架；Harness **`PLANNER_EXECUTOR_PURCHASE_ADAPTER_REAL_BRIDGE_CORE` Removed P1-B2a**）
 
 ---
 
@@ -208,7 +209,7 @@
 ## 10. C-16/C-17/C-19 实装清单（源码）
 
 - **C-16**：`PurchasePlannerReadStatus`…、`FakePurchasePlannerReadBridge`、`PurchasePlannerAgentAdapter`；计划字段 `purchaseReadRequest` / `purchaseExecutionContext`
-- **C-17**：`PurchasePlannerRealReadBridge`（`readWithExecutionContext`）；`AiPlannerExecutorPurchaseAdapterRealBridgeGraphCase`；Harness `replay(..., purchasePlannerRealReadBridge)`
+- **C-17**：`PurchasePlannerRealReadBridge`（`readWithExecutionContext`）；Harness 负例 case **Removed P1-B2a**；Hydrated/GROUP/Composite 经 `replay(..., purchasePlannerRealReadBridge)`
 - **C-19**：`AiPlannerExecutorPurchaseAdapterRealBridgeHydratedGraphCase`；`PLANNER_EXECUTOR_PURCHASE_ADAPTER_REAL_BRIDGE_HYDRATED_CORE`；`PurchasePlannerRealReadBridge` → `PurchaseOverviewToolExecutor` / `PurchaseAnswerPlanBuilder`
 
 ---

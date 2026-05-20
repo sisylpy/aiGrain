@@ -128,19 +128,7 @@ public class AiConversationMemoryService {
         }
     }
 
-    /**
-     * @see #rememberCompletedTurn
-     */
-    public void saveTurn(Long userId, Long conversationId, AiConversationTurnMemory turn) {
-        rememberCompletedTurn(userId, conversationId, turn);
-    }
 
-    /**
-     * @see #load
-     */
-    public AiConversationTurnMemory loadLastTurn(Long userId, Long conversationId) {
-        return load(userId, conversationId);
-    }
 
     private static String key(Long userId, Long conversationId) {
         return userId + ":" + conversationId;

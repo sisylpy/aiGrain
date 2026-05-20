@@ -105,11 +105,11 @@ data: {"success":true,"tool":"revenue_query","displayText":"工具已完成：re
 
 ```
 
-取消路径下可能出现的 **跳过工具**：
+取消路径下可能出现的 **跳过工具**（**Historical** 样例中的 `tool` 字段可能为已删 `purchase_query`；现网成本链为 **`purchase_overview`**）：
 
 ```http
 event: tool_finished
-data: {"tool":"purchase_query","skipped":true,"displayText":"运行已取消，跳过后续工具","success":false,"event":"tool_finished","runId":1778344855542,"timestamp":"...","status":"running"}
+data: {"tool":"purchase_overview","skipped":true,"displayText":"运行已取消，跳过后续工具","success":false,"event":"tool_finished","runId":1778344855542,"timestamp":"...","status":"running"}
 
 ```
 
@@ -250,7 +250,7 @@ data: {"status":"failed","displayText":"运行失败","data":{},"event":"run_fin
 }
 ```
 
-**真实示例（毛利 Tool 被拒，`data.permissionDenied` 已与后端一致）**：
+**历史示例 A（已删毛利 Tool 被拒，Historical raw capture / 非现网契约）**：
 
 ```json
 {
@@ -277,7 +277,26 @@ data: {"status":"failed","displayText":"运行失败","data":{},"event":"run_fin
 }
 ```
 
-**历史示例（营销工作台被拒，`WORKSPACE_ACCESS_DENIED`）**：曾由已删除的 **`AiWorkspaceAccessGuard`** / **`BusinessWorkspaceRouteNode`** 发出；当前主链 **不会**再经该路径产生此错误码，示例仅保留契约参考。
+**现网等价（成本诊断 Agent 被拒，`CostDiagnosisAgent` + `VIEW_COST`）**：
+
+```json
+{
+  "displayText": "成本诊断因权限不足已跳过",
+  "agent": "CostDiagnosisAgent",
+  "skipped": true,
+  "permissionDenied": {
+    "allowed": false,
+    "requiredPermission": "VIEW_COST",
+    "subject": "CostDiagnosisAgent"
+  },
+  "event": "agent_finished",
+  "runId": 1778344855542,
+  "timestamp": "...",
+  "status": "running"
+}
+```
+
+**历史示例 B（营销工作台被拒，`WORKSPACE_ACCESS_DENIED`）**：曾由已删除的 **`AiWorkspaceAccessGuard`** / **`BusinessWorkspaceRouteNode`** 发出；当前主链 **不会**再经该路径产生此错误码，示例仅保留契约参考。
 
 ```json
 {

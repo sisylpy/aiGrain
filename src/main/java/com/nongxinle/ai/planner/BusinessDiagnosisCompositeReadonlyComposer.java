@@ -15,6 +15,13 @@ import java.util.Map;
 /**
  * C-51：只读 {@link BusinessDiagnosisCompositeAnswerPlan} 的最小 Composer；不调 LLM、不读 toolResults、不改写 Builder 已物化事实。
  *
+ * <p><b>旁路边界</b>：仅生成 BusinessDiagnosisComposite
+ * {@link BusinessDiagnosisCompositeExecutionMode#SHADOW} /
+ * {@link BusinessDiagnosisCompositeExecutionMode#HARNESS_ONLY} 旁路观测用的<strong>只读摘要</strong>；
+ * <strong>不写</strong>、<strong>不替换</strong> {@link com.nongxinle.ai.core.AiRunState#getFinalAnswerText()}；
+ * <strong>不属于</strong> Master Graph 主回答链；<strong>不负责</strong>生产用户正文。
+ * {@link BusinessDiagnosisCompositeExecutionMode#PRIMARY} 为预留/未接生产主链。</p>
+ *
  * @see com.nongxinle.ai.planner.BusinessDiagnosisCompositeAnswerPlanBuilder
  */
 public final class BusinessDiagnosisCompositeReadonlyComposer {

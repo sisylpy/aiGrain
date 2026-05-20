@@ -10,36 +10,12 @@ import java.util.Locale;
 public enum AiHarnessReplayMode {
     RESOLVER_ONLY,
     GRAPH_RUN,
-    /** PlannerExecutor 纯 mock：{@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_MOCK_CORE} 等。 */
+    /**
+     * PlannerExecutor Harness：{@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_MOCK_CORE}、
+     * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_MOCK_DEGRADED_CORE}、Composite strict（C-35 / C-48 / C-42）。
+     * P1-B Final 已摘除单域 Adapter 专用 replayMode。
+     */
     PLANNER_EXECUTOR_MOCK,
-    /**
-     * PlannerExecutor {@link PlannerExecutorExecutionMode#ADAPTER} + {@link RevenuePlannerAgentAdapter}（半真实占位，无 readBridge）：
-     * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_REVENUE_ADAPTER_CORE}。
-     */
-    PLANNER_EXECUTOR_REVENUE_ADAPTER,
-    /**
-     * PlannerExecutor ADAPTER + {@link com.nongxinle.ai.planner.PurchasePlannerAgentAdapter}（C-16）：
- * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_PURCHASE_ADAPTER_CORE} /
- * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_PURCHASE_ADAPTER_FAKE_OK_CORE} /
- * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_PURCHASE_ADAPTER_REAL_BRIDGE_CORE}。
-     */
-    PLANNER_EXECUTOR_PURCHASE_ADAPTER,
-
-    /**
-     * PlannerExecutor ADAPTER + {@link com.nongxinle.ai.planner.StockReducePlannerAgentAdapter}（C-21）：
-     * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_STOCK_REDUCE_ADAPTER_CORE} /
-     * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_STOCK_REDUCE_ADAPTER_FAKE_OK_CORE}。
-     */
-    PLANNER_EXECUTOR_STOCK_REDUCE_ADAPTER,
-
-    /**
-     * PlannerExecutor ADAPTER + {@link com.nongxinle.ai.planner.DishProfitPlannerAgentAdapter}（C-26 / C-27 / C-29）：
-     * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER_CORE} /
-     * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER_FAKE_OK_CORE} /
-     * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER_REAL_BRIDGE_CORE} /
-     * {@link AiHarnessBuiltinCases#PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER_REAL_BRIDGE_HYDRATED_CORE}。
-     */
-    PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER,
 
     /**
      * C-54：{@link AiHarnessReplayCompositeGate} — 仅

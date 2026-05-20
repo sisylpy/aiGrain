@@ -385,4 +385,16 @@ public class GbDistributerPurchaseGoodsServiceImpl extends ServiceImpl<GbDistrib
         return list != null ? list : Collections.emptyList();
     }
 
+    @Override
+    public List<Map<String, Object>> queryGbPurchaseSupplierAggRowsForFocusedDisGoods(Map<String, Object> map) {
+        List<Map<String, Object>> list = baseMapper.queryGbPurchaseSupplierAggRowsForFocusedDisGoods(map);
+        return list != null ? list : Collections.emptyList();
+    }
+
+    @Override
+    public List<Map<String, Object>> queryGbPurchaseGoodsAggRowsForFocusedSupplier(Map<String, Object> map) {
+        List<Map<String, Object>> list = baseMapper.queryGbPurchaseGoodsAggRowsForFocusedSupplier(map);
+        return list != null ? list : Collections.emptyList();
+    }
+
 }

@@ -11,14 +11,15 @@
 ### 前端联调（成本主线，`VITE_USE_MOCK=false`）
 
 - **稳定端点**（勿改路径与动词）：`POST /api/ai/runs` → `GET /api/ai/runs/{runId}/events`（SSE）→ 可选 `POST /api/ai/runs/{runId}/stop`。
-- **经营路由 vs 成本意图（`BusinessDataPlanner`）**：**显式「菜品毛利 / 菜品分析 / 哪些菜赚钱…」优先 `dish_profit_path`**（单 Tool **`dish_profit_analysis`** + **`DishProfitAgent`**，`answer_delta.data.dishProfitOverview`）。否则，含 **成本/毛利（泛指）/核销/采购/出库…** 子串会先命中 **成本类原始意图**。在 Run 挂载 **`AiUserContext`** 时执行 **意图收敛**（全额 **5 Tool + `CostDiagnosisAgent`** ｜ **采购视角 Tool 链** ｜ **优惠券端拒答**），规则与话术见 **`docs/PERMISSION_MODEL.md` §7**。再否则，话术如 **「这个月生意怎么样」** → **经营概览链**（4 Tool + `BusinessOverviewAgent`）。最终以 **`answer_delta.data.text`** 展示：**【查询范围】/【意图说明】/【权限提示】** 等可由 **`StubAnswerComposerNode`** 前置拼接；有 DeepSeek 时为其扩写段落 + 确定性摘要分段；仅调试 **`ai.agent.llm.stub=true`** 时为**纯确定性摘要**，不再向前端附带「LLM未接入」类占位句。**成本诊断卡片**仍仅 **`answer_delta.data.costDiagnosis`**（全链成功时）。
+- **经营路由 vs 成本意图（`BusinessDataPlanner`）**：**显式「菜品毛利 / 菜品分析 / 哪些菜赚钱…」优先 `dish_profit_path`**（单 Tool **`dish_profit_analysis`** + **`DishProfitAgent`**，`answer_delta.data.dishProfitOverview`）。否则，含 **成本/毛利（泛指）/核销/采购/出库…** 子串会先命中 **成本类原始意图**。在 Run 挂载 **`AiUserContext`** 时执行 **意图收敛**（全额 **4 Tool + `CostDiagnosisAgent`** ｜ **采购视角 Tool 链** ｜ **优惠券端拒答**），规则与话术见 **`docs/PERMISSION_MODEL.md` §7**。再否则，话术如 **「这个月生意怎么样」** → **`business_overview_path`**：**MULTI_AGENT 四域**（`revenue_query` + `purchase_overview` + `stock_reduce_query` + `dish_profit_analysis`，权限裁剪）→ **`BusinessOverviewAnswerPlan.MULTI_AGENT_V1`** → **`StubAnswerComposerNode` 确定性 Markdown**；非 MULTI 时为 **空 plan**（classic 六工具 + **`BusinessOverviewAgent` 已删**，见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)）。最终以 **`answer_delta.data.text`** 展示：**【查询范围】/【意图说明】/【权限提示】** 等可由 **`StubAnswerComposerNode`** 前置拼接；有 DeepSeek 时为其扩写段落 + 确定性摘要分段；仅调试 **`ai.agent.llm.stub=true`** 时为**纯确定性摘要**，不再向前端附带「LLM未接入」类占位句。**成本诊断卡片**仍仅 **`answer_delta.data.costDiagnosis`**（全链成功时）。
 - **SSE 信封**：扁平 JSON（见下节「扁平信封」），顶层含 `event`、`runId`、`timestamp`、`status`、`displayText`，按需 `agent`、`tool`、`data` 等；**不要**解析旧的 `{ type, payload }` 形态。
 - **成本诊断 UI**：**仅**在 **`purchaseCostInsightPath` / `couponCostInsightBlocked` 均未命中**且 **`CostDiagnosisAgent`** 已产出结构化结果时，使用 SSE **`answer_delta`** 的 **`data.costDiagnosis`**（稳定契约见下文）；采购视角或优惠券拒答链路**无此卡片**。**不要**依赖 **`GET /api/ai/runs/{runId}`** 的 **`answerPreview`**。
 - **菜品毛利 UI**：命中 **`dish_profit_path`**（如「菜品毛利怎么样」「水煮鱼毛利怎么样」「哪些菜赚钱」）且 **`DishProfitAgent`** 已产出结构化结果时，使用 **`answer_delta.data.dishProfitOverview`**（与 **`AiDishProfitOverviewResult`** 一致，契约见下文「`dishProfitOverview`」）；正文仍为 **`data.text`**。
 - **采购视角 AnswerPlan（2026-05-12 收口）**：走 **`purchase_overview_path` / `purchaseCostInsightPath`**、`purchase_overview` 已执行且 **`PurchaseAnswerPlanBuilder`** 成功挂载时，**`answer_delta.data`** 可含 **`purchaseAnswerPlan`**（字段名 **`type`** 对应 Java `planType`，见下文专节）。**`StubAnswerComposerNode`** 在 **`purchaseAnswerPlan.focusRows != null`** 时 **优先按该计划宣读** **`focusRows` / `secondaryRows`**（不重排、不重算）；工具快照 **`purchaseOverview`** 与旧 Composer 摘要 **不再主导** 核心数字。**整机前台验收** 由负责人在业务环境完成；仓库内 IDE Agent **无需代跑** 前台测试。
 - **营收 AnswerPlan（2026-05-12 收口）**：走 **`revenue_overview_path`**、**`revenue_query`** 成功且 **`DailyRevenueAnswerPlanBuilder`** 挂载计划时，**`answer_delta.data`** 可含 **`revenueAnswerPlan`**（字段名 **`type`** 对应 Java **`planType`**，见下文「`revenueAnswerPlan`」专节）。**`resolvedQueryContextSummary`** 同源透出 **`revenueAnswerPlan*`** 扁平摘要字段供 Harness Debug / Replay。**`StubAnswerComposerNode`** 在营收 path 且计划可用时 **优先宣读 AnswerPlan**。外卖「平台」问法无分列明细时的降级口径见 **`docs/ai/revenue-answer-plan.md`** §4.2、§11。
-- **经营概览 UI**：命中 **经营概览链**（如「这个月生意怎么样」「本月经营情况怎么样」，`business_overview_path`）且 **`BusinessOverviewAgent`** 已产出结构化结果时，使用 **`answer_delta.data.businessOverview`**（与 `AiBusinessOverviewResult` 一致，契约见下文「`businessOverview`」）；正文仍以 **`data.text`** 为准，须引用 Tool 口径数字、禁止空泛编造。
-- **超时**：整机 Run 当前常见 **50s+**（仅占位数据时约 **55～60s**）；**真实主键** 下若 **`dish_sales_query` 占主导**，常见 **~90s+**。联调请把 **EventSource / fetch 的 read 超时** 调到 **≥120s**；性能优化见 `docs/TODO_MULTI_AGENT.md` backlog，**非本阶段必做**。
+- **经营概览 UI（MULTI_AGENT，现网）**：**`BUSINESS_OVERVIEW`** + **`business_overview_path`** + Resolver **`MULTI_AGENT` / `orchestrationMultiAgentRequired`** → DataPlanner 四域 Tool → Master 挂载 **`BusinessOverviewAnswerPlan`**（**`planType`**: **`BUSINESS_OVERVIEW_MULTI_AGENT_V1`**）→ **`StubAnswerComposerNode`** **确定性四域 Markdown**。前端 **以 `answer_delta.data.text` 为准**；**勿**按 classic **`BusinessOverviewAgent`** 卡片链路集成。Classic 编排已删：[classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)。
+- **经营概览 legacy 字段（已删除，P1F-F2）**：**`answer_delta.data.businessOverview`** / **`AiBusinessOverviewResult`** / **`AiRunState.businessOverviewResult`** 已于 P1F-F2 移除；MULTI_AGENT 经营概览 **仅** `data.text`（及可选 debug AnswerPlan 字段）。形态见下文 Historical removed 专节。
+- **超时**：整机 Run 当前常见 **50s+**（仅占位数据时约 **55～60s**）；**真实主键** 下成本主线若 **`dish_profit_analysis` 占主导**（`DEFAULT_COST_INSIGHT_TOOLS` 第 4 步），常见 **~90s+**。联调请把 **EventSource / fetch 的 read 超时** 调到 **≥120s**；性能优化见 `docs/TODO_MULTI_AGENT.md` backlog，**非本阶段必做**。
 - **跨域（CORS）**：前端在 **`http://localhost:5173`**（或其它本机 dev 端口）、API 在 **`http://localhost:8090`** 时属于**跨源**；`POST` + `application/json` 会先发 **OPTIONS** 预检。后端通过 **`WebMvcConfig` 中注册的 `CorsFilter`** 放行本地源（含显式 **`http://localhost:5173`** / **`http://127.0.0.1:5173`** 与本机端口通配），并 **`Access-Control-Allow-Credentials: true`**，以兼容 `fetch`/SSE 使用 **`credentials:'include'`**（否则浏览器会因凭据模式报 CORS 失败，即使 HTTP 状态为 200）。避免仅依赖 `WebMvcConfigurer#addCorsMappings` 时预检仍为 **403**。若 OPTIONS 仍为 403：**重启后端**使 Filter 生效，并在 Network 核对响应体是否仍为 CORS 拒绝。
 
 ---
@@ -82,12 +83,14 @@ POST /api/ai/runs
 | Tool / Agent 能力 | `permission` |
 |-------------------|----------------|
 | `revenue_query` | `VIEW_REVENUE` |
-| `business_overview_query` | `VIEW_REVENUE` |
-| `purchase_query` | `VIEW_PURCHASE` |
+| `purchase_overview` | `VIEW_PURCHASE`（成本链第 2 步 / 采购主线） |
 | `stock_reduce_query` | `VIEW_STOCK` |
-| `dish_sales_query` | `VIEW_DISH_SALES` |
-| `gross_margin_calculator` | `VIEW_COST` |
-| `CostDiagnosisAgent` | `VIEW_COST` |
+| `dish_profit_analysis` | **`VIEW_DISH_SALES` + `VIEW_COST`**（**D-8** `dish_sales_query_path` 与 **成本链**第 4 步均执行本品；Planner `requiredPermissionForTool` 对本品 **无** 单 permission 映射，执行时走 **`evaluateDishProfitAnalysisInvocation`**） |
+| `CostDiagnosisAgent` | `VIEW_COST`（门店粗估毛利率由 **`CostMarginDerivation`** 内部推导，**非**独立 Tool） |
+
+> **Historical removed（D-CLEAN-GROSS-MARGIN-P2B）**：`gross_margin_calculator` / **`GrossMarginCalculatorTool`** 已删除；**不得**再作为可注册 Tool 或 SSE `tool_*` 现网契约。
+
+> **Historical removed（D-CLEAN-PURCHASE-QUERY-P2）**：`purchase_query` / **`PurchaseQueryTool`** 已删除；成本链第 2 步与采购主线统一 **`purchase_overview`**。
 | （预留）导出报表 | `EXPORT_REPORT` |
 | （预留）营销 Agent | `MANAGE_MARKETING` |
 
@@ -102,9 +105,11 @@ curl -sS -X POST http://localhost:8090/api/ai/runs -H 'Content-Type: application
 curl -Ns "http://localhost:8090/api/ai/runs/<runId>/events"
 ```
 
-**预期**：**`userId`** 在 **`gb_department_user`** 存在；**`gb_du_admin`** 映射为可读 **`roleCode`**（如 **`admin=0` → `GROUP_MANAGER`**，原 **`GROUP_BOSS` 别名已废弃**）；**`ScopeIntersect`** 对 **`GROUP_MANAGER`** 不错误收窄本次业务样例中的 **1/2** 锚点；五 Tool 不因权限误拦截；**`answer_delta.data.costDiagnosis`** 有结构；**`run_finished.status`** 为 **`completed`**；卡片联调仍看 **`answer_delta.data.costDiagnosis`**。
+**预期**：**`userId`** 在 **`gb_department_user`** 存在；**`gb_du_admin`** 映射为可读 **`roleCode`**（如 **`admin=0` → `GROUP_MANAGER`**，原 **`GROUP_BOSS` 别名已废弃**）；**`ScopeIntersect`** 对 **`GROUP_MANAGER`** 不错误收窄本次业务样例中的 **1/2** 锚点；四步成本 Tool 不因权限误拦截；**`answer_delta.data.costDiagnosis`** 有结构（含内部推导毛利）；**`run_finished.status`** 为 **`completed`**；卡片联调仍看 **`answer_delta.data.costDiagnosis`**。
 
-**已验一回（2026-05-10，本机，`runId=1778350824377`）**：**`ScopeIntersectNode`** 完成，`resolvedDepartmentCount:3`；**DataPlanner** 五 Tool 全编排；**五 Tool** `tool_finished.success` 均为 **`true`**（其中 **`dish_sales_query`** 约 **31s**）；**`CostDiagnosisAgent`** `riskLevel:data_incomplete`、`needMoreData:false`；**`answer_delta`** 含 **`data.costDiagnosis`** 与 **`data.text`**；无 **`event:error`** / **`permissionDenied`**；**`run_finished`** **`status:completed`**。**`GET /api/ai/runs/{id}`** 返回 **`status:COMPLETED`**、**`workspaceMode:BUSINESS_CHAT`**。
+**已验一回（2026-05-10，本机，`runId=1778350824377`）**：**`ScopeIntersectNode`** 完成，`resolvedDepartmentCount:3`；**DataPlanner** 四 Tool 全编排（**不再**编排 **`gross_margin_calculator`**）；**四 Tool** `tool_finished.success` 均为 **`true`**（历史第 4 步曾为 **`dish_sales_query`**；**2026-05-20 P1** 起第 4 步为 **`dish_profit_analysis`**；**P2A** 起毛利由 **`CostMarginDerivation`** 在 **`CostDiagnosisAgent`** 内推导）。
+
+> **Historical removed（D-CLEAN-DISH-SALES-P2）**：独立 Tool **`dish_sales_query`** / **`DishSalesQueryTool`** 已删除。**D-8** 语义 intent 仍为 **`DISH_SALES_QUERY`**，path 仍为 **`dish_sales_query_path`**，执行 Tool 为 **`dish_profit_analysis`**（与成本链一致）。**不再**存在 `toolResults["dish_sales_query"]` fallback。**`CostDiagnosisAgent`** `riskLevel:data_incomplete`、`needMoreData:false`；**`answer_delta`** 含 **`data.costDiagnosis`** 与 **`data.text`**；无 **`event:error`** / **`permissionDenied`**；**`run_finished`** **`status:completed`**。**`GET /api/ai/runs/{id}`** 返回 **`status:COMPLETED`**、**`workspaceMode:BUSINESS_CHAT`**。
 
 > **说明**：无监听端口的 IDE/CI Agent 环境可能无法代抓取 SSE；门禁仍以 **`mvn test`** 为准。真机可把 **`curl -Ns .../events`** 输出重定向留档。
 
@@ -122,7 +127,7 @@ curl -Ns "http://localhost:8090/api/ai/runs/<runId>/events"
     "reason": "你当前账号没有权限使用「毛利率估算」（需要权限：查看成本/毛利结构化分析）。",
     "suggestedScope": "你可以查看自己职责范围内的门店/分销经营数据；若需跨店或集团视图，请联系管理员开通相应权限。",
     "requiredPermission": "VIEW_COST",
-    "subject": "gross_margin_calculator"
+    "subject": "CostDiagnosisAgent"
   }
 }
 ```
@@ -232,7 +237,7 @@ curl -s -X POST http://localhost:8090/api/ai/runs/1778339369299/stop \
 | `displayText` | 是 | 给人看的进度/结果短描述 |
 | `agent` | 否 | 展示用智能体名（非 Spring Bean 名） |
 | `tool` | 否 | 工具名（若有） |
-| `data` | 否 | 结构化附加负载。**`answer_delta` 中必选 `text`（与根级 `text` 兼容副本）**；若走成本主线，可含 **`costDiagnosis`**；若走经营概览链，可含 **`businessOverview`**（与 `BusinessOverviewAgent` 输出一致）；若走 **`dish_profit_path`**，可含 **`dishProfitOverview`**（`AiDishProfitOverviewResult`，camelCase）；若走 **`purchase_overview_path` / `purchaseCostInsightPath`** 且 Composer 已写入快照，可含 **`purchaseOverview`**（与 **`PurchaseOverviewTool`** 产出的 `purchaseOverview` 对象同源，`camelCase`）；**同一帧还可含 `purchaseAnswerPlan`**（采购回答计划，见下文「`purchaseAnswerPlan`」节；与 Debug/Replay 同源）；若走 **`revenue_overview_path`** 且 Builder 已挂载，可含 **`revenueAnswerPlan`**（日营业额回答计划，见下文「`revenueAnswerPlan`」节；与 **`resolvedQueryContextSummary.revenueAnswerPlan`** 同源）。 |
+| `data` | 否 | 结构化附加负载。**`answer_delta` 中必选 `text`（与根级 `text` 兼容副本）**；若走成本主线，可含 **`costDiagnosis`**；若走 **`business_overview_path` MULTI_AGENT（现网）**，主文在 **`text`**（确定性四域 Markdown）；可选 **legacy** **`businessOverview`**（**非** Composer 主线，P1F 待审计，见下文）；若走 **`dish_profit_path`**，可含 **`dishProfitOverview`**（`AiDishProfitOverviewResult`，camelCase）；若走 **`purchase_overview_path` / `purchaseCostInsightPath`** 且 Composer 已写入快照，可含 **`purchaseOverview`**（与 **`PurchaseOverviewTool`** 产出的 `purchaseOverview` 对象同源，`camelCase`）；**同一帧还可含 `purchaseAnswerPlan`**（采购回答计划，见下文「`purchaseAnswerPlan`」节；与 Debug/Replay 同源）；若走 **`revenue_overview_path`** 且 Builder 已挂载，可含 **`revenueAnswerPlan`**（日营业额回答计划，见下文「`revenueAnswerPlan`」节；与 **`resolvedQueryContextSummary.revenueAnswerPlan`** 同源）。 |
 | 其它 | — | 各事件可附带 `message`、`type`、`workspaceMode`、`text` 等；前端应容错未知字段 |
 
 **示例**
@@ -269,7 +274,7 @@ es.addEventListener('answer_delta', (e) => {
   const envelope = JSON.parse(e.data); // e.data 为单行 UTF-8 JSON
   const body = envelope.data?.text ?? envelope.text ?? '';
   const costCard = envelope.data?.costDiagnosis; // 成本卡片，可选
-  const overviewCard = envelope.data?.businessOverview; // 经营概览卡片，可选
+  const overviewCard = envelope.data?.businessOverview; // legacy/API 尾巴，可选；非 MULTI_AGENT 主链
   const dishProfitCard = envelope.data?.dishProfitOverview; // 菜品毛利卡片，可选
   const purchaseCard = envelope.data?.purchaseOverview; // 采购入库概览快照，可选（purchase_overview / 采购视角）
   const purchasePlan = envelope.data?.purchaseAnswerPlan; // 采购回答计划（Harness/Debug 同源），可选
@@ -358,77 +363,39 @@ es.addEventListener('run_finished', () => {
 
 ---
 
-## `answer_delta.data.businessOverview` 稳定契约（前端）
+## 经营概览 MULTI_AGENT 活跃链路（`business_overview_path`，现网）
 
-经营概览链（「这个月生意怎么样」等，`business_overview_path`：**`business_overview_query` → `dish_sales_query` → `purchase_query` → `gross_margin_calculator`**）走完 **`BusinessOverviewAgent`** 后，SSE **`answer_delta`** 的 **`data.businessOverview`** 为 **`AiBusinessOverviewResult`** 的 Fastjson 序列化：**字段名为 camelCase，视为稳定契约**。
+> Classic **`BusinessOverviewAgent` / `BusinessOverviewAgentNode`** 与六工具 / 四工具序已删除，见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)。
+
+| 阶段 | 说明 |
+|------|------|
+| **Intent / Path** | **`BUSINESS_OVERVIEW`** + **`business_overview_path`** |
+| **Resolver 门闸** | **`orchestrationTaskMode=MULTI_AGENT`** 或 **`orchestrationMultiAgentRequired=true`** |
+| **DataPlanner** | **`buildBusinessOverviewMultiAgentToolsPermissionFiltered`** → 四域子集（固定顺序，权限裁剪）：**`revenue_query`** → **`purchase_overview`** → **`stock_reduce_query`** → **`dish_profit_analysis`** |
+| **Master / BTEN** | **`MasterBusinessAgent.tryOrchestrateBusinessOverviewMultiAgent`**；四域 Tool 成功后挂载子域 AnswerPlan |
+| **AnswerPlan** | **`BusinessOverviewAnswerPlan`**，**`planType`**: **`BUSINESS_OVERVIEW_MULTI_AGENT_V1`**（字段 **`type`** 与 Java 对齐时同理） |
+| **Composer** | **`StubAnswerComposerNode`** → **`composeBusinessOverviewMultiAgentFourDomainMarkdown`**（**确定性 Markdown**，非 classic Composer prompt） |
+| **前端主数据** | **`answer_delta.data.text`** |
+
+非 MULTI 的 **`business_overview_path`**：**`dataPlanTools` 为空**（`businessOverviewClassicPlanSuppressed`），**无** classic 回退。
+
+---
+
+## `answer_delta.data.businessOverview` — Historical removed（P1F-F2）
+
+> **已删除（P1F-F2）**：Classic **`BusinessOverviewAgent`** 链与 **`AiRunState.businessOverviewResult`** 写入方已于 P1A–P1E 下线；**`AiRunService`** 不再序列化 **`data.businessOverview`** / **`businessOverviewWarning`**；DTO **`AiBusinessOverviewResult`** 已删。**MULTI_AGENT 经营概览请以 `data.text` 为准**（见上文「经营概览 MULTI_AGENT 活跃链路」）。
+
+下列 JSON 形态 **仅作历史归档**，**勿**再对接新前端；旧客户端若仍读该字段将永远收不到 payload。
 
 | JSON 字段 | 类型 | 说明 |
 |-----------|------|------|
-| `agentName` | `string` | 默认 `BusinessOverviewAgent` |
-| `summary` | `string` | 一句话结论（须与营业额等真实指标一致） |
-| `riskLevel` | `string` | `ok` \| `warning` \| `high` \| `data_incomplete` |
-| `keyMetrics` | `array<object>` | `{ name, value, unit? }`，由 Agent 将看板/Tools 收口 |
-| `findings` | `array<string>` | 基于数据的观察 |
-| `recommendations` | `array<string>` | 可执行建议（禁止脱离指标空泛泛化） |
-| `needMoreData` | `boolean` \| 省略 | 是否需补数据再继续 |
-| `questions` | `array<string>` | 需用户补充的问题 |
-| `dashboardStatsCn` | `object` | 与日营收 **`buildStatsDashboard`** 输出的 **`stats`** 对齐的扁平中文键值副本（无前端的卡片可直接用之渲染） |
-| `dashboardBindings` | `object` | 看板 **`dashboard.bindings`** 副本（英文键） |
-| `overviewScope` | `object` | 可选。集团/门店**查询口径与门店覆盖**：`scopeType`（`GROUP` \| `STORE`）、`scopeName`、`aggregationModeHint`、`departmentCount`、`visibleDepartmentNodeCount`、`dataAvailableDepartmentCount`、`dataMissingDepartmentCount`、`primaryBanner`、`coverageDetail`。**集团广角**还可能含命名门店计数：`dataMissingStoreCount`、`attentionStoreCount`（≠ 抽象的「节点缺记录」：`dataMissingDepartmentCount`）。仅业务语义与自然语言，**不透明部门主键**。 |
-| `dataMissingStores` | `array<object>` | 可选。集团广角 v1：**数据缺口**命名门店清单（画像未配、子树内无日营收记录等）；**与经营异常分列**，无 `riskLevel`。**权限**：本轮仅 **`GROUP_MANAGER`** 返回按集团可视范围归因的条目；店长/采购等后续再接角色裁剪。每项：`storeName`、`reason`。 |
-| `attentionStores` | `array<object>` | 可选。**有可用日营收台账**前提下，启发式经营关注点（采购入库高于营业额、单量偏低等）。每项：`storeName`、`reason`、`riskLevel`（如 `warning` \| `high`）。 |
-| `priorityStoresBrief` | `string` \| 省略 | 可选。供正文/模型点到为止：**至多 Top3** 家门店的一句话摘要（与 `business_overview_query.data.priorityStoresBrief` 同源）；**完整列表仅在** `dataMissingStores` **`/`** `attentionStores`。
+| `agentName` | `string` | Historical 默认 **`BusinessOverviewAgent`**（Agent 已删） |
+| `summary` / `riskLevel` / `keyMetrics` / `findings` 等 | 各类型 | Historical 结构化卡片字段（完整表见 Git 历史 P1F-F2 前版本） |
 
-与 **`business_overview_query` Tool**：`tool_finished` 成功后 **`data.data.stats`**、`data.days`、`totalRevenue`、`dashboardBindings`、`anomalyHints` 等与旧版 **`GET …/daily-revenue/stats/{id}`** 同源；**集团广角且聚合成功时**，同层 **`data` 还可能含** `dataMissingStores`、`attentionStores`、`priorityStoresBrief`（camelCase）；Composer 优先引用 **`toolResults.business_overview_query`** 中的指标，**勿**编造未返回数字。
-
-**集团管理端（`GROUP_MANAGER`，第一版口径说明）**：`BusinessToolExecutionNode` 仍会向 Tool 传入 **`POST` 的 `departmentId`**（解释为「父部门/餐厅」键，与日营收 Mapper 一致）。**`AiRunScopeIntersectService`** 对集团广角账号**不写回**收窄后的单体门店 ID，因而若传入的是「集团组织根节点」而非某一门店的经营父 department，常与 **`gb_ai_restaurant_profile`** / 日营收表粒度不匹配。此时 **`business_overview_query`** 会带上 **`groupWideOverviewHint`**，失败载荷中的 **`failureKind`** / **`note` / `anomalyHints`** 会说明「**集团多维汇总暂未接入**」，**不再**以「门店画像未配置」作为唯一话术。下属门店 rollup 详见 **`docs/TODO_MULTI_AGENT.md`「集团经营概览聚合口径」**。
-
-**`businessOverview` 示例**（占位，仅供形态）
-
-```json
-{
-  "agentName": "BusinessOverviewAgent",
-  "summary": "本月截至目前本门店营业额与订单情况如下，后续可关注采购与核销侧数据完整性。",
-  "riskLevel": "ok",
-  "keyMetrics": [
-    { "name": "总营业额", "value": "32800", "unit": "元" },
-    { "name": "统计天数", "value": 10, "unit": "天" }
-  ],
-  "findings": ["..."],
-  "recommendations": ["..."],
-  "needMoreData": false,
-  "questions": [],
-  "dashboardStatsCn": { "总营业额": "32800", "日均营业额": "3280", "统计天数": 10 },
-  "dashboardBindings": {},
-  "overviewScope": {
-    "scopeType": "GROUP",
-    "scopeName": "集团汇总（账号可见组织）",
-    "aggregationModeHint": "GROUP_SQL_ROLLUP",
-    "departmentCount": 12,
-    "visibleDepartmentNodeCount": 380,
-    "dataAvailableDepartmentCount": 10,
-    "dataMissingDepartmentCount": 2,
-    "primaryBanner": "你当前账号可查看集团范围。",
-    "coverageDetail": "本期系统识别到 x 家门店有日营收数据…（或「共 y 家有数据、z 家暂无」）；下面按有数据门店汇总分析。",
-    "dataMissingStoreCount": 2,
-    "attentionStoreCount": 1
-  },
-  "dataMissingStores": [
-    { "storeName": "朝阳店", "reason": "暂无日营收记录" },
-    { "storeName": "国贸店", "reason": "餐厅画像未配置" }
-  ],
-  "attentionStores": [
-    {
-      "storeName": "望京店",
-      "reason": "采购入库额高于营业额，需要结合库存出库核对",
-      "riskLevel": "warning"
-    }
-  ],
-  "priorityStoresBrief": "需要优先关注的门店：\n1. 朝阳店：暂无日营收记录；"
-}
-```
+详见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)。
 
 ---
+
 
 ## `answer_delta.data.purchaseOverview` 稳定契约（前端）
 
@@ -603,6 +570,8 @@ es.addEventListener('run_finished', () => {
 
 用于 **`warehouse_stock_overview_path`**（工具 **`warehouse_stock_overview`**）：库存概览链路完成后，`StubAnswerComposerNode` 将 Tool 返回的 **`data.warehouseOverview`** 快照写入 RunState，SSE **`answer_delta`** 的 **`data.warehouseOverview`** 与该 **`Map` 同源**（Fastjson 序列化，**camelCase 键名以 `WarehouseStockOverviewTool` 为准**）。
 
+> **Historical removed（D-CLEAN-STOCK-QUERY-P2）**：独立 Tool **`stock_query`** / **`StockQueryTool`** 已删除；**不**再存在 `toolResults["stock_query"]`。语义 wire **`"STOCK_QUERY"`** 仍保留并映射到本 path；执行仅 **`warehouse_stock_overview`**。
+
 ### 组织与范围
 
 | JSON 字段 | 类型 | 说明 |
@@ -653,7 +622,7 @@ es.addEventListener('run_finished', () => {
 
 ## `answer_delta.data.dishProfitOverview` 稳定契约（前端）
 
-用于 **菜品毛利 / 菜品利润分析**（如「这个月菜品毛利怎么样」「哪些菜赚钱」）。**`dish_profit_path`**（DataPlanner：`dishProfitPath=true`，工具 **`dish_profit_analysis`**）走完 **`DishProfitAgent`** 后，SSE **`answer_delta`** 的 **`data.dishProfitOverview`** 为 **`AiDishProfitOverviewResult`** 的 Fastjson 序列化：**字段名为 camelCase，视为稳定契约**。与 **`businessOverview` / `costDiagnosis`** 一样，请以 **`answer_delta`** 为准；**勿**依赖 **`GET /api/ai/runs/{runId}`** 的 **`answerPreview`**。
+用于 **菜品毛利 / 菜品利润分析**（如「这个月菜品毛利怎么样」「哪些菜赚钱」）。**`dish_profit_path`**（DataPlanner：`dishProfitPath=true`，工具 **`dish_profit_analysis`**）走完 **`DishProfitAgent`** 后，SSE **`answer_delta`** 的 **`data.dishProfitOverview`** 为 **`AiDishProfitOverviewResult`** 的 Fastjson 序列化：**字段名为 camelCase，视为稳定契约**。与 **`costDiagnosis`** 一样，请以 **`answer_delta`** 为准；**勿**依赖 **`GET /api/ai/runs/{runId}`** 的 **`answerPreview`**。（**`businessOverview`** 为 legacy 尾巴，非经营概览主链。）
 
 ### 集团范围与门店字段（与 `AiResolvedQueryContext` 对齐）
 
@@ -662,7 +631,7 @@ es.addEventListener('run_finished', () => {
 - **`coveredStores`**：本轮**有菜品销售 / 毛利汇总数据**的门店（同形对象列表）。
 - **`dataMissingStores`**：**在可见范围内**但本轮**暂无菜品侧数据**的门店；元素为 **`AiOverviewStoreIssueItem`**（`storeDepartmentId`、`storeName`、`reason`、`riskLevel` 可选），语义上以 `reason` 说明缺口。
 - 辅助计数（与列表一致时可快速展示）：**`visibleStoreCount`**、**`dataAvailableStoreCount`**、**`dataMissingStoreCount`**。
-- **`queryScopeBanner`**：开篇人类可读范围句（可见门店家数、店名枚举等），与经营概览 **`businessOverview.queryScopeBanner`** 风格对齐。
+- **`queryScopeBanner`**：开篇人类可读范围句（可见门店家数、店名枚举等），与 legacy **`businessOverview.queryScopeBanner`** 风格对齐（非现网 MULTI_AGENT 主链）。
 - **`scopeType` / `scopeName`**：透视范围标签（如 `GROUP`、可读「集团范围」等），与 **`AiDishProfitOverviewResult`** 一致。
 
 ### 汇总金额与综合毛利率
@@ -784,7 +753,7 @@ curl -s http://localhost:8090/api/ai/runs/<runId>
 |---|--------|----------|
 | 1 | 进入 **BUSINESS_CHAT** | SSE `agent_finished` `WorkspaceRouterAgent` 上出现 `workspaceMode":"BUSINESS_CHAT"` |
 | 2 | 「本月」时间窗 | `TimeWindowNode` 的 **`agent_finished`** 带 **`startDate`/`endDate`**（当月首日至当日或语义等价） |
-| 3 | 五个 Tool **顺序执行** | 依次出现 `revenue_query` → `purchase_query` → `stock_reduce_query` → `dish_sales_query` → `gross_margin_calculator` 的 `tool_started`/`tool_finished` |
+| 3 | 四个 Tool **顺序执行** | 依次出现 `revenue_query` → **`purchase_overview`** → `stock_reduce_query` → **`dish_profit_analysis`** 的 `tool_started`/`tool_finished`（**不再**编排 `dish_sales_query` / **`purchase_query`** / **`gross_margin_calculator`**；毛利在 **`CostDiagnosisAgent`** 内由 **`CostMarginDerivation`** 推导） |
 | 4 | Tool **真实 vs mock / success** | 各 `tool_finished` 的 `success`；响应体信封见 **`com.nongxinle.ai.tool.business`**：`schemaVersion`=`v1`，**`mock`**、`success`、`data` 内指标 |
 | 5 | **`costDiagnosis` 结构化** | `CostDiagnosisAgent` 成对 `agent_*` 后出现 |
 | 6 | **`answer_delta.data.costDiagnosis`** | 事件中 `data.costDiagnosis` 非空对象，字段遵守上节契约 |
@@ -797,18 +766,19 @@ curl -s http://localhost:8090/api/ai/runs/<runId>
 | Tool | 主要后端依赖 | 「像真实」的判据 |
 |------|----------------|------------------|
 | `revenue_query` | `GbAiDailyRevenueService#getStatsByDepartmentId` | `success=true` 且 **`data.days>0`** 或 **`data.rawStats`** 有关键聚合 |
-| `business_overview_query` | 同上 + `GbAiRestaurantProfileService` + **`GbAiDailyRevenueDashboardService#buildStatsDashboard`** | `success=true` 且 **`data.stats`**（中文 KPI map）非空、`totalRevenue` 可用于毛利推导 |
-| `purchase_query` | `GbDistributerPurchaseGoodsService`（count/subTotal） | **`data.purchaseRowCount>0`** |
+| `purchase_overview` | `PurchaseOverviewTool` / `GbDistributerPurchaseGoodsService` | **`data.purchaseOverview.purchaseOrderCount>0`** 或 **`totalPurchaseAmount`** 非零 |
 | `stock_reduce_query` | `GbDepartmentGoodsStockReduceService#queryReduceAllTypesTotalOnDailyRevenueDays` | **`data`** 中各类 total 不全为 0 或 **`mock`** 为 false |
-| `dish_sales_query` | `GbDepFoodBusinessInsightService#buildInsight` | **`data.dishLineCount>0`**（该步较慢，常见于 数十秒） |
-| `gross_margin_calculator` | 纯推导（读快照中 **`revenue_query`** 或 **`business_overview_query`** 的 **`totalRevenue`**） | **`success`** 通常为 true；可信度依赖上游 `data` |
+| `dish_profit_analysis`（成本链第 4 步） | `GbDepFoodBusinessInsightService#buildInsight`（`DishProfitAnalysisTool`） | **`data.businessInsightSummary.totalListPriceRevenue`** 或 **`data.dishLineCount>0`**（该步较慢，常见于 数十秒） |
+| *(无独立毛利 Tool)* | **Historical removed**：`gross_margin_calculator` 已删；现网在 **`CostDiagnosisAgent`** 内由 **`CostMarginDerivation`** 推导，**不写回** `toolResults` | — |
+
+> **Historical removed（D-CLEAN-BOV-TOOL-DELETE）**：`business_overview_query` / **`BusinessOverviewQueryTool`** 已从 `src/main` 删除；经营看板 KPI 现由 **`revenue_query`**（MULTI 四域）承担，不再单独注册 Tool。
 
 ### 与本仓库联调一致的验证记录（占位 ID）
 
 在 **本地应用已连接业务库、`profile=local`、`ai.trace.persist-enabled=false`** 的前提下，使用 **虚构主键** `departmentId=999001`、`distributerId=888001`、`userId=1` 跑一次「帮我看本月成本怎么样」，已观测到：
 
-- **BUSINESS_CHAT**、本月 **`2026-05-01`～`2026-05-09`**（与服务器「今天」对齐）、**五步 Tool 均被调用**
-- Run **约 55～60 秒完成**（`dish_sales_query` 最重）
+- **BUSINESS_CHAT**、本月 **`2026-05-01`～`2026-05-09`**（与服务器「今天」对齐）、**四步成本 Tool 均被调用**（**不**再出现 **`gross_margin_calculator`** 的 `tool_*`）
+- Run **约 55～60 秒完成**（成本链菜品步 **`dish_profit_analysis`** 最重）
 - 因 ID 与库内数据不对齐：**指标多为 0，`needMoreData: true`**，属**预期兜底行为**，也证明链路与结构化诊断可走通
 
 换为 **真实门店父部门与分销商 ID** 后，应再在同样清单下复检 **数值非零与 mock 语义**。**请勿把本人跑出的 `runId` 写死进文档**，避免环境与数据漂移。
@@ -817,15 +787,15 @@ curl -s http://localhost:8090/api/ai/runs/<runId>
 
 以下在 **连接业务库** 的机器上、由助手按用户给定主键 **跑通一次 SSE** 后的**定性**结论（**不写具体金额/行内容**，仅状态与耗时级别）。参数：`userId=1`、`departmentId=1`、`distributerId=2`；问句：**「帮我看本月成本怎么样」**。修复前参考 `runId=1778341723440`，整机约 **91～92s**。
 
-**历史备注**：下表为 **修复 Mapper 前（2026-05-09）** 快照；**`revenue_query` 异常** 根因与修复见下节 **「`revenue_query` 失败根因与修复」**。**2026-05-10** 起需 **重启应用** 后再用同参复测，预期五步均为 **`success:true`**（未重启则仍可能 `revenue` 失败）。
+**历史备注**：下表为 **修复 Mapper 前（2026-05-09）** 快照；**`revenue_query` 异常** 根因与修复见下节 **「`revenue_query` 失败根因与修复」**。**2026-05-10** 起需 **重启应用** 后再用同参复测，预期四步成本 Tool 均为 **`success:true`**（未重启则仍可能 `revenue` 失败）。
 
 | # | 检查项 | 结果（定性，修复前） |
 |---|--------|----------------|
 | 1 | **`WorkspaceRouterAgent` → BUSINESS_CHAT** | ✅ `agent_finished` 含 `workspaceMode":"BUSINESS_CHAT"` |
 | 2 | **`TimeWindowNode` → 本月** | ✅ 「本月截至目前」；`startDate`/`endDate` 覆盖当月首日～当日（与服务器日期对齐） |
-| 3 | **五步 Tool 顺序** | ✅ `revenue_query` → `purchase_query` → `stock_reduce_query` → `dish_sales_query` → `gross_margin_calculator` |
-| 4 | **真实数据 / mock / success** | **`revenue_query`：`success:false`**（`query_failed`，非无行）。其余四步 **`success:true`** |
-| 5 | **`dish_sales_query` 耗时** | ✅ **最重**：约 **60s** 量级 |
+| 3 | **四步 Tool 顺序** | ✅ `revenue_query` → **`purchase_overview`** → `stock_reduce_query` → **`dish_profit_analysis`**（**无** `gross_margin_calculator` SSE） |
+| 4 | **真实数据 / mock / success** | **`revenue_query`：`success:false`**（`query_failed`，非无行）。其余三步 **`success:true`** |
+| 5 | **菜品洞察 Tool 耗时** | ✅ **最重**：约 **60s** 量级（现网为 **`dish_profit_analysis`**） |
 | 6 | **`answer_delta.data.costDiagnosis`** | ✅ **结构完整** |
 | 7 | **`needMoreData`** | **`false`** |
 | 8 | **自然语言 `data.text`** | ✅ 可读 |
@@ -836,7 +806,7 @@ curl -s http://localhost:8090/api/ai/runs/<runId>
 | **根因** | `GbAiDailyRevenueMapper.xml` 的 **`selectStatsByDepartmentId`** 对内层按日汇总使用了列 **`gb_ai_daily_revenue_gross_revenue`**。该列在参考 DDL（如 `beData/ai_marketing.sql`）中为 **生成列**；**业务库若尚未包含该列**，MySQL 报 **未知列**，查询失败。`departmentId` / 日期区间传参在本次抽检中为 **正确**（非「缺少父部门 ID」）。 |
 | **修改** | **`src/main/resources/mapper/GbAiDailyRevenueMapper.xml`**：`day_gross` 改为用 **`COALESCE(dine_in,0)+COALESCE(takeout,0)`** 汇总（与同表生成列语义一致，**兼容无 gross 列的库表**）；`day_orders` 对两项订单数 **`COALESCE` 后再相加**，避免 NULL 语义问题。**`RevenueQueryTool.java`**：异常日志增补 **日期区间**，便于检索 `[RevenueQueryTool]`。 |
 | **部署注意** | 修改 XML 后需 **重启 Spring Boot**（通常不会热替换 Mapper）。未重启时对同一环境的探测 Run（如 `runId=1778342321970`）仍可能 **`revenue` 失败**，属旧 SQL 缓存/已加载资源。 |
-| **复测验收（同一组 ID）** | `userId=1`、`departmentId=1`、`distributerId=2`、问句「帮我看本月成本怎么样」→ 预期 **`revenue_query`～`gross_margin_calculator` 均为 `success:true`**；`answer_delta` 正常；文案不再因 **revenue SQL 异常** 提示 mock/链路失败（若仍有个别 mock，多为业务数据空集，与 `no_rows` 语义区分）。**整机耗时**与 **`dish_sales_query` 单独耗时** 仍为性能优化项（本阶段不排期），常见 **~75～90s** 量级、`dish` **~40～60s**。请把 **重启后** 新 `runId` 记入你们内部运行簿；本文档不写具体金额。 |
+| **复测验收（同一组 ID）** | `userId=1`、`departmentId=1`、`distributerId=2`、问句「帮我看本月成本怎么样」→ 预期 **`revenue_query`～`dish_profit_analysis` 均为 `success:true`**；**`costDiagnosis`** 含内部推导毛利；`answer_delta` 正常；文案不再因 **revenue SQL 异常** 提示 mock/链路失败（若仍有个别 mock，多为业务数据空集，与 `no_rows` 语义区分）。**整机耗时**与 **`dish_profit_analysis` 单独耗时** 仍为性能优化项（本阶段不排期），常见 **~75～90s** 量级。请把 **重启后** 新 `runId` 记入你们内部运行簿；本文档不写具体金额。 |
 
 ### `revenue_query` 语义速查（保持）
 

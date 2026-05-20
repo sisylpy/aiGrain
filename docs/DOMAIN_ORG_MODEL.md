@@ -324,7 +324,7 @@ departmentId 不是 0 fatherId，也当成一个门店
 权限范围
 ScopeIntersect
 AiOrgScope
-BusinessOverviewQueryTool
+RevenueQueryTool（现网 MULTI 经营收入域；Historical removed：BusinessOverviewQueryTool）
 coveredStores
 dataMissingStores
 attentionStores

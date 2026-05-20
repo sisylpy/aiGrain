@@ -306,11 +306,17 @@ com.nongxinle.ai
 │   ├── ToolRequest.java
 │   ├── ToolResult.java
 │   ├── RevenueQueryTool.java
-│   ├── PurchaseQueryTool.java
+│   ├── PurchaseOverviewTool.java
+│   ├── WarehouseStockOverviewTool.java
 │   ├── StockReduceQueryTool.java
-│   ├── DishSalesQueryTool.java
-│   ├── DishRecipeQueryTool.java
-│   ├── GrossMarginCalculator.java
+│   ├── DishProfitAnalysisTool.java
+│   ├── DishIngredientCostBreakdownTool.java
+│   ├── ~~PurchaseQueryTool.java~~（**Historical removed**：D-CLEAN-PURCHASE-QUERY-P2）
+│   ├── ~~StockQueryTool.java~~（**Historical removed**：D-CLEAN-STOCK-QUERY-P2；库存现量见 **`warehouse_stock_overview`**）
+│   ├── ~~DishSalesQueryTool.java~~（**Historical removed**：D-CLEAN-DISH-SALES-P2；D-8 **`DISH_SALES_QUERY` / `dish_sales_query_path`** 执行 **`DishProfitAnalysisTool`**）
+│   ├── ~~GrossMarginCalculatorTool.java~~（**Historical removed**：D-CLEAN-GROSS-MARGIN-P2B；毛利见 **`CostMarginDerivation`**）
+│   ├── ~~BusinessOverviewQueryTool.java~~（**Historical removed**：D-CLEAN-BOV-TOOL-DELETE；经营概览收入见 **`revenue_query`** MULTI 四域）
+│   ├── ~~DishRecipeQueryTool.java~~（**Draft removed**：未实现，勿当作现网 Tool）
 │   ├── CouponCreateTool.java
 │   ├── ComboCreateTool.java
 │   └── KnowledgeSearchTool.java
@@ -1108,7 +1114,7 @@ SSE 示例：
 
 {
   "event": "tool_finished",
-  "tool": "DishSalesTool",
+  "tool": "dish_profit_analysis",
   "displayText": "已读取本月水煮鱼销量 120 份"
 }
 
@@ -1414,25 +1420,43 @@ public class ToolRegistry {
     }
 }
 
-常用 Tool：
+### 25.1 现网 Business Tool（`com.nongxinle.ai.tool.business`，与 `AiBusinessToolIds` 对齐）
 
-RevenueQueryTool
-PurchaseQueryTool
-StockReduceQueryTool
-DishSalesQueryTool
-DishRecipeQueryTool
-DishGrossMarginTool
-InventoryPressureTool
-CustomerOrderProfileTool
-SupplierPriceTool
-ReportDataTool
-CouponRuleTool
-CouponCreateTool
-ComboCreateTool
-CampaignCreateTool
-TaskCreateTool
-KnowledgeSearchTool
-ExportTool
+| Tool id | Java 类 | 典型 path / 用途 |
+|---------|---------|------------------|
+| `revenue_query` | `RevenueQueryTool` | `revenue_overview_path`；经营 MULTI 四域收入侧 |
+| `purchase_overview` | `PurchaseOverviewTool` | `purchase_overview_path`；**采购主线**与**成本链第 2 步**采购快照 |
+| `warehouse_stock_overview` | `WarehouseStockOverviewTool` | `warehouse_stock_overview_path`；**库存现量/库房概览**（语义 wire `"STOCK_QUERY"` 亦映射到此 Tool） |
+| `stock_reduce_query` | `StockReduceQueryTool` | `stock_reduce_query_path`；**出库/核销**专线 |
+| `dish_profit_analysis` | `DishProfitAnalysisTool` | `dish_profit_path`；**D-8** `DISH_SALES_QUERY` / `dish_sales_query_path`；**成本链第 4 步**（标价收入读 `businessInsightSummary`） |
+| `dish_ingredient_cost_breakdown` | `DishIngredientCostBreakdownTool` | 单菜配方/原料成本明细（非主链四域） |
+
+**成本链（`cost_diagnosis_path`）**：上表四 Tool 顺序固定 — `revenue_query` → `purchase_overview` → `stock_reduce_query` → `dish_profit_analysis` — 后接 **`CostDiagnosisAgentNode`**（`StubOutcomeReviewNode`），门店粗估毛利率由 **`CostMarginDerivation`** 内部推导（**不**写回 `toolResults`）。**无** `gross_margin_calculator`；**无** classic business overview。
+
+**经营诊断（`business_diagnosis_path`）**：`BusinessDataPlannerNode#applyBusinessDiagnosisBranch`（权限裁剪，常含四 Tool）→ 各域 `*AnswerPlan` → **`DiagnosisPlanBuilder`** + **`BusinessDiagnosisAgentV1.enrich`** → **`DiagnosisDeterministicRenderer`** / Composer。**Historical removed**：`BusinessDiagnosisPlan` / `BusinessDiagnosisPlanBuilder`（见 `docs/legacy-reference/business-diagnosis-plan-removed.md`）。
+
+**Composite 诊断（旁路）**：`BusinessDiagnosisComposite*` — **HARNESS_ONLY** / **SHADOW** 观测与对照；**不写**用户 `finalAnswerText`；**PRIMARY 未接**。
+
+**经营概览（`business_overview_path`）**：现网 **MULTI_AGENT 四域** 同上四 Tool id（**非** classic `business_overview_query` 六工具链）；正文见 `answer_delta.data.text`。
+
+**库存边界**：**现量/库房** → `warehouse_stock_overview`；**出库/核销** → `stock_reduce_query`；**禁止**混用已删 `stock_query`。
+
+### 25.2 Historical removed（勿恢复为现网 Tool）
+
+| 已删 Tool id / 类 | 替代 |
+|-------------------|------|
+| `purchase_query` / `PurchaseQueryTool` | `purchase_overview` |
+| `stock_query` / `StockQueryTool` | `warehouse_stock_overview` |
+| `dish_sales_query` / `DishSalesQueryTool` | `dish_profit_analysis`（保留 intent/path `DISH_SALES_QUERY` / `dish_sales_query_path`） |
+| `gross_margin_calculator` / `GrossMarginCalculatorTool` | `CostMarginDerivation` + `CostDiagnosisAgentNode` |
+| `business_overview_query` / `BusinessOverviewQueryTool` | MULTI 四域 + `revenue_query` |
+| `DishGrossMarginTool` | **Draft removed**（从未注册；毛利见上表成本链） |
+
+索引：`docs/legacy-reference/*-removed.md`。
+
+### 25.3 其它 Workspace Tool（规划中，未在 `src/main/java` 注册）
+
+Report / Marketing / Office / Knowledge / Task 等：`ReportDataTool`、`CouponCreateTool`、`ComboCreateTool`、`KnowledgeSearchTool`、`ExportTool` 等 — **不得**与 §25.1 现网 Business Tool 混写为「已上线」。
 ## 26. 重要原则
 ### 26.1 AI 负责分析，不负责直接改数据
 

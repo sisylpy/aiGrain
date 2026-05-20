@@ -112,10 +112,6 @@ public final class AiFollowUpResolver {
             }
         }
         String fut = r.getFollowUpType();
-        boolean scopeInherited = fut == null
-                || (!"SCOPE_SHIFT".equals(fut) && !"STORE_SCOPE_FOLLOW_UP".equals(fut)
-                        && !"GROUP_SCOPE_EXPAND_FOLLOW_UP".equals(fut)
-                        && !"STORE_PRIORITY_RANKING_FOLLOW_UP".equals(fut));
         if ("STORE_SCOPE_FOLLOW_UP".equals(fut)) {
             r.setEffectiveScopeSource("CURRENT_MESSAGE_STORE_OVERRIDE");
         } else if ("GROUP_SCOPE_EXPAND_FOLLOW_UP".equals(fut)) {
@@ -125,7 +121,7 @@ public final class AiFollowUpResolver {
         } else if ("SCOPE_SHIFT".equals(fut)) {
             r.setEffectiveScopeSource("FOLLOWUP_NARROW_VISIBLE_STORE");
         } else {
-            r.setEffectiveScopeSource(scopeInherited && r.isInheritOrgScope() ? "INHERITED_PREVIOUS" : "CURRENT_MESSAGE");
+            r.setEffectiveScopeSource(r.isInheritOrgScope() ? "INHERITED_PREVIOUS" : "CURRENT_MESSAGE");
         }
         if (merged != null) {
             r.setEffectiveIntentCode(merged.getIntentCode());

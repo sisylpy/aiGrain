@@ -5,6 +5,9 @@
 - **D-5 StockReduce Batch 1** 已收口：出库专线（`STOCK_REDUCE_QUERY` / `stock_reduce_query_path`）与多店出库排行、 goods outbound 等语义边界在主力链路上已单独治理。
 - **当前进入 D-6**：以 **Inventory / WarehouseStock** 为专题，把**库存现量与结构**与 **出库/核销**、**采购+库存双域风险**分清，避免用户问「仓库还有多少」却走出库排行，或问「补货」却落到核销概览。
 - **库存域原则**：回答应优先基于**账面库存快照与库存工具**；出库数据只应用来解释「区间内核销结构」，不能替代「现在还有多少」；采购侧风险 wire 不能泛化成「所有积压问题」的唯一出口。
+- **治理边界（D-CLEAN）**：**`warehouse_stock_overview` / `WAREHOUSE_STOCK_OVERVIEW` / `warehouse_stock_overview_path` 为现网活跃库存域主链**，禁止与已删除的 **`business_overview_query` / `BusinessOverviewQueryTool`** 类比整链删除。
+- **D-CLEAN-WAREHOUSE-P1B**：已删除 **`WarehouseDeterministicRenderer` / `AnswerComposerPayloadFactory`** 及库房 raw-tool Composer fallback；**`warehouseOverview` 正文仅来自 `warehouse_stock_overview` → `WarehouseAnswerPlan` → Composer Plan-first**（无 Plan 固定 no-plan）。契约见 `docs/ai/warehouse-drilldown-matrix-contract.md`。
+- **文档索引**：无独立 `warehouse-stock-overview.md`；现网契约以本文件、`docs/LEGACY_AI_ANSWER_ASSETS.md` §库房库存、`docs/API_INTEGRATION.md` §`warehouseOverview` 为准。已删 **`stock_query`**：[stock-query-tool-removed.md](../legacy-reference/stock-query-tool-removed.md)。
 
 ---
 
@@ -15,10 +18,10 @@
 | Intent | 存在 **`WAREHOUSE_STOCK_OVERVIEW`**（`AiResolvedQueryIntent`）。 |
 | Path | 存在 **`warehouse_stock_overview_path`**（`PATH_WAREHOUSE_STOCK`）。 |
 | 无独立 inventory intent | **不存在** `INVENTORY_OVERVIEW` intent 或独立的 `inventory_*_path`；库存专线在服务端统一落在仓线命名上。 |
-| 真实库存类工具 | 主工具 **`warehouse_stock_overview`**（`WarehouseStockOverviewTool`）；另有 **`stock_query`**（`StockQueryTool`，部门库存快照：结余 + 区间内入库汇总）。 |
+| 真实库存类工具 | **仅** **`warehouse_stock_overview`**（`WarehouseStockOverviewTool`）。**Historical removed（D-CLEAN-STOCK-QUERY-P2）**：**`stock_query`** / **`StockQueryTool`** 已删；语义 wire **`"STOCK_QUERY"`** 仍映射到本 Tool。 |
 | Payload | `warehouse_stock_overview` 返回体中含 **`warehouseOverview`**，典型字段包括：`stockItemCount`、`stockBatchRowCount`、`totalStockAmount`、`totalStockWeight`、`inboundAmount`/`inboundWeight`、核销分型金额（如 `produceAmount`、`wasteAmount`、`lossAmount`、`returnAmount`、`stockReduceAmount` 等）、**`lowStockItems`**、**`overStockItems`**、**`inactiveStockItems` / `priorityStocktakeItems`**、`recommendations`；集团场景另有门店覆盖与缺失列表等。 |
 | AnswerPlan | **不存在** `WarehouseStockAnswerPlan` / `InventoryAnswerPlan`；无与采购/出库同级的 attach Builder。 |
-| 回答生成 | 主要依赖 **`warehouseOverview`** 结构化 + **`WarehouseDeterministicRenderer`**；否则走 **LLM Composer / Stub**。 |
+| 回答生成 | **`WarehouseAnswerPlan` + Composer Plan-first**（`StubAnswerComposerNode`）；无 Plan 固定 no-plan。**不**使用已删 `WarehouseDeterministicRenderer`。 |
 
 **Planner 侧（事实摘要）**：当有效路径为 `warehouse_stock_overview_path` 且未被更高优先级分支抢占时，`BusinessDataPlannerNode` 走库存概览分支；在具备 `VIEW_STOCK` 时 `dataPlanTools` 通常为 **`["warehouse_stock_overview"]`**（`WarehouseStockIntentConvergence`）。  
 **注意**：编排层 `orchestrationDecisionCandidate.selectedTools` 与上述计划可能不一致；以 **`effectivePathCode` + `dataPlanTools`** 为准解读主链。
@@ -53,7 +56,7 @@
 
 ## 4. 建议 canonical wire（设计稿，不要求一期全部实现）
 
-下列 wire 名称为 **D-6 建议契约**，用于后续 Lexicon、`metric.rankingType` / `structuredIntentDetail`、Planner 与 Composer 对齐。实现可分期。
+下列 wire 名称为 **D-6 建议契约**，用于 **`semanticSlots.structuredIntentDetailWire` / `queryIntent.structuredIntentDetail`**、Planner 与 Composer 对齐。LLM 可输出 **`metric.rankingType`** 作 compat；**服务端主依据为 slots wire**（**D-1X-D3**）。实现可分期。
 
 | Wire | 用途摘要 |
 |------|-----------|
@@ -82,7 +85,7 @@
 | **老板问法** | 现在库存还有多少？仓库还有多少货？现货/结余？ |
 | **期望 intent/path** | `WAREHOUSE_STOCK_OVERVIEW` / `warehouse_stock_overview_path` |
 | **期望 structured wire** | `warehouse_stock_overview` |
-| **需要 tool** | `warehouse_stock_overview`（可选辅助 `stock_query`） |
+| **需要 tool** | **`warehouse_stock_overview`**（唯一执行 Tool；Composer 只读 `warehouseOverview`） |
 | **回答应包含字段** | `totalStockAmount`、`totalStockWeight`、`stockItemCount`、`stockBatchRowCount`、`summary`、时间/范围 banner |
 | **当前是否具备** | **是**（主工具 + 确定性渲染可覆盖核心摘要）。 |
 | **诚实降级规则** | 无实时盘点时明确为**账面**库存；数据缺失门店需在 `coveredStores`/`dataMissingStores` 或文案中体现。 |
@@ -209,7 +212,7 @@
 2. **当前细分 `structuredIntentDetail` 尚未收口：**
    - Lexicon 缺 **`warehouse_stock_low_risk`**、**`warehouse_stock_replenishment_needed`** 正式常量；
    - **`stock_below_safety`** 尚无 canonical 映射；
-   - **`query_semantic_parser.v1/v2`** 尚未强制上述问法输出统一的 **`structuredIntentDetail`**。
+   - **`query_semantic_parser.v2`**（v1 已于 D-CLEAN-V1 删除）尚未强制上述问法输出统一的 **`structuredIntentDetail`**。
 
 3. **`warehouse_stock_overview` payload 中已有 `lowStockItems`**，可支撑**概览级**低库存提示。字段包括：**`goodsName`**；**`goodsId`**（可选）；**`storeName`**（可选）；**`restWeightTotal`**；**`restAmountTotal`**；**`note`**。
 
@@ -222,7 +225,7 @@
    - **不能**预测还能用几天。
 
 6. **Renderer / Composer：**
-   - **`WarehouseDeterministicRenderer`** 已会展示 **`lowStockItems`**；
+   - **`WarehouseAnswerPlan` + Composer** 宣读 **`lowStockItems`**（Tool 信封字段）；
    - **`COMPOSER_WAREHOUSE_V1`** 可引用 **`warehouseOverview.lowStockItems`**。
 
 7. **Phase 2 最小收口建议（文档/评审层面）：**
@@ -249,7 +252,7 @@
    - 「库存太多」误落到 **`warehouse_stock_low_risk`**；
    - 「库存积压 / 库存压力大 / 存货太多 / 库存金额太高」误落到 **`purchase_inventory_overstock_risk`**；
    - **`AiQuerySemanticLexicon`** 当前**没有** **`warehouse_stock_overstock_risk`** 正式常量；
-   - **`query_semantic_parser.v1` / `v2`** 也**未**要求纯库存过高问法输出 **`warehouse_stock_overstock_risk`**。
+   - **`query_semantic_parser.v2`** 也**未**要求纯库存过高问法输出 **`warehouse_stock_overstock_risk`**。
 
 3. **混淆根因（梳理结论）：**
    - **v1/v2** 将「可能积压 / 库存量太大 / 库存压力大」写入 **`purchase_inventory_overstock_risk`**，易诱导 LLM 在**无采购语境**的纯库存问法上也输出采购双域风险 wire；
@@ -262,8 +265,7 @@
 5. **`warehouse_stock_overview` payload 已有 `overStockItems`**，可支撑**概览级**库存偏高提示。常见字段：**`goodsName`**；**`goodsId`**（可选）；**`restAmountTotal`**；**`restWeightTotal`**；**`storeName` / scope 标签**（可选）；**`note`**（类似「剩余金额相对较高，建议优先消耗避免积压」）。**`overStockItems` 为启发式高库存列表**，不等于严格滞销、真实积压、MRP 过量或周转天数判断。
 
 6. **Renderer / Composer：**
-   - **`WarehouseDeterministicRenderer`** 已展示 **`overStockItems`**，标题为「库存偏高 / 建议优先消耗」；
-   - **`AnswerComposerPayloadFactory`** 已将 **`overStockItems`** 映射为 Composer 可用的 **积压偏高商品条目**；
+   - **`WarehouseAnswerPlan` + Composer** 宣读 **`overStockItems`**（积压偏高条目，标题「库存偏高 / 建议优先消耗」）；
    - 因此 Phase 3 **暂不需要先改** Renderer / Composer。
 
 7. **Phase 3 最小收口建议（文档/评审层面）：**
@@ -285,8 +287,8 @@
 | 项 | 结论 |
 |----|------|
 | **Lexicon** | **没有** 以下 wire 的正式 `STRUCTURED_*` 注册与 **`canonicalStructuredIntentDetailWire`** 归一：`store_inventory_amount_ranking`、`store_stock_amount_ranking`、`warehouse_stock_amount_ranking`、`warehouse_stock_item_count_ranking`、`warehouse_inventory_item_count_ranking` 等。LLM 若自造 snake case，多为**原样透传**。 |
-| **Prompt v1/v2** | **未**专项定义 Phase 4 问法（双店库存金额对比、门店库存金额/种数/压力 Top、仓库维度排行）的 **`intent` / `path` / `metric.rankingType` / `structuredIntentDetail`** 填表。 |
-| **`AiQuerySemanticV2CompareStoreNormalizer`** | 对 **`COMPARE_STORE`** 仅识别经营综合、**明确营业额**、**采购**；**双店且指标未被识别**时兜底 **`BUSINESS_OVERVIEW`**（易与 **`business_store_status_compare`** 经营对比串联）。**没有**库存金额 / 库存种数 / 库存压力类 **`primaryMetric` 分支**，「AAA 和汀兰餐厅哪个库存金额高」**存在误归**到经营对比路径的风险。 |
+| **Prompt v2** | Phase 4 问法须在 v2 填 **`semanticSlots` + `structuredIntentDetailWire`**（及顶层 `intent` / `path`）；**`metric.rankingType`** 可 compat 输出，**非**服务端主 wire 来源。（**Historical removed**：v1 prompt） |
+| ~~**`AiQuerySemanticV2CompareStoreNormalizer`**~~ | **Historical removed（D-CLEAN-V1）**。多店对比改由 V2 **`semanticSlots.structuredIntentDetailWire`**（如 `business_store_status_compare`、`store_stock_amount_ranking`、`store_outbound_amount_ranking`）+ `mapLlmIntent`；**禁止**再引入 Java `COMPARE_STORE` 关键词 Normalizer。 |
 | **`BusinessDataPlannerNode`** | 只要 **`effectivePathCode`** 为 **`warehouse_stock_overview_path`** 且进入库存分支，在具备 **`VIEW_STOCK`** 时 **`dataPlanTools`** 通常为 **`["warehouse_stock_overview"]`**（仅此 Tool）。若路径被Resolver 判成 **`business_overview_path`** 等，**不会**走该库存 Planner 分支。 |
 | **`WarehouseStockOverviewTool`** | 集团聚合在内存中按门店根逐店计算各店 **`totalStockAmount`** 等，但 **循环结束后 `one.clear()`**，**不对外**输出**按门店/按仓库**的排行数组；顶层 **`stockItemCount` / `totalStockAmount`** 为**合并**结果。 |
 | **`coveredStores` / `dataMissingStores`** | 仅 **`departmentId`/`name`、`hasData`**（及归一后的 `storeDepartmentId`/`storeName`），**没有**单店金额、种数。 |
@@ -302,7 +304,7 @@
 
 ### （三）建议 canonical wire（设计稿）
 
-以下命名供 **`AiQuerySemanticLexicon`、`metric.rankingType` / `structuredIntentDetail`、Merge 归一**对齐：
+以下命名供 **`AiQuerySemanticLexicon` canonical、`structuredIntentDetail` / slots wire、Merge 归一**对齐：
 
 | Canonical wire | 含义 |
 |----------------|------|
@@ -357,10 +359,10 @@
 | 顺序 | 项 | 说明 |
 |:----:|----|------|
 | **A** | **Prompt + Lexicon** | 定义 Phase 4 问法 → **`WAREHOUSE_STOCK_OVERVIEW`** / **`warehouse_stock_overview_path`** / **`warehouse_stock_overview`**；注册 **`store_stock_amount_ranking`** 等 canonical 与别名归一。 |
-| **B** | **`AiQuerySemanticV2CompareStoreNormalizer`** | 增加 **`primaryMetric`** 对 **库存金额 / 库存种数 / 库存压力（约定枚举）** 的分支，**先于**「双店兜底 → `BUSINESS_OVERVIEW`」执行，映射到 **`WAREHOUSE_STOCK_OVERVIEW`**（或与 Merge 协同的最终 path）。 |
+| **B** | **V2 prompt + `semanticSlots`**（非 Java Normalizer） | 双店库存对比须在 LLM 输出 **`WAREHOUSE_STOCK_OVERVIEW`** + wire `store_stock_amount_ranking` / `store_stock_item_count_ranking`；勿回落已删 CompareStore Normalizer。 |
 | **C** | **`WarehouseStockOverviewTool`** | 在集团（及需要的单店）路径下**填充**本节**（四）**排行数组与 **`dataCoverage`**；不在此步强行做未建模的仓库维。 |
 | **D** | **Inventory / Warehouse `AnswerPlan`** | 新增或扩展现有 plan，承载排行行、口径、边界（**计划内算清排序与展示行**，Composer **不重算**）。 |
-| **E** | **Composer / `WarehouseDeterministicRenderer`** | 确定性首答或 fallback，消费 AnswerPlan + payload。 |
+| **E** | **Composer Plan-first** | 宣读 `WarehouseAnswerPlan`；无 Plan 固定 no-plan。 |
 
 ### （六）验收问法（GRAPH_RUN / Harness）
 
@@ -397,7 +399,7 @@
   - `storeStockAmountRanking`
   - `storeStockItemCountRanking`
   - `warehouseStockRankingDegradedNote`
-- **`WarehouseDeterministicRenderer`** 按排行 wire 输出**确定性**排行结构（查询范围、统计时间、首句结论、Top3 等）。
+- **Composer** 按排行 wire 宣读 **`WarehouseAnswerPlan`** 排行字段（查询范围、统计时间、首句结论、Top3 等）；**不**恢复已删 Renderer fallback。
 - **`StubAnswerComposerNode`** 在库存排行 wire 下 **deterministic takeover**，**不再**让 **`COMPOSER_WAREHOUSE_V1`** 覆盖排行答案。
 - **`finalAnswerText`** 可直接回答排行问题（排行 path 上避免与「总览 + 收敛/边界头」重复啰嗦，以当期实现为准）。
 
@@ -461,4 +463,4 @@
 ## 文档维护
 
 - **本文档仅描述设计与事实边界**；具体实现以代码与 prompt 变更为准，变更时应同步修订本矩阵「当前是否具备」列。  
-- **关联**：D-5 出库专线设计、经营路由 D-2、`query_semantic_parser.v1/v2` 库存与双域章节、`AiQuerySemanticLexicon`、`BusinessDataPlannerNode`、`WarehouseStockOverviewTool`。
+- **关联**：D-5 出库专线设计、经营路由 D-2、`query_semantic_parser.v2` 库存与双域章节、`BusinessDataPlannerNode`、`WarehouseStockOverviewTool`。

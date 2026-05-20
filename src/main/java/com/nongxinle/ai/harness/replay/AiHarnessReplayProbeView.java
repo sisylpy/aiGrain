@@ -43,7 +43,9 @@ final class AiHarnessReplayProbeView {
         copy(m, summary, "finalAnswerTextBlank");
         copy(m, summary, "couponCostInsightBlocked");
         copy(m, summary, "diagnosisPlanExists");
-        copy(m, summary, "businessDiagnosisPlanExists");
+        copy(m, summary, "diagnosisPlanPresent");
+        copy(m, summary, "diagnosisPlanType");
+        copy(m, summary, "businessDiagnosisPlanExists"); // deprecated compat — mirrors diagnosisPlanExists
         copy(m, summary, "planSource");
         copy(m, summary, "harnessReplayPlanSource");
         copy(m, summary, "harnessReplayPurchaseAnswerPlanType");
@@ -56,7 +58,7 @@ final class AiHarnessReplayProbeView {
         copy(m, summary, "harnessReplayDishSalesRankingRowCount");
         copy(m, summary, "harnessReplayDishSalesTopDishName");
         copy(m, summary, "harnessReplayDishSalesMetricType");
-        copy(m, summary, "harnessReplayBusinessDiagnosisPlanType");
+        copy(m, summary, "harnessReplayBusinessDiagnosisPlanType"); // deprecated compat — mirrors diagnosisPlanType
         copy(m, summary, "harnessReplayStorePriorityRankingPlanType");
         copy(m, summary, "harnessReplayStorePriorityRankingRowsLen");
         copy(m, summary, "harnessReplayStorePriorityRankingTop1StoreName");
@@ -73,6 +75,16 @@ final class AiHarnessReplayProbeView {
             planTools = summary.get("usedTools");
         }
         m.put("dataPlanTools", shallowCopyList(planTools));
+        copy(m, summary, "dryRunStage");
+        copy(m, summary, "toolExecuteSkipped");
+        copy(m, summary, "toolRequestCaptured");
+        copyPlannedToolArgs(m, summary);
+        copy(m, summary, "resolvedVisibleStoreRootIds");
+        copy(m, summary, "resolvedEffectiveSqlDepartmentIds");
+        copy(m, summary, "groupPurchaseOverview");
+        copy(m, summary, "groupStockReduceQuery");
+        copy(m, summary, "groupWarehouseStockOverview");
+        copy(m, summary, "costInsightPath");
 
         Object fat = summary != null ? summary.get("finalAnswerText") : null;
         if (fat == null && summary != null) {
@@ -97,5 +109,28 @@ final class AiHarnessReplayProbeView {
             return new ArrayList<>(list);
         }
         return v;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void copyPlannedToolArgs(LinkedHashMap<String, Object> dest, Map<String, Object> src) {
+        if (src == null) {
+            dest.put("plannedToolArgsByToolId", null);
+            return;
+        }
+        Object planned = src.get("plannedToolArgsByToolId");
+        if (!(planned instanceof Map<?, ?> raw) || raw.isEmpty()) {
+            dest.put("plannedToolArgsByToolId", null);
+            return;
+        }
+        LinkedHashMap<String, Object> copy = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> e : raw.entrySet()) {
+            if (e.getKey() == null || e.getValue() == null) {
+                continue;
+            }
+            if (e.getValue() instanceof Map<?, ?> inner) {
+                copy.put(e.getKey().toString(), new LinkedHashMap<>((Map<String, Object>) inner));
+            }
+        }
+        dest.put("plannedToolArgsByToolId", copy.isEmpty() ? null : copy);
     }
 }

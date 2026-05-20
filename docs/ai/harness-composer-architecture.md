@@ -86,7 +86,11 @@
 
 ### 2.5b DiagnosisPlan（经营诊断：只聚合子 AnswerPlan）
 
-**经营诊断**问法在上层增加 **DiagnosisPlan**（见 **`docs/ai/diagnosis-answer-plan.md`**）：**DiagnosisPlanBuilder** **只读** 本轮已产生的 **`PurchaseAnswerPlan`**、**`StockReduceAnswerPlan`**、**`DishProfitAnswerPlan`**、**`DailyRevenueAnswerPlan`**，组装 `summary` / `focusFindings` / `evidenceRows` / `riskRows` / `actionSuggestions` / `debug`；**不得**回退为从原始 `toolResults` 重算、重排后再交给 Composer。**DiagnosisComposer** 与单域 Composer 边界相同：只表达、不心算。
+**经营诊断**问法在上层增加 **DiagnosisPlan**（见 **`docs/ai/diagnosis-answer-plan.md`** §0b）：**`DiagnosisPlanBuilder.attachIfApplicable`**（`StubOutcomeReviewNode`）**只读** 四域 **AnswerPlan**，再经 **`BusinessDiagnosisAgentV1.enrich`**（`business_diagnosis_path`）追加规则型 findings；**不得**从原始 `toolResults` 重算。宣读：**`DiagnosisDeterministicRenderer`** / Composer。
+
+**成本诊断**（`cost_diagnosis_path`）：四 Tool + **`CostDiagnosisAgentNode`** + **`CostMarginDerivation`** — **不是** DiagnosisPlan 链。
+
+**Composite**（`BusinessDiagnosisComposite*`）：**SHADOW / HARNESS_ONLY** 旁路，**不是**用户 `finalAnswerText` 主链（见 `BusinessDiagnosisCompositeExecutionMode`）。
 
 阶段一可仅文档与字段定稿；**四条主链路代码冻结**，诊断模块不得反向污染采购 / 出库 / 毛利 / 营收 Builder 与主 Tool。
 
@@ -102,6 +106,12 @@
 - **不得**自行计算毛利率、成本差额、利用率等；**必须**使用 Tool / `buildInsight` / `buildReport` 已给出的字段或已格式化的可读串。
 - **不得**编造 Tool 未返回的数字或排行。
 - **不得**把 type2 叫「损耗」、把 type3 叫「废弃」；退货 type4 为单独口径（与出库链路文档一致）。
+- **不得**读取已删 Tool 的 `toolResults`（**Historical removed**：`purchase_query`、`stock_query`、`dish_sales_query`、`gross_margin_calculator`、`business_overview_query`）；现网 Tool 为 `purchase_overview`、`warehouse_stock_overview`、`stock_reduce_query`、`dish_profit_analysis`、`revenue_query`。
+- **不得**用 `metric.rankingType` 覆盖 AnswerPlan 或 `queryIntent.structuredIntentDetail` 已定的业务口径（**D-CLEAN-RENDERER-FALLBACK-FINAL** + **D-1X-D3-RANKINGTYPE-FINAL**）；`rankingType` 仅 compat/debug 日志与 LLM JSON 观测字段。
+
+**确定性 Renderer**（`DeterministicAnswerRenderer` 及各域仍保留的 `*DeterministicRenderer`，如营收/毛利/采购/诊断）与 Composer 同边界：只读 **AnswerPlan** + **现网 Tool payload** + **`qi.structuredIntentDetail` canonical wire**。**已移除、禁止恢复**：`StockReduceDeterministicRenderer`、`WarehouseDeterministicRenderer`、`PurchaseDeterministicRenderer`、`AnswerComposerPayloadFactory` 及 `render*ToolFallback` 类 raw-tool 拼装。出库/库房无 Plan 时由各域 `compose*NoPlanFallback` / Plan 宣读表达。
+
+**Matrix P1 本地 Replay**（`scripts/harness/replay-*-matrix-p1.sh`）：footer 统一输出 `caseId` / `overallPass` / `failureCount`（`replay-harness-common.sh`）。契约见各域 `docs/ai/*-drilldown-matrix-contract.md`；**knownGap 为能力边界而非假成功**。
 
 菜品毛利 Composer 现有系统提示：`DISH_PROFIT_COMPOSER_SYSTEM`（`StubAnswerComposerNode`）。后续若引入 AnswerPlan，应在提示中明确「仅展开 AnswerPlan 指定焦点与 Tool 中对应字段」。
 

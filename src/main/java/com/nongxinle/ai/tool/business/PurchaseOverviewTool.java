@@ -1,6 +1,7 @@
 package com.nongxinle.ai.tool.business;
 
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.tool.AiTool;
 import com.nongxinle.ai.tool.ToolRequest;
 import com.nongxinle.ai.tool.ToolResult;
@@ -13,6 +14,7 @@ import com.nongxinle.utils.GbConstants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
 
@@ -36,6 +38,11 @@ import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_DEPARTMENT_FA
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_DIS_ID;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_GROUP_PURCHASE_AGGREGATION;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_DEPARTMENT_ID;
+import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOLLOW_UP_DETAIL_WANTED;
+import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_DIS_GOODS_ID;
+import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_ENTITY_TYPE;
+import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_GOODS_NAME;
+import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_SUPPLIER_ID;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_NARRATIVE_MODE;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_SOURCE_FOCUS;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_QUERY_SCOPE_BANNER;
@@ -308,6 +315,10 @@ public class PurchaseOverviewTool implements AiTool {
             List<Map<String, Object>> goodsFrequencyTop = mapGoodsFrequencyTop(topByTimes);
             List<Map<String, Object>> goodsAmountTop = mapGoodsAmountTop(topBySub);
 
+            PurchaseGoodsSupplierDrilldownExtras drilldown =
+                    resolvePurchaseGoodsSupplierDrilldown(
+                            args, base, hasRows, purchaseSourceFocus, goodsAmountTop);
+
             Map<String, Object> purchaseOverview = new LinkedHashMap<>();
             purchaseOverview.put("queryScopeBanner", bannerArg.isEmpty() ? null : bannerArg);
             purchaseOverview.put("purchaseSourceFocus",
@@ -325,6 +336,93 @@ public class PurchaseOverviewTool implements AiTool {
             purchaseOverview.put("purchaseMethodSummaryFragment", methodSection.narrativeFragment);
             purchaseOverview.put("goodsPurchaseFrequencyTop", goodsFrequencyTop);
             purchaseOverview.put("goodsPurchaseAmountTop", goodsAmountTop);
+            if (drilldown.active) {
+                if (drilldown.goodsSourceBreakdown) {
+                    purchaseOverview.put("purchaseGoodsSourceBreakdownActive", Boolean.TRUE);
+                    purchaseOverview.put(
+                            "purchaseGoodsSourceBreakdownQueryMethod",
+                            drilldown.queryMethod == null || drilldown.queryMethod.isBlank()
+                                    ? "queryGbPurchaseGoodsAggByLegacyPurchaseMethod"
+                                    : drilldown.queryMethod);
+                    purchaseOverview.put("purchaseGoodsSourceBreakdownRow", drilldown.sourceBreakdownRow);
+                    purchaseOverview.put("purchaseGoodsSourceBreakdownNoDataReason", drilldown.noDataReason);
+                    purchaseOverview.put(
+                            "purchaseGoodsSourceBreakdownFocusDisGoodsId",
+                            drilldown.targetGoodsId != null && drilldown.targetGoodsId > 0
+                                    ? drilldown.targetGoodsId
+                                    : null);
+                    purchaseOverview.put(
+                            "purchaseGoodsSourceBreakdownGoodsAnchorIdMissing",
+                            drilldown.goodsAnchorIdMissing);
+                    purchaseOverview.put(
+                            "purchaseGoodsSourceBreakdownBuckets",
+                            drilldown.sourceBreakdownBuckets == null || drilldown.sourceBreakdownBuckets.isEmpty()
+                                    ? List.of()
+                                    : new ArrayList<>(drilldown.sourceBreakdownBuckets));
+                    Object scopePids = base.get("purDepIds");
+                    if (scopePids instanceof List<?> l && !l.isEmpty()) {
+                        purchaseOverview.put(
+                                "purchaseGoodsSourceBreakdownExpandedSqlDepartmentIds", new ArrayList<>(l));
+                    } else if (base.get("purDepId") != null) {
+                        purchaseOverview.put(
+                                "purchaseGoodsSourceBreakdownExpandedSqlDepartmentIds",
+                                List.of(base.get("purDepId")));
+                    } else {
+                        purchaseOverview.put("purchaseGoodsSourceBreakdownExpandedSqlDepartmentIds", null);
+                    }
+                    purchaseOverview.put("purchaseSupplierGoodsDetailRows", List.of());
+                    purchaseOverview.put("purchaseSupplierGoodsDetailRowsCount", 0);
+                    purchaseOverview.put("purchaseSupplierGoodsDetailNoDataReason", null);
+                    purchaseOverview.put("purchaseSupplierGoodsDetailAlternativeFacet", null);
+                    purchaseOverview.put("purchaseSupplierGoodsDetailAlternativeHasData", null);
+                    purchaseOverview.put("purchaseSupplierGoodsDetailQueryMethod", null);
+                } else {
+                    purchaseOverview.put("purchaseSupplierGoodsDetailRows",
+                            new ArrayList<>(drilldown.detailRows));
+                    if (drilldown.goodsAnchoredSupplierBreakdown) {
+                        purchaseOverview.put("purchaseGoodsSupplierDrilldown", Boolean.TRUE);
+                        purchaseOverview.put("purchaseGoodsDrilldownTargetGoodsName",
+                                drilldown.targetGoodsName.isEmpty() ? null : drilldown.targetGoodsName);
+                        purchaseOverview.put("purchaseGoodsDrilldownTargetGoodsId", drilldown.targetGoodsId);
+                    }
+                    purchaseOverview.put("purchaseSupplierGoodsDetailRowsCount", drilldown.detailRows.size());
+                    purchaseOverview.put("purchaseSupplierGoodsDetailNoDataReason", drilldown.noDataReason);
+                    if (drilldown.goodsAnchoredSupplierBreakdown) {
+                        purchaseOverview.put("purchaseSupplierGoodsDetailAlternativeFacet", "SELF_PURCHASE");
+                        purchaseOverview.put(
+                                "purchaseSupplierGoodsDetailAlternativeHasData", drilldown.alternativeHasData);
+                        if (drilldown.alternativeEvidence != null && !drilldown.alternativeEvidence.isEmpty()) {
+                            purchaseOverview.put(
+                                    "purchaseSupplierGoodsDetailAlternativeEvidence", drilldown.alternativeEvidence);
+                        }
+                    } else {
+                        purchaseOverview.put("purchaseSupplierGoodsDetailAlternativeFacet", null);
+                        purchaseOverview.put("purchaseSupplierGoodsDetailAlternativeHasData", null);
+                    }
+                    if (drilldown.queryMethod != null && !drilldown.queryMethod.isBlank()) {
+                        purchaseOverview.put("purchaseSupplierGoodsDetailQueryMethod", drilldown.queryMethod);
+                    }
+                    if (drilldown.focusSupplierId != null && drilldown.focusSupplierId > 0) {
+                        purchaseOverview.put("purchaseSupplierGoodsDetailFocusSupplierId", drilldown.focusSupplierId);
+                    }
+                }
+                purchaseOverview.put(
+                        "purchaseSupplierDrilldownTimeWindow",
+                        str(args.get(ARG_START_DATE)).isEmpty() || str(args.get(ARG_STOP_DATE)).isEmpty()
+                                ? null
+                                : str(args.get(ARG_START_DATE)) + "~" + str(args.get(ARG_STOP_DATE)));
+                Object pids = base.get("purDepIds");
+                if (pids instanceof List<?> l && !l.isEmpty()) {
+                    purchaseOverview.put("purchaseSupplierDrilldownPurDepIds", new ArrayList<>(l));
+                } else if (base.get("purDepId") != null) {
+                    purchaseOverview.put("purchaseSupplierDrilldownPurDepIds", List.of(base.get("purDepId")));
+                } else {
+                    purchaseOverview.put("purchaseSupplierDrilldownPurDepIds", null);
+                }
+                purchaseOverview.put(
+                        "purchaseSupplierDrilldownSourceFocus",
+                        purchaseSourceFocus.isEmpty() ? null : purchaseSourceFocus);
+            }
             purchaseOverview.put("topGoods", mapTopGoods(topByTimes, topBySub));
             purchaseOverview.put("topSuppliers", topSuppliers);
             purchaseOverview.put("priceChangeItems", mapPriceChange(topPrice));
@@ -373,6 +471,349 @@ public class PurchaseOverviewTool implements AiTool {
                             "采购概览查询异常，已降级为无数据口径"))
                     .build();
         }
+    }
+
+    private PurchaseGoodsSupplierDrilldownExtras resolvePurchaseGoodsSupplierDrilldown(
+            Map<String, Object> args,
+            Map<String, Object> base,
+            boolean hasRows,
+            String purchaseSourceFocus,
+            List<Map<String, Object>> goodsAmountTop) {
+        PurchaseGoodsSupplierDrilldownExtras out = new PurchaseGoodsSupplierDrilldownExtras();
+        if (isPurchaseGoodsSourceBreakdownArgs(args)) {
+            return resolveGoodsSourceBreakdownDrilldown(args, base, hasRows, out);
+        }
+        if (isPurchaseChannelOverviewGoodsDetailArgs(args)) {
+            return resolveChannelOverviewGoodsDetailFromTopGoods(
+                    goodsAmountTop, hasRows, purchaseSourceFocus, out);
+        }
+        if (isPurchaseSupplierFocusedGoodsLinesDrilldownArgs(args)) {
+            return resolveSupplierFocusedGoodsLinesDrilldown(args, base, hasRows, purchaseSourceFocus, out);
+        }
+        if (!isPurchaseGoodsFocusedSupplierDrilldownToolArgs(args)) {
+            return out;
+        }
+        out.active = true;
+        out.goodsAnchoredSupplierBreakdown = true;
+        out.targetGoodsName = str(args.get(ARG_PURCHASE_FOCUS_GOODS_NAME));
+        out.targetGoodsId = toInt(args.get(ARG_PURCHASE_FOCUS_DIS_GOODS_ID));
+        out.queryMethod = "queryGbPurchaseSupplierAggRowsForFocusedDisGoods";
+        boolean idOk = out.targetGoodsId != null && out.targetGoodsId > 0;
+        boolean nameOk = !out.targetGoodsName.isEmpty();
+
+        if (!hasRows) {
+            if (!idOk && !nameOk) {
+                out.noDataReason = "GOODS_NOT_FOUND_FOR_PURCHASE_DETAIL";
+            } else {
+                out.noDataReason = "NO_SUPPLIER_PURCHASE_FOR_FOCUSED_GOODS";
+            }
+            applySelfPurchaseAlternativeProbeForGoodsDrilldown(out, base, idOk ? out.targetGoodsId : null);
+            return out;
+        }
+        if (!idOk) {
+            if (!nameOk) {
+                out.noDataReason = "GOODS_NOT_FOUND_FOR_PURCHASE_DETAIL";
+            } else {
+                out.noDataReason = "NO_SUPPLIER_PURCHASE_FOR_FOCUSED_GOODS";
+            }
+            applySelfPurchaseAlternativeProbeForGoodsDrilldown(out, base, null);
+            return out;
+        }
+        Map<String, Object> drillBase = new HashMap<>(base);
+        drillBase.put("disGoodsId", out.targetGoodsId);
+        out.detailRows = new ArrayList<>(nullToEmptyMap(
+                purchaseGoodsService.queryGbPurchaseSupplierAggRowsForFocusedDisGoods(drillBase)));
+        if (!out.detailRows.isEmpty()) {
+            return out;
+        }
+        out.noDataReason = "NO_SUPPLIER_PURCHASE_FOR_FOCUSED_GOODS";
+        applySelfPurchaseAlternativeProbeForGoodsDrilldown(out, base, out.targetGoodsId);
+        return out;
+    }
+
+    /**
+     * Phase2-A：GOODS 锚 + {@code SOURCE_BREAKDOWN}，按采购记录行 legacy 桶拆自采/供货商/其它（时间窗 + 权限 + ALL，不带 {@code legacyPurchaseMethodFocus}）。
+     */
+    private PurchaseGoodsSupplierDrilldownExtras resolveGoodsSourceBreakdownDrilldown(
+            Map<String, Object> args, Map<String, Object> base, boolean hasRows, PurchaseGoodsSupplierDrilldownExtras out) {
+        out.active = true;
+        out.goodsSourceBreakdown = true;
+        out.goodsAnchoredSupplierBreakdown = false;
+        out.queryMethod = "queryGbPurchaseGoodsAggByLegacyPurchaseMethod";
+        out.targetGoodsName = str(args.get(ARG_PURCHASE_FOCUS_GOODS_NAME));
+        out.targetGoodsId = toInt(args.get(ARG_PURCHASE_FOCUS_DIS_GOODS_ID));
+        boolean idOk = out.targetGoodsId != null && out.targetGoodsId > 0;
+
+        if (!hasRows) {
+            out.noDataReason = "NO_PURCHASE_RECORD_FOR_SCOPE";
+            if (!idOk) {
+                out.goodsAnchorIdMissing = Boolean.TRUE;
+            }
+            return out;
+        }
+        if (!idOk) {
+            out.noDataReason = "GOODS_ANCHOR_ID_MISSING";
+            out.goodsAnchorIdMissing = Boolean.TRUE;
+            return out;
+        }
+
+        Map<String, Object> drillBase = new HashMap<>(base);
+        drillBase.remove("legacyPurchaseMethodFocus");
+        drillBase.put("disGoodsId", out.targetGoodsId);
+
+        List<PurchaseMethodLegacyAggRow> raw = nullToEmptyPurchaseMethodAgg(
+                purchaseGoodsService.queryGbPurchaseGoodsAggByLegacyPurchaseMethod(drillBase));
+
+        int selfLines = 0;
+        int supLines = 0;
+        int otherLines = 0;
+        BigDecimal selfAmt = BigDecimal.ZERO;
+        BigDecimal supAmt = BigDecimal.ZERO;
+        BigDecimal otherAmt = BigDecimal.ZERO;
+        BigDecimal selfQty = BigDecimal.ZERO;
+        BigDecimal supQty = BigDecimal.ZERO;
+        BigDecimal otherQty = BigDecimal.ZERO;
+        List<Map<String, Object>> buckets = new ArrayList<>();
+        for (PurchaseMethodLegacyAggRow r : raw) {
+            if (r == null) {
+                continue;
+            }
+            String b = r.getMethodBucket();
+            int lc = r.getLineCount() == null ? 0 : r.getLineCount();
+            BigDecimal a = r.getLineSubtotal() == null ? BigDecimal.ZERO : r.getLineSubtotal();
+            BigDecimal q = r.getLineQuantity() == null ? BigDecimal.ZERO : r.getLineQuantity();
+            LinkedHashMap<String, Object> br = new LinkedHashMap<>();
+            br.put("methodBucket", b);
+            br.put("lineCount", lc);
+            br.put("lineSubtotal", formatScaleOnePlain(a));
+            br.put("lineQuantity", q.setScale(1, RoundingMode.HALF_UP).toPlainString());
+            buckets.add(br);
+            if ("supplier_channel".equals(b)) {
+                supLines += lc;
+                supAmt = supAmt.add(a);
+                supQty = supQty.add(q);
+            } else if ("self_strict".equals(b)) {
+                selfLines += lc;
+                selfAmt = selfAmt.add(a);
+                selfQty = selfQty.add(q);
+            } else {
+                otherLines += lc;
+                otherAmt = otherAmt.add(a);
+                otherQty = otherQty.add(q);
+            }
+        }
+        out.sourceBreakdownBuckets = buckets;
+
+        int totalLines = selfLines + supLines + otherLines;
+        if (totalLines == 0) {
+            out.noDataReason = "NO_PURCHASE_LINES_FOR_FOCUSED_GOODS";
+            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+            row.put("disGoodsId", out.targetGoodsId);
+            if (!out.targetGoodsName.isEmpty()) {
+                row.put("goodsName", out.targetGoodsName);
+            }
+            row.put("totalPurchaseAmount", formatScaleOnePlain(BigDecimal.ZERO));
+            row.put("totalPurchaseQuantity", BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP).toPlainString());
+            row.put("selfPurchaseAmount", formatScaleOnePlain(BigDecimal.ZERO));
+            row.put("selfPurchaseQuantity", BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP).toPlainString());
+            row.put("supplierPurchaseAmount", formatScaleOnePlain(BigDecimal.ZERO));
+            row.put("supplierPurchaseQuantity", BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP).toPlainString());
+            row.put("otherPurchaseAmount", formatScaleOnePlain(BigDecimal.ZERO));
+            row.put("otherPurchaseQuantity", BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP).toPlainString());
+            row.put("selfPurchaseLineCount", 0);
+            row.put("supplierPurchaseLineCount", 0);
+            row.put("otherPurchaseLineCount", 0);
+            out.sourceBreakdownRow = row;
+            return out;
+        }
+
+        BigDecimal totalAmt = selfAmt.add(supAmt).add(otherAmt);
+        BigDecimal totalQty = selfQty.add(supQty).add(otherQty);
+        LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+        row.put("disGoodsId", out.targetGoodsId);
+        if (!out.targetGoodsName.isEmpty()) {
+            row.put("goodsName", out.targetGoodsName);
+        }
+        row.put("totalPurchaseAmount", formatScaleOnePlain(totalAmt));
+        row.put("totalPurchaseQuantity", totalQty.setScale(1, RoundingMode.HALF_UP).toPlainString());
+        row.put("selfPurchaseAmount", formatScaleOnePlain(selfAmt));
+        row.put("selfPurchaseQuantity", selfQty.setScale(1, RoundingMode.HALF_UP).toPlainString());
+        row.put("supplierPurchaseAmount", formatScaleOnePlain(supAmt));
+        row.put("supplierPurchaseQuantity", supQty.setScale(1, RoundingMode.HALF_UP).toPlainString());
+        row.put("otherPurchaseAmount", formatScaleOnePlain(otherAmt));
+        row.put("otherPurchaseQuantity", otherQty.setScale(1, RoundingMode.HALF_UP).toPlainString());
+        row.put("selfPurchaseLineCount", selfLines);
+        row.put("supplierPurchaseLineCount", supLines);
+        row.put("otherPurchaseLineCount", otherLines);
+        out.sourceBreakdownRow = row;
+        return out;
+    }
+
+    private static List<PurchaseMethodLegacyAggRow> nullToEmptyPurchaseMethodAgg(
+            List<PurchaseMethodLegacyAggRow> list) {
+        return list == null ? List.of() : list;
+    }
+
+    private static boolean isPurchaseGoodsSourceBreakdownArgs(Map<String, Object> args) {
+        if (args == null) {
+            return false;
+        }
+        String et = str(args.get(ARG_PURCHASE_FOCUS_ENTITY_TYPE));
+        if (!AiResultAnchor.ENTITY_TYPE_GOODS.equalsIgnoreCase(et)) {
+            return false;
+        }
+        return "SOURCE_BREAKDOWN".equalsIgnoreCase(str(args.get(ARG_PURCHASE_FOLLOW_UP_DETAIL_WANTED)));
+    }
+
+    /** D-13 Registry：上一帧供货商/自采概览追问 GOODS_DETAIL，仅带 followUpDetailWanted（无 focus 实体）。 */
+    private static boolean isPurchaseChannelOverviewGoodsDetailArgs(Map<String, Object> args) {
+        if (args == null) {
+            return false;
+        }
+        if (!"GOODS_DETAIL".equalsIgnoreCase(str(args.get(ARG_PURCHASE_FOLLOW_UP_DETAIL_WANTED)))) {
+            return false;
+        }
+        return !StringUtils.hasText(str(args.get(ARG_PURCHASE_FOCUS_ENTITY_TYPE)));
+    }
+
+    private PurchaseGoodsSupplierDrilldownExtras resolveChannelOverviewGoodsDetailFromTopGoods(
+            List<Map<String, Object>> goodsAmountTop,
+            boolean hasRows,
+            String purchaseSourceFocus,
+            PurchaseGoodsSupplierDrilldownExtras out) {
+        out.active = true;
+        out.goodsAnchoredSupplierBreakdown = false;
+        String pst = purchaseSourceFocus == null ? "" : purchaseSourceFocus.trim();
+        boolean sup = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equalsIgnoreCase(pst);
+        out.queryMethod = sup ? "supplier_channel_goods_detail" : "self_channel_goods_detail";
+        if (!hasRows || goodsAmountTop == null || goodsAmountTop.isEmpty()) {
+            out.noDataReason = "NO_PURCHASE_RECORD_FOR_SCOPE";
+            out.detailRows = List.of();
+            return out;
+        }
+        List<Map<String, Object>> copy = new ArrayList<>(goodsAmountTop.size());
+        for (Map<String, Object> r : goodsAmountTop) {
+            copy.add(r != null ? new LinkedHashMap<>(r) : new LinkedHashMap<>());
+        }
+        out.detailRows = copy;
+        return out;
+    }
+
+    private PurchaseGoodsSupplierDrilldownExtras resolveSupplierFocusedGoodsLinesDrilldown(
+            Map<String, Object> args,
+            Map<String, Object> base,
+            boolean hasRows,
+            String purchaseSourceFocus,
+            PurchaseGoodsSupplierDrilldownExtras out) {
+        out.active = true;
+        out.goodsAnchoredSupplierBreakdown = false;
+        out.queryMethod = "queryGbPurchaseGoodsAggRowsForFocusedSupplier";
+        Integer sid = toInt(args.get(ARG_PURCHASE_FOCUS_SUPPLIER_ID));
+        out.focusSupplierId = sid;
+        if (!hasRows) {
+            out.noDataReason = "NO_SUPPLIER_PURCHASE_FOR_SCOPE";
+            return out;
+        }
+        if (sid == null || sid <= 0) {
+            out.noDataReason = "SUPPLIER_ID_MISSING_FOR_DRILLDOWN";
+            return out;
+        }
+        Map<String, Object> drillBase = new HashMap<>(base);
+        drillBase.put("supplierId", sid);
+        out.detailRows = new ArrayList<>(nullToEmptyMap(
+                purchaseGoodsService.queryGbPurchaseGoodsAggRowsForFocusedSupplier(drillBase)));
+        if (!out.detailRows.isEmpty()) {
+            return out;
+        }
+        out.noDataReason = "NO_PURCHASE_LINES_FOR_FOCUSED_SUPPLIER";
+        return out;
+    }
+
+    /**
+     * 同一商品在自采口径下的轻量笔数探针（已有 SQL/Service，不切换采购来源）。
+     * {@code disGoodsId} 缺失时不查库：{@code alternativeHasData=null}、{@code status=NOT_CHECKED}。
+     */
+    private void applySelfPurchaseAlternativeProbeForGoodsDrilldown(
+            PurchaseGoodsSupplierDrilldownExtras out, Map<String, Object> base, Integer disGoodsId) {
+        if (disGoodsId == null || disGoodsId <= 0) {
+            out.alternativeHasData = null;
+            LinkedHashMap<String, Object> alt = new LinkedHashMap<>();
+            alt.put("originalFacet", "SUPPLIER_PURCHASE");
+            alt.put("alternativeFacet", "SELF_PURCHASE");
+            alt.put("entityType", "GOODS");
+            alt.put("entityName", out.targetGoodsName.isEmpty() ? null : out.targetGoodsName);
+            alt.put("status", "NOT_CHECKED");
+            out.alternativeEvidence = alt;
+            return;
+        }
+        Map<String, Object> drillBase = new HashMap<>(base);
+        drillBase.put("disGoodsId", disGoodsId);
+        Map<String, Object> selfBase = new HashMap<>(drillBase);
+        selfBase.put("legacyPurchaseMethodFocus", "self_strict");
+        Integer selfCnt = purchaseGoodsService.queryGbPurchaseGoodsCount(selfBase);
+        out.alternativeHasData = Boolean.valueOf(selfCnt != null && selfCnt > 0);
+        LinkedHashMap<String, Object> alt = new LinkedHashMap<>();
+        alt.put("originalFacet", "SUPPLIER_PURCHASE");
+        alt.put("alternativeFacet", "SELF_PURCHASE");
+        alt.put("entityType", "GOODS");
+        alt.put("entityName", out.targetGoodsName.isEmpty() ? null : out.targetGoodsName);
+        alt.put("status", Boolean.TRUE.equals(out.alternativeHasData) ? "HAS_DATA" : "NO_DATA");
+        alt.put("rowCount", selfCnt == null ? 0 : selfCnt);
+        out.alternativeEvidence = alt;
+    }
+
+    private static boolean isPurchaseGoodsFocusedSupplierDrilldownToolArgs(Map<String, Object> args) {
+        if (args == null) {
+            return false;
+        }
+        String et = str(args.get(ARG_PURCHASE_FOCUS_ENTITY_TYPE));
+        if (!AiResultAnchor.ENTITY_TYPE_GOODS.equalsIgnoreCase(et)) {
+            return false;
+        }
+        String dw = str(args.get(ARG_PURCHASE_FOLLOW_UP_DETAIL_WANTED));
+        if (!"SUPPLIER_UNIT_PRICE".equalsIgnoreCase(dw)) {
+            return false;
+        }
+        Integer id = toInt(args.get(ARG_PURCHASE_FOCUS_DIS_GOODS_ID));
+        String nm = str(args.get(ARG_PURCHASE_FOCUS_GOODS_NAME));
+        return (id != null && id > 0) || !nm.isEmpty();
+    }
+
+    /** 供货商排行锚 → 按商品聚合行（D-13.1）。 */
+    private static boolean isPurchaseSupplierFocusedGoodsLinesDrilldownArgs(Map<String, Object> args) {
+        if (args == null) {
+            return false;
+        }
+        String et = str(args.get(ARG_PURCHASE_FOCUS_ENTITY_TYPE));
+        if (!AiResultAnchor.ENTITY_TYPE_SUPPLIER.equalsIgnoreCase(et)) {
+            return false;
+        }
+        String dw = str(args.get(ARG_PURCHASE_FOLLOW_UP_DETAIL_WANTED));
+        if (!"GOODS_UNIT_PRICE".equalsIgnoreCase(dw)) {
+            return false;
+        }
+        Integer sid = toInt(args.get(ARG_PURCHASE_FOCUS_SUPPLIER_ID));
+        return sid != null && sid > 0;
+    }
+
+    private static final class PurchaseGoodsSupplierDrilldownExtras {
+        boolean active;
+        /** Phase2-A：单商品 legacy 来源拆桶（与 {@link #resolveGoodsSourceBreakdownDrilldown} 对应）。 */
+        boolean goodsSourceBreakdown;
+        /** true：商品锚下各供应商行；false：供应商锚下各商品行。 */
+        boolean goodsAnchoredSupplierBreakdown = true;
+        String queryMethod;
+        Integer focusSupplierId;
+        String targetGoodsName = "";
+        Integer targetGoodsId;
+        List<Map<String, Object>> detailRows = List.of();
+        Map<String, Object> sourceBreakdownRow;
+        List<Map<String, Object>> sourceBreakdownBuckets = List.of();
+        String noDataReason;
+        Boolean goodsAnchorIdMissing;
+        /** null = 未做自采探针（{@code alternativeEvidence.status=NOT_CHECKED}） */
+        Boolean alternativeHasData;
+        Map<String, Object> alternativeEvidence;
     }
 
     private static final class PurchaseMethodSection {
@@ -618,6 +1059,9 @@ public class PurchaseOverviewTool implements AiTool {
             LinkedHashMap<String, Object> row = new LinkedHashMap<>();
             row.put("goodsName", g.getGbDgGoodsName());
             row.put("purchaseTimes", g.getGbDgQuantityDays());
+            if (g.getGbDistributerGoodsId() != null) {
+                row.put("disGoodsId", g.getGbDistributerGoodsId());
+            }
             out.add(row);
         }
         return out;
@@ -631,6 +1075,9 @@ public class PurchaseOverviewTool implements AiTool {
             LinkedHashMap<String, Object> row = new LinkedHashMap<>();
             row.put("goodsName", g.getGbDgGoodsName());
             row.put("purchaseSubtotal", g.getGoodsPurTotalSubtotal());
+            if (g.getGbDistributerGoodsId() != null) {
+                row.put("disGoodsId", g.getGbDistributerGoodsId());
+            }
             out.add(row);
         }
         return out;
@@ -646,6 +1093,9 @@ public class PurchaseOverviewTool implements AiTool {
             row.put("kind", "by_times");
             row.put("goodsName", g.getGbDgGoodsName());
             row.put("purchaseTimes", g.getGbDgQuantityDays());
+            if (g.getGbDistributerGoodsId() != null) {
+                row.put("disGoodsId", g.getGbDistributerGoodsId());
+            }
             out.add(row);
         }
         n = Math.min(bySubtotal.size(), 5);
@@ -655,6 +1105,9 @@ public class PurchaseOverviewTool implements AiTool {
             row.put("kind", "by_amount");
             row.put("goodsName", g.getGbDgGoodsName());
             row.put("purchaseSubtotal", g.getGoodsPurTotalSubtotal());
+            if (g.getGbDistributerGoodsId() != null) {
+                row.put("disGoodsId", g.getGbDistributerGoodsId());
+            }
             out.add(row);
         }
         return out;

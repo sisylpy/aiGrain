@@ -13,13 +13,13 @@ import java.util.List;
 class BusinessDiagnosisLexiconRoutingTest {
 
     @Test
-    void diagnosis_phrases_map_to_business_diagnosis_path() {
+    void diagnosis_phrases_noLongerRoutedByJavaKeyword_fromUserMessageIsStub() {
         for (String q : List.of(
                 "怎么诊断这个月经营情况？",
                 "帮我诊断一下这个月经营情况",
                 "帮我分析一下这个月经营状况")) {
             AiResolvedQueryIntent qi = AiResolvedQueryIntent.fromUserMessage(q);
-            Assertions.assertThat(qi.getPathCode()).as(q).isEqualTo(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS);
+            Assertions.assertThat(qi.getPathCode()).as(q).isNull();
         }
     }
 
@@ -32,12 +32,12 @@ class BusinessDiagnosisLexiconRoutingTest {
     }
 
     @Test
-    void store_priority_user_message_maps_to_business_diagnosis_wire() {
-        String q = "今天老板先处理哪个门店？";
-        AiResolvedQueryIntent qi = AiResolvedQueryIntent.fromUserMessage(q);
-        Assertions.assertThat(qi.getPathCode()).isEqualTo(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS);
-        Assertions.assertThat(qi.getStructuredIntentDetail())
+    void store_priority_wire_isCanonicalInLexicon_notJavaKeywordRouting() {
+        Assertions.assertThat(
+                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire("store_priority_ranking"))
                 .isEqualTo(AiQuerySemanticLexicon.STRUCTURED_STORE_PRIORITY_RANKING);
+        Assertions.assertThat(AiResolvedQueryIntent.fromUserMessage("今天老板先处理哪个门店？").getPathCode())
+                .isNull();
     }
 
     @Test

@@ -2,6 +2,8 @@
 
 > **定位**：与 `dish-profit-domain-capability-matrix.md`（DishProfit / D-7）配合使用。本文档为 **规划与事实梳理**；**D-8 Phase 1（菜品销量/销售额排行闭环）已收口**，Phase 2+ 仍多未落地。
 
+> **语义 vs Tool（勿混写）**：**`DISH_SALES_QUERY`**（intent）与 **`dish_sales_query_path`**（path）为 **现网** D-8 路由；**执行 Tool** 仅为 **`dish_profit_analysis`**（`DishProfitAnalysisTool`）。**Historical removed**：独立 Tool id **`dish_sales_query`** / **`DishSalesQueryTool`**（**D-CLEAN-DISH-SALES-P2**）。**不得**恢复独立 Tool 或 `toolResults["dish_sales_query"]`。
+
 ---
 
 ## 1. 背景与边界
@@ -22,6 +24,7 @@
 ### 2.1 已完成能力
 
 - **路由**：**`DISH_SALES_QUERY`**（有效意图）与 **`dish_sales_query_path`**（有效路径）已作为主载体区分「菜品销量/销售额排行」与 DishProfit 专线。
+- **Wire 来源（D-1X-D3）**：`DishSalesAnswerPlanBuilder` 仅读 merge 后 **`queryIntent.structuredIntentDetail`** 或 V2 **`semanticSlots.structuredIntentDetailWire` / `currentTurnStructuredIntentDetailWire`**；**不** fallback **`metric.rankingType`**。
 - **三种结构化 wire**（经 `canonicalStructuredIntentDetailWire` 归一后接入 Builder）：
   - **`dish_sales_count_ranking_high`**：销售份数 / 销量偏高排行（高）；
   - **`dish_sales_amount_ranking_high`**：菜品侧销售额偏高排行（高）；
@@ -53,7 +56,7 @@
 
 - **数据源**：仍**复用** **`dish_profit_analysis`** 返回的 **`dishRows`**（标价口径销售额等以 Builder / 工具定义为准）。
 - **毛利叙事**：在 DishSales 答复中，**毛利率仅作附带列表字段**（如 Top3 行展示）；**不**在「纯销量/销售额」问题下展开毛利诊断、成本异常、配方核对等 DishProfit 主线话术。
-- **独立工具**：**尚无**独立 **`dish_sales_query`** Tool；Phase 2+ 再评估是否拆 Tool / SQL。
+- **Historical removed（D-CLEAN-DISH-SALES-P2）**：独立 Tool **`dish_sales_query`** / **`DishSalesQueryTool`** 已删除。**D-8**（`DISH_SALES_QUERY` / `dish_sales_query_path`）与 **成本链**均执行 **`dish_profit_analysis`**（见 `dish-profit-domain-capability-matrix.md`）。
 - **延后（Phase 2+）**：趋势、门店维度菜品排行、分类销量、「销量高但不赚钱」等组合分析——见 **§2.5** 与 §9。
 
 ### 2.4 与下文章节的关系
@@ -79,7 +82,7 @@
 - **`dish_profit_analysis`**：DishSales Phase 1 **数据面唯一 Tool**；逐菜行仍在 `toolResults["dish_profit_analysis"]["data"]["dishRows"]`。
 - **`DishSalesAnswerPlan` + `DishSalesAnswerPlanBuilder`**：已落地；Composer 侧 **`DishSalesDeterministicRenderer`** 在专线 + 有效计划时优先写 **`finalAnswerText`**。
 - **`revenue_query`**：仍**不**承担按**菜品**维度的销量/销售额排行。
-- **独立 `dish_sales_query` Tool**：**未**落地（Phase 2+）；与早期「仅存在工具类、未闭环」等草稿表述可并存——**以 §2 收口结果为准**。
+- **`dish_sales_query` Tool**：**Historical removed** — **`DishSalesQueryTool`** 已删除（**2026-05-20 P2**）。D-8 语义 intent 仍为 **`DISH_SALES_QUERY`**，path 仍为 **`dish_sales_query_path`**，执行 Tool 为 **`dish_profit_analysis`**（成本链亦同）。
 
 ---
 
@@ -144,8 +147,8 @@
 | 方案 | 要点 | 优点 | 缺点 | 结论 |
 |------|------|------|------|------|
 | **A** | 继续挂在 **`dish_profit_path`** 下 | 改动最小 | 污染 DishProfit；Harness **可观测性差**；不利销量趋势、爆品、滞销菜扩展 | **仅极短期补丁**，不推荐 Phase 1 正式方案 |
-| **B** | 新增 **`DISH_SALES_QUERY` / `dish_sales_query_path` / `DishSalesAnswerPlan`**，**`dataPlanTools` 暂仍只含 `dish_profit_analysis`** | **产品域清晰**；**不新写 SQL**；不破坏 DishProfit；后续可换独立 `dish_sales_query` | 须新增 intent/path、Planner 映射、AnswerPlan、Composer/Renderer 分支 | **推荐** |
-| **C** | 新 DishSales path + **新 Tool / 新 SQL** | 实现彻底解耦 | Phase 1 **成本过高**；违背当前「不新写 SQL、优先复用」 | **Phase 2+ 再评估** |
+| **B** | 新增 **`DISH_SALES_QUERY` / `dish_sales_query_path` / `DishSalesAnswerPlan`**，**`dataPlanTools` 仅含 `dish_profit_analysis`**（**现网已落地**） | **产品域清晰**；**不新写 SQL**；不破坏 DishProfit | 须 intent/path、Planner、AnswerPlan、Composer/Renderer | **推荐（Phase 1 已选）** |
+| **C** | 新 DishSales path + **新 Tool / 新 SQL** | 实现彻底解耦 | Phase 1 **成本过高**；**非当前计划** | **Future proposal**（独立 `dish_sales_query` Tool 若再评，须单独 ADR；**禁止** Cursor 误恢复） |
 
 ### 7. D-8 Phase 1 推荐落地方案（方案 B 概要）
 
@@ -230,8 +233,8 @@
 ## 10. 下一步实现建议（评审向）
 
 - **先不新写 SQL**；优先沿用 **`buildInsight`** / 现有 `dish_profit_analysis` **dishRows**。
-- 后续再评审是否新增独立 **`dish_sales_query` Tool**、Harness 期望回合等；与 `business-question-routing-d2-design.md` 等路由文档对齐时再改 intent 表。**Phase 1 落地方案概要见 §5「D-8 Phase 1 接入点评审：推荐方案 B」。**
+- **Future proposal（非当前计划）**：是否新增独立 **`dish_sales_query` Tool** 须单独评审；现网 **禁止** 编排该 Tool id。Harness / 路由表变更见 `business-question-routing-d2-design.md`。**Phase 1 落地方案见 §5 方案 B（已落地）**。
 
 ---
 
-**文档版本**：**D-8 Phase 1 已收口**（2026-05-15）— §2「D-8 Phase 1 收口结果」为 Phase 1 **验收与边界唯一摘要**（含 GRAPH_RUN 样例、DishProfit 回归隔离、**§2.5 Phase 2+ 后续方向**）；§3 为代码事实梳理；§5 为方案 B 考古；§6–§7、§9 为规划与分期对照。Phase 1 **不新增**独立 `dish_sales_query` Tool。
+**文档版本**：**D-8 Phase 1 已收口**（2026-05-15）；**D-CLEAN-DISH-SALES-P2**（2026-05-20）删除独立 **`dish_sales_query` Tool**，保留 **`DISH_SALES_QUERY` / `dish_sales_query_path`**，执行 **`dish_profit_analysis`**。见 [dish-sales-query-tool-removed.md](../legacy-reference/dish-sales-query-tool-removed.md)。

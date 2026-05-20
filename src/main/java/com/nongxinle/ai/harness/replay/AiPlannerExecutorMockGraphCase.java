@@ -58,9 +58,6 @@ public final class AiPlannerExecutorMockGraphCase {
         if (AiHarnessBuiltinCases.PLANNER_EXECUTOR_MOCK_DEGRADED_CORE.equals(id)) {
             return buildDegradedPlan();
         }
-        if (AiHarnessBuiltinCases.PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE.equals(id)) {
-            return AiPlannerExecutorBusinessDiagnosisCompositeGraphCase.buildPlan();
-        }
         return buildPlan();
     }
 
@@ -258,15 +255,6 @@ public final class AiPlannerExecutorMockGraphCase {
         root.put("harnessReplayMode", AiHarnessReplayMode.PLANNER_EXECUTOR_MOCK.name());
         root.put("harnessMockGraphCaseId", harnessCaseId != null ? harnessCaseId.trim() : CASE_ID);
         root.put("harnessReplayInputMessage", replayMessage);
-        if (AiHarnessBuiltinCases.PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE.equals(
-                harnessCaseId != null ? harnessCaseId.trim() : "")) {
-            root.put(
-                    "plannerCompositeHonesty",
-                    AiPlannerExecutorBusinessDiagnosisCompositeGraphCase.PLANNER_COMPOSITE_HONESTY_SKELETON_ONLY);
-            root.put(
-                    "plannerCompositeNote",
-                    AiPlannerExecutorBusinessDiagnosisCompositeGraphCase.PLANNER_COMPOSITE_NOTE_SKELETON);
-        }
         if (result != null && result.getTrace() != null) {
             PlannerExecutorTrace tr = result.getTrace();
             root.put("plannerExecutorTrace", traceToMap(tr));

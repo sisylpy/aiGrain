@@ -5,7 +5,11 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.core.AiRunState;
 import com.alibaba.fastjson2.JSON;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
+import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -55,7 +59,7 @@ public class AiConversationTurnMemory {
     private String lastEffectiveQuestion;
     /** 可选：极短摘要供日志 */
     private String lastAnswerSummary;
-    /** 本轮工具链执行情况简述（如 dish_sales_query:ok），供回放与 Harness 日志 */
+    /** 本轮工具链执行情况简述（如 dish_profit_analysis:ok），供回放与 Harness 日志 */
     private String lastToolSummary;
     /** 上轮用户焦点/语境中的「点名门店」（如单店可见时的店名）；集团多店常为 null */
     private String lastMentionedStore;
@@ -67,6 +71,17 @@ public class AiConversationTurnMemory {
      * {@code harness_ms_json=[...]|}。
      */
     private List<String> lastHarnessMultiStoreMatchedStores;
+
+    /**
+     * 上一轮 AnswerPlan 产生的可追问锚点；跨 HTTP 请求依赖 {@link #lastToolSummary} 前缀 {@code nx_ctm_ra_json=} 写入 DB，
+     * 见 {@link AiConversationTurnMemoryEntities#toEntity} / {@link #readResultAnchorsFromToolSummary}。
+     */
+    private List<AiResultAnchor> lastResultAnchors;
+
+    /**
+     * 上一轮语义槽位（D-13）；跨请求经 {@link #lastToolSummary} 前缀 {@code nx_ctm_ss_json=} 持久化。
+     */
+    private AiQuerySemanticParseResult.SemanticSlotsPart lastSemanticSlots;
 
     public static AiConversationTurnMemory fromCompletedState(AiRunState state) {
         if (state == null) {
@@ -127,6 +142,26 @@ public class AiConversationTurnMemory {
                 }
             }
         }
+        if (!StringUtils.hasText(dishForMemory) && state.getDishProfitAnswerPlan() != null) {
+            List<AiResultAnchor> das = state.getDishProfitAnswerPlan().getResultAnchors();
+            if (das != null) {
+                for (AiResultAnchor a : das) {
+                    if (a != null
+                            && AiResultAnchor.ENTITY_TYPE_DISH.equalsIgnoreCase(
+                                    StringUtils.hasText(a.getEntityType()) ? a.getEntityType().trim() : "")
+                            && StringUtils.hasText(a.getEntityName())) {
+                        dishForMemory = trimSummary(a.getEntityName());
+                        break;
+                    }
+                }
+            }
+        }
+
+        AiQuerySemanticParseResult.SemanticSlotsPart lastSlots = null;
+        if (ctx != null && ctx.getQuerySemanticParse() != null) {
+            lastSlots = ctx.getQuerySemanticParse().getSemanticSlots();
+        }
+        lastSlots = AiQuerySemanticSlotMerge.alignSemanticSlotsForTurnMemoryPersistence(lastSlots, structured);
 
         return AiConversationTurnMemory.builder()
                 .conversationId(state.getConversationId())
@@ -153,6 +188,8 @@ public class AiConversationTurnMemory {
                 .lastMentionedStore(trimSummary(resolveMentionedStoreDisplay(ctx)))
                 .lastMentionedDishName(dishForMemory)
                 .lastHarnessMultiStoreMatchedStores(copyHarnessStoreList(ctx.getHarnessMultiStoreMatchedStores()))
+                .lastResultAnchors(copyAnchorsFromCompletedPlans(state))
+                .lastSemanticSlots(lastSlots)
                 .build();
     }
 
@@ -194,6 +231,11 @@ public class AiConversationTurnMemory {
             effectiveQ = ctx.getOriginalQuestion();
         }
 
+        AiQuerySemanticParseResult.SemanticSlotsPart replaySlots =
+                ctx.getQuerySemanticParse() != null ? ctx.getQuerySemanticParse().getSemanticSlots() : null;
+        replaySlots =
+                AiQuerySemanticSlotMerge.alignSemanticSlotsForTurnMemoryPersistence(replaySlots, structured);
+
         return AiConversationTurnMemory.builder()
                 .conversationId(conversationId)
                 .previousRunId(syntheticRunId)
@@ -215,7 +257,39 @@ public class AiConversationTurnMemory {
                 .lastMentionedStore(trimSummary(resolveHarnessMentioned(ctx)))
                 .lastMentionedDishName(trimSummary(ctx.getMentionedDishName()))
                 .lastHarnessMultiStoreMatchedStores(copyHarnessStoreList(ctx.getHarnessMultiStoreMatchedStores()))
+                .lastResultAnchors(null)
+                .lastSemanticSlots(replaySlots)
                 .build();
+    }
+
+    private static List<AiResultAnchor> copyAnchorsFromCompletedPlans(AiRunState state) {
+        if (state == null) {
+            return null;
+        }
+        List<AiResultAnchor> merged = new ArrayList<>();
+        DiagnosisPlan dp = state.getDiagnosisPlan();
+        if (dp != null && dp.getResultAnchors() != null) {
+            for (AiResultAnchor a : dp.getResultAnchors()) {
+                if (a != null) {
+                    merged.add(a);
+                }
+            }
+        }
+        if (state.getPurchaseAnswerPlan() != null && state.getPurchaseAnswerPlan().getResultAnchors() != null) {
+            for (AiResultAnchor a : state.getPurchaseAnswerPlan().getResultAnchors()) {
+                if (a != null) {
+                    merged.add(a);
+                }
+            }
+        }
+        if (state.getDishProfitAnswerPlan() != null && state.getDishProfitAnswerPlan().getResultAnchors() != null) {
+            for (AiResultAnchor a : state.getDishProfitAnswerPlan().getResultAnchors()) {
+                if (a != null) {
+                    merged.add(a);
+                }
+            }
+        }
+        return merged.isEmpty() ? null : merged;
     }
 
     private static String resolveHarnessMentioned(AiResolvedQueryContext ctx) {
@@ -249,8 +323,8 @@ public class AiConversationTurnMemory {
         if (!purchaseOverviewIsAllSource(po)) {
             return toolChainTail;
         }
-        int cnt = intHintFlexible(po != null ? po.get("purchaseOrderCount") : null);
-        String amtToken = normalizedAmountCarryToken(po != null ? po.get("totalPurchaseAmount") : null);
+        int cnt = intHintFlexible(po.get("purchaseOrderCount"));
+        String amtToken = normalizedAmountCarryToken(po.get("totalPurchaseAmount"));
         double amtVal = amtTokenCarryNumeric(amtToken);
         if (cnt <= 0 && amtVal <= 1e-9) {
             return toolChainTail;
@@ -380,22 +454,101 @@ public class AiConversationTurnMemory {
         return "harness_ms_json=" + json + "|" + (existing != null ? existing : "");
     }
 
+    /** 会话记忆落库：前缀序列化 {@link #lastResultAnchors}，与 harness 前缀可共存。 */
+    public static String embedResultAnchorsInToolSummary(String existing, List<AiResultAnchor> anchors) {
+        if (anchors == null || anchors.isEmpty()) {
+            return existing;
+        }
+        String json = JSON.toJSONString(anchors);
+        return "nx_ctm_ra_json=" + json + "|" + (existing != null ? existing : "");
+    }
+
+    /** 会话记忆落库：前缀序列化上一轮 {@link #lastSemanticSlots}。 */
+    public static String embedSemanticSlotsInToolSummary(
+            String existing, AiQuerySemanticParseResult.SemanticSlotsPart slots) {
+        if (slots == null) {
+            return existing;
+        }
+        String json = JSON.toJSONString(slots);
+        return "nx_ctm_ss_json=" + json + "|" + (existing != null ? existing : "");
+    }
+
+    public static AiQuerySemanticParseResult.SemanticSlotsPart readSemanticSlotsFromToolSummary(String toolSummary) {
+        if (!StringUtils.hasText(toolSummary)) {
+            return null;
+        }
+        String rest = toolSummary;
+        while (StringUtils.hasText(rest)) {
+            int pipe = rest.indexOf('|');
+            String seg = pipe >= 0 ? rest.substring(0, pipe) : rest;
+            if (seg.startsWith("nx_ctm_ss_json=")) {
+                String json = seg.substring("nx_ctm_ss_json=".length());
+                try {
+                    return JSON.parseObject(json, AiQuerySemanticParseResult.SemanticSlotsPart.class);
+                } catch (Exception ignore) {
+                    return null;
+                }
+            }
+            if (pipe < 0) {
+                break;
+            }
+            rest = rest.substring(pipe + 1);
+        }
+        return null;
+    }
+
+    public static List<AiResultAnchor> readResultAnchorsFromToolSummary(String toolSummary) {
+        if (!StringUtils.hasText(toolSummary)) {
+            return null;
+        }
+        String rest = toolSummary;
+        while (StringUtils.hasText(rest)) {
+            int pipe = rest.indexOf('|');
+            String seg = pipe >= 0 ? rest.substring(0, pipe) : rest;
+            if (seg.startsWith("nx_ctm_ra_json=")) {
+                String json = seg.substring("nx_ctm_ra_json=".length());
+                try {
+                    List<AiResultAnchor> list = JSON.parseArray(json, AiResultAnchor.class);
+                    return list == null || list.isEmpty() ? null : list;
+                } catch (Exception ignore) {
+                    return null;
+                }
+            }
+            if (pipe < 0) {
+                break;
+            }
+            rest = rest.substring(pipe + 1);
+        }
+        return null;
+    }
+
     public static List<String> readHarnessMultiStoreFromToolSummary(String toolSummary) {
-        if (!StringUtils.hasText(toolSummary) || !toolSummary.startsWith("harness_ms_json=")) {
+        if (!StringUtils.hasText(toolSummary)) {
             return null;
         }
-        int pipe = toolSummary.indexOf('|');
-        int prefixLen = "harness_ms_json=".length();
-        if (pipe <= prefixLen) {
-            return null;
+        String s = toolSummary;
+        while (StringUtils.hasText(s)) {
+            if (s.startsWith("harness_ms_json=")) {
+                int pipe = s.indexOf('|');
+                int prefixLen = "harness_ms_json=".length();
+                if (pipe <= prefixLen) {
+                    return null;
+                }
+                try {
+                    String json = s.substring(prefixLen, pipe);
+                    List<String> list = JSON.parseArray(json, String.class);
+                    return list == null || list.isEmpty() ? null : list;
+                } catch (Exception ignore) {
+                    return null;
+                }
+            }
+            int pipe = s.indexOf('|');
+            if (pipe < 0) {
+                return null;
+            }
+            s = s.substring(pipe + 1);
         }
-        try {
-            String json = toolSummary.substring(prefixLen, pipe);
-            List<String> list = JSON.parseArray(json, String.class);
-            return list == null || list.isEmpty() ? null : list;
-        } catch (Exception ignore) {
-            return null;
-        }
+        return null;
     }
 
     private static List<String> copyHarnessStoreList(List<String> in) {

@@ -19,6 +19,8 @@ import java.util.Map;
 
 /**
  * 成本洞察结构化诊断：在 {@link StubOutcomeReviewNode} 于 Tool 链完成后调用（非 Graph AgentNode）。
+ * <p>
+ * 门店粗估毛利率由 {@link CostMarginDerivation} 从 revenue / dish_profit / stock_reduce 现场推导（不写回 toolResults）。
  */
 @Component
 @RequiredArgsConstructor
@@ -65,26 +67,28 @@ public class CostDiagnosisAgentNode {
         ));
 
         Map<String, Object> revD = section(state, AiBusinessToolIds.REVENUE_QUERY);
-        Map<String, Object> purD = section(state, AiBusinessToolIds.PURCHASE_QUERY);
+        Map<String, Object> purOverview = purchaseOverviewFromToolData(
+                section(state, AiBusinessToolIds.PURCHASE_OVERVIEW));
         Map<String, Object> stkD = section(state, AiBusinessToolIds.STOCK_REDUCE_QUERY);
-        Map<String, Object> dishD = section(state, AiBusinessToolIds.DISH_SALES_QUERY);
-        Map<String, Object> marginD = section(state, AiBusinessToolIds.GROSS_MARGIN_CALCULATOR);
+        // 菜品标价收入由成本链 dish_profit_analysis 提供（非 dish_sales_query）
+        Map<String, Object> dishProfitD = section(state, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        Map<String, Object> marginD = CostMarginDerivation.derive(revD, dishProfitD, stkD);
 
         BigDecimal revenue = nz(revD.get("totalRevenue"));
         int days = revD.get("days") instanceof Number ? ((Number) revD.get("days")).intValue() : 0;
-        BigDecimal purchase = nz(purD.get("purchaseSubTotal"));
+        BigDecimal purchase = nz(purOverview.get("totalPurchaseAmount"));
         BigDecimal production = nz(stkD.get("productionTotal"));
         BigDecimal produce = nz(stkD.get("produceTotal"));
         BigDecimal waste = nz(stkD.get("wasteTotal"));
         BigDecimal loss = nz(stkD.get("lossTotal"));
-        BigDecimal listRev = nz(dishD.get("listPriceRevenueTotal"));
+        BigDecimal listRev = CostMarginDerivation.listPriceRevenueFromDishProfitData(dishProfitD);
         BigDecimal marginPctNumeric = nz(marginD.get("estimatedGrossMarginPercent"));
         boolean marginReliable = !(Boolean.FALSE.equals(marginD.get("grossMarginReliable")));
         String marginDisplayed = resolveMarginDisplay(marginD, marginReliable, marginPctNumeric);
 
         boolean mockHeavy = envMock(state, AiBusinessToolIds.REVENUE_QUERY)
                 || envMock(state, AiBusinessToolIds.STOCK_REDUCE_QUERY)
-                || envMock(state, AiBusinessToolIds.PURCHASE_QUERY);
+                || envMock(state, AiBusinessToolIds.PURCHASE_OVERVIEW);
 
         BigDecimal outbound123 = waste.add(loss).add(produce);
         BigDecimal wasteLossShare = outbound123.signum() == 0 ? BigDecimal.ZERO
@@ -206,6 +210,24 @@ public class CostDiagnosisAgentNode {
             return "毛利率暂不可准确计算（核销/出库/生产消耗数据不足）";
         }
         return marginPctNumeric.stripTrailingZeros().toPlainString();
+    }
+
+    /**
+     * 成本链采购快照：读 {@link AiBusinessToolIds#PURCHASE_OVERVIEW} 的 {@code data.purchaseOverview}。
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> purchaseOverviewFromToolData(Map<String, Object> toolData) {
+        if (toolData == null || toolData.isEmpty()) {
+            return Map.of();
+        }
+        Object po = toolData.get("purchaseOverview");
+        if (po instanceof Map<?, ?> pom) {
+            return (Map<String, Object>) pom;
+        }
+        if (toolData.containsKey("totalPurchaseAmount") || toolData.containsKey("purchaseOrderCount")) {
+            return toolData;
+        }
+        return Map.of();
     }
 
     @SuppressWarnings("unchecked")

@@ -1,5 +1,6 @@
 package com.nongxinle.ai.conversation;
 
+import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import org.springframework.util.StringUtils;
@@ -7,10 +8,11 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * 结构化子意图协议：wire 常量、canonical/debug 映射、格式化工具。
- * <p>除「采购来源」用户口径别名归一化（供解析合并层投递 wire）外，不包含其它自然语言推断。</p>
+ * <p>采购域语义由 V2 {@code semanticSlots} 主输出；本类不包含用户原话自然语言推断。</p>
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class AiQuerySemanticLexicon {
@@ -45,23 +47,80 @@ public final class AiQuerySemanticLexicon {
     public static final String STRUCTURED_SUPPLIER_AMOUNT_RANKING = "supplier_amount_ranking";
     public static final String STRUCTURED_SUPPLIER_RANKING = STRUCTURED_SUPPLIER_AMOUNT_RANKING;
 
+    /**
+     * {@link #canonicalStructuredIntentDetailWire} 归一后的采购 overview 路径 wire（与 CurrentSemanticFrame 采购域校验集合对齐）。
+     */
+    private static final Set<String> PURCHASE_OVERVIEW_DOMAIN_CANONICAL_WIRES =
+            Set.of(
+                    STRUCTURED_PURCHASE_OVERVIEW_SUMMARY,
+                    STRUCTURED_PURCHASE_SOURCE_SUMMARY,
+                    STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY,
+                    STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY,
+                    STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING,
+                    STRUCTURED_PURCHASE_GOODS_COUNT_RANKING,
+                    STRUCTURED_PURCHASE_GOODS_ANOMALY,
+                    STRUCTURED_PURCHASE_PRICE_ANOMALY,
+                    STRUCTURED_PURCHASE_FREQUENCY_ANOMALY,
+                    STRUCTURED_PURCHASE_QUANTITY_ANOMALY,
+                    STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE,
+                    STRUCTURED_PURCHASE_STOCK_REDUCE_MISMATCH,
+                    STRUCTURED_PURCHASE_SLOW_MOVING_RISK,
+                    STRUCTURED_PURCHASE_INVENTORY_OVERSTOCK_RISK,
+                    STRUCTURED_PURCHASE_FRESHNESS_RISK,
+                    STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING,
+                    STRUCTURED_SUPPLIER_AMOUNT_RANKING);
+
+    public static boolean isPurchaseOverviewDomainCanonicalWire(String canonicalWire) {
+        return StringUtils.hasText(canonicalWire)
+                && PURCHASE_OVERVIEW_DOMAIN_CANONICAL_WIRES.contains(canonicalWire);
+    }
+
     public static final String SOURCE_SELF_PURCHASE = "SELF_PURCHASE";
     public static final String SOURCE_SUPPLIER_PURCHASE = "SUPPLIER_PURCHASE";
     public static final String SOURCE_ALL = "ALL";
 
+    /** 采购追问明细 canonical：按来源（自采/供货商订货/其它）拆桶。 */
+    public static final String DETAIL_WANTED_SOURCE_BREAKDOWN = "SOURCE_BREAKDOWN";
+    /** 商品锚下按每个供货商列采购金额/数量（与 {@link #DETAIL_WANTED_SOURCE_BREAKDOWN} 不同）。 */
+    public static final String DETAIL_WANTED_SUPPLIER_BREAKDOWN = "SUPPLIER_BREAKDOWN";
+    public static final String DETAIL_WANTED_SUPPLIER_UNIT_PRICE = "SUPPLIER_UNIT_PRICE";
+
     /**
-     * 用户话术是否指向「自采/自行采购」渠道（与 {@link #SOURCE_SELF_PURCHASE} 对齐）。
-     * 仅用于解析合并等显式归一化，不可替代结构化 JSON。
+     * 采购 {@code semanticSlots.detailWanted} 枚举归一（槽位 canonical，非用户原话 if）。
+     * {@link #DETAIL_WANTED_SUPPLIER_BREAKDOWN} 与 {@link #DETAIL_WANTED_SOURCE_BREAKDOWN} 为独立契约，不可互转。
      */
-    public static boolean userMessageIndicatesSelfPurchaseChannel(String normalizedUserMessage) {
-        if (!StringUtils.hasText(normalizedUserMessage)) {
-            return false;
+    public static String canonicalDetailWanted(
+            String detailWanted,
+            String queryObject,
+            String operation,
+            String structuredIntentDetailWire) {
+        if (!StringUtils.hasText(detailWanted)) {
+            return null;
         }
-        String n = normalizedUserMessage.replace(" ", "").replace("\u3000", "");
-        return n.contains("自行采购")
-                || n.contains("自采购")
-                || n.contains("自采")
-                || n.contains("自购");
+        String dw = detailWanted.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+        return dw.isEmpty() ? null : dw;
+    }
+
+    /**
+     * 采购 {@code semanticSlots.operation} 槽位归一（纯枚举合同，无 previousTurn）。
+     * <p>DETAIL→BREAKDOWN 等同义归一由 {@link com.nongxinle.ai.harness.followup.PurchaseDrilldownMatrix} 统一定义。
+     */
+    public static String canonicalOperation(
+            String operation,
+            String detailWanted,
+            String queryObject,
+            String anchorPolicy,
+            String structuredIntentDetailWire) {
+        return com.nongxinle.ai.harness.followup.PurchaseDrilldownMatrix.canonicalOperation(
+                operation, detailWanted, queryObject, anchorPolicy, structuredIntentDetailWire);
+    }
+
+    private static String normalizeSlotEnumToken(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        String t = raw.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+        return t.isEmpty() ? null : t;
     }
 
     public static final String STRUCTURED_STOCK_REDUCE_OVERVIEW_SUMMARY = "stock_reduce_overview";
@@ -99,9 +158,35 @@ public final class AiQuerySemanticLexicon {
     public static final String STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH = "dish_sales_amount_ranking_high";
     /** 菜品销量（份数）由低到高排行。 */
     public static final String STRUCTURED_DISH_SALES_COUNT_RANKING_LOW = "dish_sales_count_ranking_low";
+    /** 菜品销量总览 / 卖得最好（Matrix P1 别名 → 份数排行高）。 */
+    public static final String STRUCTURED_DISH_SALES_OVERVIEW = "dish_sales_overview";
+    /** 销量排行高（Matrix P1 别名 → {@link #STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH}）。 */
+    public static final String STRUCTURED_DISH_SALES_RANKING_HIGH = "dish_sales_ranking_high";
+    /** 销量排行低（Matrix P1 别名 → {@link #STRUCTURED_DISH_SALES_COUNT_RANKING_LOW}）。 */
+    public static final String STRUCTURED_DISH_SALES_RANKING_LOW = "dish_sales_ranking_low";
+    /** 单菜销量/份数。 */
+    public static final String STRUCTURED_DISH_SALES_SINGLE_DISH = "dish_sales_single_dish";
+    /** 单店范围内菜品销量排行高。 */
+    public static final String STRUCTURED_DISH_SALES_STORE_RANKING = "dish_sales_store_ranking";
+    /** 单店 + 点名菜销量。 */
+    public static final String STRUCTURED_DISH_SALES_STORE_SINGLE_DISH = "dish_sales_store_single_dish";
+    /** 菜品销量趋势（P1 无日序列 planType）。 */
+    public static final String STRUCTURED_DISH_SALES_TREND = "dish_sales_trend";
     public static final String STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN = "dish_ingredient_cost_breakdown";
 
     public static final String STRUCTURED_REVENUE_OVERVIEW_SUMMARY = "revenue_overview_summary";
+    /** 集团/默认范围营业额总览（Matrix P1 别名，canonical → {@link #STRUCTURED_REVENUE_OVERVIEW_SUMMARY}）。 */
+    public static final String STRUCTURED_REVENUE_OVERVIEW = "revenue_overview";
+    /** 单店营业额总览（Matrix P1；planType 仍为 {@code REVENUE_OVERVIEW} + STORE scope）。 */
+    public static final String STRUCTURED_REVENUE_SINGLE_STORE_OVERVIEW = "revenue_single_store_overview";
+    /** 两店/多店营业额对比（Matrix P1；执行降级为门店排行 + knownGap）。 */
+    public static final String STRUCTURED_REVENUE_STORE_COMPARE = "revenue_store_compare";
+    /** 跨期对比（本月 vs 上月等；P1 无独立 SQL/planType）。 */
+    public static final String STRUCTURED_REVENUE_PERIOD_COMPARE = "revenue_period_compare";
+    /** 按日营业额峰值/排行（Matrix P1 别名 → {@link #STRUCTURED_REVENUE_DAILY_AMOUNT_RANKING}）。 */
+    public static final String STRUCTURED_REVENUE_DAILY_RANKING = "revenue_daily_ranking";
+    /** 营业额趋势（P1 无日序列 planType）。 */
+    public static final String STRUCTURED_REVENUE_TREND = "revenue_trend";
     public static final String STRUCTURED_REVENUE_DINE_IN_OVERVIEW = "revenue_dine_in_overview";
     public static final String STRUCTURED_REVENUE_TAKEOUT_OVERVIEW = "revenue_takeout_overview";
     public static final String STRUCTURED_REVENUE_PLATFORM_RANKING = "revenue_platform_ranking";
@@ -130,8 +215,28 @@ public final class AiQuerySemanticLexicon {
     public static final String STRUCTURED_STORE_RISK_RANKING = "store_risk_ranking";
 
     /**
+     * D-13.2：上一轮 STORE 锚点后追问「具体什么问题 / 原因」等，Resolver 写入；Planner 仍走经营诊断四域，Composer 读 {@link DiagnosisPlan}。
+     */
+    public static final String STRUCTURED_STORE_RISK_REASONS_DRILLDOWN = "store_risk_reasons_drilldown";
+
+    /** BD-E：诊断内子域归因 — 是否采购问题（不切 Purchase 专答路径）。 */
+    public static final String STRUCTURED_STORE_DOMAIN_ATTRIBUTION_PURCHASE =
+            "store_domain_attribution_purchase";
+    /** BD-F：诊断内子域归因 — 是否出库问题。 */
+    public static final String STRUCTURED_STORE_DOMAIN_ATTRIBUTION_STOCK_REDUCE =
+            "store_domain_attribution_stock_reduce";
+    /** BD-G：诊断内子域归因 — 是否毛利问题。 */
+    public static final String STRUCTURED_STORE_DOMAIN_ATTRIBUTION_DISH_PROFIT =
+            "store_domain_attribution_dish_profit";
+    /** BD-K：诊断内改进行动追问（宣读 {@link com.nongxinle.ai.dto.business.DiagnosisPlan#getActionSuggestions()}）。 */
+    public static final String STRUCTURED_DIAGNOSIS_ACTION_FOLLOWUP = "diagnosis_action_followup";
+
+    /**
      * 库存偏低 / 不足风险提示（账面启发式 {@code lowStockItems}；非真实安全库存线）。
      */
+    /** 库房库存现量总览（与 {@code warehouse_stock_overview_path} / Tool id 对齐；非出库 {@code stock_reduce_overview}）。 */
+    public static final String STRUCTURED_WAREHOUSE_STOCK_OVERVIEW = "warehouse_stock_overview";
+
     public static final String STRUCTURED_WAREHOUSE_STOCK_LOW_RISK = "warehouse_stock_low_risk";
     /**
      * 「需要补货」语义锚点（诚实降级：不得推断精确订货量）。
@@ -149,6 +254,10 @@ public final class AiQuerySemanticLexicon {
     public static final String STRUCTURED_WAREHOUSE_STOCK_AMOUNT_RANKING = "warehouse_stock_amount_ranking";
     /** 库房维度库存商品种类数排行（同上）。 */
     public static final String STRUCTURED_WAREHOUSE_STOCK_ITEM_COUNT_RANKING = "warehouse_stock_item_count_ranking";
+    /** 商品维度库存剩余金额排行（低→高；由 Tool {@code goodsStockAmountRankingAsc} 支撑）。 */
+    public static final String STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW = "goods_stock_amount_ranking_low";
+    /** 临期/保质期追问（P1 无专链 SQL；Matrix knownGap）。 */
+    public static final String STRUCTURED_WAREHOUSE_NEAR_EXPIRY = "warehouse_near_expiry";
 
     private static String toLowerSnakeWire(String raw) {
         String t = raw.trim().replace('-', '_');
@@ -169,6 +278,8 @@ public final class AiQuerySemanticLexicon {
         }
         String snake = toLowerSnakeWire(raw);
         return switch (snake) {
+            // 字面 ALL/混用 token：子口径_wire 归一为出库总览（facet ALL 不应以字面 ALL 留在 wire）。
+            case "all" -> STRUCTURED_STOCK_REDUCE_OVERVIEW_SUMMARY;
             // Merge / v2 可能将 metric.stockReduceType 原样写入 structuredIntentDetail（TYPE1…），归一到与 Builder 一致的 snake wire。
             case "type1" -> STRUCTURED_PRODUCE_CONSUME;
             case "type2" -> STRUCTURED_WASTE;
@@ -202,6 +313,7 @@ public final class AiQuerySemanticLexicon {
                     "dish_ingredient_cost_gap_ranking_max" -> STRUCTURED_DISH_GAP_RANKING_MAX;
             case "purchase_amount_ranking_high",
                     "purchase_goods_amount_ranking_high",
+                    "goods_purchase_amount_ranking",
                     "goods_purchase_amount_ranking_high",
                     "purchase_goods_purchase_amount_ranking_high",
                     "highest_goods_purchase_amount_ranking" ->
@@ -220,8 +332,8 @@ public final class AiQuerySemanticLexicon {
                     "purchase_abnormal_quantity" -> STRUCTURED_PURCHASE_QUANTITY_ANOMALY;
             case "purchase_goods_anomaly",
                     "purchase_anomaly_goods",
-                    "goods_purchase_anomaly",
-                    "purchase_goods_amount_anomaly" -> STRUCTURED_PURCHASE_GOODS_ANOMALY;
+                    "goods_purchase_anomaly" -> STRUCTURED_PURCHASE_GOODS_ANOMALY;
+            // 注意：勿将 purchase_goods_amount_anomaly 规到本 wire —— 模型常把「金额最高/排行」误标为该枚举，合并层会据用户原文升到 amount ranking。
             case "purchase_goods_amount_spike",
                     "purchase_amount_spike",
                     "purchase_amount_abnormal_increase",
@@ -238,6 +350,15 @@ public final class AiQuerySemanticLexicon {
                     "purchase_not_used_after_purchase",
                     "purchase_no_verify_after_purchase",
                     "purchase_long_time_no_reduce" -> STRUCTURED_PURCHASE_SLOW_MOVING_RISK;
+            case STRUCTURED_WAREHOUSE_STOCK_OVERVIEW,
+                    "warehouse_stock_overview_summary",
+                    "warehouse_overview",
+                    "inventory_overview",
+                    "stock_overview",
+                    "stock_status_overview",
+                    "warehouse_stock_status",
+                    "inventory_status",
+                    "stock_query" -> STRUCTURED_WAREHOUSE_STOCK_OVERVIEW;
             case STRUCTURED_WAREHOUSE_STOCK_OVERSTOCK_RISK,
                     "warehouse_overstock_risk",
                     "stock_overstock_risk",
@@ -261,7 +382,7 @@ public final class AiQuerySemanticLexicon {
                     "purchase_not_used_expiring",
                     "purchase_freshness_warning" -> STRUCTURED_PURCHASE_FRESHNESS_RISK;
             case STRUCTURED_DISH_SALES_RANKING,
-                    "dish_sales_ranking_high",
+                    STRUCTURED_DISH_SALES_RANKING_HIGH,
                     "dish_sales_count_ranking",
                     "dish_sold_count_ranking_high",
                     "dish_sold_portions_ranking_high" -> STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
@@ -269,10 +390,24 @@ public final class AiQuerySemanticLexicon {
                     "dish_revenue_ranking_high",
                     "dish_sales_revenue_ranking_high",
                     "dish_list_price_revenue_ranking_high" -> STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH;
-            case "dish_sales_count_ranking_low",
-                    "dish_sales_ranking_low",
+            case STRUCTURED_DISH_SALES_COUNT_RANKING_LOW,
+                    STRUCTURED_DISH_SALES_RANKING_LOW,
                     "dish_sold_count_ranking_low",
                     "dish_sold_portions_ranking_low" -> STRUCTURED_DISH_SALES_COUNT_RANKING_LOW;
+            case STRUCTURED_DISH_SALES_OVERVIEW,
+                    "dish_sales_best_seller",
+                    "dish_sales_top_seller" -> STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
+            case STRUCTURED_DISH_SALES_SINGLE_DISH,
+                    "dish_sold_portions_detail",
+                    "dish_sales_quantity_detail" -> STRUCTURED_DISH_SALES_SINGLE_DISH;
+            case STRUCTURED_DISH_SALES_STORE_RANKING,
+                    "dish_sales_store_top",
+                    "store_dish_sales_ranking_high" -> STRUCTURED_DISH_SALES_STORE_RANKING;
+            case STRUCTURED_DISH_SALES_STORE_SINGLE_DISH,
+                    "store_dish_sales_single" -> STRUCTURED_DISH_SALES_STORE_SINGLE_DISH;
+            case STRUCTURED_DISH_SALES_TREND,
+                    "dish_sales_trend_series",
+                    "dish_sold_portions_trend" -> STRUCTURED_DISH_SALES_TREND;
             case "stock_below_safety",
                     "below_safety_stock",
                     "low_stock",
@@ -307,7 +442,40 @@ public final class AiQuerySemanticLexicon {
                     "warehouse_stock_goods_count_ranking",
                     "warehouse_inventory_goods_count_ranking",
                     "warehouse_sku_count_ranking" -> STRUCTURED_WAREHOUSE_STOCK_ITEM_COUNT_RANKING;
-            default -> snake;
+            case STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW,
+                    "goods_stock_amount_ranking_asc",
+                    "warehouse_goods_stock_min",
+                    "goods_inventory_amount_ranking_low",
+                    "which_goods_stock_least" -> STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW;
+            case STRUCTURED_WAREHOUSE_NEAR_EXPIRY,
+                    "warehouse_expiry_risk",
+                    "near_expiry_stock",
+                    "stock_near_expiry",
+                    "inventory_expiring_soon" -> STRUCTURED_WAREHOUSE_NEAR_EXPIRY;
+            case STRUCTURED_REVENUE_OVERVIEW -> STRUCTURED_REVENUE_OVERVIEW_SUMMARY;
+            case STRUCTURED_REVENUE_SINGLE_STORE_OVERVIEW -> STRUCTURED_REVENUE_SINGLE_STORE_OVERVIEW;
+            case STRUCTURED_REVENUE_STORE_COMPARE -> STRUCTURED_REVENUE_STORE_COMPARE;
+            case STRUCTURED_REVENUE_PERIOD_COMPARE,
+                    "revenue_period_comparison",
+                    "revenue_mom_compare",
+                    "revenue_month_compare",
+                    "revenue_month_over_month" -> STRUCTURED_REVENUE_PERIOD_COMPARE;
+            case "revenue_daily_ranking",
+                    "revenue_daily_peak",
+                    "revenue_day_amount_ranking",
+                    "revenue_highest_day" -> STRUCTURED_REVENUE_DAILY_AMOUNT_RANKING;
+            case STRUCTURED_REVENUE_TREND,
+                    "revenue_trend_series",
+                    "revenue_amount_trend",
+                    "revenue_time_series" -> STRUCTURED_REVENUE_TREND;
+            default -> {
+                String revenueWire = com.nongxinle.ai.harness.followup.RevenueDrilldownMatrix.canonicalWireSupplement(snake);
+                if (revenueWire != null) {
+                    yield revenueWire;
+                }
+                String dishWire = DishProfitDrilldownMatrix.canonicalWireSupplement(snake);
+                yield dishWire != null ? dishWire : snake;
+            }
         };
     }
 
@@ -339,6 +507,37 @@ public final class AiQuerySemanticLexicon {
         return STRUCTURED_STORE_PRIORITY_RANKING.equals(c);
     }
 
+    /** D-13.2：门店风险原因追问（承接上一轮 STORE resultAnchor）。 */
+    public static boolean isStoreRiskReasonsDrilldownStructuredDetail(String structuredIntentDetail) {
+        String c = canonicalStructuredIntentDetailWire(structuredIntentDetail);
+        return STRUCTURED_STORE_RISK_REASONS_DRILLDOWN.equals(c);
+    }
+
+    public static boolean isBusinessDiagnosisSummaryStructuredDetail(String structuredIntentDetail) {
+        String c = canonicalStructuredIntentDetailWire(structuredIntentDetail);
+        return STRUCTURED_BUSINESS_DIAGNOSIS_SUMMARY.equals(c);
+    }
+
+    public static boolean isStoreDomainAttributionPurchaseStructuredDetail(String structuredIntentDetail) {
+        String c = canonicalStructuredIntentDetailWire(structuredIntentDetail);
+        return STRUCTURED_STORE_DOMAIN_ATTRIBUTION_PURCHASE.equals(c);
+    }
+
+    public static boolean isStoreDomainAttributionStockReduceStructuredDetail(String structuredIntentDetail) {
+        String c = canonicalStructuredIntentDetailWire(structuredIntentDetail);
+        return STRUCTURED_STORE_DOMAIN_ATTRIBUTION_STOCK_REDUCE.equals(c);
+    }
+
+    public static boolean isStoreDomainAttributionDishProfitStructuredDetail(String structuredIntentDetail) {
+        String c = canonicalStructuredIntentDetailWire(structuredIntentDetail);
+        return STRUCTURED_STORE_DOMAIN_ATTRIBUTION_DISH_PROFIT.equals(c);
+    }
+
+    public static boolean isDiagnosisActionFollowupStructuredDetail(String structuredIntentDetail) {
+        String c = canonicalStructuredIntentDetailWire(structuredIntentDetail);
+        return STRUCTURED_DIAGNOSIS_ACTION_FOLLOWUP.equals(c);
+    }
+
     /**
      * {@code business_overview_path} 上四域 MultiAgent 编排应对齐的结构化子意图（经营综合汇总/多店经营综合对比）；
      * 与 {@link com.nongxinle.ai.graph.business.DiagnosisPlanBuilder DiagnosisPlanBuilder} 挂载 DiagnosisPlan 的经营概览表面一致。
@@ -358,6 +557,36 @@ public final class AiQuerySemanticLexicon {
     public static boolean isDishLowProfitReasonStructuredWire(String structuredIntentDetail) {
         String c = canonicalStructuredIntentDetailWire(structuredIntentDetail);
         return STRUCTURED_DISH_LOW_PROFIT_REASON.equals(c);
+    }
+
+    public static boolean isStructuredRevenueDetail(String structuredIntentDetail) {
+        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
+            return false;
+        }
+        String t = canonicalStructuredIntentDetailWire(structuredIntentDetail.trim());
+        return STRUCTURED_REVENUE_OVERVIEW_SUMMARY.equals(t)
+                || STRUCTURED_REVENUE_SINGLE_STORE_OVERVIEW.equals(t)
+                || STRUCTURED_REVENUE_STORE_COMPARE.equals(t)
+                || STRUCTURED_REVENUE_PERIOD_COMPARE.equals(t)
+                || STRUCTURED_REVENUE_TREND.equals(t)
+                || STRUCTURED_REVENUE_DINE_IN_OVERVIEW.equals(t)
+                || STRUCTURED_REVENUE_TAKEOUT_OVERVIEW.equals(t)
+                || STRUCTURED_REVENUE_PLATFORM_RANKING.equals(t)
+                || STRUCTURED_REVENUE_ORDER_COUNT_OVERVIEW.equals(t)
+                || STRUCTURED_REVENUE_CUSTOMER_COUNT_OVERVIEW.equals(t)
+                || STRUCTURED_REVENUE_AVERAGE_ORDER_VALUE.equals(t)
+                || STRUCTURED_REVENUE_DAILY_AMOUNT_RANKING.equals(t)
+                || STRUCTURED_REVENUE_STORE_AMOUNT_RANKING.equals(t)
+                || STRUCTURED_REVENUE_CHANNEL_BREAKDOWN.equals(t);
+    }
+
+    public static boolean isRevenueRankingWire(String structuredIntentDetail) {
+        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
+            return false;
+        }
+        String t = canonicalStructuredIntentDetailWire(structuredIntentDetail.trim());
+        return STRUCTURED_REVENUE_STORE_AMOUNT_RANKING.equals(t)
+                || STRUCTURED_REVENUE_DAILY_AMOUNT_RANKING.equals(t);
     }
 
     public static boolean isStructuredStockReduceDetail(String structuredIntentDetail) {
@@ -385,6 +614,30 @@ public final class AiQuerySemanticLexicon {
             return false;
         }
         return isStructuredStockReduceDetail(t);
+    }
+
+    /**
+     * 出库专线排行类 structured wire（须保护不被 {@code metric.stockReduceType} / ALL facet 或上一轮排行形态覆盖）。
+     */
+    public static boolean isStockReduceOutboundRankingWire(String structuredIntentDetail) {
+        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
+            return false;
+        }
+        String t = canonicalStructuredIntentDetailWire(structuredIntentDetail.trim());
+        return STRUCTURED_GOODS_OUTBOUND_RANKING.equals(t)
+                || STRUCTURED_GOODS_OUTBOUND_COUNT_RANKING.equals(t)
+                || STRUCTURED_STORE_OUTBOUND_AMOUNT_RANKING.equals(t);
+    }
+
+    /**
+     * 出库非排行 structured wire（总览与各子口径 facet）；当前轮已显式给出时不得被多店排行规则覆盖。
+     */
+    public static boolean isNonRankingStockReduceStructuredWire(String structuredIntentDetail) {
+        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
+            return false;
+        }
+        String t = canonicalStructuredIntentDetailWire(structuredIntentDetail.trim());
+        return isStructuredStockReduceDetail(t) && !isStockReduceOutboundRankingWire(t);
     }
 
     public static boolean isStructuredDishProfitDetail(String structuredIntentDetail) {
@@ -415,6 +668,21 @@ public final class AiQuerySemanticLexicon {
                 || STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(t);
     }
 
+    /** 库房库存现量域 canonical wire（总览 + 风险 + 排行；不含出库 {@code stock_reduce_*}）。 */
+    public static boolean isStructuredWarehouseStockDetail(String structuredIntentDetail) {
+        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
+            return false;
+        }
+        String t = canonicalStructuredIntentDetailWire(structuredIntentDetail.trim());
+        return STRUCTURED_WAREHOUSE_STOCK_OVERVIEW.equals(t)
+                || STRUCTURED_WAREHOUSE_STOCK_LOW_RISK.equals(t)
+                || STRUCTURED_WAREHOUSE_STOCK_REPLENISHMENT_NEEDED.equals(t)
+                || STRUCTURED_WAREHOUSE_STOCK_OVERSTOCK_RISK.equals(t)
+                || STRUCTURED_WAREHOUSE_NEAR_EXPIRY.equals(t)
+                || STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW.equals(t)
+                || isStructuredWarehouseStockRankingDetail(t);
+    }
+
     /** 门店/库房库存排行类 structured wire（Phase 4B；不靠用户原文推断）。 */
     public static boolean isStructuredWarehouseStockRankingDetail(String structuredIntentDetail) {
         if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
@@ -424,7 +692,8 @@ public final class AiQuerySemanticLexicon {
         return STRUCTURED_STORE_STOCK_AMOUNT_RANKING.equals(t)
                 || STRUCTURED_STORE_STOCK_ITEM_COUNT_RANKING.equals(t)
                 || STRUCTURED_WAREHOUSE_STOCK_AMOUNT_RANKING.equals(t)
-                || STRUCTURED_WAREHOUSE_STOCK_ITEM_COUNT_RANKING.equals(t);
+                || STRUCTURED_WAREHOUSE_STOCK_ITEM_COUNT_RANKING.equals(t)
+                || STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW.equals(t);
     }
 
     /** 菜品销量/销售额 structured wire（canonical）。 */
@@ -435,7 +704,14 @@ public final class AiQuerySemanticLexicon {
         String t = canonicalStructuredIntentDetailWire(structuredIntentDetail.trim());
         return STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH.equals(t)
                 || STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH.equals(t)
-                || STRUCTURED_DISH_SALES_COUNT_RANKING_LOW.equals(t);
+                || STRUCTURED_DISH_SALES_COUNT_RANKING_LOW.equals(t)
+                || STRUCTURED_DISH_SALES_OVERVIEW.equals(t)
+                || STRUCTURED_DISH_SALES_RANKING_HIGH.equals(t)
+                || STRUCTURED_DISH_SALES_RANKING_LOW.equals(t)
+                || STRUCTURED_DISH_SALES_SINGLE_DISH.equals(t)
+                || STRUCTURED_DISH_SALES_STORE_RANKING.equals(t)
+                || STRUCTURED_DISH_SALES_STORE_SINGLE_DISH.equals(t)
+                || STRUCTURED_DISH_SALES_TREND.equals(t);
     }
 
     public static boolean isDishProfitRankingStructuredDetail(String structuredIntentDetail) {
@@ -605,6 +881,12 @@ public final class AiQuerySemanticLexicon {
         if (STRUCTURED_REVENUE_OVERVIEW_SUMMARY.equals(w)) {
             return "REVENUE_OVERVIEW_SUMMARY";
         }
+        if (STRUCTURED_REVENUE_PERIOD_COMPARE.equals(w)) {
+            return "REVENUE_PERIOD_COMPARE";
+        }
+        if (STRUCTURED_REVENUE_TREND.equals(w)) {
+            return "REVENUE_TREND";
+        }
         if (STRUCTURED_REVENUE_DINE_IN_OVERVIEW.equals(w)) {
             return "REVENUE_DINE_IN_OVERVIEW";
         }
@@ -646,6 +928,21 @@ public final class AiQuerySemanticLexicon {
         }
         if (STRUCTURED_STORE_PRIORITY_RANKING.equals(w)) {
             return "STORE_PRIORITY_RANKING";
+        }
+        if (STRUCTURED_STORE_RISK_REASONS_DRILLDOWN.equals(w)) {
+            return "STORE_RISK_REASONS";
+        }
+        if (STRUCTURED_STORE_DOMAIN_ATTRIBUTION_PURCHASE.equals(w)) {
+            return "STORE_DOMAIN_ATTRIBUTION_PURCHASE";
+        }
+        if (STRUCTURED_STORE_DOMAIN_ATTRIBUTION_STOCK_REDUCE.equals(w)) {
+            return "STORE_DOMAIN_ATTRIBUTION_STOCK_REDUCE";
+        }
+        if (STRUCTURED_STORE_DOMAIN_ATTRIBUTION_DISH_PROFIT.equals(w)) {
+            return "STORE_DOMAIN_ATTRIBUTION_DISH_PROFIT";
+        }
+        if (STRUCTURED_DIAGNOSIS_ACTION_FOLLOWUP.equals(w)) {
+            return "DIAGNOSIS_ACTION_FOLLOWUP";
         }
         if (STRUCTURED_DISH_PROFIT_OVERVIEW.equals(w)) {
             return "DISH_PROFIT_OVERVIEW";
@@ -694,6 +991,18 @@ public final class AiQuerySemanticLexicon {
         }
         if (STRUCTURED_DISH_SALES_COUNT_RANKING_LOW.equals(w)) {
             return "DISH_SALES_COUNT_RANKING_LOW";
+        }
+        if (STRUCTURED_DISH_SALES_SINGLE_DISH.equals(w) || STRUCTURED_DISH_SALES_STORE_SINGLE_DISH.equals(w)) {
+            return "DISH_SALES_SINGLE_DISH";
+        }
+        if (STRUCTURED_DISH_SALES_STORE_RANKING.equals(w)) {
+            return "DISH_SALES_STORE_RANKING";
+        }
+        if (STRUCTURED_DISH_SALES_TREND.equals(w)) {
+            return "DISH_SALES_TREND";
+        }
+        if (STRUCTURED_DISH_SALES_OVERVIEW.equals(w)) {
+            return "DISH_SALES_OVERVIEW";
         }
         if (STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(w)) {
             return "DISH_INGREDIENT_COST_BREAKDOWN";
@@ -755,6 +1064,10 @@ public final class AiQuerySemanticLexicon {
             case STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH -> "RANKING_SALES";
             case STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH -> "RANKING_SALES_AMOUNT_HIGH";
             case STRUCTURED_DISH_SALES_COUNT_RANKING_LOW -> "RANKING_SALES_COUNT_LOW";
+            case STRUCTURED_DISH_SALES_SINGLE_DISH, STRUCTURED_DISH_SALES_STORE_SINGLE_DISH -> "DETAIL_SALES_SINGLE_DISH";
+            case STRUCTURED_DISH_SALES_STORE_RANKING -> "RANKING_SALES_STORE";
+            case STRUCTURED_DISH_SALES_TREND -> "TREND_SALES";
+            case STRUCTURED_DISH_SALES_OVERVIEW -> "OVERVIEW_SALES";
             case STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN -> "INGREDIENT_BREAKDOWN";
             case STRUCTURED_DISH_LOW_PROFIT_REASON -> "LOW_PROFIT_REASON";
             default -> wireToScreamingSnake(t);

@@ -4,6 +4,9 @@ import com.nongxinle.ai.agent.business.MasterBusinessAgent;
 import com.nongxinle.ai.agent.business.MasterBusinessAgentResult;
 import com.nongxinle.ai.context.*;
 import com.nongxinle.ai.graph.business.scope.BusinessScopeResolutionSupport;
+import com.nongxinle.ai.graph.business.toolrequest.BusinessToolExecutionRequestResolver;
+import com.nongxinle.ai.graph.business.toolrequest.PurchaseToolRequestContext;
+import com.nongxinle.ai.harness.HarnessPlannedToolArgsCapture;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.scope.AiConversationScopeMode;
@@ -47,6 +50,7 @@ public class BusinessToolExecutionNode implements AgentNode {
     private final StockReduceQueryToolExecutor stockReduceQueryToolExecutor;
     private final DishProfitQueryToolExecutor dishProfitQueryToolExecutor;
     private final MasterBusinessAgent masterBusinessAgent;
+    private final BusinessToolExecutionRequestResolver toolExecutionRequestResolver;
 
     @Override
     public String name() {
@@ -76,6 +80,9 @@ public class BusinessToolExecutionNode implements AgentNode {
 
     @Override
     public AiRunState run(AiRunState state) {
+        if (state.isHarnessToolRequestOnly()) {
+            return runHarnessToolRequestCaptureOnly(state);
+        }
         long rid = state.getRunId();
         String hint;
         if (state.isPurchaseCostInsightPath()) {
@@ -127,8 +134,6 @@ public class BusinessToolExecutionNode implements AgentNode {
 
         Map<String, Object> toolEnvelopes = new LinkedHashMap<>();
 
-        MasterBusinessAgentResult classicOverviewMaster =
-                masterBusinessAgent.tryOrchestrateClassicBusinessOverview(state);
         MasterBusinessAgentResult businessOverviewMultiMaster =
                 masterBusinessAgent.tryOrchestrateBusinessOverviewMultiAgent(state);
         MasterBusinessAgentResult revenueMaster = masterBusinessAgent.tryOrchestrateRevenueOverview(state);
@@ -137,7 +142,7 @@ public class BusinessToolExecutionNode implements AgentNode {
         MasterBusinessAgentResult dishProfitMaster = masterBusinessAgent.tryOrchestrateDishProfitAnalysis(state);
         MasterBusinessAgentResult warehouseMaster = masterBusinessAgent.tryOrchestrateWarehouseStockOverview(state);
         mergeMasterBusinessAgentDebug(
-                state, classicOverviewMaster, revenueMaster, purchaseMaster, stockReduceMaster, dishProfitMaster,
+                state, revenueMaster, purchaseMaster, stockReduceMaster, dishProfitMaster,
                 businessOverviewMultiMaster, warehouseMaster);
         final boolean businessOverviewMultiBatch =
                 businessOverviewMultiMaster != null
@@ -161,8 +166,6 @@ public class BusinessToolExecutionNode implements AgentNode {
                 || (dishProfitMaster != null && dishProfitMaster.isMasterAgentEnabled());
         final boolean warehouseHandledByMaster =
                 warehouseMaster != null && warehouseMaster.isMasterAgentEnabled();
-        final boolean classicOverviewToolsHandledByMaster = classicOverviewMaster != null
-                && classicOverviewMaster.isClassicBusinessOverviewMasterPath();
 
         List<String> plan = state.getDataPlanTools();
         try {
@@ -194,11 +197,6 @@ public class BusinessToolExecutionNode implements AgentNode {
                 }
 
                 if (warehouseHandledByMaster && AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)) {
-                    continue;
-                }
-
-                if (classicOverviewToolsHandledByMaster && state.isBusinessOverviewPath()
-                        && AiBusinessToolIds.DEFAULT_BUSINESS_OVERVIEW_TOOLS.contains(toolId)) {
                     continue;
                 }
 
@@ -276,120 +274,83 @@ public class BusinessToolExecutionNode implements AgentNode {
             PurchaseAnswerPlanBuilder.attachIfApplicable(state);
             StockReduceAnswerPlanBuilder.attachIfApplicable(state);
             DailyRevenueAnswerPlanBuilder.attachIfApplicable(state);
+            WarehouseAnswerPlanBuilder.attachIfApplicable(state);
         }
         return state;
     }
 
     /**
-     * 经典经营概览六工具（{@link AiBusinessToolIds#DEFAULT_BUSINESS_OVERVIEW_TOOLS} 与 dataPlan 交集，顺序固定）。
-     * 由 {@link com.nongxinle.ai.agent.business.BusinessOverviewAgent} 独占编排；不重复发布 ToolExecution 节点级
-     * started/finished（沿用外层 {@link #run} 已发布的生命周期事件）。
+     * Harness {@link com.nongxinle.ai.harness.replay.AiHarnessReplayDryRunStage#TOOL_REQUEST_ONLY}：
+     * DataPlanner 已写入 {@code dataPlanTools} 后，仅 {@link BusinessToolExecutionRequestResolver} +
+     * {@link PurchaseOverviewToolExecutor#buildPurchaseOverviewToolArgs} 快照，不跑 Master Agent / Tool.execute / AnswerPlan。
      */
-    public void runClassicBusinessOverviewToolChain(AiRunState state) {
-        if (state == null) {
-            return;
-        }
+    private AiRunState runHarnessToolRequestCaptureOnly(AiRunState state) {
         long rid = state.getRunId();
+        publisher.publish(rid, "agent_started", Map.of(
+                "agent", "ToolExecutionNode",
+                "displayText", "Harness：规划 Tool 入参（不执行 SQL）…"
+        ));
+
         Long dept = state.getDepartmentId();
         Long dis = state.getDistributerId();
         Long deptForScopedTools = toolDepartmentResolutionSupport.resolveToolDepartmentFatherId(state, dept);
-        Long deptForBuildInsightTools = toolDepartmentResolutionSupport.resolveBuildInsightDepartmentFatherId(state,
+        Long deptForBuildInsight = toolDepartmentResolutionSupport.resolveBuildInsightDepartmentFatherId(state,
                 deptForScopedTools);
         String start = state.getStatStartDate();
         String stop = state.getStatEndDate();
-        if (state.isBusinessOverviewPath() || state.isDishProfitPath() || state.isWarehouseStockOverviewPath()
-                || state.isPurchaseCostInsightPath()
-                || state.isStockReduceQueryPath()
-                || state.isRevenueOverviewPath()
-                || state.isBusinessDiagnosisPath()) {
-            AiResolvedQueryContext rqTw = state.getResolvedQueryContext();
-            if (rqTw != null && rqTw.getTimeWindow() != null) {
-                if (rqTw.getTimeWindow().getStartDate() != null) {
-                    start = rqTw.getTimeWindow().getStartDate().toString();
-                }
-                if (rqTw.getTimeWindow().getEndDate() != null) {
-                    stop = rqTw.getTimeWindow().getEndDate().toString();
-                }
-                state.setStatStartDate(start);
-                state.setStatEndDate(stop);
+        AiResolvedQueryContext rqTw = state.getResolvedQueryContext();
+        if (rqTw != null && rqTw.getTimeWindow() != null) {
+            if (rqTw.getTimeWindow().getStartDate() != null) {
+                start = rqTw.getTimeWindow().getStartDate().toString();
             }
+            if (rqTw.getTimeWindow().getEndDate() != null) {
+                stop = rqTw.getTimeWindow().getEndDate().toString();
+            }
+            state.setStatStartDate(start);
+            state.setStatEndDate(stop);
         }
-        Map<String, Object> toolEnvelopes = new LinkedHashMap<>();
-        List<String> dataPlan = state.getDataPlanTools();
-        try {
-            for (String toolId : AiBusinessToolIds.DEFAULT_BUSINESS_OVERVIEW_TOOLS) {
-                if (dataPlan == null || !dataPlan.contains(toolId)) {
-                    continue;
-                }
+
+        LinkedHashMap<String, Map<String, Object>> planned = new LinkedHashMap<>();
+        List<String> plan = state.getDataPlanTools();
+        if (plan != null) {
+            for (String toolId : plan) {
                 if (state.isCancelled()) {
-                    publisher.publish(rid, "tool_finished", Map.of(
-                            "tool", toolId,
-                            "skipped", true,
-                            "displayText", "运行已取消，跳过后续工具",
-                            "success", false
-                    ));
                     break;
                 }
-                if (AiBusinessToolIds.REVENUE_QUERY.equals(toolId)) {
-                    ToolResult executed = revenueQueryToolExecutor.executeRevenueQuery(rid, state, deptForScopedTools,
-                            deptForBuildInsightTools, dis, start, stop, toolEnvelopes);
-                    if (executed == null) {
-                        continue;
-                    }
+                AiResolvedQueryContext rq = state.getResolvedQueryContext();
+                if (AiBusinessToolIds.PURCHASE_OVERVIEW.equals(toolId)) {
+                    PurchaseToolRequestContext ctx =
+                            toolExecutionRequestResolver.buildPurchaseRequestContext(state, rq);
+                    Map<String, Object> args = PurchaseOverviewToolExecutor.buildPurchaseOverviewToolArgs(
+                            deptForScopedTools, dis, start, stop, state);
+                    planned.put(
+                            toolId,
+                            HarnessPlannedToolArgsCapture.snapshotPurchase(state, rq, toolId, args, ctx));
                     continue;
                 }
-                ToolRequest req = ToolRequest.builder()
-                        .runId(rid)
-                        .userId(state.getUserId())
-                        .toolName(toolId)
-                        .args(toolArgs(toolId, departmentIdArgumentForTool(toolId, deptForScopedTools,
-                                deptForBuildInsightTools), dis, start, stop, toolEnvelopes, state))
-                        .resolvedQueryContext(state.getResolvedQueryContext())
-                        .build();
-                var perm = permissionGuard.evaluateToolInvocation(state, req);
-                if (!perm.isAllowed()) {
-                    AiPermissionDenied denial = perm.getDenial();
-                    if (denial != null) {
-                        state.getPermissionDenials().add(denial);
-                    }
-                    LinkedHashMap<String, Object> ex = new LinkedHashMap<>();
-                    ex.put("tool", toolId);
-                    publisher.publishError(rid,
-                            denial != null ? denial.getReason() : "无权调用工具 " + toolId,
-                            "tool permission denied",
-                            "TOOL_PERMISSION_DENIED",
-                            "BusinessError",
-                            ex,
-                            denial);
-                    publisher.publish(rid, "tool_finished", Map.of(
-                            "tool", toolId,
-                            "skipped", true,
-                            "permissionDenied", denial != null ? denial.asDataMap() : Map.of(),
-                            "displayText", "无权执行该工具：" + toolId,
-                            "success", false
-                    ));
-                    continue;
-                }
-                publisher.publish(rid, "tool_started", Map.of(
-                        "tool", toolId,
-                        "displayText", "调用工具：" + toolId
-                ));
-                ToolResult executed = toolRegistry.find(toolId)
-                        .map(t -> t.execute(req))
-                        .orElseGet(() -> ToolResult.builder().success(false).message("unknown_tool").data(Map.of()).build());
-                Map<String, Object> payload = unwrapData(executed.getData());
-                state.getToolResults().put(toolId, payload != null ? payload : Map.of());
-                toolEnvelopes.put(toolId, state.getToolResults().get(toolId));
-                publisher.publish(rid, "tool_finished", Map.of(
-                        "tool", toolId,
-                        "displayText", executed.isSuccess() ? "工具已完成：" + toolId : "工具失败：" + toolId,
-                        "success", executed.isSuccess()
-                ));
+                Map<String, Object> args = toolArgs(
+                        toolId,
+                        departmentIdArgumentForTool(toolId, deptForScopedTools, deptForBuildInsight),
+                        dis,
+                        start,
+                        stop,
+                        new LinkedHashMap<>(),
+                        state);
+                planned.put(toolId, HarnessPlannedToolArgsCapture.snapshotToolRequest(state, rq, toolId, args));
             }
-        } finally {
-            PurchaseAnswerPlanBuilder.attachIfApplicable(state);
-            DailyRevenueAnswerPlanBuilder.attachIfApplicable(state);
         }
+
+        state.setPlannedToolArgsByToolId(planned);
+        state.setToolRequestCaptured(!planned.isEmpty());
+        state.setToolExecuteSkipped(true);
+
+        publisher.publish(rid, "agent_finished", Map.of(
+                "agent", "ToolExecutionNode",
+                "displayText", "Harness：Tool 入参快照完成（未执行 SQL）",
+                "toolRequestCaptured", state.isToolRequestCaptured(),
+                "plannedToolCount", planned.size()
+        ));
+        return state;
     }
 
     private static final List<String> BUSINESS_OVERVIEW_MULTI_ORCH_PROMOTE_KEYS = List.of(
@@ -420,7 +381,6 @@ public class BusinessToolExecutionNode implements AgentNode {
 
     private static void mergeMasterBusinessAgentDebug(
             AiRunState state,
-            MasterBusinessAgentResult classicOverviewMr,
             MasterBusinessAgentResult revenueMr,
             MasterBusinessAgentResult purchaseMr,
             MasterBusinessAgentResult stockReduceMr,
@@ -431,9 +391,6 @@ public class BusinessToolExecutionNode implements AgentNode {
             return;
         }
         LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
-        if (classicOverviewMr != null && classicOverviewMr.getDebug() != null && !classicOverviewMr.getDebug().isEmpty()) {
-            dbg.putAll(classicOverviewMr.getDebug());
-        }
         LinkedHashMap<String, Object> multiNested = null;
         Map<String, Object> multiFlatSource = null;
         if (businessOverviewMultiMr != null
@@ -465,12 +422,13 @@ public class BusinessToolExecutionNode implements AgentNode {
                 }
             }
         }
-        BusinessOverviewExecutionDebugContract.apply(dbg, state, classicOverviewMr, businessOverviewMultiMr);
+        BusinessOverviewExecutionDebugContract.apply(dbg, state, businessOverviewMultiMr);
         state.setMasterBusinessAgentDebug(dbg.isEmpty() ? null : dbg);
     }
 
     private static Long departmentIdArgumentForTool(String toolId, Long defaultDept, Long buildInsightDept) {
-        if (AiBusinessToolIds.DISH_PROFIT_ANALYSIS.equals(toolId) || AiBusinessToolIds.DISH_SALES_QUERY.equals(toolId)) {
+        if (AiBusinessToolIds.DISH_PROFIT_ANALYSIS.equals(toolId)
+                || AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN.equals(toolId)) {
             return buildInsightDept;
         }
         return defaultDept;
@@ -486,6 +444,23 @@ public class BusinessToolExecutionNode implements AgentNode {
      */
     static boolean shouldRouteGroupWideDishInsight(AiRunState state) {
         return shouldRouteGroupWideBusinessOverview(state) && resolvedOrgIndicatesGroupOrMultiStoreDishAggregate(state);
+    }
+
+    /**
+     * 出库 Tool 走 harness 入参（含 narrative / group 聚合）：专线、经营诊断，以及四域内嵌链（概览 MULTI / 成本诊断）。
+     */
+    static boolean usesStockReduceHarnessToolArgs(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        if (state.isStockReduceQueryPath() || state.isBusinessDiagnosisPath()) {
+            return true;
+        }
+        List<String> plan = state.getDataPlanTools();
+        if (plan == null || !plan.contains(AiBusinessToolIds.STOCK_REDUCE_QUERY)) {
+            return false;
+        }
+        return state.isCostInsightPath() || state.isBusinessOverviewPath();
     }
 
     static boolean resolvedOrgIndicatesGroupOrMultiStoreDishAggregate(AiRunState state) {
@@ -525,10 +500,12 @@ public class BusinessToolExecutionNode implements AgentNode {
     private Map<String, Object> toolArgs(String toolId, Long dept, Long dis, String start, String stop,
             Map<String, Object> envelopes, AiRunState state) {
         if (AiBusinessToolIds.STOCK_REDUCE_QUERY.equals(toolId) && state != null
-                && (state.isStockReduceQueryPath() || state.isBusinessDiagnosisPath())) {
+                && usesStockReduceHarnessToolArgs(state)) {
             return stockReduceQueryToolExecutor.buildHarnessToolArgs(dept, dis, start, stop, state);
         }
-        if (AiBusinessToolIds.DISH_PROFIT_ANALYSIS.equals(toolId) && state != null) {
+        if ((AiBusinessToolIds.DISH_PROFIT_ANALYSIS.equals(toolId)
+                        || AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN.equals(toolId))
+                && state != null) {
             Long deptScoped = toolDepartmentResolutionSupport.resolveToolDepartmentFatherId(state, state.getDepartmentId());
             Long deptBuild =
                     toolDepartmentResolutionSupport.resolveBuildInsightDepartmentFatherId(state, deptScoped);
@@ -536,8 +513,8 @@ public class BusinessToolExecutionNode implements AgentNode {
                     deptScoped, deptBuild, dis, start, stop, state);
         }
         Map<String, Object> m = new HashMap<>(8);
-        if (AiBusinessToolIds.REVENUE_QUERY.equals(toolId) || AiBusinessToolIds.BUSINESS_OVERVIEW_QUERY.equals(toolId)
-                || AiBusinessToolIds.STOCK_REDUCE_QUERY.equals(toolId) || AiBusinessToolIds.STOCK_QUERY.equals(toolId)
+        if (AiBusinessToolIds.REVENUE_QUERY.equals(toolId)
+                || AiBusinessToolIds.STOCK_REDUCE_QUERY.equals(toolId)
                 || AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)) {
             boolean warehouseOverviewTool = AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId);
             if (warehouseOverviewTool && state.isGroupWarehouseStockOverview()) {
@@ -574,45 +551,16 @@ public class BusinessToolExecutionNode implements AgentNode {
                 if (dept != null) {
                     m.put(AiBusinessToolIds.ARG_DEPARTMENT_FATHER_ID, dept);
                 }
-                if (dis != null && (AiBusinessToolIds.STOCK_QUERY.equals(toolId)
-                        || AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId))) {
+                if (dis != null && AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)) {
                     m.put(AiBusinessToolIds.ARG_DIS_ID, dis);
                 }
                 if (warehouseOverviewTool) {
                     putWarehouseResolvedScopeArgs(m, state);
                 }
             }
-            if (AiBusinessToolIds.BUSINESS_OVERVIEW_QUERY.equals(toolId)
-                    && shouldRouteGroupWideBusinessOverview(state)) {
-                m.put(AiBusinessToolIds.ARG_GROUP_WIDE_OVERVIEW_HINT, Boolean.TRUE);
-                AiQueryScope scope = state.getScope();
-                var ctx = state.getAiUserContext();
-
-                List<Integer> resolvedFromPublicCtx = extractVisibleStoreDepartmentIds(state.getResolvedQueryContext());
-                if (!resolvedFromPublicCtx.isEmpty()) {
-                    m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS, new ArrayList<>(resolvedFromPublicCtx));
-                    m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, resolvedFromPublicCtx.size());
-                } else if (scope != null) {
-                    if (scope.getResolvedDepartmentIds() != null && !scope.getResolvedDepartmentIds().isEmpty()) {
-                        m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS,
-                                new ArrayList<>(scope.getResolvedDepartmentIds()));
-                    }
-                    m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, scope.getParentStoreCount());
-                }
-                if (ctx != null) {
-                    String roleTag = ctx.getRoleCode();
-                    if ((roleTag == null || roleTag.isBlank()) && ctx.getSourceAdminRole() != null) {
-                        roleTag = AiRoleMapper.resolveAdmin(ctx.getSourceAdminRole())
-                                .map(AiRoleMapper.AiRoleDefinition::roleCode)
-                                .orElse(null);
-                    }
-                    if (roleTag != null && !roleTag.isBlank()) {
-                        m.put(AiBusinessToolIds.ARG_AI_ROLE_CODE, roleTag);
-                    }
-                }
-            }
             if (AiBusinessToolIds.REVENUE_QUERY.equals(toolId) && state != null
-                    && (state.isRevenueOverviewPath() || state.isBusinessOverviewPath())) {
+                    && (state.isRevenueOverviewPath() || state.isBusinessOverviewPath()
+                    || state.isBusinessDiagnosisPath() || state.isCostInsightPath())) {
                 boolean multiVisible = extractVisibleStoreDepartmentIds(state.getResolvedQueryContext()).size() > 1;
                 if (shouldRouteGroupWideBusinessOverview(state) || multiVisible) {
                     m.put(AiBusinessToolIds.ARG_GROUP_WIDE_OVERVIEW_HINT, Boolean.TRUE);
@@ -653,80 +601,6 @@ public class BusinessToolExecutionNode implements AgentNode {
         } else if (AiBusinessToolIds.PURCHASE_OVERVIEW.equals(toolId)) {
             m.putAll(PurchaseOverviewToolExecutor.buildPurchaseOverviewToolArgs(dept, dis, start, stop, state));
             logPurchaseOverviewToolArgs(state, m);
-        } else if (AiBusinessToolIds.PURCHASE_QUERY.equals(toolId)) {
-            if (dis != null) {
-                m.put(AiBusinessToolIds.ARG_DIS_ID, dis);
-            }
-            if (dept != null) {
-                m.put(AiBusinessToolIds.ARG_DEPARTMENT_FATHER_ID, dept);
-                m.put(AiBusinessToolIds.ARG_PURCHASE_DEPARTMENT_ID, dept);
-            }
-            if (start != null) {
-                m.put(AiBusinessToolIds.ARG_START_DATE, start);
-            }
-            if (stop != null) {
-                m.put(AiBusinessToolIds.ARG_STOP_DATE, stop);
-            }
-        } else if (AiBusinessToolIds.DISH_SALES_QUERY.equals(toolId)) {
-            logDishToolScopeBeforeArgs(toolId, state);
-            if (dis != null) {
-                m.put(AiBusinessToolIds.ARG_DIS_ID, dis);
-            }
-            if (dept != null) {
-                m.put(AiBusinessToolIds.ARG_DEPARTMENT_FATHER_ID, dept);
-            }
-            if (start != null) {
-                m.put(AiBusinessToolIds.ARG_START_DATE, start);
-            }
-            if (stop != null) {
-                m.put(AiBusinessToolIds.ARG_STOP_DATE, stop);
-            }
-            AiQueryScope scopeSnapshot = state.getScope();
-
-            boolean dishProfitGroupWideForLog = false;
-            List<Integer> fromResolvedCtx = extractSqlQueryDepartmentIdsForTools(state.getResolvedQueryContext());
-            if (!fromResolvedCtx.isEmpty()) {
-                m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS, new ArrayList<>(fromResolvedCtx));
-            } else if (scopeSnapshot != null && scopeSnapshot.getResolvedDepartmentIds() != null
-                    && !scopeSnapshot.getResolvedDepartmentIds().isEmpty()) {
-                log.warn(
-                        "[BusinessToolExecutionNode] toolArgs {}: AiResolvedDataScope 无有效 SQL 部门 IN，回退 AiQueryScope.resolvedDepartmentIds（可能滞后为上一轮范围）。runId={}",
-                        toolId, state.getRunId());
-                m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS,
-                        new java.util.ArrayList<>(scopeSnapshot.getResolvedDepartmentIds()));
-            }
-            AiResolvedQueryContext rqScope = state.getResolvedQueryContext();
-            if (rqScope != null && rqScope.getDataScope() != null) {
-                AiResolvedDataScope ds = rqScope.getDataScope();
-                if (ds.getQueryScopeKind() != null) {
-                    m.put(AiBusinessToolIds.ARG_QUERY_SCOPE_KIND, ds.getQueryScopeKind());
-                }
-                m.put(AiBusinessToolIds.ARG_QUERY_STORE_IDS, new ArrayList<>(ds.getQueryStoreIds()));
-                m.put(AiBusinessToolIds.ARG_QUERY_REAL_DEPARTMENT_IDS, new ArrayList<>(ds.getQueryRealDepartmentIds()));
-                m.put(AiBusinessToolIds.ARG_QUERY_DISTRIBUTER_ID, ds.getQueryDistributerId());
-                m.put(AiBusinessToolIds.ARG_STORE_TO_DEPARTMENT_IDS, new LinkedHashMap<>(ds.getStoreToDepartmentIds()));
-            }
-            if (log.isInfoEnabled()) {
-                log.info(
-                        "[DISH_PROFIT_SCOPE] toolArgsBuilt toolId={} runId={} conversationId={} departmentFatherId={} disId={} "
-                                + "dateRange={}..{} resolvedDepartmentIds={} parentStoreCount={} dishProfitGroupWide={} "
-                                + "queryScopeKindInArgs={} queryStoreIdsInArgs={} stateDepartmentId={}",
-                        toolId,
-                        state.getRunId(),
-                        state.getConversationId(),
-                        m.get(AiBusinessToolIds.ARG_DEPARTMENT_FATHER_ID),
-                        m.get(AiBusinessToolIds.ARG_DIS_ID),
-                        m.get(AiBusinessToolIds.ARG_START_DATE),
-                        m.get(AiBusinessToolIds.ARG_STOP_DATE),
-                        m.get(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS),
-                        m.get(AiBusinessToolIds.ARG_PARENT_STORE_COUNT),
-                        dishProfitGroupWideForLog,
-                        m.get(AiBusinessToolIds.ARG_QUERY_SCOPE_KIND),
-                        m.get(AiBusinessToolIds.ARG_QUERY_STORE_IDS),
-                        state.getDepartmentId());
-            }
-        } else if (AiBusinessToolIds.GROSS_MARGIN_CALCULATOR.equals(toolId)) {
-            m.put(AiBusinessToolIds.ARG_INPUT_SNAPSHOT, new LinkedHashMap<>(envelopes));
         }
         return m;
     }
@@ -993,86 +867,6 @@ public class BusinessToolExecutionNode implements AgentNode {
         }
         sb.append(']');
         return sb.toString();
-    }
-
-    /**
-     * 菜品毛利/销量：在组装 Tool 参数前打印 org + dataScope 快照（与 Run Debug 字段对齐，便于后台对照）。
-     */
-    private static void logDishToolScopeBeforeArgs(String toolId, AiRunState state) {
-        if (!log.isInfoEnabled() || state == null) {
-            return;
-        }
-        AiResolvedQueryContext rq = state.getResolvedQueryContext();
-        AiResolvedOrgScope org = rq != null ? rq.getOrgScope() : null;
-        AiResolvedDataScope ds = rq != null ? rq.getDataScope() : null;
-        String visibleStoresStr = formatVisibleStoreNamesForDishLog(org);
-        String mentionedStore = resolveMentionedStoreForDishLog(rq, org);
-        String intent = rq != null ? rq.getEffectiveIntentCode() : null;
-        String path = rq != null ? rq.getEffectivePathCode() : null;
-        String scopeType = org != null ? org.getScopeType() : null;
-        log.info(
-                "[DISH_PROFIT_SCOPE] toolId={}, conversationId={}, runId={}, intent={}, path={}, scopeType={}, mentionedStore={}, visibleStores={}",
-                toolId,
-                state.getConversationId(),
-                state.getRunId(),
-                intent,
-                path,
-                scopeType,
-                mentionedStore,
-                visibleStoresStr);
-        if (ds != null) {
-            log.info(
-                    "[DISH_PROFIT_SCOPE] queryScopeKind={}, queryStoreIds={}, queryRealDepartmentIds={}, queryDistributerId={}, storeToDepartmentIds={}",
-                    ds.getQueryScopeKind(),
-                    ds.getQueryStoreIds(),
-                    ds.getQueryRealDepartmentIds(),
-                    ds.getQueryDistributerId(),
-                    ds.getStoreToDepartmentIds());
-            log.info(
-                    "[DISH_PROFIT_SCOPE] resolved visibleStoreRootIds={}, expandedSqlDepartmentIds={}, orgScopeType={}",
-                    ds.getVisibleStoreRootIds(),
-                    ds.getExpandedSqlDepartmentIds(),
-                    org != null ? org.getScopeType() : null);
-        } else {
-            log.info(
-                    "[DISH_PROFIT_SCOPE] dataScope=null resolvedQueryContextPresent={}",
-                    rq != null);
-        }
-    }
-
-    private static String resolveMentionedStoreForDishLog(AiResolvedQueryContext rq, AiResolvedOrgScope org) {
-        if (rq != null && rq.getFollowUpResolution() != null) {
-            String n = rq.getFollowUpResolution().getStoreScopeFollowUpMentionedName();
-            if (n != null && !n.isBlank()) {
-                return n.trim();
-            }
-        }
-        if (org != null && org.getVisibleStores() != null && org.getVisibleStores().size() == 1) {
-            AiStoreScopeDTO s0 = org.getVisibleStores().get(0);
-            if (s0 != null && s0.getStoreName() != null && !s0.getStoreName().isBlank()) {
-                return s0.getStoreName().trim();
-            }
-        }
-        return null;
-    }
-
-    private static String formatVisibleStoreNamesForDishLog(AiResolvedOrgScope org) {
-        if (org == null || org.getVisibleStores() == null || org.getVisibleStores().isEmpty()) {
-            return "—";
-        }
-        return org.getVisibleStores().stream()
-                .filter(Objects::nonNull)
-                .map(s -> {
-                    if (s.getStoreName() != null && !s.getStoreName().isBlank()) {
-                        return s.getStoreName().trim();
-                    }
-                    if (s.getStoreDepartmentId() != null) {
-                        return "门店" + s.getStoreDepartmentId();
-                    }
-                    return null;
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.joining("、"));
     }
 
     /**

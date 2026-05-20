@@ -67,7 +67,7 @@ public class StockReduceAgent implements BusinessSubAgent {
         long t0 = System.nanoTime();
         AiRunState state = request == null ? null : request.getExecutionContext();
         if (state == null) {
-            return failureEnvelope("missing_execution_context", AgentResultStatus.FAILED, t0);
+            return failureEnvelope(t0);
         }
         long rid = state.getRunId();
         AiResolvedQueryContext rqCtx = request.getResolvedQueryContext();
@@ -130,11 +130,11 @@ public class StockReduceAgent implements BusinessSubAgent {
                 .build();
     }
 
-    private static AgentResultEnvelope failureEnvelope(String err, AgentResultStatus status, long t0) {
+    private static AgentResultEnvelope failureEnvelope(long t0) {
         return AgentResultEnvelope.builder()
                 .agentName(BusinessAgentNames.STOCK_REDUCE_QUERY)
-                .status(status)
-                .errors(List.of(err))
+                .status(AgentResultStatus.FAILED)
+                .errors(List.of("missing_execution_context"))
                 .warnings(new ArrayList<>())
                 .durationMs(elapsedMs(t0))
                 .traceId("no-run")

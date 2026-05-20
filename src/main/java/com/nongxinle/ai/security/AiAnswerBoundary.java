@@ -22,7 +22,7 @@ import org.springframework.util.StringUtils;
 /** 可读提示文案与 permissionDenied DTO 的组装。 */
 public final class AiAnswerBoundary {
 
-    /** 门店类账号 Scope 收窄时引导语（与 {@link AiRunScopeIntersectService} 对齐）。 */
+    /** 门店类账号 Scope 收窄时引导语（与 {@link com.nongxinle.ai.scope.AiRunScopeIntersectService} 对齐）。 */
     public static final String SCOPE_CLAMP_STORE_FRONT =
             "你当前账号只能查看本门店数据，下面按本门店范围为你分析。";
 
@@ -472,15 +472,10 @@ public final class AiAnswerBoundary {
         }
         return switch (toolId) {
             case AiBusinessToolIds.REVENUE_QUERY -> "营业额查询";
-            case AiBusinessToolIds.PURCHASE_QUERY -> "采购查询";
-            case AiBusinessToolIds.STOCK_QUERY -> "库房库存快照";
             case AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW -> "库房库存概览";
             case AiBusinessToolIds.STOCK_REDUCE_QUERY -> "核销/出库汇总";
-            case AiBusinessToolIds.DISH_SALES_QUERY -> "菜品销售";
             case AiBusinessToolIds.DISH_PROFIT_ANALYSIS -> "菜品毛利透视";
-            case AiBusinessToolIds.GROSS_MARGIN_CALCULATOR -> "毛利率估算";
             case "CostDiagnosisAgent" -> "成本诊断";
-            case "echo_context" -> "演示工具";
             default -> toolId;
         };
     }

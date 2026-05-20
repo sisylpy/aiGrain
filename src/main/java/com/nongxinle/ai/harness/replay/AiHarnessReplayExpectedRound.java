@@ -13,6 +13,12 @@ public class AiHarnessReplayExpectedRound {
 
     private String effectiveIntentCode;
     private String effectivePathCode;
+
+    /** 非空列表：摘要 {@code effectiveIntentCode} 须为其中任一（与单一 {@link #effectiveIntentCode} 可同时不用）。 */
+    private List<String> effectiveIntentCodeAnyOf = new ArrayList<>();
+
+    /** 非空列表：摘要 {@code effectivePathCode} 须为其中任一。 */
+    private List<String> effectivePathCodeAnyOf = new ArrayList<>();
     /** 非空时 actual 必须落在其中任一 */
     private List<String> effectiveTimeWindowSourceAnyOf = new ArrayList<>();
     /** 与 anyOf 互斥：单一精确匹配 */
@@ -46,9 +52,16 @@ public class AiHarnessReplayExpectedRound {
      */
     private List<String> querySemanticEffectiveMentionedStoreNames = new ArrayList<>();
 
-    /** true 时校验 purchaseSourceType 与下面字段（可为 null 表示要求空） */
+    /**
+     * true 时校验采购渠道：优先 {@link #purchaseSourceTypeAnyOf}（非空则 actual 须匹配其中任一）；否则与
+     * {@link #purchaseSourceType} 比对。摘要 actual 为 null/空白时按 {@link com.nongxinle.ai.conversation.AiQuerySemanticLexicon#SOURCE_ALL}
+     * 归一（显式总览 ALL）。
+     */
     private Boolean checkPurchaseSourceType;
     private String purchaseSourceType;
+
+    /** 非空且 {@link #checkPurchaseSourceType} 为 true：actual 归一后须等于列表中任一项（用于 ALL / SELF_PURCHASE 等或关系）。 */
+    private List<String> purchaseSourceTypeAnyOf = new ArrayList<>();
 
     private String mentionedStore;
 
@@ -60,6 +73,16 @@ public class AiHarnessReplayExpectedRound {
 
     /** 非空列表时 actual 必须为其中任一 */
     private List<String> structuredIntentDetailAnyOf = new ArrayList<>();
+
+    /** D-13：与摘要顶层摊平字段 {@code canonicalStructuredIntentDetailWire} 一致（Lexicon canonical）。 */
+    private String canonicalStructuredIntentDetailWire;
+
+    /** D-13 semanticSlots：与摘要顶层 {@code queryObject}… 对齐（大小写敏感 trim）。 */
+    private String semanticSlotQueryObject;
+    private String semanticSlotOperation;
+    private String semanticSlotMetric;
+    private String semanticSlotSourceFacet;
+    private String semanticSlotAnchorPolicy;
 
     private String effectiveIntentSource;
     private String effectiveScopeSource;
@@ -98,6 +121,9 @@ public class AiHarnessReplayExpectedRound {
     /** 若为 {@link Boolean#FALSE}：摘要 {@code semanticFallbackUsed} 须为 false。 */
     private Boolean semanticFallbackUsedExpected;
 
+    /** 若非 null：摘要顶层 {@code purchaseSemanticFramePrimaryMerge} 须与该布尔一致。 */
+    private Boolean purchaseSemanticFramePrimaryMergeExpected;
+
     /** 若为 {@link Boolean#FALSE}：摘要 {@code querySemanticV2ParseMissing} 须为 false。 */
     private Boolean querySemanticV2ParseMissingExpected;
 
@@ -106,6 +132,13 @@ public class AiHarnessReplayExpectedRound {
      * 例如要求 v2 原始输出为 {@code INHERIT_PREVIOUS}。
      */
     private String querySemanticV2TimeActionExpected;
+
+    /**
+     * 非空列表：摘要 {@code querySemanticV2TimeAction} 归一后须为其中任一（
+     * {@link com.nongxinle.ai.harness.replay.AiHarnessExpectationComparator} 优先于单一
+     * {@link #querySemanticV2TimeActionExpected}）。
+     */
+    private List<String> querySemanticV2TimeActionAnyOf = new ArrayList<>();
 
     /**
      * 非空：摘要顶层 {@code querySemanticV2MetricAction} 须与该值完全一致（trim 后），
@@ -160,6 +193,46 @@ public class AiHarnessReplayExpectedRound {
     private String harnessReplayStockReduceAnswerPlanSortDirection;
     private String harnessReplayStockReduceReduceType;
 
+    /** 非空：与摘要 {@code stockReduceMatrixRowId} 完全一致。 */
+    private String stockReduceMatrixRowIdExpected;
+
+    /** 非空：与摘要 {@code stockReduceKnownGap} 完全一致（如 TYPE2 商品排行未过滤）。 */
+    private String stockReduceKnownGapExpected;
+
+    /** true：摘要 {@code stockReduceKnownGap} 必须为 null / 空白。 */
+    private Boolean stockReduceKnownGapMustBeAbsent;
+
+    /** 非空：与摘要 {@code revenueMatrixRowId} 完全一致。 */
+    private String revenueMatrixRowIdExpected;
+
+    /** 非空：与摘要 {@code revenueKnownGap} 完全一致。 */
+    private String revenueKnownGapExpected;
+
+    /** true：摘要 {@code revenueKnownGap} 必须为 null / 空白。 */
+    private Boolean revenueKnownGapMustBeAbsent;
+
+    /** 非空：与摘要 {@code warehouseMatrixRowId} 完全一致。 */
+    private String warehouseMatrixRowIdExpected;
+
+    /** 非空：与摘要 {@code warehouseKnownGap} 完全一致。 */
+    private String warehouseKnownGapExpected;
+
+    /** true：摘要 {@code warehouseKnownGap} 必须为 null / 空白。 */
+    private Boolean warehouseKnownGapMustBeAbsent;
+
+    private String harnessReplayWarehouseAnswerPlanType;
+
+    /** 非空：与摘要 {@code dishSalesMatrixRowId} 完全一致。 */
+    private String dishSalesMatrixRowIdExpected;
+
+    /** 非空：与摘要 {@code dishSalesKnownGap} 完全一致。 */
+    private String dishSalesKnownGapExpected;
+
+    /** true：摘要 {@code dishSalesKnownGap} 必须为 null / 空白。 */
+    private Boolean dishSalesKnownGapMustBeAbsent;
+
+    private String harnessReplayDishSalesAnswerPlanType;
+
     /** 非空时与摘要 {@code orchestrationTaskMode} 完全一致。 */
     private String orchestrationTaskModeExpected;
     /** 非空时与摘要 {@code queryScopeMode} 完全一致（数据口径 STORE / …）。 */
@@ -183,10 +256,15 @@ public class AiHarnessReplayExpectedRound {
 
     /** 非空：摘要 {@code answerPreview} trim 后须包含其中任一字串（子串匹配）。 */
     private List<String> answerPreviewContainsAnyOf = new ArrayList<>();
+    /** 非空：摘要 {@code answerPreview} 须同时包含所列各子串（AND；各子串子串匹配）。 */
+    private List<String> answerPreviewMustContainAllSubstrings = new ArrayList<>();
     /** 非空：摘要 {@code answerPreview} 不得包含其中任一字串（子串匹配）。 */
     private List<String> answerPreviewMustNotContainAnyOf = new ArrayList<>();
 
-    /** 非空：嵌套摘要 {@code businessDiagnosisPlan.dataCompleteness.revenue} 与该值完全一致。 */
+    /**
+     * 非空：嵌套摘要 {@code businessDiagnosisPlan.dataCompleteness.revenue} 与该值完全一致。
+     * Historical：嵌套 {@code businessDiagnosisPlan} 已移除；Comparator 对 {@code OK} 走 {@code diagnosisPlan*} 兜底。
+     */
     private String businessDiagnosisDataCompletenessRevenueExpected;
 
     private Boolean businessOverviewMultiAgentBatchCompletedExpected;
@@ -219,12 +297,53 @@ public class AiHarnessReplayExpectedRound {
     /** 非空时与摘要 {@code masterDishProfitToolResultSuccess} 须一致。 */
     private Boolean masterDishProfitToolResultSuccessExpected;
 
+    /** 非 null：摘要 {@code dishProfitAnswerPlanPresent} 须与该布尔一致。 */
+    private Boolean dishProfitAnswerPlanPresentExpected;
+
+    /**
+     * 非空：摘要 {@code dishProfitAnswerPlanType}（人读标签，如 {@code 低毛利排行} / {@code 原料成本构成}）须完全一致。
+     */
+    private String dishProfitAnswerPlanHumanTypeExpected;
+
+    /** 非 null：摘要 {@code dishProfitAnswerPlanResultAnchorsCount} 须 ≥ 该值。 */
+    private Integer dishProfitAnswerPlanResultAnchorsCountMin;
+
+    /** 非空：摘要 {@code dishProfitAnswerPlanResultAnchorTypes} 须逐项包含所列类型（如 DISH）。 */
+    private List<String> dishProfitAnswerPlanResultAnchorTypesMustContain = new ArrayList<>();
+
+    /** 非 null：摘要 {@code ingredientBreakdownAvailable} 须与该布尔值一致。 */
+    private Boolean ingredientBreakdownAvailableExpected;
+
+    /**
+     * 非 null：摘要 {@code dishIngredientCostBreakdownToolSuccess} 须与该值一致。
+     * {@link com.nongxinle.ai.dto.business.DishProfitAnswerPlan#TYPE_DISH_INGREDIENT_COST_BREAKDOWN} 时由摘要从
+     * {@code ingredientBreakdownAvailable} + 非空 {@code ingredientRows} 推导；其它场景回退工具信封。
+     */
+    private Boolean dishIngredientCostBreakdownToolSuccessExpected;
+
+    /** 非 null：摘要 {@code ingredientRowsCount} 须 ≥ 该值（有原料行时）。 */
+    private Integer ingredientRowsCountMin;
+
+    /** 非 null：摘要 {@code ingredientRowCoreMetricPresent} 须与该值一致（行内配方量/单菜成本等）。 */
+    private Boolean ingredientRowCoreMetricPresentExpected;
+
+    /**
+     * 非空：摘要 {@code ingredientRowFieldsPresent} 须覆盖所列列名（各列在任一行上非空即计为 present；D-13.3B 原料契约）。
+     */
+    private List<String> ingredientRowFieldsMustContain = new ArrayList<>();
+
+    /** 非空：摘要 {@code ingredientBreakdownUnavailableReason} 须与该值完全一致。 */
+    private String ingredientBreakdownUnavailableReasonExpected;
+
     // --- DiagnosisPlan / 门店对比（business_store_status_compare_diagnosis）Graph 摘要探针 ---
 
-    /** 非空时与摘要 {@code diagnosisPlanExists} 须一致。 */
+    /** 非空时与摘要 {@code diagnosisPlanExists}（或 {@code diagnosisPlanPresent}）须一致。推荐键。 */
     private Boolean diagnosisPlanExistsExpected;
 
-    /** 非空时与摘要 {@code businessDiagnosisPlanExists} 须一致。 */
+    /**
+     * 非空时与摘要 {@code businessDiagnosisPlanExists} 须一致。
+     * Deprecated compat：与 {@link #diagnosisPlanExistsExpected} 同义（均镜像 {@link com.nongxinle.ai.dto.business.DiagnosisPlan} 是否存在）。
+     */
     private Boolean businessDiagnosisPlanExistsExpected;
 
     /** 非空时与摘要 {@code harnessReplayStoreCompareEvidenceRowsLen} 数值相等。 */
@@ -238,4 +357,118 @@ public class AiHarnessReplayExpectedRound {
 
     /** 非空时与摘要 {@code finalAnswerTextBlank} 须一致。 */
     private Boolean finalAnswerTextBlankExpected;
+
+    // --- D-13：Follow-up Action Protocol（与 {@link com.nongxinle.ai.context.AiResolvedQueryContext} debug 对齐）---
+
+    /** 非空：摘要顶层 {@code followUpAction} 须与该值完全一致。 */
+    private String followUpActionExpected;
+
+    /** 非空列表：摘要 {@code followUpAction} 须为其中任一（用于 OBJECT_DRILLDOWN / DETAIL_DRILLDOWN 等价验收）。 */
+    private List<String> followUpActionAnyOf = new ArrayList<>();
+
+    /** 非空：摘要 {@code followUpTargetEntityType} 须与该值完全一致。 */
+    private String followUpTargetEntityTypeExpected;
+
+    /**
+     * 若为 {@link Boolean#TRUE}：摘要 {@code followUpTargetEntityName} 须非空白（数据环境相关，不比具体名称）。
+     */
+    private Boolean followUpTargetEntityNameMustBeNonBlank;
+
+    /**
+     * 若为 {@link Boolean#TRUE}：摘要 {@code followUpTargetEntityId} 须非空白（Phase2-A GOODS 拆桶等）。
+     */
+    private Boolean followUpTargetEntityIdMustBeNonBlank;
+
+    /** 非空：摘要 {@code followUpDetailWanted} 须与该值完全一致。 */
+    private String followUpDetailWantedExpected;
+
+    /** 非空列表：摘要 {@code followUpDetailWanted} 须为其中任一。 */
+    private List<String> followUpDetailWantedAnyOf = new ArrayList<>();
+
+    /** 非空：摘要 {@code followUpSourcePlanType} 须与该值完全一致。 */
+    private String followUpSourcePlanTypeExpected;
+
+    /** 非空：摘要顶层 {@code matchedCapabilityId}（D-13 能力登记 debug 摊平）须与该值完全一致。 */
+    private String matchedCapabilityIdExpected;
+
+    /** 非空：摘要顶层 {@code followUpRegistryQueryMode} 须与该值完全一致。 */
+    private String followUpRegistryQueryModeExpected;
+
+    /** 非空：摘要顶层 {@code framePlanType} 须与该值完全一致。 */
+    private String framePlanTypeExpected;
+
+    /** 非空：摘要顶层 {@code framePurchaseSourceType} 须与该值完全一致。 */
+    private String framePurchaseSourceTypeExpected;
+
+    /** 非空：摘要顶层 {@code slotDetailWanted} 须与该值完全一致。 */
+    private String slotDetailWantedExpected;
+
+    /** 非 null：摘要 {@code purchaseSupplierGoodsDetailRowsCount} 须 ≥ 该值。 */
+    private Integer purchaseSupplierGoodsDetailRowsCountMin;
+
+    /**
+     * 若为 {@link Boolean#TRUE}：允许明细行数为 0，但必须给出无数据原因（如 {@code NO_SUPPLIER_PURCHASE_FOR_FOCUSED_GOODS}）
+     * 或 {@code purchaseSupplierGoodsDetailAlternativeHasData}=true（自采探针有数）。
+     */
+    private Boolean purchaseSupplierGoodsDetailRowsOrNoDataOkExpected;
+
+    /**
+     * 非空：将 {@code purchaseAnswerPlanFocusRows} 与 {@code purchaseAnswerPlanSecondaryRows} 的 JSON 拼接后，
+     * 须逐项包含所列子串（采购明细/ overview 核心行等；与 supplier channel follow-up 无耦合）。
+     */
+    private List<String> purchaseAnswerPlanFocusOrSecondaryRowsJsonMustContainSubstrings = new ArrayList<>();
+
+    /** 若非 null：摘要 {@code purchaseAnswerPlanResultAnchorsCount} 须 ≥ 该值（D-13.4 等）。 */
+    private Integer purchaseAnswerPlanResultAnchorsCountMin;
+
+    /** 非空：摘要 {@code purchaseAnswerPlanResultAnchorTypes} 须逐项包含所列类型（如 GOODS）。 */
+    private List<String> purchaseAnswerPlanResultAnchorTypesMustContain = new ArrayList<>();
+
+    // --- D-13.2：STORE anchor → 原因追问（Harness 摘要摊平键）---
+
+    /** 非空：摘要顶层 {@code diagnosisQuestionType}（由 DiagnosisPlan debug 镜像）须与该值一致。 */
+    private String diagnosisQuestionTypeExpected;
+
+    /** 非空：摘要 {@code diagnosisDrilldownMatrixRowId} 须与该值一致（BD-A…BD-K）。 */
+    private String diagnosisDrilldownMatrixRowIdExpected;
+
+    /** 非空：摘要 {@code diagnosisFacet} 须与该值一致。 */
+    private String diagnosisFacetExpected;
+
+    /** 非空：摘要 {@code diagnosisChildDomain} 须与该值一致（BD-E/F/G）。 */
+    private String diagnosisChildDomainExpected;
+
+    /** 非空：摘要 {@code diagnosisKnownGap} 须与该值一致。 */
+    private String diagnosisKnownGapExpected;
+
+    /** 非空：摘要 {@code diagnosisTargetStoreName} 须包含该子串（显式门店 BD-D 等）。 */
+    private String diagnosisTargetStoreNameMustContain;
+
+    /**
+     * 非 null：摘要 {@code diagnosisPlanResultAnchorsCount} 须 ≥ 该值（门店优先级轮通常 ≥1 含 STORE）。
+     */
+    private Integer diagnosisPlanResultAnchorsCountMin;
+
+    /** 非空：摘要 {@code diagnosisPlanResultAnchorTypes} 须逐项包含所列类型（如 STORE）。 */
+    private List<String> diagnosisPlanResultAnchorTypesMustContain = new ArrayList<>();
+
+    /** 非 null：嵌套 {@code previousTurnSummary.resultAnchorsCount} 须 ≥ 该值。 */
+    private Integer previousTurnSummaryResultAnchorsCountMin;
+
+    /** 非空：嵌套 {@code previousTurnSummary.resultAnchorTypes} 须逐项包含所列类型。 */
+    private List<String> previousTurnSummaryResultAnchorTypesMustContain = new ArrayList<>();
+
+    // --- 阶段 2：Tool Request Only（plannedToolArgsByToolId）---
+
+    /** 非 null 时断言 {@code plannedToolArgsByToolId[toolId]} 最小字段集。 */
+    private AiHarnessReplayExpectedPlannedToolArgs expectedPlannedToolArgs;
+
+    /** 非 null 时断言摘要 {@code toolExecuteSkipped}。 */
+    private Boolean toolExecuteSkippedExpected;
+
+    /** 非 null 时断言摘要 {@code purchaseAnswerPlanPresent}。 */
+    private Boolean purchaseAnswerPlanPresentExpected;
+
+    /** 非 null 时与摘要顶层 {@code needSemanticClarification} 须一致（语义帧/Registry 澄清门禁）。 */
+    private Boolean needSemanticClarificationExpected;
 }

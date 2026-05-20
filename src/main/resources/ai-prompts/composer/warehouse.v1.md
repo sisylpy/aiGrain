@@ -10,7 +10,7 @@ composer.warehouse.v1
 
 只能读取：
 
-- 库存/入库/核销分型 JSON（由上游 summarizeWarehouseToolPresenceCn 等组装）
+- 库存/入库/核销分型 JSON（由上游 **`warehouse_stock_overview`** Tool 摘要组装，如 summarizeWarehouseToolPresenceCn；**Historical removed**：**不**读取已删 **`stock_query`** Tool 或 `toolResults["stock_query"]`）
 - ResolvedQueryContext 可读摘录（称谓指令等）
 
 # 禁止事项

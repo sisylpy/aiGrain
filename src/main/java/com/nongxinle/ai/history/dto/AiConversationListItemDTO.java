@@ -43,6 +43,4 @@ public class AiConversationListItemDTO {
     private List<AiConversationNotebookBriefDTO> notebooks = new ArrayList<>();
 
     private AiConversationNoteSummaryDTO noteSummary;
-
-    private Integer conversationType;
 }

@@ -91,7 +91,7 @@
 | `StockReduceQueryTool` | `stock_reduce_query`：当前主要调 `queryReduceAllTypesTotalOnDailyRevenueDays`，**单体 father + matchDailyRevenueDepartmentId**，与旧看板核销口径一件事 |
 | `WarehouseStockOverviewTool` | `warehouse_stock_overview_path`：集团/门店汇总文案里**已含**「出品/损耗/报损/退货」四段金额，且已接 `AiResolvedQueryContext` 可见门店等 |
 | `CostDiagnosisAgentNode` | 消费 Tool 汇总：生产相关合计、损耗占比、数据不足 **`data_incomplete`**、建议话术 |
-| `GrossMarginCalculatorTool` | 与「核销全 0」时的可靠性保护（见 `TODO_MULTI_AGENT` / 文档） |
+| ~~`GrossMarginCalculatorTool`~~ | **Historical removed（P2B）**；「核销全 0」可靠性保护现由 **`CostMarginDerivation`** + **`CostDiagnosisAgentNode`**（见 `TODO_MULTI_AGENT`） |
 
 ---
 
@@ -227,7 +227,7 @@
 2. **父子部门**：只挂子部门不挂 father 时的覆盖方式，Skill 与 `buildReduceCostQueryMap` 已提示，新链也要一致。  
 3. **损耗率分母**：文档与报表常为 **不含退货** 的 1+2+3；老板口头「出库」可能含退货——需话术或结构化字段区分。  
 4. **菜品毛利 vs 出库专线**：毛利与理论量用的是 **type1 为主 + type2/3 分摊规则**；简问「出库多少钱」不必走全量 `GbDishCostAnalysisService`。  
-5. **集团经营看板**：收入已有多店 rollup，**核销/利润率**在 `TODO_MULTI_AGENT` 中仍部分为「不适用」——新出库链不要默认复用 `business_overview_query` 的未完成部分而不自知。  
+5. **集团经营看板**：收入已有多店 rollup（现网 MULTI **`revenue_query`**），**核销/利润率**在 `TODO_MULTI_AGENT` 中仍部分为「不适用」——新出库链勿假设已删 **`business_overview_query`**（Historical removed）仍提供合并口径。  
 6. **queryDepartmentIds**：仅作 SQL 展开列表，**禁止**在文案中假装成「门店清单」。
 
 ---

@@ -42,7 +42,7 @@ public class RevenueQueryToolExecutor {
             m.put(AiBusinessToolIds.ARG_DEPARTMENT_FATHER_ID, dept);
         }
         if (state != null && (state.isRevenueOverviewPath() || state.isBusinessOverviewPath()
-                || state.isBusinessDiagnosisPath())) {
+                || state.isBusinessDiagnosisPath() || state.isCostInsightPath())) {
             boolean multiVisible =
                     BusinessScopeResolutionSupport.extractVisibleStoreRootDepartmentIds(state.getResolvedQueryContext())
                                     .size()

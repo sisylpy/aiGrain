@@ -26,7 +26,6 @@ public interface GbAiMessageMapper extends BaseMapper<GbAiMessageEntity> {
 	int upsertRunScopedMessage(
 			@Param("conversationId") Long conversationId,
 			@Param("userId") Long userId,
-			@Param("messageType") Integer messageType,
 			@Param("role") String role,
 			@Param("content") String content,
 			@Param("runId") Long runId,

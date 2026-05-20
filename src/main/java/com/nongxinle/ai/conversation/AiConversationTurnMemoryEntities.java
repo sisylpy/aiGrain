@@ -1,6 +1,8 @@
 package com.nongxinle.ai.conversation;
 
 import com.alibaba.fastjson2.JSON;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.entity.GbAiConversationTurnMemoryEntity;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
@@ -46,6 +48,12 @@ public final class AiConversationTurnMemoryEntities {
                 && !m.getLastHarnessMultiStoreMatchedStores().isEmpty()) {
             ts = trimToNull(AiConversationTurnMemory.embedHarnessMultiStoreInToolSummary(ts, m.getLastHarnessMultiStoreMatchedStores()));
         }
+        if (m.getLastResultAnchors() != null && !m.getLastResultAnchors().isEmpty()) {
+            ts = trimToNull(AiConversationTurnMemory.embedResultAnchorsInToolSummary(ts, m.getLastResultAnchors()));
+        }
+        if (m.getLastSemanticSlots() != null) {
+            ts = trimToNull(AiConversationTurnMemory.embedSemanticSlotsInToolSummary(ts, m.getLastSemanticSlots()));
+        }
         if (ts != null && ts.length() > 1900) {
             ts = ts.substring(0, 1900) + "…";
         }
@@ -69,6 +77,10 @@ public final class AiConversationTurnMemoryEntities {
         }
         String rawTs = trimToNull(e.getGbAiCtmToolSummary());
         List<String> harnessMs = AiConversationTurnMemory.readHarnessMultiStoreFromToolSummary(rawTs);
+        List<AiResultAnchor> ra =
+                AiConversationTurnMemory.readResultAnchorsFromToolSummary(rawTs);
+        AiQuerySemanticParseResult.SemanticSlotsPart ss =
+                AiConversationTurnMemory.readSemanticSlotsFromToolSummary(rawTs);
         return AiConversationTurnMemory.builder()
                 .conversationId(e.getGbAiConversationId())
                 .previousRunId(e.getGbAiCtmRunId())
@@ -93,6 +105,8 @@ public final class AiConversationTurnMemoryEntities {
                 .lastToolSummary(rawTs)
                 .lastHarnessMultiStoreMatchedStores(
                         harnessMs == null || harnessMs.isEmpty() ? null : harnessMs)
+                .lastResultAnchors(ra == null || ra.isEmpty() ? null : ra)
+                .lastSemanticSlots(ss)
                 .build();
     }
 

@@ -1,0 +1,12 @@
+{
+  "userId": 3,
+  "distributerId": 2,
+  "scopeMode": "GROUP",
+  "frozenClockDate": "2026-05-17",
+  "strictStoreSqlMatch": false,
+  "caseId": "PURCHASE_GOODS_RANKING_DRILLDOWN_SUPPLIER_UNIT_PRICE_2",
+  "messages": [
+    "这个月采购金额最高的商品是什么？",
+    "这个商品是哪些供应商供的？单价分别是多少？"
+  ]
+}

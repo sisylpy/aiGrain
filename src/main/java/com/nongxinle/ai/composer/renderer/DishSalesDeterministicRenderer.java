@@ -63,6 +63,15 @@ public final class DishSalesDeterministicRenderer {
                     .append(" 份，销售额 ")
                     .append(rev)
                     .append(" 元。");
+        } else if (DishSalesAnswerPlan.TYPE_DISH_SALES_SINGLE_DISH.equals(pt)) {
+            sb.append(name)
+                    .append(" 销量 ")
+                    .append(qty)
+                    .append(" 份，销售额 ")
+                    .append(rev)
+                    .append(" 元。");
+            appendLimitations(sb, plan);
+            return sb.toString().trim();
         } else {
             sb.append("菜品销售排行首位：")
                     .append(name)

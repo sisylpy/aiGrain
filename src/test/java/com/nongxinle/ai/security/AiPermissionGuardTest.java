@@ -21,21 +21,16 @@ class AiPermissionGuardTest {
     private final AiPermissionGuard guard = new AiPermissionGuard();
 
     @Test
-    void financeManager_deniesGrossMarginTool() {
+    void financeManager_deniesCostDiagnosisAgent() {
         AiUserContextResolver users =
                 AiDepartmentUserTestRows.resolverReturning(AiDepartmentUserTestRows.financeManager(881, 1, 2));
         AiRunCreateRequest rq = financeManagerRequest();
         AiUserContext uc = users.resolve(rq);
 
         AiRunState st = baseState(uc, rq.getDepartmentId(), rq.getDistributerId());
-        ToolRequest tr = ToolRequest.builder()
-                .runId(9L)
-                .userId(rq.getUserId())
-                .toolName(AiBusinessToolIds.GROSS_MARGIN_CALCULATOR)
-                .args(java.util.Map.of())
-                .build();
+        st.setCostInsightPath(true);
 
-        AiToolInvocationDecision d = guard.evaluateToolInvocation(st, tr);
+        AiToolInvocationDecision d = guard.evaluateCostDiagnosisAgent(st);
         assertThat(d.isAllowed()).isFalse();
         assertThat(d.getDenial()).isNotNull();
         assertThat(d.getDenial().getRequiredPermission()).isEqualTo(AiPermissions.VIEW_COST);

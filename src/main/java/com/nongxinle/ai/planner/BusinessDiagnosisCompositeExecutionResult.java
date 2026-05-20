@@ -11,9 +11,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * C-58：Composite Execution 结果（Harness / SHADOW）；不改变普通 {@code /api/ai/runs} legacy 终稿。
- * C-61：旁路耗时/对比观测（{@code compositeShadowLatencyMs} …）仅 SHADOW 且 {@link #executed} 时为 {@link AiRunService} 写入。
- * C-63：灰度跳过观测（{@code compositeShadowSkipped} …）在同一载体上写入，不要求 {@link #executed}。
+ * C-58：BusinessDiagnosisComposite 旁路 Execution 结果载体（{@link BusinessDiagnosisCompositeExecutionMode#HARNESS_ONLY} /
+ * {@link BusinessDiagnosisCompositeExecutionMode#SHADOW}）。
+ *
+ * <p><b>旁路边界</b>：<strong>不属于</strong> Master Graph 主回答链；<strong>不替换</strong>
+ * {@link com.nongxinle.ai.core.AiRunState#getFinalAnswerText()}；<strong>不负责</strong>生产用户正文。
+ * {@link BusinessDiagnosisCompositeExecutionMode#PRIMARY} 为预留/未接生产主链。
+ * 不改变普通 {@code /api/ai/runs} 主链终稿（legacy 终稿对比字段仅用于 shadow 观测）。</p>
+ *
+ * <p>C-61：旁路耗时/对比观测（{@code compositeShadowLatencyMs} …）仅 SHADOW 且 {@link #executed} 时为
+ * {@link com.nongxinle.ai.platform.AiRunService} 写入。
+ * C-63：灰度跳过观测（{@code compositeShadowSkipped} …）在同一载体上写入，不要求 {@link #executed}。</p>
  */
 @Data
 @Builder(toBuilder = true)

@@ -5,12 +5,16 @@ import java.util.Locale;
 /**
  * Composite Execution 模式。
  * Spring {@code ai.composite.businessDiagnosis.executionMode}：{@link #OFF}（默认）、{@link #SHADOW}；
- * Harness 请求字段：{@link #HARNESS_ONLY}。**{@link #PRIMARY}**：尚不接生效逻辑。
+ * Harness 请求字段：{@link #HARNESS_ONLY}。
  */
 public enum BusinessDiagnosisCompositeExecutionMode {
     OFF,
     HARNESS_ONLY,
     SHADOW,
+    /**
+     * 预留值：{@link BusinessDiagnosisCompositeExecutionService} 当前<strong>不执行</strong> PRIMARY，
+     * 不接生产主回答链，不替换 {@link com.nongxinle.ai.core.AiRunState#getFinalAnswerText()}。
+     */
     PRIMARY;
 
     /**

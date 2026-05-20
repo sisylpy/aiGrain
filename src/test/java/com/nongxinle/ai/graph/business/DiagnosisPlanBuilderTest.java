@@ -1,5 +1,8 @@
 package com.nongxinle.ai.graph.business;
 
+import com.nongxinle.ai.context.AiResolvedQueryContext;
+import com.nongxinle.ai.context.AiResolvedQueryIntent;
+import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiDishProfitDishBrief;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
@@ -76,13 +79,28 @@ class DiagnosisPlanBuilderTest {
     }
 
     @Test
-    void shouldAttach_onBusinessOverviewWhenHolisticCue() {
+    void shouldAttach_onBusinessOverviewWhenStructuredFourDomainWire() {
+        AiResolvedQueryIntent qi = AiResolvedQueryIntent.builder()
+                .structuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_BUSINESS_OVERVIEW_STATUS)
+                .build();
+        AiResolvedQueryContext rq = AiResolvedQueryContext.builder().queryIntent(qi).build();
+        AiRunState state = AiRunState.builder()
+                .rawUserInput("这个月经营情况怎么样？")
+                .businessOverviewPath(true)
+                .businessDiagnosisPath(false)
+                .resolvedQueryContext(rq)
+                .build();
+        assertTrue(DiagnosisPlanBuilder.shouldAttachDiagnosisPlan(state));
+    }
+
+    @Test
+    void shouldNotAttach_onBusinessOverviewWhenOnlyRawInputWithoutStructuredWire() {
         AiRunState state = AiRunState.builder()
                 .rawUserInput("这个月经营情况怎么样？")
                 .businessOverviewPath(true)
                 .businessDiagnosisPath(false)
                 .build();
-        assertTrue(DiagnosisPlanBuilder.shouldAttachDiagnosisPlan(state));
+        assertFalse(DiagnosisPlanBuilder.shouldAttachDiagnosisPlan(state));
     }
 
     @Test
@@ -146,10 +164,15 @@ class DiagnosisPlanBuilderTest {
                 .timeLabel("本月")
                 .summary(rs)
                 .build();
+        AiResolvedQueryIntent qi = AiResolvedQueryIntent.builder()
+                .structuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_BUSINESS_OVERVIEW_SUMMARY)
+                .build();
+        AiResolvedQueryContext rq = AiResolvedQueryContext.builder().queryIntent(qi).build();
         AiRunState state = AiRunState.builder()
                 .rawUserInput("这个月经营得怎么样")
                 .businessOverviewPath(true)
                 .businessDiagnosisPath(false)
+                .resolvedQueryContext(rq)
                 .revenueAnswerPlan(rap)
                 .build();
 

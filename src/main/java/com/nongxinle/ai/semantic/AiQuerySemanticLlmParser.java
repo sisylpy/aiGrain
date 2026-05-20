@@ -6,7 +6,6 @@ import com.nongxinle.ai.prompt.AiPromptIds;
 import com.nongxinle.ai.prompt.AiPromptService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -14,9 +13,7 @@ import org.springframework.util.StringUtils;
  * Harness 入口：仅用 LLM 解析「用户语义意图/时间偏好/口述范围」，禁止产出任何 SQL 或可执行 ID；
  * {@link com.nongxinle.ai.resolver.AiResolvedQueryContextResolver} 负责把门店名等映射为权限内 ID。
  * <p>
- * v2：{@link SemanticParserInput} + {@link AiPromptIds#SEMANTIC_QUERY_PARSER_V2}；
- * {@link com.nongxinle.ai.resolver.AiResolvedQueryContextResolver} 优先 {@link #parse(SemanticParserInput)}，
- * {@link #parseUserQuestion(String)}（v1）仅 fallback / 对照。
+ * 生产语义仅 v2：{@link SemanticParserInput} + {@link AiPromptIds#SEMANTIC_QUERY_PARSER_V2}，由 Resolver 调用 {@link #parse(SemanticParserInput)}。
  */
 @Slf4j
 @Component
@@ -26,20 +23,16 @@ public class AiQuerySemanticLlmParser {
     private final LlmGateway llmGateway;
     private final AiPromptService aiPromptService;
 
-    @Value("${ai.agent.querySemanticLlm.enabled:true}")
-    private boolean enabled;
-
     /**
      * v2：user 消息为 {@link SemanticParserInput} 的 JSON；system 为 {@link AiPromptIds#SEMANTIC_QUERY_PARSER_V2}。
-     * Resolver：v2 为主入口；v1 见 {@link #parseUserQuestion(String)}。
      */
     public AiQuerySemanticParseResult parse(SemanticParserInput input) {
         String pid = AiPromptIds.SEMANTIC_QUERY_PARSER_V2;
-        if (!enabled || input == null || !StringUtils.hasText(input.getCurrentUserMessage())) {
+        if (input == null || !StringUtils.hasText(input.getCurrentUserMessage())) {
             AiQuerySemanticParseResult out =
                     AiQuerySemanticParseResult.builder()
                             .parseMissing(true)
-                            .observationJsonParseError("skipped_disabled_or_empty_message")
+                            .observationJsonParseError("skipped_empty_or_null_input")
                             .build();
             logSemanticInvocation("v2", pid, null, out, null);
             return out;
@@ -109,44 +102,6 @@ public class AiQuerySemanticLlmParser {
         }
         int max = 8000;
         return t.length() <= max ? t : t.substring(0, max) + "…";
-    }
-
-    public AiQuerySemanticParseResult parseUserQuestion(String sanitizedUserMessage) {
-        String pid = AiPromptIds.SEMANTIC_QUERY_PARSER_V1;
-        if (!enabled || !StringUtils.hasText(sanitizedUserMessage)) {
-            AiQuerySemanticParseResult out = AiQuerySemanticParseResult.builder().parseMissing(true).build();
-            logSemanticInvocation("v1", pid, null, out, "skipped_disabled_or_empty_message");
-            return out;
-        }
-        String systemPrompt;
-        try {
-            systemPrompt = aiPromptService.require(pid);
-        } catch (RuntimeException bootEx) {
-            log.warn("[AiQuerySemanticLlmParser] load semantic prompt failed: {}", bootEx.toString());
-            AiQuerySemanticParseResult out = AiQuerySemanticParseResult.builder().parseMissing(true).build();
-            logSemanticInvocation("v1", pid, null, out, "semantic_prompt_load_failed");
-            return out;
-        }
-        String raw = null;
-        try {
-            raw = llmGateway.chatSimple(systemPrompt, sanitizedUserMessage.trim());
-            if (!StringUtils.hasText(raw)) {
-                AiQuerySemanticParseResult out =
-                        AiQuerySemanticParseResult.builder().parseMissing(true).promptRegistryId(pid).build();
-                logSemanticInvocation("v1", pid, raw, out, "empty_llm_response");
-                return out;
-            }
-            AiQuerySemanticParseResult parsed = AiQuerySemanticParseResultJsonParser.parseRaw(raw);
-            AiQuerySemanticParseResult out = parsed.toBuilder().promptRegistryId(pid).build();
-            logSemanticInvocation("v1", pid, raw, out, null);
-            return out;
-        } catch (Exception e) {
-            log.warn("[AiQuerySemanticLlmParser] llm semantic parse failed: {}", e.toString());
-            AiQuerySemanticParseResult out =
-                    AiQuerySemanticParseResult.builder().parseMissing(true).promptRegistryId(pid).build();
-            logSemanticInvocation("v1", pid, raw, out, "exception:" + e.getClass().getSimpleName());
-            return out;
-        }
     }
 
     /**

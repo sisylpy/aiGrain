@@ -19,8 +19,7 @@ public interface AiConversationCoreService {
             Long departmentId,
             Long distributerId,
             AiConversationScopeMode scopeMode,
-            Long userId,
-            Integer type);
+            Long userId);
 
     /**
      * 校验会话存在且 {@code gb_ai_conversation_user_id} 与 {@code userId} 一致。

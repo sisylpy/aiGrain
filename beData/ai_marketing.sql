@@ -27,7 +27,6 @@ CREATE TABLE `gb_ai_conversation` (
   `gb_ai_conversation_distributer_id` bigint DEFAULT NULL,
   `gb_ai_conversation_title` varchar(200) DEFAULT NULL COMMENT 'å¯¹è¯æ ‡é¢˜',
   `gb_ai_conversation_status` tinyint DEFAULT '1' COMMENT '1=è¿›è¡Œä¸­ 0=å·²ç»“æŸ',
-  `gb_ai_conversation_type` int DEFAULT '0' COMMENT '对话类型: 0=普通聊天, 1=促销活动/销售额, 2=公众号相关',
   `gb_ai_conversation_create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'åˆ›å»ºæ—¶é—´',
   `gb_ai_conversation_update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'æ›´æ–°æ—¶é—´',
   `gb_ai_conversation_user_id` bigint DEFAULT NULL,
@@ -237,42 +236,6 @@ CREATE TABLE `gb_ai_knowledge_usage` (
 BEGIN;
 COMMIT;
 
--- ----------------------------
--- Table structure for gb_ai_memory
--- ----------------------------
-DROP TABLE IF EXISTS `gb_ai_memory`;
-CREATE TABLE `gb_ai_memory` (
-  `gb_ai_memory_id` bigint NOT NULL AUTO_INCREMENT,
-  `gb_ai_memory_conversation_id` bigint DEFAULT NULL COMMENT '来源对话ID',
-  `gb_ai_memory_type` int DEFAULT '0' COMMENT '记忆类型: 0=普通记忆, 1=促销活动/销售额, 2=公众号相关',
-  `gb_ai_memory_department_id` bigint NOT NULL,
-  `gb_ai_memory_distributer_id` bigint DEFAULT NULL,
-  `gb_ai_memory_category` varchar(100) DEFAULT '' COMMENT '记忆分类',
-  `gb_ai_memory_title` varchar(200) NOT NULL COMMENT 'è®°å¿†æ ‡é¢˜',
-  `gb_ai_memory_content` text NOT NULL COMMENT 'è®°å¿†å†…å®¹',
-  `gb_ai_memory_summary` varchar(255) DEFAULT NULL COMMENT '记忆内容摘要',
-  `gb_ai_memory_importance` tinyint DEFAULT '5' COMMENT 'é‡è¦ç¨‹åº¦',
-  `gb_ai_memory_source_conversation_id` bigint DEFAULT NULL COMMENT 'æ¥æºå¯¹è¯ID',
-  `gb_ai_memory_tags` varchar(500) DEFAULT NULL COMMENT 'æ ‡ç­¾',
-  `gb_ai_memory_last_used_time` datetime DEFAULT NULL COMMENT 'æœ€åŽä½¿ç”¨æ—¶é—´',
-  `gb_ai_memory_use_count` int DEFAULT '0' COMMENT 'ä½¿ç”¨æ¬¡æ•°',
-  `gb_ai_memory_status` int DEFAULT '0' COMMENT '状态: 0=活跃, 1=归档, 2=删除',
-  `gb_ai_memory_is_expired` tinyint DEFAULT '0' COMMENT 'æ˜¯å¦è¿‡æœŸ',
-  `gb_ai_memory_create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'åˆ›å»ºæ—¶é—´',
-  `gb_ai_memory_update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'æ›´æ–°æ—¶é—´',
-  `gb_ai_memory_user_id` bigint DEFAULT NULL,
-  PRIMARY KEY (`gb_ai_memory_id`),
-  KEY `idx_gb_ai_mem_category` (`gb_ai_memory_category`),
-  KEY `idx_gb_ai_mem_department` (`gb_ai_memory_department_id`),
-  KEY `idx_gb_ai_mem_distributer` (`gb_ai_memory_distributer_id`),
-  KEY `idx_gb_ai_mem_tags` ((cast(`gb_ai_memory_tags` as char(500) charset latin1)))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='ç»éªŒè®°å¿† L2';
-
--- ----------------------------
--- Records of gb_ai_memory
--- ----------------------------
-BEGIN;
-COMMIT;
 
 -- ----------------------------
 -- Table structure for gb_ai_message
@@ -280,12 +243,10 @@ COMMIT;
 DROP TABLE IF EXISTS `gb_ai_message`;
 CREATE TABLE `gb_ai_message` (
   `gb_ai_message_id` bigint NOT NULL AUTO_INCREMENT,
-  `gb_ai_message_type` int DEFAULT '0' COMMENT '消息类型: 0=普通消息, 1=促销活动/销售额, 2=公众号相关',
   `gb_ai_message_conversation_id` bigint NOT NULL COMMENT 'å¯¹è¯ID',
   `gb_ai_message_role` varchar(20) NOT NULL COMMENT 'user/assistant/system',
   `gb_ai_message_content` text NOT NULL COMMENT 'æ¶ˆæ¯å†…å®¹',
   `gb_ai_message_token_count` int DEFAULT '0' COMMENT 'Tokenæ¶ˆè€—æ•°',
-  `gb_ai_message_memory_extracted` tinyint DEFAULT '0' COMMENT 'æ˜¯å¦å·²æå–è®°å¿†',
   `gb_ai_message_create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'åˆ›å»ºæ—¶é—´',
   `gb_ai_message_user_id` bigint DEFAULT NULL,
   PRIMARY KEY (`gb_ai_message_id`),

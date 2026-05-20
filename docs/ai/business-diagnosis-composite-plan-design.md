@@ -1,12 +1,10 @@
-# 组合型经营诊断 Composite Plan — **C-30 设计 + C-31 骨架 + C-31.1 trace + C-32～C-35 渐进 Hydrated + C-36 AnswerPlan + C-42 降级 + C-43 GROUP 规格 + C-48 GROUP Harness + C-49 文档收口 + C-50 Composer 只读 AnswerPlan（设计）+ C-52 生产入口 Gate（设计）+ C-57 生产执行编排（设计，外链）**
+# 组合型经营诊断 Composite Plan — **C-30 设计 + C-31 骨架 + C-31.1 trace + C-35 ALL_REAL + C-36 AnswerPlan + C-42 降级 + C-43 GROUP 规格 + C-48 GROUP Harness + C-49 文档收口 + C-50 Composer 只读 AnswerPlan（设计）+ C-52 生产入口 Gate（设计）+ C-57 生产执行编排（设计，外链）**
 
 > **读者**：Harness / Planner 工程师。  
 > **阶段**：**C-30** — 组合计划、六步、trace、失败策略等 **设计**（下文不变）。  
-> **阶段**：**C-31** — **仅** Harness Replay：**六步全 MOCK** 的 **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`** 已注册；**不接**四条 Hydrated RealBridge、**不**调真实 Tool / LLM / SQL；根摘要含 **`plannerCompositeHonesty=COMPOSITE_SKELETON_ONLY`**。  
+> **阶段**：**C-31 Removed（P1-B Final）** — **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`** 与 GraphCase 已删。**当前主验收**：**§2.4 / §2.5 / §2.6**（C-35 / C-42 / C-48）及 **`DISH_PROFIT_MATRIX_P1`**。  
 > **C-31.1**：前四步 **`targetTool`** 为 **`mock_*_hydrated_adapter`**，trace **`usedTools`** **不**含生产 **`revenue_query`** 等 id，避免误读为已真实执行；生产 Tool 名仅见于 **`inputSummary` / `acceptanceCriteria`** 文案。  
-> **C-32**：**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_CORE`** — **仅** **`step_revenue_hydrated`** 接 **Hydrated `RevenuePlannerRealReadBridge`**（真实 **`revenue_query`**）；其余五步仍为 mock（**`plannerCompositeHonesty=COMPOSITE_REVENUE_REAL_ONLY`**）。  
-> **C-33**：**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_PURCHASE_CORE`** — **`step_revenue_hydrated`** + **`step_purchase_hydrated`** 接双域 Hydrated RealBridge（**`revenue_query`** + **`purchase_overview`**）；出库 / 菜品 / 诊断 / 建议仍为 mock（**`plannerCompositeHonesty=COMPOSITE_REVENUE_PURCHASE_REAL_ONLY`**）。  
-> **C-34**：**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_PURCHASE_STOCK_CORE`** — 在 C-33 基础上 **`step_stock_reduce_hydrated`** 接 **Hydrated `StockReducePlannerRealReadBridge`**（真实 **`stock_reduce_query`**）；菜品 / 诊断 / 建议仍为 mock（**`plannerCompositeHonesty=COMPOSITE_REVENUE_PURCHASE_STOCK_REAL_ONLY`**；**`plannerCompositeNote`**：**`revenue, purchase and stock_reduce real hydrated adapters invoked; dish/diagnosis/recommendation remain mock`**）。  
+> **C-32～C-34（Historical / Retired，P1-A）**：历史分步 Composite Harness case（单域 / 双域 / 三域渐进真实）已从注册与路由摘除；**请用** **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`（C-35）** 或 **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_GROUP_CORE`（C-48）** / **`…_STOCK_DEGRADED_CORE`（C-42）** 做 strict 验收。`stepId` 契约见 **`CompositeBusinessDiagnosisStepIds`**。  
 > **C-35**：**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`** — 四数据步 **`revenue_query`** / **`purchase_overview`** / **`stock_reduce_query`** / **`dish_profit_analysis`** 均 Hydrated 真实；**`step_diagnosis_compose`** / **`step_recommendation`** 仍为 mock（**`plannerCompositeHonesty=COMPOSITE_ALL_DATA_REAL_DIAGNOSIS_MOCK`**；**无** LLM 诊断、**无**真实 Action）。
 > **C-36**：**`BusinessDiagnosisCompositeAnswerPlan`** — **仅文档**定义结构化承接四域摘要 + **`diagnosisSignals` / `dataCoverage` / 降级与 `riskLevel` 规则**；**不接** LLM、**不**生成最终自然语言；见 **[`business-diagnosis-answer-plan-design.md`](./business-diagnosis-answer-plan-design.md)** 全文。**实现路线 = C-37**（从 trace + adapter AnswerPlan 映射；诊断 compose **确定性**）。
 > **依赖（全链路 Hydrated 组合，非 C-31）**：四条域 **Hydrated RealBridge** 均已 **curl 验收**（**Revenue → `revenue_query`**、**Purchase → `purchase_overview`**、**StockReduce → `stock_reduce_query`**、**DishProfit → `dish_profit_analysis`**）。权威交叉引用：**[`planner-executor-v1-design.md`](./planner-executor-v1-design.md)** §12、§22、§24、§25、§26、§27；**[`diagnosis-answer-plan.md`](./diagnosis-answer-plan.md)**；**[`business-diagnosis-harness-plan.md`](./business-diagnosis-harness-plan.md)**。  
@@ -27,13 +25,22 @@
 
 ---
 
-## 2. caseId **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`**
+## 2. caseId **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`**（Historical / Retired candidate，P1-B B1）
 
-| 常量名 | 值 |
-|--------|-----|
-| **Composite Core** | **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`** |
+| 常量名 | 值 | 状态 |
+|--------|-----|------|
+| **Composite Core** | **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`** | **Historical / Retired candidate** — 非当前主验收；**B2** 可删 |
 
-**C-31 已注册**：**`AiHarnessBuiltinCases`**、**`isPlannerExecutorMockHarnessCase`**（走 **`PLANNER_EXECUTOR_MOCK`** 短路）；**GraphCase**：**`AiPlannerExecutorBusinessDiagnosisCompositeGraphCase#buildPlan`**；**`planForHarnessCase`** 在 **`AiPlannerExecutorMockGraphCase`** 中分支到该类。
+**C-31 Removed（P1-B Final）**：**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`** 与 **`AiPlannerExecutorBusinessDiagnosisCompositeGraphCase`** 已删；勿再 curl。
+
+**当前主验收 caseId（P1-B）**：
+
+| caseId | 阶段 |
+|--------|------|
+| **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`** | C-35 STORE strict |
+| **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_GROUP_CORE`** | C-48 GROUP strict |
+| **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_STOCK_DEGRADED_CORE`** | C-42 出库降级 |
+| **`DISH_PROFIT_MATRIX_P1`** | GRAPH 菜品下钻矩阵（非 PlannerExecutor 短路） |
 
 **Replay 诚实字段**（根摘要，与 **`toHarnessSummary`** 一致）：
 
@@ -44,66 +51,15 @@
 
 ---
 
-## 2.1 caseId **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_CORE`**（C-32）
+## 2.1～2.3 C-32 / C-33 / C-34（Historical / Retired）
 
-| 常量名 | 值 |
-|--------|-----|
-| **Composite + Revenue** | **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_CORE`** |
+| 阶段 | 原 caseId | 状态 | 替代验收 |
+|------|-----------|------|----------|
+| **C-32** | `PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_CORE` | **Retired**（P1-A） | **C-35** ALL_REAL 或 **C-48** GROUP |
+| **C-33** | `PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_PURCHASE_CORE` | **Retired** | 同上 |
+| **C-34** | `PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_PURCHASE_STOCK_CORE` | **Retired** | 同上；出库降级见 **C-42** STOCK_DEGRADED |
 
-**C-32 已注册**：**`AiHarnessBuiltinCases`**、**`isPlannerExecutorMockHarnessCase`**；**`AiHarnessReplayPlannerExecutorMock`** 专用分支（须 Spring **`RevenuePlannerRealReadBridge`** Bean）；**`CompositeBusinessDiagnosisRevenueHybridPlannerStepExecutor`** + **`AiPlannerExecutorBusinessDiagnosisCompositeRevenueGraphCase#buildPlan`**。
-
-**Replay 诚实字段**：
-
-| 字段 | 值（C-32） |
-|------|------------|
-| **`plannerCompositeHonesty`** | **`COMPOSITE_REVENUE_REAL_ONLY`** |
-| **`plannerCompositeNote`** | **`revenue real hydrated adapter invoked; purchase/stock/dish/diagnosis/recommendation remain mock`** |
-
-**trace **`usedTools`（典型 SUCCESS）**：含 **`revenue_query`**（首步）+ **`mock_purchase_hydrated_adapter`** … **`mock_build_recommendation_plan`**；**不**调用 **`purchase_overview` / `stock_reduce_query` / `dish_profit_analysis`**。
-
-**`harnessReplayMode`**：与营收 Adapter 系一致，摘要为 **`PLANNER_EXECUTOR_REVENUE_ADAPTER`**（**非**全 MOCK）。
-
----
-
-## 2.2 caseId **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_PURCHASE_CORE`**（C-33）
-
-| 常量名 | 值 |
-|--------|-----|
-| **Composite + Revenue + Purchase** | **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_PURCHASE_CORE`** |
-
-**C-33 已注册**：**`AiHarnessBuiltinCases`**、**`isPlannerExecutorMockHarnessCase`**；**`AiHarnessReplayPlannerExecutorMock`** 专用分支（须 Spring **`RevenuePlannerRealReadBridge`** + **`PurchasePlannerRealReadBridge`** Bean）；**`CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor`** + **`AiPlannerExecutorBusinessDiagnosisCompositeRevenuePurchaseGraphCase#buildPlan`**。
-
-**Replay 诚实字段**：
-
-| 字段 | 值（C-33） |
-|------|------------|
-| **`plannerCompositeHonesty`** | **`COMPOSITE_REVENUE_PURCHASE_REAL_ONLY`** |
-| **`plannerCompositeNote`** | **`revenue and purchase real hydrated adapters invoked; stock/dish/diagnosis/recommendation remain mock`** |
-
-**trace `usedTools`（典型 SUCCESS）**：含 **`revenue_query`**、**`purchase_overview`** + **`mock_stock_reduce_hydrated_adapter`**、**`mock_dish_profit_hydrated_adapter`**、**`mock_diagnosis_compose`**、**`mock_build_recommendation_plan`**；**不**调用 **`stock_reduce_query` / `dish_profit_analysis`**。
-
-**`harnessReplayMode`**：**`PLANNER_EXECUTOR_REVENUE_ADAPTER`**（与 C-32 同系摘要口径）。
-
----
-
-## 2.3 caseId **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_PURCHASE_STOCK_CORE`**（C-34）
-
-| 常量名 | 值 |
-|--------|-----|
-| **Composite + Revenue + Purchase + StockReduce** | **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_PURCHASE_STOCK_CORE`** |
-
-**C-34 已注册**：**`AiHarnessBuiltinCases`**、**`isPlannerExecutorMockHarnessCase`**；**`AiHarnessReplayPlannerExecutorMock`** 专用分支（须 Spring **`RevenuePlannerRealReadBridge`** + **`PurchasePlannerRealReadBridge`** + **`StockReducePlannerRealReadBridge`** Bean）；**`CompositeBusinessDiagnosisRevenuePurchaseStockHybridPlannerStepExecutor`** + **`AiPlannerExecutorBusinessDiagnosisCompositeRevenuePurchaseStockGraphCase#buildPlan`**；**`AiHarnessReplayService#resolveReplayMode`** 将该 caseId 归为 **`PLANNER_EXECUTOR_STOCK_REDUCE_ADAPTER`**（与出库 Adapter 系摘要一致）。
-
-**Replay 诚实字段**：
-
-| 字段 | 值（C-34） |
-|------|------------|
-| **`plannerCompositeHonesty`** | **`COMPOSITE_REVENUE_PURCHASE_STOCK_REAL_ONLY`** |
-| **`plannerCompositeNote`** | **`revenue, purchase and stock_reduce real hydrated adapters invoked; dish/diagnosis/recommendation remain mock`** |
-
-**trace `usedTools`（典型 SUCCESS）**：含 **`revenue_query`**、**`purchase_overview`**、**`stock_reduce_query`** + **`mock_dish_profit_hydrated_adapter`**、**`mock_diagnosis_compose`**、**`mock_build_recommendation_plan`**；**不**调用 **`dish_profit_analysis`**。
-
-**`harnessReplayMode`**：**`PLANNER_EXECUTOR_STOCK_REDUCE_ADAPTER`**。
+已删除：`CompositeBusinessDiagnosisRevenueHybridPlannerStepExecutor`、`CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor`、`CompositeBusinessDiagnosisRevenuePurchaseStockHybridPlannerStepExecutor` 及对应 GraphCase。Hydrated 步 **`stepId`** 上提至 **`CompositeBusinessDiagnosisStepIds`**。
 
 ---
 
@@ -124,7 +80,7 @@
 
 **trace `usedTools`（典型 SUCCESS）**：含 **`revenue_query`**、**`purchase_overview`**、**`stock_reduce_query`**、**`dish_profit_analysis`** + **`mock_diagnosis_compose`**、**`mock_build_recommendation_plan`**。
 
-**`harnessReplayMode`**：**`PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER`**。
+**`harnessReplayMode`**：**`PLANNER_EXECUTOR_MOCK`**（P1-B Final）。
 
 **诊断 / 建议两步（C-35 及全部 Composite Harness）**：**`targetAgent`** 可与生产枚举对齐（如 **`business_diagnosis_v1`**），但 **仍为 `MockPlannerStepExecutor` 合成 trace**；**`usedTools`** 恒为 **`mock_*`**，**不**表示已调用生产 LLM 或真实业务 Action — 详见 **`inputSummary` / `acceptanceCriteria`**。
 
@@ -165,7 +121,7 @@
 |--------|-----|
 | **Composite + GROUP 多门店** | **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_GROUP_CORE`** |
 
-**C-48 已注册**：**`AiHarnessBuiltinCases`**、**`isPlannerExecutorMockHarnessCase`**；**`AiHarnessReplayPlannerExecutorMock`**（须与 **C-35** 相同 **四** Bean：营收 / 采购 / 出库 / 菜品 **`*PlannerRealReadBridge`**）；**`CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecutor`** + **`AiPlannerExecutorBusinessDiagnosisCompositeGroupGraphCase#buildPlan`**；**`AiHarnessReplayService#resolveReplayMode`** 归入 **`PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER`**（与 **ALL_REAL** 同系）。四 **`ExecutionContext`** 分别由各 **`AiPlannerExecutor*AdapterGroupHydratedGraphCase`** 构建（与 **C-44～C-47** 单域 **物化方式一致**）；**`resolvedContextRef`** 指向营收 GROUP ref。
+**C-48 已注册**：**`AiHarnessBuiltinCases`**、**`isPlannerExecutorMockHarnessCase`**；**`AiHarnessReplayPlannerExecutorMock`**（须与 **C-35** 相同 **四** Bean：营收 / 采购 / 出库 / 菜品 **`*PlannerRealReadBridge`**）；**`CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecutor`** + **`AiPlannerExecutorBusinessDiagnosisCompositeGroupGraphCase#buildPlan`**；**`AiHarnessReplayService#resolveReplayMode`** 归入 **`PLANNER_EXECUTOR_MOCK`**（与 **ALL_REAL** 同系）。四 **`ExecutionContext`** 由 **`PlannerCompositeHarnessContext.*Group`** 构建；**`resolvedContextRef`** 指向营收 GROUP ref。
 
 **Replay 诚实字段（C-48）**：
 
@@ -174,7 +130,7 @@
 | **`plannerCompositeHonesty`** | **`COMPOSITE_GROUP_ALL_DATA_REAL_DIAGNOSIS_DETERMINISTIC`** |
 | **`plannerCompositeNote`** | **`group composite; four group hydrated adapters invoked; diagnosis deterministic; recommendation mock`** |
 
-**trace `usedTools`（典型四数据步 SUCCESS）**：**`revenue_query`**、**`purchase_overview`**、**`stock_reduce_query`**、**`dish_profit_analysis`** + **`mock_diagnosis_compose`**、**`mock_build_recommendation_plan`**。**`harnessReplayMode`**：**`PLANNER_EXECUTOR_DISH_PROFIT_ADAPTER`**。
+**trace `usedTools`（典型四数据步 SUCCESS）**：**`revenue_query`**、**`purchase_overview`**、**`stock_reduce_query`**、**`dish_profit_analysis`** + **`mock_diagnosis_compose`**、**`mock_build_recommendation_plan`**。**`harnessReplayMode`**：**`PLANNER_EXECUTOR_MOCK`**（P1-B Final）。
 
 **根摘要（与 C-35 同构 + GROUP 增量）**：**`businessDiagnosisSummaryText`**、**`businessDiagnosisRiskLevel`**、**`businessDiagnosisDataCoverage`**、**`businessDiagnosisCompositeAnswerPlan`**、**`visibleStoreRootDepartmentIds`**（默认 **`[1,3]`** 或由营收 **`AiResolvedQueryContext`** 提取）。**`summaryText`**：**GROUP 口径**（**`BusinessDiagnosisCompositeAnswerPlanBuilder`** 在 **`orgScope.scopeType=GROUP`** 时保守拼接；**不**复制 STORE **`scopeLabel`**）。**不**影响 **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`**。
 
@@ -215,7 +171,7 @@
 | 5 | **`step_diagnosis_compose`** | **MOCK** 或 **专用 Skeleton Executor**（**不调用 LLM**，**不做复杂推理**） | 仅 **聚合** 前四步已写入 **`AiRunState`** 的 AnswerPlan / `toolResults` **摘要** |
 | 6 | **`step_recommendation`** | **MOCK**（如 **`RecommendationPlannerMockAgentAdapter`** 同类） | 占位建议文案或结构化占位；**不**触发真实 action |
 
-**C-31 + C-31.1（当前 Harness）**：上表六 **`stepId`** 已固化，**但前四步均为 `PlannerStepMockExecutionStatus.SUCCESS` MOCK**，**命名含 `hydrated` 仅表达未来接线意图**；**前四步 `targetTool` = `mock_revenue_hydrated_adapter` … `mock_dish_profit_hydrated_adapter`（C-31.1）**，故 **`plannerExecutorTrace.usedTools` / 各步 `stepResults.usedTools`** **不**出现 **`revenue_query` / `purchase_overview` / `stock_reduce_query` / `dish_profit_analysis`**；真实 Tool id 仅写在 **`inputSummary` / `acceptanceCriteria`**。**`step_diagnosis_compose`** 使用 **`mock_diagnosis_compose`**；**`step_recommendation`** 使用既有 **`mock_build_recommendation_plan`**。**C-32**（**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_CORE`**）：**`step_revenue_hydrated`** 的 **`targetTool` = `revenue_query`**，走 Hydrated **`RevenuePlannerRealReadBridge`**；其后五步仍为 mock（**`mock_purchase_hydrated_adapter`** … **`mock_build_recommendation_plan`**）。**C-33**（**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_PURCHASE_CORE`**）：**`step_revenue_hydrated`** / **`step_purchase_hydrated`** 分别为 **`revenue_query`** / **`purchase_overview`**（双 Hydrated RealBridge）；**`step_stock_reduce_hydrated`** 起仍为 **`mock_*`**（见 **§2.2**）。**C-34**（**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_REVENUE_PURCHASE_STOCK_CORE`**）：前三步 **`revenue_query`** / **`purchase_overview`** / **`stock_reduce_query`**（三 Hydrated RealBridge）；**`step_dish_profit_hydrated`** 起 **`mock_*`**（见 **§2.3**）。**C-35**（**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`**）：前四步均为生产 Tool id（四 Hydrated RealBridge）；**`step_diagnosis_compose`** / **`step_recommendation`** **`mock_*`**（见 **§2.4**）。**C-42**（**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_STOCK_DEGRADED_CORE`**）：六步同构，**出库步 Harness 故意 DEGRADED**；余三数据域真实（见 **§2.5**）。
+**C-31 + C-31.1（当前 Harness）**：上表六 **`stepId`** 已固化，**但前四步均为 `PlannerStepMockExecutionStatus.SUCCESS` MOCK**，**命名含 `hydrated` 仅表达未来接线意图**；**前四步 `targetTool` = `mock_revenue_hydrated_adapter` … `mock_dish_profit_hydrated_adapter`（C-31.1）**，故 **`plannerExecutorTrace.usedTools` / 各步 `stepResults.usedTools`** **不**出现 **`revenue_query` / `purchase_overview` / `stock_reduce_query` / `dish_profit_analysis`**；真实 Tool id 仅写在 **`inputSummary` / `acceptanceCriteria`**。**`step_diagnosis_compose`** 使用 **`mock_diagnosis_compose`**；**`step_recommendation`** 使用既有 **`mock_build_recommendation_plan`**。**C-32～C-34**：**Retired**（见 **§2.1～2.3**）。**C-35**（**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`**）：前四步均为生产 Tool id（四 Hydrated RealBridge）；**`step_diagnosis_compose`** / **`step_recommendation`** **`mock_*`**（见 **§2.4**）。**C-42**（**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_STOCK_DEGRADED_CORE`**）：六步同构，**出库步 Harness 故意 DEGRADED**；余三数据域真实（见 **§2.5**）。
 
 **步序说明**：文档默认 **顺序执行** 以便依赖清晰的 `AiRunState` 突变；若未来实装并行四数据步，须在 **失败策略** 与 **trace** 上显式定义合并规则，**C-30 不展开实现**。
 
@@ -286,7 +242,7 @@
 
 ## 8. 实装阶段前置条件（ checklist）
 
-1. **~~注册~~ C-31 ✓**：**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`** + **`AiPlannerExecutorBusinessDiagnosisCompositeGraphCase#buildPlan`**（**全 MOCK**，**非** 四域 RealBridge）。  
+1. **~~C-31~~ Removed（P1-B Final）**：全 MOCK Composite case 已删；主验收见 C-35 / C-48 / C-42。  
 2. **`AiHarnessReplayService` + `AiHarnessReplayPlannerExecutorMock`**：**C-32～C-35** 已按 Composite case **分档注入** RealBridge（**C-35** 须 **四** Bean 非空）；与「单次短路可注入四 Bean」设计一致。  
 3. **`PlannerExecutionPlan`**：**`failureStrategy`**、六步 **`PlannerStepExecutionRequest`**、各步 **`executionMode`** — **C-31**：计划级 **`CONTINUE_WITH_DEGRADED`**、`finalAnswerPlanType=BUSINESS_DIAGNOSIS_COMPOSITE`、六 **`stepId`** 已固化。  
 4. **诊断 skeleton**：Java 类占位 **只聚合** AnswerPlan，**无 LLM** — **C-31**：**`step_diagnosis_compose`** 仍为 **MOCK SUCCESS** + **`answerPlanRef`** / **`expectedOutput`** 占位。→ **C-36 ✓**：**[`business-diagnosis-answer-plan-design.md`](./business-diagnosis-answer-plan-design.md)** 定义目标 **`BusinessDiagnosisCompositeAnswerPlan`**；**C-37**：Deterministic compose + DTO 映射。  

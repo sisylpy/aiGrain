@@ -27,7 +27,7 @@
 | `STRUCTURED_DISH_COST_GAP` | `dish_cost_gap` |
 | `STRUCTURED_DISH_LOW_PROFIT_REASON` | `dish_low_profit_reason` |
 
-**排行类（解析层 `metric.rankingType` → canonical wire）**
+**排行类（现网：V2 `semanticSlots.structuredIntentDetailWire` → merge → `structuredIntentDetail`；LLM 可填 `metric.rankingType` 作 compat，服务端不以其写 wire）**
 
 | LLM 常见输出（v2 表格） | canonical 归一后（示例） |
 |------------------------|--------------------------|
@@ -48,13 +48,15 @@
 - **Agent**：`DishProfitAgent`（`query_semantic_parser.v2.md` 与 `master-business-agent-design.md`）。  
 - **Tool ID**：`dish_profit_analysis`（`AiBusinessToolIds.DISH_PROFIT_ANALYSIS`）。
 
-**注意**：`dish_sales_query`（`DISH_SALES_QUERY`）为**独立**工具，主要用于经营概览/成本诊断等链路；**菜品毛利专线**默认 `dataPlanTools` **仅**含 `dish_profit_analysis`，见下文 §4。
+**注意**：**`dish_profit_analysis`** 同时服务 **菜品毛利专线**（`dish_profit_path`）、**D-8 销量专线**（`dish_sales_query_path`，语义 intent 仍为 **`DISH_SALES_QUERY`**）与 **成本诊断链**（`cost_diagnosis_path`，`DEFAULT_COST_INSIGHT_TOOLS` 第 4 步）。**Historical removed（D-CLEAN-DISH-SALES-P2）**：独立 Tool **`dish_sales_query`** / **`DishSalesQueryTool`** 已删除；**不再**编排或读取 `toolResults["dish_sales_query"]`。标价收入读 **`data.businessInsightSummary.totalListPriceRevenue`**。见下文 §4。
 
 ---
 
-## 2. `query_semantic_parser` v1 / v2 与典型问法映射
+## 2. `query_semantic_parser` v2 与典型问法映射
 
-下列为用户列举问法在 **prompt 正文**中的定义方式（以 **intent、metric.rankingType（蛇形）、mentionedDishName、time** 为主）。服务端仍会经 **Lexicon canonical + Merge** 落到 `structuredIntentDetail`。
+> **D-CLEAN-V1**：`query_semantic_parser.v1.md` 已从生产 prompt 目录删除；下表「v1 / v2 要点」列中 v1 描述仅作 Git 历史对照，现行契约以 **v2 + `semantic-output-schema.md`** 为准。
+
+下列为用户列举问法在 **prompt 正文**中的定义方式（LLM 侧常同时输出 **`semanticSlots` + `metric.rankingType`**）。**服务端主链**仅经 **slots wire / `structuredIntentDetail`** 落到 canonical wire（**D-1X-D3**）；勿按「仅填 rankingType 即可落 wire」实现 Java。
 
 | 用户问法（示例） | v1 / v2 要点 | 备注 |
 |------------------|--------------|------|
@@ -62,7 +64,7 @@
 | **核桃芽菜西芹毛利怎么样？** | `intent=DISH_PROFIT`；`mentionedDishName` 填菜名；**不要**输出 `dish_actual_cost_ranking_*`；`metric.rankingType=null`。 | v2：服务端落 `dish_gross_margin_query` 类单菜口径；承接排行榜后点菜名时**强制** `metricAction=OVERRIDE` 且 `rankingType=null`。 |
 | **哪个菜利润最高？** | v2 表格将 **「毛利最高 / 利润率最高 / 综合毛利率最高」** 与 `dish_gross_profit_rate_ranking_high` 对齐。 | **产品缺口**：用户若指 **绝对毛利金额**（非毛利率 %），v2 专节**未**单独枚举「按毛利额排行」的 `rankingType`；需后续语义扩展或与营业额域区分。 |
 | **哪个菜成本最高？** | v1：**DISH_PROFIT** + `dish_actual_cost_ranking_high`（勿标 `COST_DIAGNOSIS`）；v2 表格「实际成本最高」。 | 与门店/部门成本诊断（`COST_DIAGNOSIS`）区分。 |
-| **哪个菜销量最高？** | Lexicon 存在 **`dish_sales_ranking`**；`DishProfitAnalysisTool` 内可按 `soldPortionsTotal` **排序展示**。 | v2 **「DISH_PROFIT 排行表格」未单独列出销量行**；依赖解析器填 `rankingType` 或 merge 落地。`DishProfitAgentNode` **未**见对 `dish_sales_ranking` 的专用 `DishProfitAnswerPlan` 分支。 |
+| **哪个菜销量最高？** | 走 **`DISH_SALES_QUERY` / `dish_sales_query_path`** + **`DishSalesAnswerPlan`**（数据 **`dish_profit_analysis`**）。 | v2 须在 **`semanticSlots.structuredIntentDetailWire`** 给出销量排行 wire；**不**依赖服务端读 `metric.rankingType` 定 planType。 |
 | **哪个菜毛利异常？** | v1 `metric` 枚举中列出 `dish_low_profit_reason`；**无**单独「anomaly」字面 wire。 | 运行态：`DishProfitAgentNode` 对 `abnormalDishes` 有启发式筛选；**全域「异常排行榜」**无与采购异常同级的封闭 `rankingType` 专节。 |
 | **哪个菜原料成本变化大？** | **近义**：理论 vs 实际差额最大 → `dish_gap_ranking_max`（v2 表「理论/实际」落差排行）。 | **原料采购价环比/历史波动**未在菜品毛利 v2 专节定义，更可能落入 **采购域**或需多域证据；当前梳理**不**延伸臆造 wire。 |
 
@@ -130,9 +132,9 @@
 
 | 条件 | 行为 |
 |------|------|
-| 有 `AiDishProfitOverviewResult` 且（`dishProfitUseDeterministicSummaryOnly` **或** `dishProfitNarrowRankingOrReasonPlan`） | **`pickLlmSanitized("", deterministicFallback)`** — **跳过 LLM**，直接使用 **`DeterministicAnswerRenderer.renderDishProfitFallback`** → **`DishProfitDeterministicRenderer`**。 |
-| 否则 | 调用 **`COMPOSER_DISH_PROFIT_V1`**，`pickLlmSanitized(llm, deterministicFallback)`。 |
-| 无 overview | `renderDishProfitFallback(null, state)`。 |
+| 有 `DishProfitAnswerPlan` 且窄口径/确定性宣读条件满足 | **`composeDishProfitDeterministicFromAnswerPlan`**（只读 Plan，跳过 LLM）。 |
+| 否则 | 调用 **`COMPOSER_DISH_PROFIT_V1`**，`pickLlmSanitized(llm, planAwareFallback)`。 |
+| 无 Plan / 无 overview | `composeDishProfitNoPlanFallback`（**不**恢复 `renderDishProfitFallback` / `DishProfitDeterministicRenderer`）。 |
 
 **确定性渲染**内部逻辑要点：
 
@@ -156,7 +158,7 @@
 | **菜品利润排行（绝对利润额）** | **弱 / 未闭环** | 解析层倾向 **毛利率** 排行；未见「按毛利金额」独立 wire 与 planType。 |
 | **菜品成本排行（实际）** | **支持** | `dish_actual_cost_ranking_high` / low；`TYPE_DISH_HIGHEST_ACTUAL_COST` 等。 |
 | **菜品成本排行（理论）** | **支持（tool + plan）** | Lexicon + `attachSingleDish…` / 排行逻辑在 toolchain 中存在；依赖解析器输出 `dish_theoretical_cost_ranking_*`。 |
-| **菜品销量关联** | **部分** | Tool 层可按 `dish_sales_ranking` **排序**；**菜品专线不默认拉 `dish_sales_query`**；**无**与 `DISH_LOWEST_MARGIN` 同级的销量 AnswerPlan 类型。 |
+| **菜品销量关联** | **部分** | Tool 层可按 `dish_sales_ranking` **排序**；D-8 / 成本链均执行 **`dish_profit_analysis`**，**不**编排 **`dish_sales_query`**；**无**与 `DISH_LOWEST_MARGIN` 同级的销量 AnswerPlan 类型。 |
 | **菜品成本 / 毛利「异常」** | **部分** | Overview 层 `abnormalDishes`、`lowProfitDishes` 启发式；`dish_low_profit_reason` 偏 **点名解释**；无统一「异常榜」封闭契约。 |
 | **理论 vs 实际成本变化（差额）** | **支持** | `dish_gap_ranking_max` → `TYPE_DISH_COST_GAP`。 |
 
@@ -193,13 +195,13 @@
 - `DishProfitAnswerPlan` 已有 `TYPE_DISH_LOWEST_MARGIN`、`TYPE_DISH_HIGHEST_MARGIN`、`TYPE_DISH_HIGHEST_ACTUAL_COST`、`TYPE_DISH_COST_GAP`。
 - **当前没有** `TYPE_DISH_SALES_RANKING`。
 
-### 5. 「成本最高」误判根因
+### 5. 「成本最高」误判根因（历史）
 
-`AiQuerySemanticV2DishProfitGate.sanitize` 中：若 `metric.rankingType` = `dish_actual_cost_ranking_high` 但 `primaryMetric` 被标成 `PROFIT_MARGIN` / `MARGIN` / `GROSS_MARGIN`，会把 `rankingType` 改成 `dish_gross_profit_rate_ranking_high`，最终落成 `DISH_HIGHEST_MARGIN`。这解释了「哪个菜成本最高？」被改成 **高毛利率排行** 的现象。
+D-1X-B 前 `AiQuerySemanticV2DishProfitGate.sanitize` 曾把 `dish_actual_cost_ranking_high` + `PROFIT_MARGIN` 类 primaryMetric 改成毛利率排行 wire；**该类已删除**，现由 v2 semanticSlots + Validator 落地。
 
 ### 6. 「销量最高」混乱根因
 
-v2 菜品排行允许列表 `ALLOWED_DISH_RANKING_TYPES` **当前不包含** `dish_sales_ranking`，**也不包含** `dish_gap_ranking_max`。因此若 LLM 输出 `dish_sales_ranking`，可能被 gate **拒绝或回退**，导致与 `RevenueAgent` / `revenue_query` **混填**。**短期不要直接修销量**，先评审归属。
+v2 菜品排行白名单与销量 wire 归属仍在 prompt/schema 侧评审；**不再**经 Resolver Java Gate 拦截。
 
 ### 7. D-7 后续 Phase 建议
 
@@ -210,7 +212,7 @@ v2 菜品排行允许列表 `ALLOWED_DISH_RANKING_TYPES` **当前不包含** `di
 
 ### 8. 最小改动建议（评审向）
 
-优先从 **prompt / schema + `DishProfitGate` 的 allowed / sanitize** 评审入手；**不要优先**改 Tool / SQL / Composer；**`DishProfitAnswerPlanBuilder` 不是当前主要受力点**。
+优先从 **prompt / schema + Validator** 评审入手；**不要优先**改 Tool / SQL / Composer；**`DishProfitAnswerPlanBuilder` 不是当前主要受力点**。
 
 ### D-7 与 D-8 边界：菜品销量不作为 DishProfit 长期能力承接
 
@@ -251,7 +253,7 @@ v2 菜品排行允许列表 `ALLOWED_DISH_RANKING_TYPES` **当前不包含** `di
 | AnswerPlan DTO | `DishProfitAnswerPlan` |
 | Composer 分支 | `StubAnswerComposerNode`（`isDishProfitPath`） |
 | 确定性渲染 | `DishProfitDeterministicRenderer`、`DeterministicAnswerRenderer` |
-| Parser 契约 | `src/main/resources/ai-prompts/semantic/query_semantic_parser.v1.md`、`query_semantic_parser.v2.md` |
+| Parser 契约 | **`query_semantic_parser.v2.md`** + **`semantic-output-schema.md`**（v1 prompt 已于 D-CLEAN-V1 删除，仅 Git 历史） |
 
 ---
 

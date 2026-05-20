@@ -1,6 +1,5 @@
 package com.nongxinle.ai.planner;
 
-import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.core.AiRunState;
@@ -33,7 +32,15 @@ import java.util.Objects;
 /**
  * C-37 / C-38：从 {@link PlannerExecutorTrace} 等价物（已完成步 {@code priorStepResults}）+ 计划级执行上下文挂载的
  * AnswerPlan（及其次优 {@link AiRunState#getToolResults()} 快照）物化 {@link BusinessDiagnosisCompositeAnswerPlan}。
- * C-38.2：出库 / 菜品标量 <strong>不</strong>用 AnswerPlan 的 nz 默认 0 冒充 Tool 真值；以 Tool payload 的 key 存在性为准，
+ *
+ * <p><b>旁路边界</b>：本 Builder 仅服务于 BusinessDiagnosisComposite
+ * {@link BusinessDiagnosisCompositeExecutionMode#SHADOW} /
+ * {@link BusinessDiagnosisCompositeExecutionMode#HARNESS_ONLY} 旁路观测链；<strong>不属于</strong> Master Graph 主回答链；
+ * 产出仅供 Composite 旁路对照与只读 Composer；<strong>不替换</strong>
+ * {@link AiRunState#getFinalAnswerText()}；<strong>不负责</strong>生产用户正文。
+ * {@link BusinessDiagnosisCompositeExecutionMode#PRIMARY} 为预留/未接生产主链。</p>
+ *
+ * <p>C-38.2：出库 / 菜品标量 <strong>不</strong>用 AnswerPlan 的 nz 默认 0 冒充 Tool 真值；以 Tool payload 的 key 存在性为准，
  * {@code debug.mappingNotes} 区分 <strong>real zero</strong> 与 <strong>missing</strong>。
  * C-39：在四域 summary + {@code dataCoverage} 上生成<strong>最小确定性</strong> {@code diagnosisSignals}（保守规则）；<strong>不</strong>调 LLM。
  * C-40：{@link BusinessDiagnosisCompositeAnswerPlan#getSummaryText()} 为确定性中文短摘要（仅拼接既有字段；**非** LLM 终稿；不说「经营正常」）。
@@ -43,7 +50,7 @@ import java.util.Objects;
  * C-49：文档与 {@link #BUILDER_VERSION} 标记收口（curl 已验收 GROUP Composite）；{@code debug.mappingNotes}
  * 仍保留 {@code phase=C-38.2_zero_vs_missing}、{@code signalsPhase=C-39_minimal_deterministic}、{@code
  * summaryPhase=C-40_deterministic_zh}；语义同 C-38.2 / C-39 / C-40 / C-42 / C-48。
- * <strong>不</strong>读原始 DB、<strong>不</strong>调 LLM。
+ * <strong>不</strong>读原始 DB、<strong>不</strong>调 LLM。</p>
  */
 public final class BusinessDiagnosisCompositeAnswerPlanBuilder {
 
@@ -68,14 +75,11 @@ public final class BusinessDiagnosisCompositeAnswerPlanBuilder {
         String dishProfitAnswerPlanType = resolveDishProfitAnswerPlanType(request);
 
         PlannerStepResult revStep =
-                findPrior(prior, CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor
-                        .COMPOSITE_STEP_ID_REVENUE_HYDRATED);
+                findPrior(prior, CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_REVENUE_HYDRATED);
         PlannerStepResult purStep =
-                findPrior(prior, CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor
-                        .COMPOSITE_STEP_ID_PURCHASE_HYDRATED);
+                findPrior(prior, CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_PURCHASE_HYDRATED);
         PlannerStepResult stStep =
-                findPrior(prior, CompositeBusinessDiagnosisRevenuePurchaseStockHybridPlannerStepExecutor
-                        .COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED);
+                findPrior(prior, CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED);
         PlannerStepResult dishStep =
                 findPrior(prior, CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecutor.COMPOSITE_STEP_ID_DISH_PROFIT_HYDRATED);
 
@@ -211,14 +215,11 @@ public final class BusinessDiagnosisCompositeAnswerPlanBuilder {
         String deg = r != null ? r.getDegradedReason() : null;
         String stepId =
                 domain == BusinessDiagnosisDataDomain.REVENUE
-                        ? CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor
-                                .COMPOSITE_STEP_ID_REVENUE_HYDRATED
+                        ? CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_REVENUE_HYDRATED
                         : domain == BusinessDiagnosisDataDomain.PURCHASE
-                                ? CompositeBusinessDiagnosisRevenuePurchaseHybridPlannerStepExecutor
-                                        .COMPOSITE_STEP_ID_PURCHASE_HYDRATED
+                                ? CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_PURCHASE_HYDRATED
                                 : domain == BusinessDiagnosisDataDomain.STOCK_REDUCE
-                                        ? CompositeBusinessDiagnosisRevenuePurchaseStockHybridPlannerStepExecutor
-                                                .COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED
+                                        ? CompositeBusinessDiagnosisStepIds.COMPOSITE_STEP_ID_STOCK_REDUCE_HYDRATED
                                         : CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecutor
                                                 .COMPOSITE_STEP_ID_DISH_PROFIT_HYDRATED;
         return BusinessDiagnosisDomainCoverage.builder()

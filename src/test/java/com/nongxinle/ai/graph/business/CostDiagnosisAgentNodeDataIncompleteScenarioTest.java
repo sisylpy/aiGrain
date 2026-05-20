@@ -23,7 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * 成本主线收口：采购有发生、核销侧全 0 + 毛利 Tool 标示不可靠 → data_incomplete 与克制摘要。
+ * 成本主线收口：采购有发生、核销侧全 0 + 内部毛利推导标示不可靠 → data_incomplete 与克制摘要。
  *
  * @see docs/TODO_MULTI_AGENT.md 「成本分析主线收口」
  */
@@ -56,21 +56,18 @@ class CostDiagnosisAgentNodeDataIncompleteScenarioTest {
         state.getToolResults().put(AiBusinessToolIds.REVENUE_QUERY, envData(Map.of(
                 "totalRevenue", new BigDecimal("10000"),
                 "days", 10)));
-        state.getToolResults().put(AiBusinessToolIds.PURCHASE_QUERY, envData(Map.of(
-                "purchaseSubTotal", new BigDecimal("3303"))));
-        state.getToolResults().put(AiBusinessToolIds.DISH_SALES_QUERY, envData(Map.of(
-                "listPriceRevenueTotal", BigDecimal.ZERO)));
+        state.getToolResults().put(AiBusinessToolIds.PURCHASE_OVERVIEW, envData(Map.of(
+                "purchaseOverview", Map.of(
+                        "totalPurchaseAmount", "3303",
+                        "purchaseOrderCount", 1))));
+        Map<String, Object> dishProfitData = new LinkedHashMap<>();
+        dishProfitData.put("businessInsightSummary", Map.of("totalListPriceRevenue", BigDecimal.ZERO));
+        state.getToolResults().put(AiBusinessToolIds.DISH_PROFIT_ANALYSIS, envData(dishProfitData));
         state.getToolResults().put(AiBusinessToolIds.STOCK_REDUCE_QUERY, envData(Map.of(
                 "productionTotal", BigDecimal.ZERO,
                 "produceTotal", BigDecimal.ZERO,
                 "wasteTotal", BigDecimal.ZERO,
                 "lossTotal", BigDecimal.ZERO)));
-        Map<String, Object> gm = new LinkedHashMap<>();
-        gm.put("grossMarginReliable", false);
-        gm.put("estimatedGrossMarginPercent", "");
-        gm.put("estimatedGrossMarginPercentDisplay", "毛利率暂不可准确计算");
-        gm.put("basisRevenue", "10000");
-        state.getToolResults().put(AiBusinessToolIds.GROSS_MARGIN_CALCULATOR, envData(gm));
 
         node.applyIfApplicable(state);
 

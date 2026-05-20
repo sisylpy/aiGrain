@@ -38,7 +38,7 @@ public class GbAiConversationEntity implements Serializable {
 	 */
 	private Long gbAiConversationAdvisorId;
 	/**
-	 * 会话线程类别：{@code ADVISOR}=顾问专属长期会话；与普通整数 {@link #gbAiConversationType} 无关。
+	 * 会话线程类别：{@code ADVISOR}=顾问专属长期会话。
 	 */
 	private String gbAiConversationThreadKind;
 	/**
@@ -65,10 +65,6 @@ public class GbAiConversationEntity implements Serializable {
 	 *  状态 (0=进行中,1=已结束)
 	 */
 	private Integer gbAiConversationStatus;
-	/**
-	 *  对话类型 (0=普通聊天, 1=促销活动/销售额, 2=公众号相关)
-	 */
-	private Integer gbAiConversationType;
 
 	/** 0 正常，1 归档（历史列表筛选用） */
 	private Integer gbAiConversationArchived;

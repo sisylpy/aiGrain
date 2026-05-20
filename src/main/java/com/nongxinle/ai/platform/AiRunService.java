@@ -107,7 +107,7 @@ public class AiRunService {
         if (req.getConversationId() == null) {
             AiConversationScopeMode mode = inferAgentRunScopeMode(req);
             conv = conversationCoreService.createNewConversationForAgentRun(
-                    req.getDepartmentId(), req.getDistributerId(), mode, req.getUserId(), 0);
+                    req.getDepartmentId(), req.getDistributerId(), mode, req.getUserId());
             req.setConversationId(conv.getGbAiConversationId());
             log.info("[AiRunService] created conversationId={} userId={} mode={}",
                     conv.getGbAiConversationId(), req.getUserId(), mode);
@@ -131,7 +131,6 @@ public class AiRunService {
         runMessagePersistence.persistUserMessageForRun(
                 conv.getGbAiConversationId(),
                 req.getUserId(),
-                conv.getGbAiConversationType() != null ? conv.getGbAiConversationType() : 0,
                 runId,
                 req.getMessage());
 
@@ -233,6 +232,26 @@ public class AiRunService {
             long runId,
             Boolean compositeProductionGateProductionEnabledOverride,
             String compositeBusinessDiagnosisExecutionMode) {
+        return executeBusinessGraphSyncForHarness(
+                req,
+                today,
+                runId,
+                compositeProductionGateProductionEnabledOverride,
+                compositeBusinessDiagnosisExecutionMode,
+                false);
+    }
+
+    /**
+     * @param toolRequestOnly {@code true} 时启用 {@link com.nongxinle.ai.harness.replay.AiHarnessReplayDryRunStage#TOOL_REQUEST_ONLY}
+     *     截断（ToolExecution 仅快照 args，不 execute / 不 Composer）。
+     */
+    public AiRunState executeBusinessGraphSyncForHarness(
+            AiRunCreateRequest req,
+            LocalDate today,
+            long runId,
+            Boolean compositeProductionGateProductionEnabledOverride,
+            String compositeBusinessDiagnosisExecutionMode,
+            boolean toolRequestOnly) {
         if (req == null || req.getUserId() == null) {
             throw new IllegalArgumentException("userId required");
         }
@@ -252,6 +271,10 @@ public class AiRunService {
         resolved.setRunId(runId);
 
         AiRunState state = newRunStateFromResolved(runId, req, uc, resolved);
+        if (toolRequestOnly) {
+            state.setHarnessToolRequestOnly(true);
+            state.setToolExecuteSkipped(true);
+        }
         maybeAppendOutOfScopeMentionDenial(resolvedQueryContextResolver, resolved, state);
         recordCompositeProductionGateObservation(state, compositeProductionGateProductionEnabledOverride);
         logResolvedQueryContext(runId, req.getConversationId(), resolved);
@@ -263,8 +286,10 @@ public class AiRunService {
         String statusName = AiRunStatus.COMPLETED.name();
         try {
             ended = graphRunner.runBusinessGraph(state);
-            if (!ended.isCancelled()) {
+            if (!ended.isCancelled() && !ended.isHarnessToolRequestOnly()) {
                 maybeExecuteHarnessCompositePlanner(ended, compositeBusinessDiagnosisExecutionMode);
+            } else if (ended.isHarnessToolRequestOnly()) {
+                ended.setBusinessDiagnosisCompositeExecutionResult(null);
             } else {
                 ended.setBusinessDiagnosisCompositeExecutionResult(null);
             }
@@ -507,13 +532,6 @@ public class AiRunService {
                     data.put("costDiagnosisWarning", "serialize_failed");
                 }
             }
-            if (endedState.getBusinessOverviewResult() != null) {
-                try {
-                    data.put("businessOverview", JSON.parseObject(JSON.toJSONString(endedState.getBusinessOverviewResult())));
-                } catch (Exception ignore) {
-                    data.put("businessOverviewWarning", "serialize_failed");
-                }
-            }
             if (endedState.getDishProfitOverviewResult() != null) {
                 try {
                     data.put("dishProfitOverview", JSON.parseObject(JSON.toJSONString(endedState.getDishProfitOverviewResult())));
@@ -667,11 +685,9 @@ public class AiRunService {
         if (state == null || state.getConversationId() == null || state.getUserId() == null) {
             return;
         }
-        Integer messageType = runMessagePersistence.resolveConversationMessageType(state.getConversationId());
         Long assistantMessageId = runMessagePersistence.persistAssistantMessageForRun(
                 state.getConversationId(),
                 state.getUserId(),
-                messageType,
                 runId,
                 content,
                 assistantStatusName);

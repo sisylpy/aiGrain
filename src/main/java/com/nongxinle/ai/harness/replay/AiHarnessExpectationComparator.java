@@ -2,6 +2,7 @@ package com.nongxinle.ai.harness.replay;
 
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.alibaba.fastjson2.JSON;
 import org.springframework.util.StringUtils;
@@ -43,6 +44,26 @@ public final class AiHarnessExpectationComparator {
             String actual = stringVal(summary.get("effectivePathCode"));
             if (!eq(actual, exp.getEffectivePathCode())) {
                 out.add(mm(AiHarnessFailureType.PATH_MISMATCH, "effectivePathCode", exp.getEffectivePathCode(), actual));
+            }
+        }
+        if (exp.getEffectiveIntentCodeAnyOf() != null && !exp.getEffectiveIntentCodeAnyOf().isEmpty()) {
+            String actual = stringVal(summary.get("effectiveIntentCode"));
+            if (!exp.getEffectiveIntentCodeAnyOf().contains(actual)) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "effectiveIntentCode(anyOf)",
+                        exp.getEffectiveIntentCodeAnyOf(),
+                        actual));
+            }
+        }
+        if (exp.getEffectivePathCodeAnyOf() != null && !exp.getEffectivePathCodeAnyOf().isEmpty()) {
+            String actual = stringVal(summary.get("effectivePathCode"));
+            if (!exp.getEffectivePathCodeAnyOf().contains(actual)) {
+                out.add(mm(
+                        AiHarnessFailureType.PATH_MISMATCH,
+                        "effectivePathCode(anyOf)",
+                        exp.getEffectivePathCodeAnyOf(),
+                        actual));
             }
         }
 
@@ -120,9 +141,34 @@ public final class AiHarnessExpectationComparator {
         }
 
         if (Boolean.TRUE.equals(exp.getCheckPurchaseSourceType())) {
-            String actual = stringVal(summary.get("purchaseSourceType"));
-            if (!eq(actual, blankToNull(exp.getPurchaseSourceType()))) {
-                out.add(mm(AiHarnessFailureType.PURCHASE_SOURCE_MISMATCH, "purchaseSourceType", exp.getPurchaseSourceType(), actual));
+            String actualNorm =
+                    normalizeHarnessPurchaseSourceTypeForComparison(stringVal(summary.get("purchaseSourceType")));
+            List<String> anyOf = trimNonEmpty(exp.getPurchaseSourceTypeAnyOf());
+            if (!anyOf.isEmpty()) {
+                boolean hit = false;
+                for (String cand : anyOf) {
+                    if (eq(actualNorm, normalizeHarnessPurchaseSourceTypeForComparison(cand))) {
+                        hit = true;
+                        break;
+                    }
+                }
+                if (!hit) {
+                    out.add(mm(
+                            AiHarnessFailureType.PURCHASE_SOURCE_MISMATCH,
+                            "purchaseSourceType(anyOf)",
+                            anyOf,
+                            actualNorm));
+                }
+            } else {
+                String expectedNorm =
+                        normalizeHarnessPurchaseSourceTypeForComparison(blankToNull(exp.getPurchaseSourceType()));
+                if (!eq(actualNorm, expectedNorm)) {
+                    out.add(mm(
+                            AiHarnessFailureType.PURCHASE_SOURCE_MISMATCH,
+                            "purchaseSourceType",
+                            expectedNorm,
+                            actualNorm));
+                }
             }
         }
 
@@ -154,6 +200,49 @@ public final class AiHarnessExpectationComparator {
             }
         }
 
+        assertOptionalString(summary, exp.getCanonicalStructuredIntentDetailWire(), "canonicalStructuredIntentDetailWire", out);
+        assertOptionalString(summary, exp.getSemanticSlotQueryObject(), "queryObject", out);
+        assertOptionalString(summary, exp.getSemanticSlotOperation(), "operation", out);
+        assertOptionalString(summary, exp.getSemanticSlotMetric(), "metric", out);
+        assertOptionalString(summary, exp.getSemanticSlotSourceFacet(), "sourceFacet", out);
+        assertOptionalString(summary, exp.getSemanticSlotAnchorPolicy(), "anchorPolicy", out);
+        assertOptionalString(summary, exp.getStockReduceMatrixRowIdExpected(), "stockReduceMatrixRowId", out);
+        assertOptionalString(summary, exp.getStockReduceKnownGapExpected(), "stockReduceKnownGap", out);
+        if (Boolean.TRUE.equals(exp.getStockReduceKnownGapMustBeAbsent())) {
+            String gap = stringVal(summary.get("stockReduceKnownGap"));
+            if (StringUtils.hasText(gap)) {
+                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "stockReduceKnownGap", null, gap));
+            }
+        }
+        assertOptionalString(summary, exp.getRevenueMatrixRowIdExpected(), "revenueMatrixRowId", out);
+        assertOptionalString(summary, exp.getRevenueKnownGapExpected(), "revenueKnownGap", out);
+        if (Boolean.TRUE.equals(exp.getRevenueKnownGapMustBeAbsent())) {
+            String gap = stringVal(summary.get("revenueKnownGap"));
+            if (StringUtils.hasText(gap)) {
+                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "revenueKnownGap", null, gap));
+            }
+        }
+        assertOptionalString(summary, exp.getWarehouseMatrixRowIdExpected(), "warehouseMatrixRowId", out);
+        assertOptionalString(summary, exp.getWarehouseKnownGapExpected(), "warehouseKnownGap", out);
+        if (Boolean.TRUE.equals(exp.getWarehouseKnownGapMustBeAbsent())) {
+            String gap = stringVal(summary.get("warehouseKnownGap"));
+            if (StringUtils.hasText(gap)) {
+                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "warehouseKnownGap", null, gap));
+            }
+        }
+        assertOptionalString(
+                summary, exp.getHarnessReplayWarehouseAnswerPlanType(), "warehouseAnswerPlanType", out);
+        assertOptionalString(summary, exp.getDishSalesMatrixRowIdExpected(), "dishSalesMatrixRowId", out);
+        assertOptionalString(summary, exp.getDishSalesKnownGapExpected(), "dishSalesKnownGap", out);
+        if (Boolean.TRUE.equals(exp.getDishSalesKnownGapMustBeAbsent())) {
+            String gap = stringVal(summary.get("dishSalesKnownGap"));
+            if (StringUtils.hasText(gap)) {
+                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "dishSalesKnownGap", null, gap));
+            }
+        }
+        assertOptionalString(
+                summary, exp.getHarnessReplayDishSalesAnswerPlanType(), "dishSalesAnswerPlanType", out);
+
         if (StringUtils.hasText(exp.getEffectiveIntentSource())) {
             String actual = stringVal(summary.get("effectiveIntentSource"));
             if (!eq(actual, exp.getEffectiveIntentSource())) {
@@ -180,6 +269,13 @@ public final class AiHarnessExpectationComparator {
         }
 
         assertSemanticV2HarnessFields(summary, exp, out);
+        assertOptionalBoolean(
+                summary, exp.getNeedSemanticClarificationExpected(), "needSemanticClarification", out);
+        assertOptionalBooleanProbe(
+                summary,
+                exp.getPurchaseSemanticFramePrimaryMergeExpected(),
+                "purchaseSemanticFramePrimaryMerge",
+                out);
         assertQuerySemanticV2TimeActionExpected(summary, exp, out);
         assertQuerySemanticV2MetricActionExpected(summary, exp, out);
         assertQuerySemanticV2TimeActionNoneOf(summary, exp, out);
@@ -215,10 +311,559 @@ public final class AiHarnessExpectationComparator {
                 out);
         assertOptionalBooleanProbe(
                 summary, exp.getMasterDishProfitToolResultSuccessExpected(), "masterDishProfitToolResultSuccess", out);
+        assertOptionalBooleanProbe(
+                summary,
+                exp.getDishIngredientCostBreakdownToolSuccessExpected(),
+                "dishIngredientCostBreakdownToolSuccess",
+                out);
         assertHarnessReplayContextProbes(summary, exp, out);
         assertDiagnosisStoreCompareHarnessProbes(summary, exp, out);
+        assertStoreRiskReasonsDrilldownHarnessExtras(summary, exp, out);
+        assertDishProfitAnchorDrilldownHarnessExtras(summary, exp, out);
+        assertPurchaseAnswerPlanAnchorHarnessExtras(summary, exp, out);
+        assertFollowUpActionProtocol(summary, exp, out);
+        assertPurchaseSupplierChannelFollowUpRegistryHarness(summary, exp, out);
+        assertPurchaseAnswerPlanFocusOrSecondaryRowsJson(summary, exp, out);
+        assertExpectedPlannedToolArgs(summary, exp, out);
+        assertToolRequestHarnessProbes(summary, exp, out);
 
         return out;
+    }
+
+    private static void assertToolRequestHarnessProbes(
+            Map<String, Object> summary,
+            AiHarnessReplayExpectedRound exp,
+            List<AiHarnessMismatch> out) {
+        assertOptionalBooleanProbe(summary, exp.getToolExecuteSkippedExpected(), "toolExecuteSkipped", out);
+        assertOptionalBooleanProbe(
+                summary, exp.getPurchaseAnswerPlanPresentExpected(), "purchaseAnswerPlanPresent", out);
+    }
+
+    private static void assertExpectedPlannedToolArgs(
+            Map<String, Object> summary,
+            AiHarnessReplayExpectedRound exp,
+            List<AiHarnessMismatch> out) {
+        AiHarnessReplayExpectedPlannedToolArgs expPt = exp.getExpectedPlannedToolArgs();
+        if (expPt == null || !StringUtils.hasText(expPt.getToolId())) {
+            return;
+        }
+        String toolId = expPt.getToolId().trim();
+        Object byToolRaw = summary.get("plannedToolArgsByToolId");
+        if (!(byToolRaw instanceof Map<?, ?> byTool) || byTool.isEmpty()) {
+            out.add(mm(
+                    AiHarnessFailureType.TOOL_ARGUMENT_MISMATCH,
+                    "plannedToolArgsByToolId[" + toolId + "]",
+                    "present",
+                    byToolRaw));
+            return;
+        }
+        Object snapRaw = byTool.get(toolId);
+        if (!(snapRaw instanceof Map<?, ?> snap)) {
+            out.add(mm(
+                    AiHarnessFailureType.TOOL_ARGUMENT_MISMATCH,
+                    "plannedToolArgsByToolId[" + toolId + "]",
+                    "snapshot",
+                    snapRaw));
+            return;
+        }
+        if (StringUtils.hasText(expPt.getStartDate())) {
+            String actual = stringVal(snap.get("startDate"));
+            if (!eq(actual, expPt.getStartDate())) {
+                out.add(mm(
+                        AiHarnessFailureType.TOOL_ARGUMENT_MISMATCH,
+                        "plannedToolArgsByToolId[" + toolId + "].startDate",
+                        expPt.getStartDate(),
+                        actual));
+            }
+        }
+        if (StringUtils.hasText(expPt.getEndDate())) {
+            String actual = stringVal(snap.get("endDate"));
+            if (!eq(actual, expPt.getEndDate())) {
+                out.add(mm(
+                        AiHarnessFailureType.TOOL_ARGUMENT_MISMATCH,
+                        "plannedToolArgsByToolId[" + toolId + "].endDate",
+                        expPt.getEndDate(),
+                        actual));
+            }
+        }
+        if (StringUtils.hasText(expPt.getScopeType())) {
+            String actual = stringVal(snap.get("scopeType"));
+            if (!eq(actual, expPt.getScopeType())) {
+                out.add(mm(
+                        AiHarnessFailureType.TOOL_ARGUMENT_MISMATCH,
+                        "plannedToolArgsByToolId[" + toolId + "].scopeType",
+                        expPt.getScopeType(),
+                        actual));
+            }
+        }
+        if (expPt.getExpandedSqlDepartmentIdsMustContain() != null
+                && !expPt.getExpandedSqlDepartmentIdsMustContain().isEmpty()) {
+            List<Long> actual = longListFromUnknown(snap.get("expandedSqlDepartmentIds"));
+            if (!longListContainsAll(actual, expPt.getExpandedSqlDepartmentIdsMustContain())) {
+                out.add(mm(
+                        AiHarnessFailureType.TOOL_ARGUMENT_MISMATCH,
+                        "plannedToolArgsByToolId[" + toolId + "].expandedSqlDepartmentIds",
+                        expPt.getExpandedSqlDepartmentIdsMustContain(),
+                        actual));
+            }
+        }
+        if (expPt.getPurchaseSqlDepartmentIdsMustContain() != null
+                && !expPt.getPurchaseSqlDepartmentIdsMustContain().isEmpty()) {
+            List<Long> actual = longListFromUnknown(snap.get("purchaseSqlDepartmentIds"));
+            if (!longListContainsAll(actual, expPt.getPurchaseSqlDepartmentIdsMustContain())) {
+                out.add(mm(
+                        AiHarnessFailureType.TOOL_ARGUMENT_MISMATCH,
+                        "plannedToolArgsByToolId[" + toolId + "].purchaseSqlDepartmentIds",
+                        expPt.getPurchaseSqlDepartmentIdsMustContain(),
+                        actual));
+            }
+        }
+        if (StringUtils.hasText(expPt.getCanonicalStructuredIntentDetailWire())) {
+            String actual = stringVal(snap.get("canonicalStructuredIntentDetailWire"));
+            if (!eq(actual, expPt.getCanonicalStructuredIntentDetailWire())) {
+                out.add(mm(
+                        AiHarnessFailureType.TOOL_ARGUMENT_MISMATCH,
+                        "plannedToolArgsByToolId[" + toolId + "].canonicalStructuredIntentDetailWire",
+                        expPt.getCanonicalStructuredIntentDetailWire(),
+                        actual));
+            }
+        }
+        Object argsRaw = snap.get("args");
+        Map<?, ?> args = argsRaw instanceof Map<?, ?> m ? m : null;
+        if (StringUtils.hasText(expPt.getArgsPurchaseNarrativeMode())) {
+            String actual = args == null ? null : stringVal(args.get(AiBusinessToolIds.ARG_PURCHASE_NARRATIVE_MODE));
+            if (!eq(actual, expPt.getArgsPurchaseNarrativeMode())) {
+                out.add(mm(
+                        AiHarnessFailureType.TOOL_ARGUMENT_MISMATCH,
+                        "plannedToolArgsByToolId[" + toolId + "].args."
+                                + AiBusinessToolIds.ARG_PURCHASE_NARRATIVE_MODE,
+                        expPt.getArgsPurchaseNarrativeMode(),
+                        actual));
+            }
+        }
+        if (StringUtils.hasText(expPt.getArgsPurchaseSourceFocus())) {
+            String actual = args == null ? null : stringVal(args.get(AiBusinessToolIds.ARG_PURCHASE_SOURCE_FOCUS));
+            if (!eq(actual, expPt.getArgsPurchaseSourceFocus())) {
+                out.add(mm(
+                        AiHarnessFailureType.TOOL_ARGUMENT_MISMATCH,
+                        "plannedToolArgsByToolId[" + toolId + "].args."
+                                + AiBusinessToolIds.ARG_PURCHASE_SOURCE_FOCUS,
+                        expPt.getArgsPurchaseSourceFocus(),
+                        actual));
+            }
+        } else if (expPt.getArgsPurchaseSourceFocusAnyOf() != null
+                && !expPt.getArgsPurchaseSourceFocusAnyOf().isEmpty()) {
+            String actual = args == null ? null : stringVal(args.get(AiBusinessToolIds.ARG_PURCHASE_SOURCE_FOCUS));
+            if (actual == null || !expPt.getArgsPurchaseSourceFocusAnyOf().contains(actual)) {
+                out.add(mm(
+                        AiHarnessFailureType.TOOL_ARGUMENT_MISMATCH,
+                        "plannedToolArgsByToolId[" + toolId + "].args."
+                                + AiBusinessToolIds.ARG_PURCHASE_SOURCE_FOCUS + "(anyOf)",
+                        expPt.getArgsPurchaseSourceFocusAnyOf(),
+                        actual));
+            }
+        }
+    }
+
+    private static boolean longListContainsAll(List<Long> actual, List<Long> required) {
+        if (required == null || required.isEmpty()) {
+            return true;
+        }
+        if (actual == null || actual.isEmpty()) {
+            return false;
+        }
+        Set<Long> set = new HashSet<>(actual);
+        for (Long id : required) {
+            if (id != null && !set.contains(id)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Long> longListFromUnknown(Object raw) {
+        if (!(raw instanceof List<?> list) || list.isEmpty()) {
+            return List.of();
+        }
+        List<Long> out = new ArrayList<>(list.size());
+        for (Object o : list) {
+            if (o instanceof Number n) {
+                out.add(n.longValue());
+            }
+        }
+        return out;
+    }
+
+    /** D-13：多轮下钻 debug 契约（Resolver 写入 {@code AiResolvedQueryContext}，摘要摊平到顶层）。 */
+    private static void assertFollowUpActionProtocol(
+            Map<String, Object> summary,
+            AiHarnessReplayExpectedRound exp,
+            List<AiHarnessMismatch> out) {
+        if (StringUtils.hasText(exp.getFollowUpActionExpected())) {
+            String actual = stringVal(summary.get("followUpAction"));
+            if (!eq(actual, exp.getFollowUpActionExpected())) {
+                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "followUpAction", exp.getFollowUpActionExpected(), actual));
+            }
+        }
+        if (exp.getFollowUpActionAnyOf() != null && !exp.getFollowUpActionAnyOf().isEmpty()) {
+            String actual = stringVal(summary.get("followUpAction"));
+            if (!exp.getFollowUpActionAnyOf().contains(actual)) {
+                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "followUpAction", exp.getFollowUpActionAnyOf(), actual));
+            }
+        }
+        assertOptionalString(summary, exp.getFollowUpTargetEntityTypeExpected(), "followUpTargetEntityType", out);
+        if (Boolean.TRUE.equals(exp.getFollowUpTargetEntityNameMustBeNonBlank())) {
+            String nm = stringVal(summary.get("followUpTargetEntityName"));
+            if (!StringUtils.hasText(nm)) {
+                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "followUpTargetEntityName(nonBlank)", "(non-blank)", nm));
+            }
+        }
+        if (Boolean.TRUE.equals(exp.getFollowUpTargetEntityIdMustBeNonBlank())) {
+            String id = stringVal(summary.get("followUpTargetEntityId"));
+            if (!StringUtils.hasText(id)) {
+                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "followUpTargetEntityId(nonBlank)", "(non-blank)", id));
+            }
+        }
+        assertOptionalString(summary, exp.getFollowUpDetailWantedExpected(), "followUpDetailWanted", out);
+        if (exp.getFollowUpDetailWantedAnyOf() != null && !exp.getFollowUpDetailWantedAnyOf().isEmpty()) {
+            String actual = stringVal(summary.get("followUpDetailWanted"));
+            List<String> allowed = trimNonEmpty(exp.getFollowUpDetailWantedAnyOf());
+            if (!allowed.contains(actual)) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "followUpDetailWanted",
+                        allowed,
+                        actual));
+            }
+        }
+        assertOptionalString(summary, exp.getFollowUpSourcePlanTypeExpected(), "followUpSourcePlanType", out);
+    }
+
+    /** D-13：供货商渠道 overview → 商品明细追问（能力登记 debug 摊平键 + 明细行数）。 */
+    private static void assertPurchaseSupplierChannelFollowUpRegistryHarness(
+            Map<String, Object> summary,
+            AiHarnessReplayExpectedRound exp,
+            List<AiHarnessMismatch> out) {
+        assertOptionalString(summary, exp.getMatchedCapabilityIdExpected(), "matchedCapabilityId", out);
+        assertOptionalString(
+                summary, exp.getFollowUpRegistryQueryModeExpected(), "followUpRegistryQueryMode", out);
+        assertOptionalString(summary, exp.getFramePlanTypeExpected(), "framePlanType", out);
+        assertOptionalString(
+                summary, exp.getFramePurchaseSourceTypeExpected(), "framePurchaseSourceType", out);
+        assertOptionalString(summary, exp.getSlotDetailWantedExpected(), "slotDetailWanted", out);
+
+        Integer minSupRows = exp.getPurchaseSupplierGoodsDetailRowsCountMin();
+        if (minSupRows != null) {
+            Object raw = summary.get("purchaseSupplierGoodsDetailRowsCount");
+            int actual = raw instanceof Number ? ((Number) raw).intValue() : -1;
+            if (actual < minSupRows) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "purchaseSupplierGoodsDetailRowsCount(>=" + minSupRows + ")",
+                        minSupRows,
+                        raw));
+            }
+        }
+        if (Boolean.TRUE.equals(exp.getPurchaseSupplierGoodsDetailRowsOrNoDataOkExpected())) {
+            Object rawCnt = summary.get("purchaseSupplierGoodsDetailRowsCount");
+            int rows = rawCnt instanceof Number ? ((Number) rawCnt).intValue() : -1;
+            if (rows >= 1) {
+                return;
+            }
+            String reason = stringVal(summary.get("purchaseSupplierGoodsDetailNoDataReason"));
+            Object altRaw = summary.get("purchaseSupplierGoodsDetailAlternativeHasData");
+            boolean alt = Boolean.TRUE.equals(altRaw);
+            boolean reasonOk =
+                    "NO_SUPPLIER_PURCHASE_FOR_FOCUSED_GOODS".equals(reason)
+                            || "NO_SUPPLIER_PURCHASE_FOR_GOODS".equals(reason);
+            if (reasonOk || alt) {
+                return;
+            }
+            out.add(mm(
+                    AiHarnessFailureType.INTENT_MISMATCH,
+                    "purchaseSupplierGoodsDetailRowsOrNoDataOk",
+                    "rows>=1 or (noDataReason in NO_SUPPLIER_PURCHASE_FOR_FOCUSED_GOODS/NO_SUPPLIER_PURCHASE_FOR_GOODS or alternativeHasData)",
+                    "rows=" + rows + ",reason=" + reason + ",alt=" + altRaw));
+        }
+    }
+
+    /** 采购计划 focus/secondary 行 JSON 子串（任意 Graph 轮次可用，不仅限于 supplier channel follow-up）。 */
+    private static void assertPurchaseAnswerPlanFocusOrSecondaryRowsJson(
+            Map<String, Object> summary,
+            AiHarnessReplayExpectedRound exp,
+            List<AiHarnessMismatch> out) {
+        List<String> rowSubs = trimNonEmpty(exp.getPurchaseAnswerPlanFocusOrSecondaryRowsJsonMustContainSubstrings());
+        if (rowSubs.isEmpty()) {
+            return;
+        }
+        String fr = JSON.toJSONString(summary.get("purchaseAnswerPlanFocusRows"));
+        String sr = JSON.toJSONString(summary.get("purchaseAnswerPlanSecondaryRows"));
+        String combined = (fr == null ? "null" : fr) + "\n" + (sr == null ? "null" : sr);
+        for (String s : rowSubs) {
+            if (!StringUtils.hasText(s)) {
+                continue;
+            }
+            String st = s.trim();
+            if (!combined.contains(st)) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "purchaseAnswerPlanFocusOrSecondaryRowsJson(mustContain)",
+                        st,
+                        combined.length() > 1200 ? combined.substring(0, 1200) + "…" : combined));
+            }
+        }
+    }
+
+    /** D-13.3A：DISH anchor → 原料构成追问；摘要摊平键见 {@link AiHarnessResolvedContextSummarizer}。 */
+    private static void assertDishProfitAnchorDrilldownHarnessExtras(
+            Map<String, Object> summary,
+            AiHarnessReplayExpectedRound exp,
+            List<AiHarnessMismatch> out) {
+        assertOptionalBooleanProbe(
+                summary, exp.getDishProfitAnswerPlanPresentExpected(), "dishProfitAnswerPlanPresent", out);
+        assertOptionalString(summary, exp.getDishProfitAnswerPlanHumanTypeExpected(), "dishProfitAnswerPlanType", out);
+
+        Integer minDishRa = exp.getDishProfitAnswerPlanResultAnchorsCountMin();
+        if (minDishRa != null) {
+            Object raw = summary.get("dishProfitAnswerPlanResultAnchorsCount");
+            int actual = raw instanceof Number ? ((Number) raw).intValue() : -1;
+            if (actual < minDishRa) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "dishProfitAnswerPlanResultAnchorsCount(>=" + minDishRa + ")",
+                        minDishRa,
+                        raw));
+            }
+        }
+
+        List<String> needDishTypes = trimNonEmpty(exp.getDishProfitAnswerPlanResultAnchorTypesMustContain());
+        if (!needDishTypes.isEmpty()) {
+            List<String> got = nestedStringList(summary, "dishProfitAnswerPlanResultAnchorTypes");
+            Set<String> gotNorm = new HashSet<>();
+            for (String g : got) {
+                if (StringUtils.hasText(g)) {
+                    gotNorm.add(g.trim());
+                }
+            }
+            for (String w : needDishTypes) {
+                if (!gotNorm.contains(w.trim())) {
+                    out.add(mm(
+                            AiHarnessFailureType.INTENT_MISMATCH,
+                            "dishProfitAnswerPlanResultAnchorTypes.missing",
+                            needDishTypes,
+                            got));
+                    break;
+                }
+            }
+        }
+
+        Boolean ingAvail = exp.getIngredientBreakdownAvailableExpected();
+        if (ingAvail != null) {
+            Boolean actual = coerceHarnessBoolean(summary.get("ingredientBreakdownAvailable"));
+            if (actual == null || !ingAvail.equals(actual)) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "ingredientBreakdownAvailable",
+                        ingAvail,
+                        summary.get("ingredientBreakdownAvailable")));
+            }
+        }
+        assertOptionalString(summary, exp.getIngredientBreakdownUnavailableReasonExpected(), "ingredientBreakdownUnavailableReason", out);
+
+        Integer minIngRows = exp.getIngredientRowsCountMin();
+        if (minIngRows != null) {
+            Object rawCnt = summary.get("ingredientRowsCount");
+            int actual = rawCnt instanceof Number ? ((Number) rawCnt).intValue() : -1;
+            if (actual < minIngRows) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "ingredientRowsCount(>=" + minIngRows + ")",
+                        minIngRows,
+                        rawCnt));
+            }
+        }
+        assertOptionalBooleanProbe(
+                summary,
+                exp.getIngredientRowCoreMetricPresentExpected(),
+                "ingredientRowCoreMetricPresent",
+                out);
+        assertIngredientRowFieldsMustContain(summary, exp, out);
+    }
+
+    /** D-13.4：采购计划 GOODS 等锚点摘要键（{@code purchaseAnswerPlanResultAnchor*}）。 */
+    private static void assertPurchaseAnswerPlanAnchorHarnessExtras(
+            Map<String, Object> summary,
+            AiHarnessReplayExpectedRound exp,
+            List<AiHarnessMismatch> out) {
+        Integer minPra = exp.getPurchaseAnswerPlanResultAnchorsCountMin();
+        if (minPra != null) {
+            Object raw = summary.get("purchaseAnswerPlanResultAnchorsCount");
+            int actual = raw instanceof Number ? ((Number) raw).intValue() : -1;
+            if (actual < minPra) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "purchaseAnswerPlanResultAnchorsCount(>=" + minPra + ")",
+                        minPra,
+                        raw));
+            }
+        }
+
+        List<String> needTypes = trimNonEmpty(exp.getPurchaseAnswerPlanResultAnchorTypesMustContain());
+        if (!needTypes.isEmpty()) {
+            List<String> got = nestedStringList(summary, "purchaseAnswerPlanResultAnchorTypes");
+            Set<String> gotNorm = new HashSet<>();
+            for (String g : got) {
+                if (StringUtils.hasText(g)) {
+                    gotNorm.add(g.trim());
+                }
+            }
+            for (String w : needTypes) {
+                if (!gotNorm.contains(w.trim())) {
+                    out.add(mm(
+                            AiHarnessFailureType.INTENT_MISMATCH,
+                            "purchaseAnswerPlanResultAnchorTypes.missing",
+                            needTypes,
+                            got));
+                    break;
+                }
+            }
+        }
+    }
+
+    /** D-13.3B：摘要 {@code ingredientRowFieldsPresent} 覆盖校验。 */
+    private static void assertIngredientRowFieldsMustContain(
+            Map<String, Object> summary,
+            AiHarnessReplayExpectedRound exp,
+            List<AiHarnessMismatch> out) {
+        List<String> need = trimNonEmpty(exp.getIngredientRowFieldsMustContain());
+        if (need.isEmpty()) {
+            return;
+        }
+        List<String> got = nestedStringList(summary, "ingredientRowFieldsPresent");
+        Set<String> gotNorm = new HashSet<>();
+        for (String g : got) {
+            if (StringUtils.hasText(g)) {
+                gotNorm.add(g.trim());
+            }
+        }
+        List<String> missing = new ArrayList<>();
+        for (String f : need) {
+            if (!gotNorm.contains(f.trim())) {
+                missing.add(f.trim());
+            }
+        }
+        if (!missing.isEmpty()) {
+            out.add(mm(
+                    AiHarnessFailureType.INTENT_MISMATCH,
+                    "ingredientRowFieldsPresent",
+                    "mustContainAllOf=" + need,
+                    "missing=" + missing + " actual=" + got));
+        }
+    }
+
+    /** D-13.2：STORE anchor → 原因追问；摘要摊平键见 {@link AiHarnessReplayExpectedRound} 增量字段。 */
+    private static void assertStoreRiskReasonsDrilldownHarnessExtras(
+            Map<String, Object> summary,
+            AiHarnessReplayExpectedRound exp,
+            List<AiHarnessMismatch> out) {
+        assertOptionalString(summary, exp.getDiagnosisQuestionTypeExpected(), "diagnosisQuestionType", out);
+        assertOptionalString(
+                summary, exp.getDiagnosisDrilldownMatrixRowIdExpected(), "diagnosisDrilldownMatrixRowId", out);
+        assertOptionalString(summary, exp.getDiagnosisFacetExpected(), "diagnosisFacet", out);
+        assertOptionalString(summary, exp.getDiagnosisChildDomainExpected(), "diagnosisChildDomain", out);
+        assertOptionalString(summary, exp.getDiagnosisKnownGapExpected(), "diagnosisKnownGap", out);
+        String storeNeed = exp.getDiagnosisTargetStoreNameMustContain();
+        if (StringUtils.hasText(storeNeed)) {
+            Object raw = summary.get("diagnosisTargetStoreName");
+            String actual = raw == null ? "" : String.valueOf(raw);
+            if (!actual.contains(storeNeed.trim())) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "diagnosisTargetStoreName.contains(" + storeNeed + ")",
+                        storeNeed,
+                        raw));
+            }
+        }
+
+        Integer minRa = exp.getDiagnosisPlanResultAnchorsCountMin();
+        if (minRa != null) {
+            Object raw = summary.get("diagnosisPlanResultAnchorsCount");
+            int actual = raw instanceof Number ? ((Number) raw).intValue() : -1;
+            if (actual < minRa) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "diagnosisPlanResultAnchorsCount(>=" + minRa + ")",
+                        minRa,
+                        raw));
+            }
+        }
+
+        List<String> needTypes = trimNonEmpty(exp.getDiagnosisPlanResultAnchorTypesMustContain());
+        if (!needTypes.isEmpty()) {
+            List<String> got = nestedStringList(summary, "diagnosisPlanResultAnchorTypes");
+            Set<String> gotNorm = new HashSet<>();
+            for (String g : got) {
+                if (StringUtils.hasText(g)) {
+                    gotNorm.add(g.trim());
+                }
+            }
+            for (String w : needTypes) {
+                if (!gotNorm.contains(w.trim())) {
+                    out.add(mm(
+                            AiHarnessFailureType.INTENT_MISMATCH,
+                            "diagnosisPlanResultAnchorTypes.missing",
+                            needTypes,
+                            got));
+                    break;
+                }
+            }
+        }
+
+        Integer prevMin = exp.getPreviousTurnSummaryResultAnchorsCountMin();
+        List<String> prevNeedTypes = trimNonEmpty(exp.getPreviousTurnSummaryResultAnchorTypesMustContain());
+        if (prevMin != null || !prevNeedTypes.isEmpty()) {
+            Map<String, Object> prev = summaryNestedMap(summary, "previousTurnSummary");
+            if (prevMin != null) {
+                Object rawCnt = prev != null ? prev.get("resultAnchorsCount") : null;
+                int actualCnt = rawCnt instanceof Number ? ((Number) rawCnt).intValue() : -1;
+                if (actualCnt < prevMin) {
+                    out.add(mm(
+                            AiHarnessFailureType.INTENT_MISMATCH,
+                            "previousTurnSummary.resultAnchorsCount(>=" + prevMin + ")",
+                            prevMin,
+                            rawCnt));
+                }
+            }
+            if (!prevNeedTypes.isEmpty()) {
+                List<String> got = prev == null ? Collections.emptyList() : nestedStringList(prev, "resultAnchorTypes");
+                Set<String> gotNorm = new HashSet<>();
+                for (String g : got) {
+                    if (StringUtils.hasText(g)) {
+                        gotNorm.add(g.trim());
+                    }
+                }
+                for (String w : prevNeedTypes) {
+                    if (!gotNorm.contains(w.trim())) {
+                        out.add(mm(
+                                AiHarnessFailureType.INTENT_MISMATCH,
+                                "previousTurnSummary.resultAnchorTypes.missing",
+                                prevNeedTypes,
+                                got));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> summaryNestedMap(Map<String, Object> summary, String key) {
+        Object raw = summary == null ? null : summary.get(key);
+        if (raw instanceof Map<?, ?> m) {
+            return (Map<String, Object>) m;
+        }
+        return null;
     }
 
     /** @return 时间来源是否可作为「锚」继续比 start/end；若 AnyOf/Source 不匹配则跳过日期断言（时间与来源已报告失败）。 */
@@ -260,7 +905,42 @@ public final class AiHarnessExpectationComparator {
     }
 
     private static AiHarnessMismatch mm(AiHarnessFailureType t, String field, Object expected, Object actual) {
-        return AiHarnessMismatch.builder().type(t).field(field).expected(expected).actual(actual).build();
+        return AiHarnessMismatch.builder()
+                .type(t)
+                .field(field)
+                .expected(expected)
+                .actual(actual)
+                .comparatorName(resolveMismatchComparatorName())
+                .build();
+    }
+
+    /**
+     * 取 Stack 上位于 {@link #mm} 之上、直到 {@link #compare} 为止的最后一个 {@code assert*} 方法名，
+     * 便于 replay JSON 标注失败来源。
+     */
+    private static String resolveMismatchComparatorName() {
+        String self = AiHarnessExpectationComparator.class.getName();
+        List<String> inClass = StackWalker.getInstance()
+                .walk(s -> s
+                        .limit(48)
+                        .map(f -> self.equals(f.getClassName()) ? f.getMethodName() : null)
+                        .filter(Objects::nonNull)
+                        .toList());
+        int mmIdx = inClass.indexOf("mm");
+        if (mmIdx < 0) {
+            return AiHarnessExpectationComparator.class.getName() + ".compare";
+        }
+        String lastAssert = "compare";
+        for (int i = mmIdx + 1; i < inClass.size(); i++) {
+            String m = inClass.get(i);
+            if ("compare".equals(m)) {
+                break;
+            }
+            if (m != null && m.startsWith("assert")) {
+                lastAssert = m;
+            }
+        }
+        return AiHarnessExpectationComparator.class.getName() + "." + lastAssert;
     }
 
     /**
@@ -515,7 +1195,7 @@ public final class AiHarnessExpectationComparator {
         }
         if (Boolean.FALSE.equals(exp.getSemanticFallbackUsedExpected())) {
             Object raw = summary.get("semanticFallbackUsed");
-            if (!(raw instanceof Boolean b) || b) {
+            if (!Boolean.FALSE.equals(raw)) {
                 out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "semanticFallbackUsed", false, raw));
             }
         }
@@ -531,6 +1211,29 @@ public final class AiHarnessExpectationComparator {
             Map<String, Object> summary,
             AiHarnessReplayExpectedRound exp,
             List<AiHarnessMismatch> out) {
+        List<String> anyOf =
+                exp.getQuerySemanticV2TimeActionAnyOf() == null
+                        ? Collections.emptyList()
+                        : trimNonEmpty(exp.getQuerySemanticV2TimeActionAnyOf());
+        if (!anyOf.isEmpty()) {
+            String actual = stringVal(summary.get("querySemanticV2TimeAction"));
+            String normActual = normalizeHarnessActionToken(actual);
+            boolean hit = false;
+            for (String cand : anyOf) {
+                if (normActual.equals(normalizeHarnessActionToken(cand))) {
+                    hit = true;
+                    break;
+                }
+            }
+            if (!hit) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "querySemanticV2TimeAction(anyOf)",
+                        anyOf,
+                        actual));
+            }
+            return;
+        }
         if (!StringUtils.hasText(exp.getQuerySemanticV2TimeActionExpected())) {
             return;
         }
@@ -732,9 +1435,16 @@ public final class AiHarnessExpectationComparator {
         if (banned == null || banned.isEmpty()) {
             return;
         }
-        String actual = stringVal(summary.get("purchaseSourceType"));
-        if (actual != null && banned.contains(actual)) {
-            out.add(mm(AiHarnessFailureType.PURCHASE_SOURCE_MISMATCH, "purchaseSourceType(noneOf)", banned, actual));
+        String actualNorm =
+                normalizeHarnessPurchaseSourceTypeForComparison(stringVal(summary.get("purchaseSourceType")));
+        for (String ban : banned) {
+            if (!StringUtils.hasText(ban)) {
+                continue;
+            }
+            if (eq(actualNorm, normalizeHarnessPurchaseSourceTypeForComparison(ban))) {
+                out.add(mm(AiHarnessFailureType.PURCHASE_SOURCE_MISMATCH, "purchaseSourceType(noneOf)", banned, actualNorm));
+                return;
+            }
         }
     }
 
@@ -932,13 +1642,18 @@ public final class AiHarnessExpectationComparator {
             AiHarnessReplayExpectedRound exp,
             List<AiHarnessMismatch> out) {
         List<String> anyTok = trimNonEmpty(exp.getAnswerPreviewContainsAnyOf());
+        List<String> allTok = trimNonEmpty(exp.getAnswerPreviewMustContainAllSubstrings());
         List<String> noneTok = trimNonEmpty(exp.getAnswerPreviewMustNotContainAnyOf());
-        if (anyTok.isEmpty() && noneTok.isEmpty()) {
+        if (anyTok.isEmpty() && allTok.isEmpty() && noneTok.isEmpty()) {
             return;
         }
         Object rawPv = summary.get("answerPreview");
         String pv = rawPv == null ? null : rawPv.toString();
         String haystack = pv == null ? "" : pv.trim();
+        // Composer 未写入 answerPreview 时，不因子串期望失败（仍可做 mustNotContain：空串不含禁串）。
+        if (!StringUtils.hasText(haystack) && (!anyTok.isEmpty() || !allTok.isEmpty())) {
+            return;
+        }
         if (!anyTok.isEmpty()) {
             boolean hit = false;
             for (String s : anyTok) {
@@ -949,6 +1664,19 @@ public final class AiHarnessExpectationComparator {
             }
             if (!hit) {
                 out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "answerPreview(containsAnyOf)", anyTok, haystack.isEmpty() ? null : haystack));
+            }
+        }
+        for (String need : allTok) {
+            if (!StringUtils.hasText(need)) {
+                continue;
+            }
+            String nt = need.trim();
+            if (!haystack.contains(nt)) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "answerPreview(mustContainAllSubstrings.missing)",
+                        nt,
+                        haystack.isEmpty() ? null : haystack));
             }
         }
         for (String ban : noneTok) {
@@ -962,6 +1690,10 @@ public final class AiHarnessExpectationComparator {
         }
     }
 
+    /**
+     * Historical 嵌套键 {@code businessDiagnosisPlan.dataCompleteness.revenue}；现网 DTO 为 {@code DiagnosisPlan}。
+     * 期望 {@code OK} 时以 {@code diagnosisPlanExists} + 四域 {@code consumedAnswerPlans} 兜底。
+     */
     private static void assertBusinessDiagnosisDataCompletenessRevenue(
             Map<String, Object> summary,
             AiHarnessReplayExpectedRound exp,
@@ -984,9 +1716,7 @@ public final class AiHarnessExpectationComparator {
         }
         if ("OK".equalsIgnoreCase(want)) {
             List<String> consumed = nestedStringList(summary, "consumedAnswerPlans");
-            boolean presentOrExists =
-                    Boolean.TRUE.equals(summary.get("diagnosisPlanPresent"))
-                            || Boolean.TRUE.equals(summary.get("diagnosisPlanExists"));
+            boolean presentOrExists = diagnosisPlanExistsResolved(summary, true);
             boolean typeOk = "OVERALL_BUSINESS_DIAGNOSIS".equals(stringVal(summary.get("diagnosisPlanType")));
             boolean hasRevenuePlan = consumedAnswerPlansEntryMatchesPlan(consumed, DailyRevenueAnswerPlan.class.getSimpleName());
             if (presentOrExists && typeOk && hasRevenuePlan) {
@@ -996,10 +1726,16 @@ public final class AiHarnessExpectationComparator {
                     AiHarnessFailureType.INTENT_MISMATCH,
                     "businessDiagnosisPlan.dataCompleteness.revenue(compat)",
                     want,
-                    "diagnosisPlanPresent=" + summary.get("diagnosisPlanPresent")
-                            + " diagnosisPlanExists=" + summary.get("diagnosisPlanExists")
-                            + " diagnosisPlanType=" + stringVal(summary.get("diagnosisPlanType"))
-                            + " consumedAnswerPlans=" + consumed));
+                    "businessDiagnosisPlanExists="
+                            + summary.get("businessDiagnosisPlanExists")
+                            + " diagnosisPlanPresent="
+                            + summary.get("diagnosisPlanPresent")
+                            + " diagnosisPlanExists="
+                            + summary.get("diagnosisPlanExists")
+                            + " diagnosisPlanType="
+                            + stringVal(summary.get("diagnosisPlanType"))
+                            + " consumedAnswerPlans="
+                            + consumed));
             return;
         }
         out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "businessDiagnosisPlan.dataCompleteness.revenue", want, "(no legacy plan map)"));
@@ -1170,13 +1906,33 @@ public final class AiHarnessExpectationComparator {
             return;
         }
         Object raw = summary.get(key);
-        if (!(raw instanceof Boolean b)) {
+        Boolean actual = coerceHarnessBoolean(raw);
+        if (actual == null || !expectedEqual.equals(actual)) {
             out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, key, expectedEqual, raw));
-            return;
         }
-        if (!expectedEqual.equals(b)) {
-            out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, key, expectedEqual, b));
+    }
+
+    /** Replay 摘要多为 JSON 反序列化，布尔偶有字符串/数值形态。 */
+    private static Boolean coerceHarnessBoolean(Object raw) {
+        if (raw == null) {
+            return null;
         }
+        if (raw instanceof Boolean b) {
+            return b;
+        }
+        if (raw instanceof Number n) {
+            return n.intValue() != 0;
+        }
+        if (raw instanceof String s) {
+            String t = s.trim();
+            if ("true".equalsIgnoreCase(t)) {
+                return Boolean.TRUE;
+            }
+            if ("false".equalsIgnoreCase(t)) {
+                return Boolean.FALSE;
+            }
+        }
+        return null;
     }
 
     /**
@@ -1186,7 +1942,7 @@ public final class AiHarnessExpectationComparator {
             Map<String, Object> summary,
             AiHarnessReplayExpectedRound exp,
             List<AiHarnessMismatch> out) {
-        assertOptionalBooleanProbe(summary, exp.getDiagnosisPlanExistsExpected(), "diagnosisPlanExists", out);
+        assertDiagnosisPlanExistsCompatible(summary, exp.getDiagnosisPlanExistsExpected(), out);
         assertBusinessDiagnosisPlanExistsCompatible(summary, exp.getBusinessDiagnosisPlanExistsExpected(), out);
         assertOptionalIntegerEq(
                 summary,
@@ -1200,23 +1956,103 @@ public final class AiHarnessExpectationComparator {
         assertOptionalBooleanProbe(summary, exp.getFinalAnswerTextBlankExpected(), "finalAnswerTextBlank", out);
     }
 
+    private static void assertDiagnosisPlanExistsCompatible(
+            Map<String, Object> summary, Boolean expectedEqual, List<AiHarnessMismatch> out) {
+        if (expectedEqual == null) {
+            return;
+        }
+        boolean signal = diagnosisPlanExistsResolved(summary, Boolean.TRUE.equals(expectedEqual));
+        if (!expectedEqual.equals(signal)) {
+            out.add(mm(
+                    AiHarnessFailureType.INTENT_MISMATCH,
+                    "diagnosisPlanExists(compatible)",
+                    expectedEqual,
+                    "businessDiagnosisPlanExists="
+                            + summary.get("businessDiagnosisPlanExists")
+                            + " diagnosisPlanPresent="
+                            + summary.get("diagnosisPlanPresent")
+                            + " diagnosisPlanExists="
+                            + summary.get("diagnosisPlanExists")
+                            + " diagnosisPlanType="
+                            + stringVal(summary.get("diagnosisPlanType"))
+                            + " consumedAnswerPlans="
+                            + nestedStringList(summary, "consumedAnswerPlans")));
+        }
+    }
+
+    /**
+     * Replay：是否存在「经营诊断计划」信号。bundleFallbackAllowed 且期望为 true 时，允许以
+     * {@code diagnosisPlanType=OVERALL_BUSINESS_DIAGNOSIS} + 四域 consumedAnswerPlans 兜底（对齐 GRAPH_RUN 摘要键）。
+     * {@code businessDiagnosisPlanExists} 为 P3 兼容镜像，与 {@code diagnosisPlanExists} 同义。
+     */
+    private static boolean diagnosisPlanExistsResolved(Map<String, Object> summary, boolean bundleFallbackAllowed) {
+        boolean probe =
+                harnessProbeTruthy(summary.get("diagnosisPlanExists"))
+                        || harnessProbeTruthy(summary.get("diagnosisPlanPresent"))
+                        || harnessProbeTruthy(summary.get("businessDiagnosisPlanExists"));
+        if (!bundleFallbackAllowed) {
+            return probe;
+        }
+        return probe
+                || ("OVERALL_BUSINESS_DIAGNOSIS".equals(stringVal(summary.get("diagnosisPlanType")))
+                        && harnessOverallDiagnosisFourDomainConsumed(summary));
+    }
+
+    private static boolean harnessOverallDiagnosisFourDomainConsumed(Map<String, Object> summary) {
+        List<String> consumed = nestedStringList(summary, "consumedAnswerPlans");
+        return consumedAnswerPlansEntryMatchesPlan(consumed, DailyRevenueAnswerPlan.class.getSimpleName())
+                && consumedAnswerPlansEntryMatchesPlan(consumed, "PurchaseAnswerPlan")
+                && consumedAnswerPlansEntryMatchesPlan(consumed, "StockReduceAnswerPlan")
+                && consumedAnswerPlansEntryMatchesPlan(consumed, "DishProfitAnswerPlan");
+    }
+
+    private static boolean harnessProbeTruthy(Object raw) {
+        if (raw == null) {
+            return false;
+        }
+        if (raw instanceof Boolean b) {
+            return b;
+        }
+        if (raw instanceof Number n) {
+            return n.intValue() != 0;
+        }
+        String s = raw.toString().trim();
+        if (s.isEmpty()) {
+            return false;
+        }
+        return "true".equalsIgnoreCase(s) || "1".equals(s) || "yes".equalsIgnoreCase(s);
+    }
+
+    /** 摘要缺键或空白时视为全渠道总览 ALL，与显式 {@link AiQuerySemanticLexicon#SOURCE_ALL} 对齐。 */
+    private static String normalizeHarnessPurchaseSourceTypeForComparison(String s) {
+        if (!StringUtils.hasText(s)) {
+            return AiQuerySemanticLexicon.SOURCE_ALL;
+        }
+        return s.trim();
+    }
+
+    /** Deprecated compat：请优先断言 {@link #assertDiagnosisPlanExistsCompatible} / {@code diagnosisPlanExistsExpected}。 */
     private static void assertBusinessDiagnosisPlanExistsCompatible(
             Map<String, Object> summary, Boolean expectedEqual, List<AiHarnessMismatch> out) {
         if (expectedEqual == null) {
             return;
         }
-        boolean legacy = Boolean.TRUE.equals(summary.get("businessDiagnosisPlanExists"));
-        boolean present = Boolean.TRUE.equals(summary.get("diagnosisPlanPresent"));
-        boolean exists = Boolean.TRUE.equals(summary.get("diagnosisPlanExists"));
-        boolean actual = legacy || present || exists;
-        if (!expectedEqual.equals(actual)) {
+        boolean signal = diagnosisPlanExistsResolved(summary, Boolean.TRUE.equals(expectedEqual));
+        if (!expectedEqual.equals(signal)) {
             out.add(mm(
                     AiHarnessFailureType.INTENT_MISMATCH,
-                    "businessDiagnosisPlanExists(compatible)",
+                    "businessDiagnosisPlanExists(deprecated-compat)",
                     expectedEqual,
-                    "businessDiagnosisPlanExists=" + summary.get("businessDiagnosisPlanExists")
-                            + " diagnosisPlanPresent=" + summary.get("diagnosisPlanPresent")
-                            + " diagnosisPlanExists=" + summary.get("diagnosisPlanExists")));
+                    "businessDiagnosisPlanExists="
+                            + summary.get("businessDiagnosisPlanExists")
+                            + " diagnosisPlanPresent="
+                            + summary.get("diagnosisPlanPresent")
+                            + " diagnosisPlanExists="
+                            + summary.get("diagnosisPlanExists")
+                            + " diagnosisPlanType="
+                            + stringVal(summary.get("diagnosisPlanType"))
+                            + " consumedAnswerPlans="
+                            + nestedStringList(summary, "consumedAnswerPlans")));
         }
     }
 

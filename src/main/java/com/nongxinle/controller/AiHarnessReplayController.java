@@ -33,7 +33,9 @@ public class AiHarnessReplayController {
     @PostMapping(value = "replay", consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Replay 多轮解析上下文",
             description = "在同一 conversation 内依次解析 messages，写入 turn memory（与生产同源），返回每轮的 resolvedQueryContextSummary 与失败分类。"
-                    + " 需 ai.harness.replay-enabled=true；建议仅 local / 内网。")
+                    + " 需 ai.harness.replay-enabled=true；建议仅 local / 内网。"
+                    + " {@code messages} 可省略：当 {@code caseId} 为内置固定问句 case（如 {@code BUSINESS_SEMANTIC_1B_RESOLVED_CONTEXT}）时由服务端补全；"
+                    + " 否则须显式传 {@code messages}。")
     public R replay(@RequestBody AiHarnessReplayRequest body) {
         if (!replayEnabled) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "harness replay disabled");
@@ -41,6 +43,7 @@ public class AiHarnessReplayController {
         try {
             return R.ok().put("replay", replayService.replay(body));
         } catch (IllegalArgumentException ex) {
+            // 例如 userId / messages required 等均由 {@link AiHarnessReplayService} 在补齐内置问句后再校验
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
         }
     }

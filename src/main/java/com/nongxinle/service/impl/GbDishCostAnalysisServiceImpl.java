@@ -2501,6 +2501,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         if (ge == null) {
             row.put("gbDgGoodsName", null);
             row.put("gbDgGoodsStandardname", null);
+            row.put("gbDgGoodsIsWeight", null);
             row.put("gbDgControlFresh", null);
             row.put("gbDgFreshWarnHour", null);
             row.put("gbDgFreshWasteHour", null);
@@ -2510,6 +2511,7 @@ public class GbDishCostAnalysisServiceImpl implements GbDishCostAnalysisService 
         }
         row.put("gbDgGoodsName", ge.getGbDgGoodsName());
         row.put("gbDgGoodsStandardname", ge.getGbDgGoodsStandardname());
+        row.put("gbDgGoodsIsWeight", ge.getGbDgGoodsIsWeight());
         row.put("gbDgControlFresh", ge.getGbDgControlFresh());
         row.put("gbDgFreshWarnHour", ge.getGbDgFreshWarnHour());
         row.put("gbDgFreshWasteHour", ge.getGbDgFreshWasteHour());

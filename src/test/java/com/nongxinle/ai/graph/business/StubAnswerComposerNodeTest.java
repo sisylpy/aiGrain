@@ -1,29 +1,23 @@
 package com.nongxinle.ai.graph.business;
 
-import com.nongxinle.ai.composer.payload.AnswerComposerPayloadFactory;
 import com.nongxinle.ai.composer.renderer.DeterministicAnswerRenderer;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.core.AiWorkspaceMode;
-import com.nongxinle.ai.dto.business.AiBusinessOverviewResult;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
 import com.nongxinle.ai.dto.cost.AiCostDiagnosisResult;
-import com.nongxinle.ai.gateway.LlmGateway;
-import com.nongxinle.ai.prompt.AiPromptRegistry;
-import com.nongxinle.ai.prompt.AiPromptService;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.io.DefaultResourceLoader;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
@@ -38,15 +32,9 @@ class StubAnswerComposerNodeTest {
     @Mock
     private AiSseEventPublisher publisher;
 
-    private static AiPromptService testPromptService() {
-        return new AiPromptService(new DefaultResourceLoader(), new AiPromptRegistry());
-    }
-
     @Test
     void cost_blankLlm_shortFallbackDoesNotEmitKeyMetricsBlock() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
 
         AiCostDiagnosisResult diagnosis = AiCostDiagnosisResult.builder()
                 .summary("本月成本判断还不完整。")
@@ -76,101 +64,8 @@ class StubAnswerComposerNodeTest {
     }
 
     @Test
-    void business_blankLlm_shortFallbackDoesNotEmitKeyMetricsBlock() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
-
-        AiBusinessOverviewResult overview = AiBusinessOverviewResult.builder()
-                .summary("目前有营业额和采购数据。")
-                .riskLevel("data_incomplete")
-                .keyMetrics(List.of(
-                        AiBusinessOverviewResult.metric("仅卡片", "1", "")
-                ))
-                .findings(List.of("差异需关注", "核销要补齐"))
-                .recommendations(List.of("先补链路", "再做贡献分析"))
-                .needMoreData(true)
-                .build();
-
-        AiRunState state = AiRunState.builder()
-                .runId(2L)
-                .normalizedUserInput("这个月生意怎么样？")
-                .businessOverviewResult(overview)
-                .build();
-
-        node.run(state);
-
-        String text = state.getFinalAnswerText();
-        assertThat(text).doesNotContain("关键指标");
-        assertThat(text).doesNotContain("仅卡片");
-        assertThat(text).contains("经营概览卡片");
-    }
-
-    @Test
-    void businessOverview_numbersComeFromMountedAnswerPlans_whenRevenuePlanAuthoritative() {
-        LlmGateway llmForbidden = (s, u) -> {
-            throw new AssertionError("经营概览在挂载可读日营收 AnswerPlan 时应跳过 LLM，以免混用看板口径");
-        };
-        StubAnswerComposerNode node = new StubAnswerComposerNode(llmForbidden, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
-
-        Map<String, Object> dash = new LinkedHashMap<>();
-        dash.put("统计天数", 5);
-        dash.put("总营业额", new BigDecimal("5831"));
-        dash.put("日均营业额", new BigDecimal("1166.2"));
-
-        AiBusinessOverviewResult overview = AiBusinessOverviewResult.builder()
-                .dashboardStatsCn(dash)
-                .findings(List.of())
-                .recommendations(List.of())
-                .build();
-
-        Map<String, Object> revFocus = new LinkedHashMap<>();
-        revFocus.put("totalRevenue", new BigDecimal("4644"));
-        revFocus.put("days", 2);
-        revFocus.put("avgDailyRevenue", new BigDecimal("2322"));
-        DailyRevenueAnswerPlan rap = DailyRevenueAnswerPlan.builder()
-                .planType(DailyRevenueAnswerPlan.TYPE_REVENUE_OVERVIEW)
-                .focusRows(List.of(revFocus))
-                .build();
-
-        Map<String, Object> purRow = new LinkedHashMap<>();
-        purRow.put("totalPurchaseAmount", new BigDecimal("3303"));
-        purRow.put("purchaseOrderCount", 6);
-        PurchaseAnswerPlan pap = PurchaseAnswerPlan.builder()
-                .planType(PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW)
-                .focusRows(List.of(purRow))
-                .build();
-
-        AiRunState state = AiRunState.builder()
-                .runId(501L)
-                .normalizedUserInput("这个月经营得怎么样")
-                .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
-                .businessOverviewPath(true)
-                .statStartDate("2026-05-01")
-                .statEndDate("2026-05-13")
-                .businessOverviewResult(overview)
-                .revenueAnswerPlan(rap)
-                .purchaseAnswerPlan(pap)
-                .build();
-
-        node.run(state);
-
-        String text = state.getFinalAnswerText();
-        assertThat(text).contains("4644");
-        assertThat(text).contains("2322");
-        assertThat(text).doesNotContain("5831");
-        assertThat(text).contains("3303");
-        assertThat(text).contains("6 笔");
-        assertThat(text).contains("采购");
-    }
-
-    @Test
-    void fallbackStripRemovesTechnicalLines_echoedFromLlm() {
-        LlmGateway evil = (system, user) ->
-                "开始\ndataPlanTools 为空。\ntoolResults 为空。\n系统尚未执行任何数据查询工具\n结束";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(evil, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+    void fallbackStripRemovesTechnicalLines_genericNoPlanDoesNotEchoInternals() {
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
         AiRunState state = AiRunState.builder()
                 .runId(4L)
                 .normalizedUserInput("随便闲聊")
@@ -186,9 +81,7 @@ class StubAnswerComposerNodeTest {
 
     @Test
     void dishProfit_blankLlm_answerPlanLowestMargin_usesFocusRowNotToolSummary() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
 
         Map<String, Object> focus = new LinkedHashMap<>();
         focus.put("dishName", "PlanLowMargin");
@@ -226,9 +119,7 @@ class StubAnswerComposerNodeTest {
 
     @Test
     void dishProfit_blankLlm_answerPlanHighestActualCost_usesFocusRowNotToolSummary() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
 
         Map<String, Object> focus = new LinkedHashMap<>();
         focus.put("dishName", "PlanHighCost");
@@ -264,9 +155,7 @@ class StubAnswerComposerNodeTest {
 
     @Test
     void dishProfit_blankLlm_answerPlanActualOutbound_prefersFocusRowOverDeterministicSummaryIntent() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
 
         Map<String, Object> focus = new LinkedHashMap<>();
         focus.put("dishName", "PlanOutbound");
@@ -301,9 +190,7 @@ class StubAnswerComposerNodeTest {
 
     @Test
     void dishProfit_blankLlm_answerPlanCostGap_usesFocusRowDiffNotToolSummary() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
 
         Map<String, Object> focus = new LinkedHashMap<>();
         focus.put("dishName", "PlanGapDish");
@@ -343,9 +230,7 @@ class StubAnswerComposerNodeTest {
 
     @Test
     void dishProfit_blankLlm_answerPlanProfitReason_usesFocusRowMetricsNotToolSummary() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
 
         Map<String, Object> focus = new LinkedHashMap<>();
         focus.put("dishName", "PlanReasonDish");
@@ -388,9 +273,7 @@ class StubAnswerComposerNodeTest {
 
     @Test
     void purchase_blankLlm_answerPlanSupplierRanking_usesFocusRowNotPoisonedToolOverview() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
 
         Map<String, Object> wrongSupplier = new LinkedHashMap<>();
         wrongSupplier.put("supplierId", -1);
@@ -444,10 +327,50 @@ class StubAnswerComposerNodeTest {
     }
 
     @Test
+    void purchase_goodsSourceBreakdown_answerPlan_rendersSelfAndSupplierAmounts() {
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
+
+        Map<String, Object> focus = new LinkedHashMap<>();
+        focus.put("disGoodsId", 54);
+        focus.put("goodsName", "海天5度白醋");
+        focus.put("totalPurchaseAmount", "2970");
+        focus.put("selfPurchaseAmount", "2970");
+        focus.put("supplierPurchaseAmount", "0");
+        focus.put("selfPurchaseLineCount", 3);
+        focus.put("supplierPurchaseLineCount", 0);
+
+        PurchaseAnswerPlan plan = PurchaseAnswerPlan.builder()
+                .planType(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN)
+                .focusRows(List.of(focus))
+                .build();
+
+        AiRunState state = AiRunState.builder()
+                .runId(41L)
+                .purchaseOverviewPath(true)
+                .normalizedUserInput("第一名是谁供的？")
+                .statStartDate("2026-05-01")
+                .statEndDate("2026-05-31")
+                .purchaseAnswerPlan(plan)
+                .resolvedQueryContext(
+                        AiResolvedQueryContext.builder()
+                                .effectiveIntentCode(AiResolvedQueryIntent.PURCHASE_OVERVIEW)
+                                .effectivePathCode(AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW)
+                                .build())
+                .build();
+
+        node.run(state);
+
+        String text = state.getFinalAnswerText();
+        assertThat(text).contains("海天5度白醋");
+        assertThat(text).contains("2970");
+        assertThat(text).contains("自采");
+        assertThat(text).contains("供货商订货");
+        assertThat(text).doesNotContain("采购分析计划暂未生成");
+    }
+
+    @Test
     void revenueCustomerCount_emptyFocusWithFailure_doesNotFallbackToOverview() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
 
         Map<String, Object> inner = new LinkedHashMap<>();
         inner.put("totalRevenue", 9999);
@@ -487,9 +410,7 @@ class StubAnswerComposerNodeTest {
 
     @Test
     void revenueAverageOrderValue_emptyFocusWithFailure_doesNotFallbackToOverview() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
 
         Map<String, Object> inner = new LinkedHashMap<>();
         inner.put("totalRevenue", 9999);
@@ -529,9 +450,7 @@ class StubAnswerComposerNodeTest {
 
     @Test
     void stockReduce_blankLlm_goodsAmountRanking_usesAnswerPlanNotPoisonedToolPayload() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
 
         Map<String, Object> wrongRow = new LinkedHashMap<>();
         wrongRow.put("name", "错误商品");
@@ -583,9 +502,7 @@ class StubAnswerComposerNodeTest {
 
     @Test
     void stockReduce_blankLlm_lossOverview_usesAnswerPlanNotWastePoisonFromTool() {
-        LlmGateway stubLlm = (system, user) -> "";
-        StubAnswerComposerNode node = new StubAnswerComposerNode(stubLlm, publisher, testPromptService(), new AnswerComposerPayloadFactory(),
-                DeterministicAnswerRenderer.createStandalone());
+        StubAnswerComposerNode node = new StubAnswerComposerNode(publisher, DeterministicAnswerRenderer.createStandalone());
 
         Map<String, Object> toolData = new LinkedHashMap<>();
         toolData.put("produceTotal", BigDecimal.ZERO);

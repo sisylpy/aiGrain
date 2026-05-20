@@ -31,14 +31,14 @@ POST /ai/runs
 
 ## 1. 「第一轮用户去哪儿」——LLM 语义判断的代码入口在哪里？
 
-**结论**：主入口在 **`AiResolvedQueryContextResolver#resolve`**：在启用 `ai.agent.querySemanticLlm.enabled` 时构建 `SemanticParserInput`，调用 **`AiQuerySemanticLlmParser#parse(SemanticParserInput)`**（v2，prompt `SEMANTIC_QUERY_PARSER_V2`）；采纳失败则回退 **`parseUserQuestion(String)`**（v1）。  
+**结论**：主入口在 **`AiResolvedQueryContextResolver#resolve`**：构建 `SemanticParserInput`，调用 **`AiQuerySemanticLlmParser#parse(SemanticParserInput)`**（v2，prompt `SEMANTIC_QUERY_PARSER_V2`）；经 Normalizer 与 **`trySemanticAdoption`**；未采纳则走现有澄清 / FollowUp 兜底。**Resolver 不调用 v1 `parseUserQuestion`**。  
 该调用链在 **`AiRunService#startRun`** 里通过 `resolvedQueryContextResolver.resolve(runId, req, uc)` **同步完成**，早于 Graph、早于 `BusinessDataPlannerNode`。
 
 | 环节 | 类与方法 | 说明 |
 |------|-----------|------|
 | HTTP | `com.nongxinle.controller.AiRunController#createRun` | `POST` 映射在类级 `@RequestMapping("ai/runs")` 上，即 **`/ai/runs`**。 |
 | Run 启动 | `com.nongxinle.ai.platform.AiRunService#startRun` | 第 112～113 行：`userContextResolver` → **`resolvedQueryContextResolver.resolve(...)`**。 |
-| 解析总控 | `com.nongxinle.ai.resolver.AiResolvedQueryContextResolver#resolve` | 组装 v2 输入后调用 `querySemanticLlmParser.parse(v2In)`；v2 后经若干 **Normalizer**、`AiQuerySemanticV2DishProfitGate`，再走 **`trySemanticAdoption`**；失败则 v1 `parseUserQuestion`。 |
+| 解析总控 | `com.nongxinle.ai.resolver.AiResolvedQueryContextResolver#resolve` | 组装 v2 输入后调用 `querySemanticLlmParser.parse(v2In)`，再走 **`trySemanticAdoption`**（D-1X-B：已移除 Resolver 内 DishProfitGate / harness 多店 augment）。 |
 | LLM 调用 | `com.nongxinle.ai.semantic.AiQuerySemanticLlmParser#parse` | `LlmGateway.chatSimple(systemPrompt, userPayload)`，`userPayload` 为 `SemanticParserInput` 的 JSON；类注释写明 **禁止产出 SQL/可执行 ID**，门店等由 Resolver 映射为权限内 ID。 |
 
 `AiResolvedQueryIntent` 类注释也写明：**主链路内容由 `AiQuerySemanticParseResult` 合并得到，不再对用户消息做关键词路由**（`fromUserMessage` 等已废弃/空实现）。
@@ -97,7 +97,7 @@ POST /ai/runs
 ### 4.2 DataPlanner：经营概览工具列表
 
 - **`overviewIntent`**（`PATH_BUSINESS_OVERVIEW`）且非角色收敛到采购/库房时：设 **`businessOverviewPath(true)`**。  
-- 若 **`resolvedContextOrchestrationMultiAgentOverview(rCtx)`** 为真（`orchestrationTaskMode == MULTI_AGENT` 或 `orchestrationMultiAgentRequired`），则 **`buildBusinessOverviewMultiAgentToolsPermissionFiltered`** 按权限组装 **四域工具子集**（可能少于四域）；否则使用 **`DEFAULT_BUSINESS_OVERVIEW_TOOLS`**（legacy 默认套餐）。  
+- 若 **`resolvedContextOrchestrationMultiAgentOverview(rCtx)`** 为真（`orchestrationTaskMode == MULTI_AGENT` 或 `orchestrationMultiAgentRequired`），则 **`buildBusinessOverviewMultiAgentToolsPermissionFiltered`** 按权限组装 **四域工具子集**（可能少于四域）；否则 **`dataPlanTools` 为空**（classic 六工具链已删除，见 [classic-business-overview-removed.md](../legacy-reference/classic-business-overview-removed.md)）。  
 - 注释强调：**固定四域能力与顺序，不根据用户原文删减域**，仅权限裁剪。
 
 ### 4.3 Master：`tryOrchestrateBusinessOverviewMultiAgent`

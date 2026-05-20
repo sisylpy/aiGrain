@@ -1,5 +1,7 @@
 package com.nongxinle.ai.graph.business;
 
+import com.nongxinle.ai.context.AiResolvedQueryContext;
+import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.core.AiWorkspaceMode;
@@ -55,7 +57,7 @@ class BusinessDataPlannerStorePurchaserBusinessOverviewTest {
     }
 
     @Test
-    void storeManager_sameQuestion_keepsBusinessOverviewPath() {
+    void storeManager_sameQuestion_keepsBusinessOverviewPathWithoutClassicPlan() {
         AiUserContext ctx = AiUserContext.builder()
                 .roleCode(AiRoleCodes.STORE_MANAGER)
                 .permissions(new ArrayList<>(AiRoleMapper.permissionsForAiRole(AiRoleCodes.STORE_MANAGER)))
@@ -65,13 +67,17 @@ class BusinessDataPlannerStorePurchaserBusinessOverviewTest {
                 .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
                 .normalizedUserInput("这个月经营怎么样？")
                 .aiUserContext(ctx)
+                .resolvedQueryContext(AiResolvedQueryContext.builder()
+                        .effectiveIntentCode(AiResolvedQueryIntent.BUSINESS_OVERVIEW)
+                        .effectivePathCode(AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW)
+                        .build())
                 .build();
 
         node.run(st);
 
         assertThat(st.isBusinessOverviewPath()).isTrue();
         assertThat(st.isPurchaseCostInsightPath()).isFalse();
-        assertThat(st.getDataPlanTools()).isEqualTo(AiBusinessToolIds.DEFAULT_BUSINESS_OVERVIEW_TOOLS);
+        assertThat(st.getDataPlanTools()).isEmpty();
         assertThat(st.getIntentConvergence()).isNull();
     }
 

@@ -33,19 +33,16 @@ public class AiRunMessagePersistenceService {
     public void persistUserMessageForRun(
             Long conversationId,
             Long userId,
-            Integer messageType,
             long runId,
             String content) {
         if (conversationId == null || userId == null || content == null) {
             return;
         }
         Date now = new Date();
-        int mt = messageType != null ? messageType : 0;
         try {
             messageMapper.upsertRunScopedMessage(
                     conversationId,
                     userId,
-                    mt,
                     ROLE_USER,
                     content,
                     runId,
@@ -69,7 +66,6 @@ public class AiRunMessagePersistenceService {
     public Long persistAssistantMessageForRun(
             Long conversationId,
             Long userId,
-            Integer messageType,
             long runId,
             String content,
             String status) {
@@ -77,14 +73,12 @@ public class AiRunMessagePersistenceService {
             return null;
         }
         Date now = new Date();
-        int mt = messageType != null ? messageType : 0;
         String effectiveContent = content != null ? content : "";
         String effectiveStatus = normalizeAssistantStatus(status);
         try {
             messageMapper.upsertRunScopedMessage(
                     conversationId,
                     userId,
-                    mt,
                     ROLE_ASSISTANT,
                     effectiveContent,
                     runId,
@@ -138,18 +132,6 @@ public class AiRunMessagePersistenceService {
                     e.toString());
             throw e;
         }
-    }
-
-    /** 供 Run 路径解析消息类型（含会话不存在时的兜底）。 */
-    public Integer resolveConversationMessageType(Long conversationId) {
-        if (conversationId == null) {
-            return 0;
-        }
-        GbAiConversationEntity c = conversationMapper.selectById(conversationId);
-        if (c == null || c.getGbAiConversationType() == null) {
-            return 0;
-        }
-        return c.getGbAiConversationType();
     }
 
     private static String normalizeAssistantStatus(String raw) {

@@ -1,10 +1,6 @@
 package com.nongxinle.ai.composer.summary;
 
-import com.nongxinle.ai.core.AiRunState;
-import com.nongxinle.ai.dto.business.AiBusinessOverviewResult;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
-import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
-import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.util.AiNumericPlainText;
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
 
@@ -14,108 +10,20 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Deterministic prose snippets for business-overview payloads and fallbacks:
- * revenue paragraph from {@link DailyRevenueAnswerPlan}, numeric headline from overview result / tool stats,
- * purchase one-liner from {@link PurchaseAnswerPlan}. Reads structured state only.
+ * Deterministic prose from {@link DailyRevenueAnswerPlan} for Answer Composer / MULTI_AGENT revenue blocks.
+ * Reads structured AnswerPlan only.
  */
 public final class BusinessOverviewDeterministicSummaryBuilder {
 
     private BusinessOverviewDeterministicSummaryBuilder() {
     }
 
-    /** 经营概览 + 已挂载日营收 AnswerPlan：确定性正文必须与 revenue_query 计划一致（禁止混用 business_overview_query 营业额/天数）。 */
-    public static String businessOverviewResolvedRevenueParagraph(AiRunState state) {
-        if (state == null || !state.isBusinessOverviewPath()) {
-            return null;
-        }
-        DailyRevenueAnswerPlan rap = state.getRevenueAnswerPlan();
-        if (rap == null) {
-            return null;
-        }
-        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
-        return composeRevenueDeterministicFromAnswerPlan(rap, tw);
-    }
-
-    public static boolean hasAuthoritativeBusinessOverviewRevenuePlan(AiRunState state) {
-        String p = businessOverviewResolvedRevenueParagraph(state);
-        return p != null && !p.isBlank();
-    }
-
-    /**
-     * 经营概览最终摘要一句：取自 {@link PurchaseAnswerPlan} focus 行（与 purchase_overview 工具一致）。
-     */
-    public static String businessOverviewPurchaseCoreSentence(AiRunState state) {
-        if (state == null || !state.isBusinessOverviewPath()) {
-            return "";
-        }
-        PurchaseAnswerPlan pap = state.getPurchaseAnswerPlan();
-        if (pap == null || pap.getPlanType() == null || pap.getPlanType().isBlank()
-                || pap.getFocusRows() == null || pap.getFocusRows().isEmpty()) {
-            return "";
-        }
-        String type = pap.getPlanType().trim();
-        Map<String, Object> row = pap.getFocusRows().get(0);
-        int cnt = intHint(row.get("purchaseOrderCount"));
-        String amt = plainNumericHint(row.get("totalPurchaseAmount"));
-        if (PurchaseAnswerPlan.TYPE_PURCHASE_SELF_OVERVIEW.equals(type)) {
-            return "同期自采金额为 " + amt + " 元，共 " + cnt + " 笔自采入库。";
-        }
-        if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_OVERVIEW.equals(type)) {
-            return "同期供货商渠道采购金额为 " + amt + " 元，共 " + cnt + " 笔供货商采购入库。";
-        }
-        if (PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW.equals(type)) {
-            return "同期采购入库总金额为 " + amt + " 元，共 " + cnt + " 笔。";
-        }
-        return "";
-    }
-
-    public static String extractOverviewNumericHeadline(AiRunState state, AiBusinessOverviewResult o) {
-        Map<String, Object> st = o.getDashboardStatsCn();
-        if (st == null || st.isEmpty()) {
-            st = loadStatsFallbackFromTool(state);
-        }
-        if (st != null && !st.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            appendDistinctRevenueDayLead(sb, st);
-            sb.append("，总营业额 ");
-            appendPlainValue(sb, st.get("总营业额"));
-            sb.append(" 元，日均营业额 ");
-            appendPlainValue(sb, st.get("日均营业额"));
-            sb.append(" 元，日均订单数 ");
-            appendPlainValue(sb, st.get("日均订单数"));
-            sb.append(" 单/天，客单价 ");
-            appendPlainValue(sb, st.get("客单价"));
-            sb.append(" 元。优惠券/平台费合计 ");
-            appendPlainValue(sb, st.get("平台费合计"));
-            sb.append(" 元，退款合计 ");
-            appendPlainValue(sb, st.get("退款合计"));
-            sb.append(" 元，外卖营业额合计 ");
-            appendPlainValue(sb, st.get("外卖营业额合计"));
-            sb.append(" 元");
-            Object profit = st.get("盈亏状态");
-            if (profit != null && !profit.toString().isBlank()) {
-                String ps = profit.toString().trim();
-                if (!"-".equals(ps) && !"—".equals(ps)) {
-                    sb.append("。盈亏状态：").append(ps);
-                }
-            }
-            sb.append("。");
-            return sb.toString();
-        }
-        String fromSummary = o.getSummary();
-        if (fromSummary != null && !fromSummary.isBlank()) {
-            return fromSummary.trim();
-        }
-        return "暂无日营收经营看板数据，无法列出查询区间内具体数字。";
-    }
-
     /**
      * 营业额 AnswerPlan：仅宣读 {@link DailyRevenueAnswerPlan} 的 focusRows / secondaryRows，不重算、不重排。
      * <p>
-     * 非 {@link DailyRevenueAnswerPlan#TYPE_REVENUE_OVERVIEW} 且本轮无可用 metric 行时，返回确定性「指标不可用」话术，
-     * 禁止返回 {@code null} 以免外层误走营业额工具信封兜底（总额口径污染细指标问法）。
+     * 非 {@link DailyRevenueAnswerPlan#TYPE_REVENUE_OVERVIEW} 且本轮无可用 metric 行时，返回确定性「指标不可用」话术。
      *
-     * @return 可展示的确定性正文；{@code null} 仅表示(plan/planType 缺失)或 REVENUE_OVERVIEW 无行时可退回信封朗读。
+     * @return 可展示的确定性正文；{@code null} 表示 plan/planType 缺失或 compose 无法宣读，由 Composer no-plan 兜底。
      */
     public static String composeRevenueDeterministicFromAnswerPlan(DailyRevenueAnswerPlan plan,
             AiTimeWindowTextFormatter.UserPhrases tw) {
@@ -161,46 +69,6 @@ public final class BusinessOverviewDeterministicSummaryBuilder {
         return null;
     }
 
-    /**
-     * 与 {@link com.nongxinle.service.impl.GbAiDailyRevenueDashboardServiceImpl#buildGroupWideIncomeFlattened}
-     * 等指标一致：先说明本次查询日期边界，再说明「统计天数」是区间内有营业额入账的自然日数（非日历满跨度）。
-     */
-    private static void appendDistinctRevenueDayLead(StringBuilder sb, Map<String, Object> statsCn) {
-        String qStart = trimStatDate(statsCn.get("统计开始日期"));
-        String qEnd = trimStatDate(statsCn.get("统计结束日期"));
-        if (!qStart.isEmpty() && !qEnd.isEmpty()) {
-            if (qStart.equals(qEnd)) {
-                sb.append(qStart).append(" 当日");
-            } else {
-                sb.append("所选区间 ").append(qStart).append("～").append(qEnd).append(" 内");
-            }
-        } else if (!qStart.isEmpty()) {
-            sb.append("自 ").append(qStart).append(" 起");
-        } else if (!qEnd.isEmpty()) {
-            sb.append("截至 ").append(qEnd);
-        } else {
-            sb.append("本查询区间内");
-        }
-        sb.append("，录入营业额的自然日共 ");
-        appendPlainValue(sb, statsCn.get("统计天数"));
-        sb.append(" 天");
-    }
-
-    private static String trimStatDate(Object raw) {
-        if (raw == null) {
-            return "";
-        }
-        String t = raw.toString().trim();
-        return t.isBlank() ? "" : t;
-    }
-
-    private static Map<String, Object> loadStatsFallbackFromTool(AiRunState state) {
-        Map<String, Object> bo = overviewToolData(state);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> st = bo.get("stats") instanceof Map ? (Map<String, Object>) bo.get("stats") : Map.of();
-        return st;
-    }
-
     private static void appendPlainValue(StringBuilder sb, Object v) {
         if (v == null || v.toString().isBlank()) {
             sb.append("暂无");
@@ -212,19 +80,6 @@ public final class BusinessOverviewDeterministicSummaryBuilder {
             return;
         }
         sb.append(AiNumericPlainText.plainNumber(v));
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> overviewToolData(AiRunState state) {
-        Object env = state.getToolResults().get(AiBusinessToolIds.BUSINESS_OVERVIEW_QUERY);
-        if (!(env instanceof Map)) {
-            return Map.of();
-        }
-        Object data = ((Map<String, Object>) env).get("data");
-        if (!(data instanceof Map)) {
-            return Map.of();
-        }
-        return (Map<String, Object>) data;
     }
 
     private static String plainNumericHint(Object v) {

@@ -319,7 +319,7 @@ V1 **可作为 Pin / WorkNote 表上的扁平字段集合**，不必单独表。
 
 1. **`conversationId` 来源**  
    - 表：`gb_ai_conversation.gb_ai_conversation_id`。  
-   - API：**`POST /api/ai/runs`** 首轮可不传，服务端 `GbAiChatService#createNewConversationForAgentRun` 插入后在响应体返回；后续轮须传同一 id。**`POST /api/ai/chat/conversation`** 也会创建/恢复会话。
+   - API：**`POST /api/ai/runs`** 首轮可不传 `conversationId`，服务端 **`AiConversationCoreService#createNewConversationForAgentRun`** 插入后在响应体返回；后续轮须传同一 id。
 
 2. **`runId` 来源**  
    - **`AiRunSessionRegistry#nextRunId()`** 分配；**`POST /api/ai/runs`** 响应体 **`runId`**。  

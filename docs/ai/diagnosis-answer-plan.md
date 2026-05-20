@@ -1,8 +1,32 @@
 # DiagnosisPlan：经营诊断 Harness 设计（阶段一 · 文档定稿）
 
-> **状态**：阶段一 **仅设计与字段约定**；**不**在本阶段改采购 / 出库 / 菜品毛利 / 营收主链路代码，**不**新增诊断 SQL，**不**改前端与 SSE。  
+> **状态**：阶段二骨架已落地（`DiagnosisPlanBuilder` + `StubOutcomeReviewNode`）；**现网 `business_diagnosis_path` 主链**见下文 **§0b**。  
 > **读者**：接手餐饮 AI 多智能体 Harness 的工程师。  
-> **关联**：`docs/ai/harness-composer-architecture.md`（分层总览）、`docs/ai/business-diagnosis-harness-plan.md`（历史 Tool 编排视角，见下文「与旧文档对齐」）。
+> **关联**：`docs/ai/harness-composer-architecture.md`、`docs/ai/business-overview-diagnosis-domain-capability-matrix.md`、`docs/legacy-reference/business-diagnosis-plan-removed.md`。
+
+---
+
+## 0b. 现网三条诊断相关链（2026-05-20 · P2 审计）
+
+### 1. 成本诊断 `cost_diagnosis_path`（现网主链）
+
+`BusinessDataPlannerNode` → `DEFAULT_COST_INSIGHT_TOOLS`（四 Tool：`revenue_query` → `purchase_overview` → `stock_reduce_query` → `dish_profit_analysis`）→ `BusinessToolExecutionNode` → `StubOutcomeReviewNode` → **`CostDiagnosisAgentNode`** + **`CostMarginDerivation`**（**无** `gross_margin_calculator` Tool；**无** classic business overview）。
+
+### 2. 经营诊断 `business_diagnosis_path`（现网主链）
+
+`BusinessDataPlannerNode#applyBusinessDiagnosisBranch`（权限裁剪 tools，可与 **MULTI_AGENT** 共用 `MasterBusinessAgent` 四域编排）→ 各域 `*AnswerPlanBuilder` → `StubOutcomeReviewNode` → **`DiagnosisPlanBuilder.attachIfApplicable`** → **`BusinessDiagnosisAgentV1.enrich`**（仅 `businessDiagnosisPath`）→ `StubAnswerComposerNode` / **`DiagnosisDeterministicRenderer`**。
+
+### 3. Composite `BusinessDiagnosisComposite*`（非用户正文主链）
+
+`BusinessDiagnosisCompositeProductionGate`（观测写入 `AiRunState`，**不改**路由）→ `BusinessDiagnosisCompositeExecutionService`：
+
+| 模式 | 用途 |
+|------|------|
+| **HARNESS_ONLY** | Harness `GRAPH_RUN` 同步跑完后旁路 |
+| **SHADOW** | 普通 Run 图完成后旁路；**不写** `finalAnswerText` |
+| **PRIMARY** | **未接**现网 |
+
+PlannerExecutor GraphCase（`AiPlannerExecutorBusinessDiagnosisComposite*`）仅验收 Composite，**不是** `/api/ai/runs` 默认 Graph。
 
 ---
 
@@ -107,9 +131,13 @@
 
 可选扩展（与 `business-diagnosis-harness-plan.md` 历史稿兼容时可用）：`dataCompleteness`（各域 `OK` / `PARTIAL` / `MISSING` / `FAILED`）、`usedSourcePlans`。新建链路 **优先** 把等价信息收进 `debug`，避免 Composer 依赖过多顶层键。
 
-### 3.1 与仓库现有 `BusinessDiagnosisPlan` 的关系（说明）
+### 3.1 与历史 `BusinessDiagnosisPlan` 的关系（Historical removed）
 
-仓库中已有 **`com.nongxinle.ai.dto.business.BusinessDiagnosisPlan`**（字段如 `mainFindings`、`riskItems`、`sourceTools` 等），契约历史上偏 **Tool 摘要**。  
+**P2（2026-05-20）**：`BusinessDiagnosisPlan` / `BusinessDiagnosisPlanBuilder` / `BusinessDiagnosisPlanNode` 已从 `src/main` 删除；现网统一为 **`DiagnosisPlan`** + **`DiagnosisPlanBuilder`** + **`BusinessDiagnosisAgentV1.enrich`**。详见 [business-diagnosis-plan-removed.md](../legacy-reference/business-diagnosis-plan-removed.md)。
+
+**P3 Harness 键（2026-05-20）**：Replay / `GET …/runs` 摘要以 **`diagnosisPlan` / `diagnosisPlanExists` / `diagnosisPlanType`** 为准；**`businessDiagnosisPlanExists`**、**`harnessReplayBusinessDiagnosisPlanType`** 等为 **deprecated compat**（与 `diagnosisPlan*` 同义镜像），不代表旧 DTO。
+
+历史上 **`BusinessDiagnosisPlan`**（字段如 `mainFindings`、`riskItems`、`sourceTools` 等）契约偏 **Tool 摘要**，已由 AnswerPlan 聚合层替代。  
 **阶段一产品契约**以 **本文 §3～§5** 为准；后续 Java 收口时可 **演化 DTO 或增加适配映射**，**不在**「仅文档」任务中改代码。
 
 ---

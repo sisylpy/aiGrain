@@ -1,18 +1,18 @@
 package com.nongxinle.ai.graph.business;
 
-import com.nongxinle.ai.context.AiResolvedDataScope;
-import com.nongxinle.ai.context.AiResolvedOrgScope;
-import com.nongxinle.ai.context.AiResolvedQueryContext;
-import com.nongxinle.ai.context.AiStoreScopeDTO;
-import com.nongxinle.ai.context.AiUserContext;
+import com.nongxinle.ai.context.*;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
+import com.alibaba.fastjson2.JSON;
 import com.nongxinle.ai.dto.business.AiDishProfitDishBrief;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.AiOverviewStoreIssueItem;
 import com.nongxinle.ai.dto.business.AiOverviewVisibleStoreItem;
+import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrixRow;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
@@ -25,6 +25,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -86,6 +87,47 @@ public class DishProfitAgentNode {
                 && state.getDataPlanTools().contains(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
     }
 
+    /**
+     * D-8 菜品销量专线：复用 {@link AiBusinessToolIds#DISH_PROFIT_ANALYSIS} 读 dishRows，但不挂载
+     * {@link DishProfitAnswerPlan} / portfolio fallback（由 {@link DishSalesAnswerPlanBuilder} 独占）。
+     */
+    static boolean isDishSalesQueryOnlyPath(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        String path = effectivePath(rq);
+        if (!AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(path)) {
+            return false;
+        }
+        String intent = effectiveIntent(rq);
+        if (StringUtils.hasText(intent) && !AiResolvedQueryIntent.DISH_SALES_QUERY.equals(intent)) {
+            return false;
+        }
+        return !AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(path);
+    }
+
+    private static String effectivePath(AiResolvedQueryContext rq) {
+        if (StringUtils.hasText(rq.getEffectivePathCode())) {
+            return rq.getEffectivePathCode().trim();
+        }
+        return rq.getQueryIntent() != null && StringUtils.hasText(rq.getQueryIntent().getPathCode())
+                ? rq.getQueryIntent().getPathCode().trim()
+                : null;
+    }
+
+    private static String effectiveIntent(AiResolvedQueryContext rq) {
+        if (StringUtils.hasText(rq.getEffectiveIntentCode())) {
+            return rq.getEffectiveIntentCode().trim();
+        }
+        return rq.getQueryIntent() != null && StringUtils.hasText(rq.getQueryIntent().getIntentCode())
+                ? rq.getQueryIntent().getIntentCode().trim()
+                : null;
+    }
+
     private static void maybeMergeStoreDisclaimer(AiRunState state) {
         AiUserContext ctx = state.getAiUserContext();
         if (ctx == null) {
@@ -117,6 +159,11 @@ public class DishProfitAgentNode {
      * @param orchestrationEnvelope 为 true 时在 {@link DishProfitAnswerPlan#getDebug()} 中标记（经营概览 Multi-Agent 子域 envelope）
      */
     static AiDishProfitOverviewResult computeOverviewAndAttachPlans(AiRunState state, boolean orchestrationEnvelope) {
+        if (isDishSalesQueryOnlyPath(state)) {
+            state.setDishProfitAnswerPlan(null);
+            DishSalesAnswerPlanBuilder.attachIfApplicable(state);
+            return null;
+        }
         Map<String, Object> data = toolEnvelopeData(state, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
         Map<String, Object> cov = coverageFromToolEnvelope(data);
         boolean ok = toolSuccess(state, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
@@ -301,10 +348,6 @@ public class DishProfitAgentNode {
         if (state == null || out == null || dishRowsAllPeers == null) {
             return;
         }
-        boolean peersEmpty = dishRowsAllPeers.isEmpty();
-        if (peersEmpty && !isSingleDishBuildInsightMetricQuestion(state) && !isLowProfitReasonQuestion(state)) {
-            return;
-        }
         var qi = queryIntentFrom(state);
         if (qi == null) {
             return;
@@ -316,24 +359,47 @@ public class DishProfitAgentNode {
         LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
         dbg.put("structuredIntentDetail", sid);
         dbg.put("structuredIntentDetailWire", wire);
+        AiResolvedQueryContext rctx = state.getResolvedQueryContext();
+        if (state.isDishProfitPath()
+                && DishProfitDrilldownMatrix.detectMatrixWireMissing(
+                        rctx != null ? rctx.getQuerySemanticParse() : null,
+                        qi.getPathCode(),
+                        wire)) {
+            dbg.put("matrixWireMissing", DishProfitDrilldownMatrix.MATRIX_WIRE_MISSING);
+            log.info(
+                    "[DishProfitAgentNode] dishProfitAnswerPlan {} runId={} structuredIntentDetail={} wire={}",
+                    DishProfitDrilldownMatrix.MATRIX_WIRE_MISSING,
+                    state.getRunId(),
+                    sid,
+                    wire);
+            return;
+        }
         String dbgMention = effectiveMentionedDishNameForMetric(state);
         if (StringUtils.hasText(dbgMention)) {
             dbg.put("mentionedDishName", dbgMention);
         }
-        AiResolvedQueryContext rctx = state.getResolvedQueryContext();
 
-        if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(wire)) {
-            attachLowestMarginRankingPlan(state, dishRowsAllPeers, scopeLabel, timeLabel, dbg);
-            if (state.getDishProfitAnswerPlan() != null) {
+        DishProfitDrilldownMatrixRow matrixRow = DishProfitDrilldownMatrix.findFirstTurnRowByWire(wire);
+        if (matrixRow != null) {
+            dbg.put("dishProfitMatrixRowId", matrixRow.getRowId());
+            if (tryAttachFirstTurnPlanFromMatrix(
+                    matrixRow,
+                    state,
+                    out,
+                    dishRowsAllPeers,
+                    dishRowsScoped,
+                    wire,
+                    scopeLabel,
+                    timeLabel,
+                    dbg,
+                    rctx)) {
                 return;
             }
         }
 
-        if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN.equals(wire)) {
-            attachHighestMarginRankingPlan(state, dishRowsAllPeers, scopeLabel, timeLabel, dbg);
-            if (state.getDishProfitAnswerPlan() != null) {
-                return;
-            }
+        boolean peersEmpty = dishRowsAllPeers.isEmpty();
+        if (peersEmpty && !isSingleDishBuildInsightMetricQuestion(state) && !isLowProfitReasonQuestion(state)) {
+            return;
         }
 
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(wire)) {
@@ -416,19 +482,7 @@ public class DishProfitAgentNode {
                 log.info("[DishProfitAgentNode] dishProfitAnswerPlan skip REASON emptyMention runId={}", state.getRunId());
                 return;
             }
-            List<Map<String, Object>> pool = dishRowsScoped != null ? dishRowsScoped : dishRowsAllPeers;
-            RowSnap hit = pool.stream()
-                    .map(r -> new RowSnap(r, briefFromRow(r)))
-                    .filter(rs -> dishNameMatchesMention(mention, rs.brief().getDishName()))
-                    .findFirst()
-                    .orElse(null);
-            if (hit == null) {
-                hit = dishRowsAllPeers.stream()
-                        .map(r -> new RowSnap(r, briefFromRow(r)))
-                        .filter(rs -> dishNameMatchesMention(mention, rs.brief().getDishName()))
-                        .findFirst()
-                        .orElse(null);
-            }
+            RowSnap hit = findInsightRowByMention(mention, dishRowsScoped, dishRowsAllPeers);
             if (hit == null) {
                 dbg.put("dishNotFoundInScope", true);
                 DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
@@ -475,6 +529,53 @@ public class DishProfitAgentNode {
     }
 
     /**
+     * Phase 1 dish matrix first-turn entry：按 {@link DishProfitDrilldownMatrixRow#getTargetDishProfitPlanType()} 挂载 plan。
+     */
+    private static boolean tryAttachFirstTurnPlanFromMatrix(
+            DishProfitDrilldownMatrixRow matrixRow,
+            AiRunState state,
+            AiDishProfitOverviewResult out,
+            List<Map<String, Object>> dishRowsAllPeers,
+            List<Map<String, Object>> dishRowsScoped,
+            String wire,
+            String scopeLabel,
+            String timeLabel,
+            LinkedHashMap<String, Object> dbg,
+            AiResolvedQueryContext rctx) {
+        if (matrixRow == null || state == null) {
+            return false;
+        }
+        String target = matrixRow.getTargetDishProfitPlanType();
+        if (DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN.equals(target)) {
+            attachIngredientCostBreakdownPlan(
+                    state, out, dishRowsAllPeers, dishRowsScoped, scopeLabel, timeLabel, dbg);
+            return true;
+        }
+        if (DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN.equals(target)) {
+            if (dishRowsAllPeers == null || dishRowsAllPeers.isEmpty()) {
+                return false;
+            }
+            attachLowestMarginRankingPlan(state, dishRowsAllPeers, scopeLabel, timeLabel, dbg);
+            return state.getDishProfitAnswerPlan() != null;
+        }
+        if (DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN.equals(target)) {
+            if (dishRowsAllPeers == null || dishRowsAllPeers.isEmpty()) {
+                return false;
+            }
+            attachHighestMarginRankingPlan(state, dishRowsAllPeers, scopeLabel, timeLabel, dbg);
+            return state.getDishProfitAnswerPlan() != null;
+        }
+        if (DishProfitAnswerPlan.TYPE_DISH_THEORETICAL_COST.equals(target)
+                || DishProfitAnswerPlan.TYPE_DISH_ACTUAL_OUTBOUND_COST.equals(target)
+                || DishProfitAnswerPlan.TYPE_DISH_PROFIT_RATE.equals(target)
+                || DishProfitAnswerPlan.TYPE_DISH_COST_GAP.equals(target)) {
+            return attachSingleDishBuildInsightMetricAnswerPlanIfApplicable(
+                    state, dishRowsAllPeers, dishRowsScoped, wire, scopeLabel, timeLabel, dbg, rctx);
+        }
+        return false;
+    }
+
+    /**
      * 结构化子意图未挂载 {@link DishProfitAnswerPlan} 时，从 Overview 补聚合档位：
      * 经营诊断 path 用 {@link DishProfitAnswerPlan#TYPE_BUSINESS_DIAGNOSIS_DISH_OVERVIEW}；
      * 经营概览 / 菜品专线用 {@link DishProfitAnswerPlan#TYPE_AGGREGATED_DISH_PORTFOLIO_FALLBACK}。
@@ -488,6 +589,13 @@ public class DishProfitAgentNode {
             return;
         }
         if (state.getDishProfitAnswerPlan() != null) {
+            return;
+        }
+        if (dishProfitMatrixWireMissing(state)) {
+            log.info(
+                    "[DishProfitAgentNode] skip portfolio aggregate {} runId={}",
+                    DishProfitDrilldownMatrix.MATRIX_WIRE_MISSING,
+                    state.getRunId());
             return;
         }
         if (!businessDiagnosisDishOverviewHasSignal(out)) {
@@ -702,6 +810,7 @@ public class DishProfitAgentNode {
 
     private static void finishAttachDishProfitAnswerPlan(AiRunState state, DishProfitAnswerPlan plan) {
         mergePlanServerDebug(plan, state);
+        populateDishProfitResultAnchors(plan);
         state.setDishProfitAnswerPlan(plan);
         log.info(
                 "[DishProfitAgentNode] dishProfitAnswerPlan attached runId={} type={} sortKey={} focusRows={} secondaryRows={}",
@@ -710,6 +819,191 @@ public class DishProfitAgentNode {
                 plan.getSortKey(),
                 plan.getFocusRows() == null ? 0 : plan.getFocusRows().size(),
                 plan.getSecondaryRows() == null ? 0 : plan.getSecondaryRows().size());
+    }
+
+    /** D-13.3B：原料构成；优先消费 {@link AiBusinessToolIds#DISH_INGREDIENT_COST_BREAKDOWN}，否则诚实降级。 */
+    private static void attachIngredientCostBreakdownPlan(
+            AiRunState state,
+            AiDishProfitOverviewResult out,
+            List<Map<String, Object>> dishRowsAllPeers,
+            List<Map<String, Object>> dishRowsScoped,
+            String scopeLabel,
+            String timeLabel,
+            LinkedHashMap<String, Object> dbg) {
+        List<Map<String, Object>> focus = new ArrayList<>();
+        String mention = nz(effectiveMentionedDishNameForMetric(state));
+        if (StringUtils.hasText(mention)) {
+            RowSnap hit = findInsightRowByMention(mention, dishRowsScoped, dishRowsAllPeers);
+            if (hit != null) {
+                focus.add(insightRowToAnswerPlanRow(hit.row(), hit.brief()));
+            }
+        }
+
+        Map<String, Object> ing = toolEnvelopeData(state, AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN);
+        boolean ingToolRan = state.getToolResults() != null
+                && state.getToolResults().containsKey(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN);
+        boolean ingOk = toolSuccess(state, AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN);
+
+        LinkedHashMap<String, Object> d = new LinkedHashMap<>(dbg);
+        if (!ingToolRan) {
+            d.put("ingredientBreakdownAvailable", false);
+            d.put("ingredientBreakdownUnavailableReason", "NO_INGREDIENT_BREAKDOWN_TOOL_RUN");
+            DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                    .planType(DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN)
+                    .scopeLabel(scopeLabel)
+                    .timeLabel(timeLabel)
+                    .sortKey(null)
+                    .sortDirection(null)
+                    .topN(focus.isEmpty() ? 0 : 1)
+                    .focusRows(focus)
+                    .secondaryRows(new ArrayList<>())
+                    .ingredientBreakdownAvailable(false)
+                    .ingredientBreakdownUnavailableReason("NO_INGREDIENT_BREAKDOWN_TOOL_RUN")
+                    .ingredientRows(new ArrayList<>())
+                    .missingPriceItems(new ArrayList<>())
+                    .debug(d)
+                    .resultAnchors(new ArrayList<>())
+                    .build();
+            finishAttachDishProfitAnswerPlan(state, plan);
+            return;
+        }
+        if (!ingOk || ing.isEmpty()) {
+            d.put("ingredientBreakdownAvailable", false);
+            d.put("ingredientBreakdownUnavailableReason", "DISH_INGREDIENT_TOOL_FAILED");
+            DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                    .planType(DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN)
+                    .scopeLabel(scopeLabel)
+                    .timeLabel(timeLabel)
+                    .sortKey(null)
+                    .sortDirection(null)
+                    .topN(focus.isEmpty() ? 0 : 1)
+                    .focusRows(focus)
+                    .secondaryRows(new ArrayList<>())
+                    .ingredientBreakdownAvailable(false)
+                    .ingredientBreakdownUnavailableReason("DISH_INGREDIENT_TOOL_FAILED")
+                    .ingredientRows(new ArrayList<>())
+                    .missingPriceItems(new ArrayList<>())
+                    .debug(d)
+                    .resultAnchors(new ArrayList<>())
+                    .build();
+            finishAttachDishProfitAnswerPlan(state, plan);
+            return;
+        }
+
+        boolean avail = Boolean.TRUE.equals(ing.get("ingredientBreakdownAvailable"));
+        String reason = stringify(ing.get("ingredientBreakdownUnavailableReason"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows =
+                ing.get("ingredientRows") instanceof List ? (List<Map<String, Object>>) ing.get("ingredientRows") : List.of();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> missing = ing.get("missingPriceItems") instanceof List
+                ? (List<Map<String, Object>>) ing.get("missingPriceItems")
+                : List.of();
+        String total = stringify(ing.get("totalIngredientCost"));
+        if (total.isEmpty()) {
+            total = null;
+        }
+
+        d.put("ingredientBreakdownAvailable", avail);
+        if (StringUtils.hasText(reason)) {
+            d.put("ingredientBreakdownUnavailableReason", reason);
+        } else if (avail) {
+            d.remove("ingredientBreakdownUnavailableReason");
+        }
+        Object ingDbg = ing.get("debug");
+        if (ingDbg instanceof Map<?, ?> m && !m.isEmpty()) {
+            d.put("ingredientToolDebug", new LinkedHashMap<>(m));
+        }
+
+        DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                .planType(DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN)
+                .scopeLabel(scopeLabel)
+                .timeLabel(timeLabel)
+                .sortKey(null)
+                .sortDirection(null)
+                .topN(focus.isEmpty() ? 0 : 1)
+                .focusRows(focus)
+                .secondaryRows(new ArrayList<>())
+                .ingredientBreakdownAvailable(avail)
+                .ingredientBreakdownUnavailableReason(StringUtils.hasText(reason) ? reason : null)
+                .ingredientRows(rows == null ? new ArrayList<>() : new ArrayList<>(rows))
+                .missingPriceItems(missing == null ? new ArrayList<>() : new ArrayList<>(missing))
+                .totalIngredientCost(total)
+                .debug(d)
+                .resultAnchors(new ArrayList<>())
+                .build();
+        finishAttachDishProfitAnswerPlan(state, plan);
+    }
+
+    private static RowSnap findInsightRowByMention(
+            String mention,
+            List<Map<String, Object>> dishRowsScoped,
+            List<Map<String, Object>> dishRowsAllPeers) {
+        if (!StringUtils.hasText(mention)) {
+            return null;
+        }
+        List<Map<String, Object>> pool =
+                dishRowsScoped != null && !dishRowsScoped.isEmpty() ? dishRowsScoped : dishRowsAllPeers;
+        RowSnap hit = null;
+        if (pool != null) {
+            hit = pool.stream()
+                    .map(r -> new RowSnap(r, briefFromRow(r)))
+                    .filter(rs -> dishNameMatchesMention(mention, rs.brief().getDishName()))
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (hit == null && dishRowsAllPeers != null) {
+            hit = dishRowsAllPeers.stream()
+                    .map(r -> new RowSnap(r, briefFromRow(r)))
+                    .filter(rs -> dishNameMatchesMention(mention, rs.brief().getDishName()))
+                    .findFirst()
+                    .orElse(null);
+        }
+        return hit;
+    }
+
+    private static void populateDishProfitResultAnchors(DishProfitAnswerPlan plan) {
+        if (plan == null) {
+            return;
+        }
+        if (!DishProfitAnswerPlan.planTypeEmitsResultAnchor(plan.getPlanType())) {
+            plan.setResultAnchors(new ArrayList<>());
+            return;
+        }
+        List<Map<String, Object>> rows = plan.getFocusRows();
+        if (rows == null || rows.isEmpty()) {
+            plan.setResultAnchors(new ArrayList<>());
+            return;
+        }
+        Map<String, Object> row = rows.get(0);
+        Object dn = row.get("dishName");
+        String dishName = dn == null ? null : dn.toString().trim();
+        if (!StringUtils.hasText(dishName) || "（区间菜品组合）".equals(dishName)) {
+            plan.setResultAnchors(new ArrayList<>());
+            return;
+        }
+        Object did = row.get("dishId");
+        String entityId = did == null ? null : did.toString().trim();
+        Integer rank = null;
+        if (StringUtils.hasText(plan.getSortKey())
+                && plan.getTopN() != null
+                && plan.getTopN() == 1) {
+            rank = 1;
+        }
+        String extraJson = null;
+        if (StringUtils.hasText(entityId)) {
+            extraJson = JSON.toJSONString(Collections.singletonMap("foodId", entityId));
+        }
+        AiResultAnchor anchor = AiResultAnchor.builder()
+                .entityType(AiResultAnchor.ENTITY_TYPE_DISH)
+                .entityId(entityId)
+                .entityName(dishName)
+                .rank(rank)
+                .sourcePlanType(plan.getPlanType())
+                .metric(plan.getSortKey())
+                .extraJson(extraJson)
+                .build();
+        plan.setResultAnchors(new ArrayList<>(List.of(anchor)));
     }
 
     private static boolean dishProfitToolUsedBuildInsight(AiRunState state) {
@@ -835,6 +1129,20 @@ public class DishProfitAgentNode {
         }
         String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail());
         return AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(wire);
+    }
+
+    private static boolean dishProfitMatrixWireMissing(AiRunState state) {
+        if (state == null || !state.isDishProfitPath()) {
+            return false;
+        }
+        var qi = queryIntentFrom(state);
+        if (qi == null) {
+            return false;
+        }
+        String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail());
+        AiResolvedQueryContext rctx = state.getResolvedQueryContext();
+        return DishProfitDrilldownMatrix.detectMatrixWireMissing(
+                rctx != null ? rctx.getQuerySemanticParse() : null, qi.getPathCode(), wire);
     }
 
     private static boolean isHighActualCostRankingQuestion(AiRunState state) {

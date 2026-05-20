@@ -6,42 +6,30 @@ import java.util.List;
 public final class AiBusinessToolIds {
 
     public static final String REVENUE_QUERY = "revenue_query";
-    /** 日营收经营看板：与 {@link com.nongxinle.service.GbAiDailyRevenueDashboardService#buildStatsDashboard} 同源。 */
-    public static final String BUSINESS_OVERVIEW_QUERY = "business_overview_query";
-    public static final String PURCHASE_QUERY = "purchase_query";
     /** 采购概览：多门店/单门店聚合 + Top 商品与供货商（{@code purchase_overview_path}）。 */
     public static final String PURCHASE_OVERVIEW = "purchase_overview";
-    /** 部门库存快照（剩余汇总 + 区间内入库批次汇总）。 */
-    public static final String STOCK_QUERY = "stock_query";
     /** 库房库存概览：聚合库存 + 入库 + 核销分型 + 简易预警列表（{@code warehouse_stock_overview_path}）。 */
     public static final String WAREHOUSE_STOCK_OVERVIEW = "warehouse_stock_overview";
     public static final String STOCK_REDUCE_QUERY = "stock_reduce_query";
-    public static final String DISH_SALES_QUERY = "dish_sales_query";
     public static final String DISH_PROFIT_ANALYSIS = "dish_profit_analysis";
-    public static final String GROSS_MARGIN_CALCULATOR = "gross_margin_calculator";
+    /**
+     * 单菜原料成本明细（配方 + 区间出库/损耗摊销），数据源自 {@link com.nongxinle.service.GbDishCostAnalysisService}。
+     */
+    public static final String DISH_INGREDIENT_COST_BREAKDOWN = "dish_ingredient_cost_breakdown";
 
     /**
      * 成本洞察默认执行顺序（后者可读取前者落库的 toolResults）。
+     * 采购快照由 {@link #PURCHASE_OVERVIEW}（{@code purchaseOverview.totalPurchaseAmount} 等）提供。
+     * 菜品标价收入汇总由 {@link #DISH_PROFIT_ANALYSIS} 提供（读 {@code businessInsightSummary.totalListPriceRevenue}）。
+     * D-8 语义 intent/path 见 {@link com.nongxinle.ai.context.AiResolvedQueryIntent}，执行 Tool 同为 {@link #DISH_PROFIT_ANALYSIS}。
+     * 门店粗估毛利率由 {@link com.nongxinle.ai.graph.business.CostDiagnosisAgentNode} +
+     * {@link com.nongxinle.ai.graph.business.CostMarginDerivation} 内部推导（不写回 toolResults）。
      */
     public static final List<String> DEFAULT_COST_INSIGHT_TOOLS = List.of(
             REVENUE_QUERY,
-            PURCHASE_QUERY,
-            STOCK_REDUCE_QUERY,
-            DISH_SALES_QUERY,
-            GROSS_MARGIN_CALCULATOR
-    );
-
-    /**
-     * 经营概览：与子域 AnswerPlan 对齐时需先跑 {@link #REVENUE_QUERY} 与 {@link #PURCHASE_OVERVIEW}，
-     * 再结合旧版看板聚合、菜品标价、{@link #PURCHASE_QUERY}、毛利率估算。
-     */
-    public static final List<String> DEFAULT_BUSINESS_OVERVIEW_TOOLS = List.of(
-            REVENUE_QUERY,
             PURCHASE_OVERVIEW,
-            BUSINESS_OVERVIEW_QUERY,
-            DISH_SALES_QUERY,
-            PURCHASE_QUERY,
-            GROSS_MARGIN_CALCULATOR
+            STOCK_REDUCE_QUERY,
+            DISH_PROFIT_ANALYSIS
     );
 
     /**
@@ -54,7 +42,7 @@ public final class AiBusinessToolIds {
             DISH_PROFIT_ANALYSIS
     );
 
-    /** 菜品毛利/经营洞察专用链（单列，勿与 {@link #DEFAULT_BUSINESS_OVERVIEW_TOOLS} 混排）。 */
+    /** 菜品毛利/经营洞察专用链（单列，勿与 {@link #BUSINESS_OVERVIEW_MULTI_AGENT_DOMAIN_TOOLS} 混排）。 */
     public static final List<String> DEFAULT_DISH_PROFIT_TOOLS = List.of(
             DISH_PROFIT_ANALYSIS
     );
@@ -116,6 +104,20 @@ public final class AiBusinessToolIds {
     public static final String ARG_PURCHASE_SOURCE_FOCUS = "purchaseSourceFocus";
     /** 采购概览：回答模板（与 queryIntent.structuredIntentDetail 一致，供 Tool 日志与 Composer）。 */
     public static final String ARG_PURCHASE_NARRATIVE_MODE = "purchaseNarrativeMode";
+
+    /**
+     * D-13.4 Phase2：商品锚下钻（仅在有上一 GOODS anchor / 名称时由 {@link com.nongxinle.ai.graph.business.PurchaseOverviewGoodsDrilldownArgs} 写入）。
+     */
+    public static final String ARG_PURCHASE_FOCUS_DIS_GOODS_ID = "focusDisGoodsId";
+    public static final String ARG_PURCHASE_FOCUS_GOODS_NAME = "focusGoodsName";
+    public static final String ARG_PURCHASE_FOCUS_ENTITY_TYPE = "focusEntityType";
+    public static final String ARG_PURCHASE_FOLLOW_UP_DETAIL_WANTED = "followUpDetailWanted";
+
+    /**
+     * D-13.1：供货商金额排行锚下钻「商品明细」时由 {@link com.nongxinle.ai.graph.business.PurchaseOverviewGoodsDrilldownArgs}
+     * 写入；与 {@link #ARG_PURCHASE_FOCUS_DIS_GOODS_ID} 为不同追问维度（供货商 vs 商品）。
+     */
+    public static final String ARG_PURCHASE_FOCUS_SUPPLIER_ID = "focusSupplierId";
 
     /** 集团出库/核销查询：多门店父部门 in 聚合（与 {@link PurchaseOverviewTool} 集团旗标对称）。 */
     public static final String ARG_GROUP_STOCK_REDUCE_AGGREGATION = "groupStockReduceAggregation";

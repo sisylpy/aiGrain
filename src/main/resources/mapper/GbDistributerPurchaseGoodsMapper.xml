@@ -543,7 +543,8 @@
                    ELSE 'other'
                    END                                  AS methodBucket,
                CAST(COUNT(*) AS SIGNED)               AS lineCount,
-               COALESCE(SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))), 0) AS lineSubtotal
+               COALESCE(SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))), 0) AS lineSubtotal,
+               COALESCE(SUM(CAST(gdpg.gb_DPG_buy_quantity AS DECIMAL(24, 6))), 0) AS lineQuantity
         FROM gb_distributer_purchase_goods AS gdpg
         LEFT JOIN gb_distributer_purchase_batch AS gdpb
         ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
@@ -567,11 +568,13 @@
                    WHEN agg.std_key &lt;&gt; '' THEN agg.std_key
                    ELSE '（未命名商品）'
                    END              AS gb_dg_goods_name,
-               agg.times AS gb_dg_quantity_days
+               agg.times AS gb_dg_quantity_days,
+               agg.gb_distributer_goods_id AS gb_distributer_goods_id
         FROM (
                  SELECT TRIM(IFNULL(dg.gb_dg_goods_name, ''))         AS name_key,
                         TRIM(IFNULL(dg.gb_dg_goods_standardname, '')) AS std_key,
-                        CAST(COUNT(*) AS SIGNED)                      AS times
+                        CAST(COUNT(*) AS SIGNED)                      AS times,
+                        MIN(dg.gb_distributer_goods_id)               AS gb_distributer_goods_id
                  FROM gb_distributer_purchase_goods AS gdpg
                           INNER JOIN gb_distributer_goods AS dg
                                      ON dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
@@ -595,11 +598,13 @@
                    WHEN agg.std_key &lt;&gt; '' THEN agg.std_key
                    ELSE '（未命名商品）'
                    END AS gb_dg_goods_name,
-               CAST(ROUND(agg.total_subtotal, 1) AS CHAR) AS goodsPurTotalSubtotal
+               CAST(ROUND(agg.total_subtotal, 1) AS CHAR) AS goodsPurTotalSubtotal,
+               agg.gb_distributer_goods_id AS gb_distributer_goods_id
         FROM (
                  SELECT TRIM(IFNULL(dg.gb_dg_goods_name, ''))         AS name_key,
                         TRIM(IFNULL(dg.gb_dg_goods_standardname, '')) AS std_key,
-                        SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))) AS total_subtotal
+                        SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))) AS total_subtotal,
+                        MIN(dg.gb_distributer_goods_id) AS gb_distributer_goods_id
                  FROM gb_distributer_purchase_goods AS gdpg
                           INNER JOIN gb_distributer_goods AS dg
                                      ON dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
@@ -1095,6 +1100,83 @@
                  LIMIT 10
              ) t
                  LEFT JOIN nx_jrdh_supplier AS njs ON njs.nx_jrdh_supplier_id = t.supplier_id
+    </select>
+
+    <!-- D-13.4 Phase2：单商品（disGoodsId + 与 count 同条件）在供货商采购口径下按供应商拆行 -->
+    <select id="queryGbPurchaseSupplierAggRowsForFocusedDisGoods" resultType="java.util.LinkedHashMap">
+        SELECT CAST(t.supplier_id AS SIGNED)                                AS supplierId,
+               CASE
+                   WHEN njs.nx_jrdhs_supplier_name IS NOT NULL
+                       AND TRIM(njs.nx_jrdhs_supplier_name) &lt;&gt; ''
+                       THEN TRIM(njs.nx_jrdhs_supplier_name)
+                   ELSE CONCAT('供货商ID ', IFNULL(CAST(t.supplier_id AS CHAR), ''), '（名称未维护）')
+                   END                                                   AS supplierName,
+               t.goods_name                                              AS goodsName,
+               t.standard_name                                         AS standardName,
+               ROUND(t.total_subtotal, 1)                              AS purchaseAmount,
+               ROUND(t.total_quantity, 3)                              AS purchaseQuantity,
+               CAST(t.line_count AS SIGNED)                            AS orderCount,
+               ROUND(IFNULL(t.total_subtotal / NULLIF(t.total_quantity, 0), 0), 4) AS avgUnitPrice
+        FROM (
+                 SELECT gdpg.gb_DPG_purchase_nx_supplier_id                    AS supplier_id,
+                        MAX(TRIM(IFNULL(dg.gb_dg_goods_name, '')))             AS goods_name,
+                        MAX(TRIM(IFNULL(dg.gb_dg_goods_standardname, '')))     AS standard_name,
+                        COALESCE(SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))), 0)
+                                                                               AS total_subtotal,
+                        COALESCE(SUM(CAST(gdpg.gb_DPG_buy_quantity AS DECIMAL(24, 6))), 0)
+                                                                               AS total_quantity,
+                        CAST(COUNT(*) AS SIGNED)                               AS line_count
+                 FROM gb_distributer_purchase_goods AS gdpg
+                          INNER JOIN gb_distributer_goods AS dg
+                                     ON dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
+                          LEFT JOIN gb_distributer_purchase_batch AS gdpb
+                                    ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+                 <where>
+                     gdpg.gb_DPG_buy_subtotal &gt; 0
+                     AND gdpg.gb_DPG_purchase_nx_supplier_id IS NOT NULL
+                     AND gdpg.gb_DPG_purchase_nx_supplier_id &gt; 0
+                     <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+                 </where>
+                 GROUP BY gdpg.gb_DPG_purchase_nx_supplier_id
+                 HAVING SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))) &gt; 0
+             ) t
+                 LEFT JOIN nx_jrdh_supplier AS njs ON njs.nx_jrdh_supplier_id = t.supplier_id
+        ORDER BY t.total_subtotal DESC
+    </select>
+
+    <!-- D-13.1：单供货商（supplierId + 与 count 同条件）在供货商采购口径下按商品聚合 -->
+    <select id="queryGbPurchaseGoodsAggRowsForFocusedSupplier" resultType="java.util.LinkedHashMap">
+        SELECT CAST(t.goods_id AS SIGNED)                                AS disGoodsId,
+               t.goods_name                                              AS goodsName,
+               t.standard_name                                           AS standardName,
+               ROUND(t.total_subtotal, 1)                                AS purchaseSubtotal,
+               ROUND(t.total_quantity, 3)                                AS purchaseQuantity,
+               CAST(t.line_count AS SIGNED)                              AS orderCount,
+               ROUND(IFNULL(t.total_subtotal / NULLIF(t.total_quantity, 0), 0), 4) AS avgUnitPrice
+        FROM (
+                 SELECT gdpg.gb_DPG_dis_goods_id                        AS goods_id,
+                        MAX(TRIM(IFNULL(dg.gb_dg_goods_name, '')))   AS goods_name,
+                        MAX(TRIM(IFNULL(dg.gb_dg_goods_standardname, ''))) AS standard_name,
+                        COALESCE(SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))), 0)
+                                                                         AS total_subtotal,
+                        COALESCE(SUM(CAST(gdpg.gb_DPG_buy_quantity AS DECIMAL(24, 6))), 0)
+                                                                         AS total_quantity,
+                        CAST(COUNT(*) AS SIGNED)                       AS line_count
+                 FROM gb_distributer_purchase_goods AS gdpg
+                          INNER JOIN gb_distributer_goods AS dg
+                                     ON dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
+                          LEFT JOIN gb_distributer_purchase_batch AS gdpb
+                                    ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+                 <where>
+                     gdpg.gb_DPG_buy_subtotal &gt; 0
+                     AND gdpg.gb_DPG_purchase_nx_supplier_id IS NOT NULL
+                     AND gdpg.gb_DPG_purchase_nx_supplier_id &gt; 0
+                     <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+                 </where>
+                 GROUP BY gdpg.gb_DPG_dis_goods_id
+                 HAVING SUM(CAST(gdpg.gb_DPG_buy_subtotal AS DECIMAL(24, 6))) &gt; 0
+             ) t
+        ORDER BY t.total_subtotal DESC
     </select>
 
     <!-- 从采购商品表查询商品大类 -->

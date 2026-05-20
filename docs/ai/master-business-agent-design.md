@@ -256,7 +256,7 @@ interface BusinessSubAgent {
 | **RevenueAgent** | `REVENUE_OVERVIEW` | `revenue_overview_path` | **`revenue_query`** | **`DailyRevenueAnswerPlan`**（`DailyRevenueAnswerPlanBuilder`） | **`revenueFallback`**；成功 Master 路径可 **`legacyRevenueSkipped`** 并剥离 **`toolResults`** 中已执行 Tool；否则 legacy 全跑。 |
 | **PurchaseAgent** | `PURCHASE_OVERVIEW` | `purchase_overview_path`（采购结构化支线以 Resolver 为准） | **`purchase_overview`** | **`PurchaseAnswerPlan`**（`PurchaseAnswerPlanBuilder`） | **`purchaseFallback`**、**`legacyPurchaseSkipped`**、**`purchaseToolExecutedByMasterPath`** 等（Summarizer 扁平键）。 |
 | **StockReduceAgent** | `STOCK_REDUCE_QUERY` | `stock_reduce_query_path` | **`stock_reduce_query`** | **`StockReduceAnswerPlan`**（`StockReduceAnswerPlanBuilder`） | **`stockReduceFallback`**、**`legacyStockReduceSkipped`** 等。 |
-| **DishProfitAgent** | `DISH_PROFIT` | `dish_profit_path` | **`dish_profit_analysis`** | **`DishProfitAnswerPlan`**（主线仍由 **`DishProfitAgentNode`** / 既有 Builder 挂载） | **`dishProfitFallback`**、**`masterDishProfitPathAllowsLegacySkip`**、**`dishProfitToolExecutedByMasterPath`**；**`DISH_SALES_QUERY`** 仍为 Graph 内 **独立** Tool 分支。 |
+| **DishProfitAgent** | `DISH_PROFIT` | `dish_profit_path` | **`dish_profit_analysis`** | **`DishProfitAnswerPlan`**（主线仍由 **`DishProfitAgentNode`** / 既有 Builder 挂载） | **`dishProfitFallback`**、**`masterDishProfitPathAllowsLegacySkip`**、**`dishProfitToolExecutedByMasterPath`**。**D-8**（`DISH_SALES_QUERY` / `dish_sales_query_path`）亦执行 **`dish_profit_analysis`**（**Historical removed**：`DishSalesQueryTool` 已删）。 |
 
 ### BusinessOverview MultiAgent（✅ v1 · 闭环）
 

@@ -3,7 +3,6 @@ package com.nongxinle.ai.core;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.security.AiPermissionDenied;
-import com.nongxinle.ai.dto.business.AiBusinessOverviewResult;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
 import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
@@ -184,9 +183,7 @@ public class AiRunState {
 
     private AiCostDiagnosisResult costDiagnosisResult;
 
-    private AiBusinessOverviewResult businessOverviewResult;
-
-    /** 经营概览 MultiAgent：四域 AnswerPlan 聚合（可选；与 {@link #businessOverviewResult} 并存）。 */
+    /** 经营概览 MultiAgent：四域 AnswerPlan 聚合（Composer / Debug 只读）。 */
     private BusinessOverviewAnswerPlan businessOverviewAnswerPlan;
 
     private AiDishProfitOverviewResult dishProfitOverviewResult;
@@ -216,6 +213,11 @@ public class AiRunState {
      */
     private DailyRevenueAnswerPlan revenueAnswerPlan;
 
+    /**
+     * 库房库存现量专线：本轮 AnswerPlan（{@link com.nongxinle.ai.tool.business.WarehouseStockOverviewTool} 结果衍生）。
+     */
+    private com.nongxinle.ai.dto.business.WarehouseAnswerPlan warehouseAnswerPlan;
+
     /** 经营诊断：只读子域 AnswerPlan 聚合（{@link DiagnosisPlanBuilder}）。 */
     private DiagnosisPlan diagnosisPlan;
 
@@ -243,4 +245,25 @@ public class AiRunState {
     private BusinessDiagnosisCompositeExecutionResult businessDiagnosisCompositeExecutionResult;
 
     private volatile boolean cancelled;
+
+    /**
+     * Harness {@link com.nongxinle.ai.harness.replay.AiHarnessReplayDryRunStage#TOOL_REQUEST_ONLY}：
+     * Graph 在 ToolExecution 节点仅捕获 planned args，不调用 {@code Tool.execute}。
+     */
+    @Builder.Default
+    private boolean harnessToolRequestOnly = false;
+
+    /** Harness 阶段 2：{@code Tool.execute} 是否被刻意跳过。 */
+    @Builder.Default
+    private boolean toolExecuteSkipped = false;
+
+    /** Harness 阶段 2：是否至少写入一条 planned tool args 快照。 */
+    @Builder.Default
+    private boolean toolRequestCaptured = false;
+
+    /**
+     * Harness 阶段 2：toolId → 快照（含 args、RequestContext 字段、resolutionDebug）。
+     */
+    @Builder.Default
+    private Map<String, Map<String, Object>> plannedToolArgsByToolId = new HashMap<>();
 }

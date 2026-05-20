@@ -94,16 +94,16 @@ Java **只做**包括但不限于：
 
 Java **不**重新理解用户原文；**不**用业务代码替代 v2 选择 taskMode。
 
-### 3.3 全局时间口语信号（`AiQuerySemanticTimeLexicon`，与 §3.1 边界）
+### 3.3 全局时间（V2-only，D-CLEAN-V1；与 §3.1 边界）
 
-**编排路由**（走何种 `taskMode`、选谁）仍以 **§3.1** 为准：**不得**用用户原文 `contains` / `regex` 在 Java 里「猜」意图。**以下仅为窄例外**：与 **`query_semantic_parser.v2.md`** 中「明确时间词」对齐的 **多轮时间窗合并 / 继承纠偏**（全局时间语义层），**不是**单业务 Agent 补丁。
+**编排路由**（走何种 `taskMode`、选谁）仍以 **§3.1** 为准：**不得**用用户原文 `contains` / `regex` 在 Java 里「猜」**intent/path**。时间窗由 V2 **`time`** → **`SemanticTimeContractCheck`** 校验后写入 `AiResolvedQueryContext`；合同失败进入澄清。
 
 | 约束 | 说明 |
 |------|------|
-| **统一入口** | 显式时间词（当前已实现：**这个月 / 本月 / 当前月** 等）的判断统一走 **`com.nongxinle.ai.semantic.AiQuerySemanticTimeLexicon`**（如 **`explicitCurrentMonthMentioned(normalizedUserMessage)`**），与 Resolver 归一后的本轮用户句配合使用。 |
-| **禁止分散** | **不要**在 **DomainAgent**、**ToolExecutor**、**Composer**、**`AiResolvedQueryContextResolver` 主流程**（编排分叉）、**`MasterBusinessAgent`** 等路径上，为同类「口语时间锚」再写一套用户原文 **`contains` / `regex`**。 |
-| **后续扩展** | 若需增加 **今天 / 本周 / 本月 / 今年 / 去年同期 / 上季度** 等口语信号，**集中**扩写 **`AiQuerySemanticTimeLexicon`**（或经评审后统一抽到同名 **`TimeUtteranceSignals`** 类）；**禁止**在业务模块复制短语表。 |
-| **合并层消费方式** | **`AiQuerySemanticLlmMergeHelper`**（及同类时间合并代码）**只调用**上述词典的公开 API，**不**在内联逻辑里散写用户原文判断。 |
+| **统一入口** | V2 JSON 结构化时间；**Historical removed**：`AiQuerySemanticTimeLexicon` 与用户话术月份 `contains` 主路由。 |
+| **禁止分散** | **不要**在 **DomainAgent**、**ToolExecutor**、**Composer**、**Resolver 主流程**、**`MasterBusinessAgent`** 等路径上，用用户原文关键词决定 **intent/path**。 |
+| **后续扩展** | 新口语时间信号优先扩 **v2 prompt + `semantic-output-schema.md`**；Java 侧仅做结构化合并，不复制短语表。 |
+| **合并层消费方式** | **`AiQuerySemanticLlmMergeHelper#mergeTentativeTime`** 只读 V2 `time` 字段，**不**解析用户原话判「今天/本月」。 |
 
 ---
 

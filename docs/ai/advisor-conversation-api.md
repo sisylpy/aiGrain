@@ -39,8 +39,6 @@
 - **`gb_ai_conversation.gb_ai_conversation_advisor_id`** = 顾问主键  
 - **`gb_ai_conversation.gb_ai_conversation_thread_kind`** = **`'ADVISOR'`**（常量见 `AiAdvisorConversationConstants.THREAD_KIND_ADVISOR`）
 
-> 说明：整数列 **`gb_ai_conversation_type`**（如 0 普通/促销/公众号）与 **`thread_kind`** 含义不同，**请勿混用**。
-
 ### 3. Message（消息）
 
 用户/顾问的自然语言条目，存储在 **`gb_ai_message`**。顾问解释工作流结果产出的助手回复仍是普通的 **assistant message**，与手工问答无表结构区分（本轮不提供 `messagePurpose` / metadata）。
@@ -90,7 +88,7 @@
    - `gb_ai_conversation_thread_kind = 'ADVISOR'`  
    - 以及与 Run 对齐的 scope / user / title 等字段（见 `AiConversationCoreService#getOrCreateAdvisorConversation`）。  
 4. 调用 **`AiConversationHistoryService#listMessages(conversationId, userId)`**，内部会 **`requireConversationOwnedByUser`** 并拼装 **`AiConversationMessageDTO`**。  
-5. 返回 **`AiAdvisorConversationBootstrapDTO`**：`conversationId`、`advisorId`、`conversationType`、`threadKind`、`title`、`messages`。
+5. 返回 **`AiAdvisorConversationBootstrapDTO`**：`conversationId`、`advisorId`、`conversationType`（字符串展示用，固定 `ADVISOR`）、`threadKind`、`title`、`messages`。
 
 **控制器**：`AiAdvisorController#advisorConversation`。
 
@@ -114,7 +112,6 @@
       {
         "messageId": 9001,
         "role": "user",
-        "messageType": 0,
         "content": "本月营业额?",
         "status": "COMPLETED",
         "runId": 555,
@@ -200,7 +197,7 @@ DTO 源码：`com.nongxinle.ai.platform.dto.AiRunCreateRequest`。
 | 顾问会话编排 | `src/main/java/com/nongxinle/ai/advisor/AiAdvisorConversationService.java` | 接口 `getOrBootstrap(...)`。 |
 | 顾问会话编排 | `src/main/java/com/nongxinle/ai/advisor/AiAdvisorConversationServiceImpl.java` | 启用校验、scope 推断、调用 `AiConversationCoreService.getOrCreateAdvisorConversation` 与 `listMessages`。 |
 | 常量 | `src/main/java/com/nongxinle/ai/advisor/AiAdvisorConversationConstants.java` | `THREAD_KIND_ADVISOR = "ADVISOR"`。 |
-| 响应 DTO | `src/main/java/com/nongxinle/ai/history/dto/AiAdvisorConversationBootstrapDTO.java` | `conversationId`、`advisorId`、`conversationType`、`threadKind`、`title`、`messages`。 |
+| 响应 DTO | `src/main/java/com/nongxinle/ai/history/dto/AiAdvisorConversationBootstrapDTO.java` | `conversationId`、`advisorId`、`conversationType`（字符串，`ADVISOR`）、`threadKind`、`title`、`messages`。 |
 | 会话核心 | `src/main/java/com/nongxinle/ai/conversation/AiConversationCoreService.java` | 声明 **`getOrCreateAdvisorConversation`** 及 Run / 历史共用会话方法。 |
 | 会话核心 | `src/main/java/com/nongxinle/ai/conversation/AiConversationCoreServiceImpl.java` | 幂等查询 + 插入顾问线程；`List#get(0)` 兼容 Java 17。 |
 | 实体 | `src/main/java/com/nongxinle/entity/GbAiConversationEntity.java` | `gbAiConversationAdvisorId`、`gbAiConversationThreadKind`。 |

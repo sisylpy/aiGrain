@@ -47,7 +47,7 @@ public final class PurchasePlannerAgentAdapter implements PlannerAgentAdapter {
             return markerDegraded(MARKER_NO_REAL_CONTEXT, "resolved_query_context_ref_missing:purchase_read_not_invoked");
         }
         if (!hasTimeWindow(readReq)) {
-            return markerDegraded(MARKER_MISSING_TIME, "time_window_unspecified:need_pair_timeStart_timeEnd_or_timeLabel");
+            return markerDegraded(MARKER_MISSING_TIME, "time_window_unspecified:timeStart_and_timeEnd_required");
         }
         if (!hasResolvableScope(readReq)) {
             return markerDegraded(
@@ -105,9 +105,7 @@ public final class PurchasePlannerAgentAdapter implements PlannerAgentAdapter {
     }
 
     private static boolean hasTimeWindow(PurchasePlannerReadRequest r) {
-        boolean pair = r.getTimeStart() != null && r.getTimeEnd() != null;
-        boolean label = !isBlank(r.getTimeLabel());
-        return pair || label;
+        return r.getTimeStart() != null && r.getTimeEnd() != null;
     }
 
     private static boolean hasResolvableScope(PurchasePlannerReadRequest r) {
