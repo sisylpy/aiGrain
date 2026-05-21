@@ -1,3 +1,9 @@
+> **【Draft / 非 Plan-first 主链权威】**
+> - 本文件**不是**当前 Plan-first 主链路的权威 Prompt。
+> - 当前生产表达优先走：**AnswerPlan → StubAnswerComposerNode / *DeterministicRenderer**（Java 确定性宣读）。
+> - 本文件仅作为 **LLM Composer 草案 / 历史参考**；已在 `AiPromptRegistry` 登记，但生产 Graph **主链不** `require` 本 promptId。
+> - 修改业务答案口径时，应优先修改 **AnswerPlan / Renderer 契约**（见 `docs/ai/*-answer-plan.md`、`docs/ai/harness-composer-architecture.md`），而不是只改本文件。
+>
 # Prompt ID
 
 composer.diagnosis.v1

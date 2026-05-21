@@ -4,6 +4,7 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
+import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import lombok.experimental.UtilityClass;
@@ -449,6 +450,9 @@ public final class DishProfitDrilldownMatrix {
     public static String resolveStructuredIntentDetailWire(
             AiQuerySemanticParseResult sem, String pathCode, String mergedStructuredDetail) {
         if (!AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(pathCode) || sem == null) {
+            return null;
+        }
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
             return null;
         }
         String singleDish = resolveExplicitMentionedDishWire(sem, mergedStructuredDetail);

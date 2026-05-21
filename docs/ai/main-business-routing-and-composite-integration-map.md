@@ -168,7 +168,7 @@
 ```mermaid
 flowchart TD
     U[用户问题 POST /ai/runs] --> UC[AiUserContextResolver]
-    UC --> RES[AiResolvedQueryContextResolver<br/>语义 LLM v2/v1]
+    UC --> RES[AiResolvedQueryContextResolver<br/>语义 LLM v2-only]
     RES --> RQ[AiResolvedQueryContext<br/>intent path structured effectiveStar]
     RQ --> S0[AiRunState newRunStateFromResolved]
     S0 --> GATE_EVAL[BusinessDiagnosisCompositeProductionGate.evaluate<br/>只读 RQ State]

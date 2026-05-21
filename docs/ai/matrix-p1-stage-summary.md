@@ -16,6 +16,14 @@
 **架构总览**：`harness-composer-architecture.md`  
 **已删资产索引**：`LEGACY_AI_ANSWER_ASSETS.md`、`docs/legacy-reference/*-removed.md`
 
+**契约治理（总表不重复粘贴，见下列文档）：**
+
+| 主题 | 文档 |
+|------|------|
+| 八域 intent / path / Tool / 闭环成熟度 | [`phase1-semantic-mainline-acceptance-summary.md`](./phase1-semantic-mainline-acceptance-summary.md) §4「八域语义契约索引」 |
+| Wire / semanticSlots 登记七步、Planned/Gap | [`semantic-output-schema.md`](../../src/main/resources/ai-prompts/semantic/semantic-output-schema.md)「契约治理 · Wire / semanticSlots 登记规则」 |
+| Plan-first、fallback 不得抢权 | [`harness-composer-architecture.md`](./harness-composer-architecture.md) §2.7 |
+
 ---
 
 ## 1. 当前已完成的 Matrix P1

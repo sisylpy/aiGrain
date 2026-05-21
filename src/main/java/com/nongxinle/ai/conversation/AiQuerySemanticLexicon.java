@@ -215,7 +215,7 @@ public final class AiQuerySemanticLexicon {
     public static final String STRUCTURED_STORE_RISK_RANKING = "store_risk_ranking";
 
     /**
-     * D-13.2：上一轮 STORE 锚点后追问「具体什么问题 / 原因」等，Resolver 写入；Planner 仍走经营诊断四域，Composer 读 {@link DiagnosisPlan}。
+     * D-13.2：上一轮 STORE 锚点后追问「具体什么问题 / 原因」等，Resolver 写入；Planner 仍走经营诊断四域，Composer 读 {@link  DiagnosisPlan}。
      */
     public static final String STRUCTURED_STORE_RISK_REASONS_DRILLDOWN = "store_risk_reasons_drilldown";
 
@@ -313,6 +313,7 @@ public final class AiQuerySemanticLexicon {
                     "dish_ingredient_cost_gap_ranking_max" -> STRUCTURED_DISH_GAP_RANKING_MAX;
             case "purchase_amount_ranking_high",
                     "purchase_goods_amount_ranking_high",
+                    // compat only（LLM/历史 metric.rankingType）；主 wire 为 purchase_goods_amount_ranking
                     "goods_purchase_amount_ranking",
                     "goods_purchase_amount_ranking_high",
                     "purchase_goods_purchase_amount_ranking_high",
@@ -479,29 +480,6 @@ public final class AiQuerySemanticLexicon {
         };
     }
 
-    /**
-     * 已为商品侧采购结构化子口径或采购+出库双域商品风险 wire（不含门店横向对比）；
-     * 供 merge 层抑制多店误写 store ranking。
-     */
-    public static boolean isStructuredPurchaseGoodsFocusedDetail(String structuredIntentDetail) {
-        String c = canonicalStructuredIntentDetailWire(structuredIntentDetail);
-        if (!StringUtils.hasText(c)) {
-            return false;
-        }
-        return STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING.equals(c)
-                || STRUCTURED_PURCHASE_GOODS_COUNT_RANKING.equals(c)
-                || STRUCTURED_PURCHASE_GOODS_ANOMALY.equals(c)
-                || STRUCTURED_PURCHASE_PRICE_ANOMALY.equals(c)
-                || STRUCTURED_PURCHASE_FREQUENCY_ANOMALY.equals(c)
-                || STRUCTURED_PURCHASE_QUANTITY_ANOMALY.equals(c)
-                || STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE.equals(c)
-                || STRUCTURED_PURCHASE_STOCK_REDUCE_MISMATCH.equals(c)
-                || STRUCTURED_PURCHASE_SLOW_MOVING_RISK.equals(c)
-                || STRUCTURED_PURCHASE_INVENTORY_OVERSTOCK_RISK.equals(c)
-                || STRUCTURED_PURCHASE_FRESHNESS_RISK.equals(c)
-                || STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(c);
-    }
-
     public static boolean isStorePriorityRankingStructuredDetail(String structuredIntentDetail) {
         String c = canonicalStructuredIntentDetailWire(structuredIntentDetail);
         return STRUCTURED_STORE_PRIORITY_RANKING.equals(c);
@@ -516,6 +494,26 @@ public final class AiQuerySemanticLexicon {
     public static boolean isBusinessDiagnosisSummaryStructuredDetail(String structuredIntentDetail) {
         String c = canonicalStructuredIntentDetailWire(structuredIntentDetail);
         return STRUCTURED_BUSINESS_DIAGNOSIS_SUMMARY.equals(c);
+    }
+
+    /** 经营诊断 path 已登记 wire（不含单域 revenue/purchase/stock 专线 wire）。 */
+    public static boolean isStructuredBusinessDiagnosisDetail(String structuredIntentDetail) {
+        String c = canonicalStructuredIntentDetailWire(structuredIntentDetail);
+        if (!StringUtils.hasText(c)) {
+            return false;
+        }
+        return isBusinessDiagnosisSummaryStructuredDetail(c)
+                || isStorePriorityRankingStructuredDetail(c)
+                || isStoreRiskReasonsDrilldownStructuredDetail(c)
+                || STRUCTURED_BUSINESS_STORE_COMPARE_DIAGNOSIS.equals(c)
+                || isStoreDomainAttributionPurchaseStructuredDetail(c)
+                || isStoreDomainAttributionStockReduceStructuredDetail(c)
+                || isStoreDomainAttributionDishProfitStructuredDetail(c)
+                || isDiagnosisActionFollowupStructuredDetail(c)
+                || STRUCTURED_PURCHASE_STOCK_REDUCE_MISMATCH.equals(c)
+                || STRUCTURED_PURCHASE_SLOW_MOVING_RISK.equals(c)
+                || STRUCTURED_PURCHASE_INVENTORY_OVERSTOCK_RISK.equals(c)
+                || STRUCTURED_PURCHASE_FRESHNESS_RISK.equals(c);
     }
 
     public static boolean isStoreDomainAttributionPurchaseStructuredDetail(String structuredIntentDetail) {
@@ -580,14 +578,7 @@ public final class AiQuerySemanticLexicon {
                 || STRUCTURED_REVENUE_CHANNEL_BREAKDOWN.equals(t);
     }
 
-    public static boolean isRevenueRankingWire(String structuredIntentDetail) {
-        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
-            return false;
-        }
-        String t = canonicalStructuredIntentDetailWire(structuredIntentDetail.trim());
-        return STRUCTURED_REVENUE_STORE_AMOUNT_RANKING.equals(t)
-                || STRUCTURED_REVENUE_DAILY_AMOUNT_RANKING.equals(t);
-    }
+
 
     public static boolean isStructuredStockReduceDetail(String structuredIntentDetail) {
         if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
@@ -629,24 +620,6 @@ public final class AiQuerySemanticLexicon {
                 || STRUCTURED_STORE_OUTBOUND_AMOUNT_RANKING.equals(t);
     }
 
-    /**
-     * 出库非排行 structured wire（总览与各子口径 facet）；当前轮已显式给出时不得被多店排行规则覆盖。
-     */
-    public static boolean isNonRankingStockReduceStructuredWire(String structuredIntentDetail) {
-        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
-            return false;
-        }
-        String t = canonicalStructuredIntentDetailWire(structuredIntentDetail.trim());
-        return isStructuredStockReduceDetail(t) && !isStockReduceOutboundRankingWire(t);
-    }
-
-    public static boolean isStructuredDishProfitDetail(String structuredIntentDetail) {
-        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
-            return false;
-        }
-        String t = canonicalStructuredIntentDetailWire(structuredIntentDetail.trim());
-        return STRUCTURED_DISH_PROFIT_OVERVIEW.equals(t) || isNonOverviewDishProfitStructuredDetail(t);
-    }
 
     public static boolean isNonOverviewDishProfitStructuredDetail(String structuredIntentDetail) {
         if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {

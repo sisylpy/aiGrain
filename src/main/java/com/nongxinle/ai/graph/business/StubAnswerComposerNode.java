@@ -197,6 +197,8 @@ public class StubAnswerComposerNode implements AgentNode {
                     + "或在经营诊断结果页再追问该菜。";
         } else if (composerEmitRevenueDeniedPermissionOnly(state)) {
             answer = AiAnswerBoundary.revenuePermissionDeniedComposerBody(state);
+        } else if (shouldBlockGenericComposerForBusinessSurface(state)) {
+            answer = composeBlockedBusinessSurfaceNoPlanFallback(state);
         } else {
             answer = composeGenericComposerFallback(state);
         }
@@ -2182,7 +2184,47 @@ public class StubAnswerComposerNode implements AgentNode {
                 && AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(qi.getPathCode().trim());
     }
 
+    /** 经营概览/诊断 path 上禁止 generic LLM 拼事实抢主链。 */
+    private static boolean shouldBlockGenericComposerForBusinessSurface(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        if (state.isBusinessOverviewPath() || state.isBusinessDiagnosisPath()) {
+            return true;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        String path = rq.getEffectivePathCode();
+        return AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(path)
+                || AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(path);
+    }
+
+    private String composeBlockedBusinessSurfaceNoPlanFallback(AiRunState state) {
+        if (state != null && state.isBusinessDiagnosisPath()) {
+            return composeBusinessDiagnosisNoPlanFallback(state);
+        }
+        if (state != null && state.isBusinessOverviewPath()) {
+            return composeBusinessOverviewMultiAgentNoPlanFallback(state);
+        }
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+        dbg.put("composerFallback", "business_surface_no_plan");
+        if (state != null) {
+            Map<String, Object> existingMaster = state.getMasterBusinessAgentDebug();
+            LinkedHashMap<String, Object> merged = existingMaster != null
+                    ? new LinkedHashMap<>(existingMaster)
+                    : new LinkedHashMap<>();
+            merged.put("composerBusinessSurfaceNoPlan", dbg);
+            state.setMasterBusinessAgentDebug(merged);
+        }
+        return "当前经营问句未走通编排主链，暂无结构化答复。请改用更完整的经营概览或经营诊断问法后重试。";
+    }
+
     private String composeGenericComposerFallback(AiRunState state) {
+        if (shouldBlockGenericComposerForBusinessSurface(state)) {
+            return composeBlockedBusinessSurfaceNoPlanFallback(state);
+        }
         LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
         dbg.put("composerFallback", "generic_no_business_plan");
         dbg.put("reason", "no AnswerPlan mainline matched");

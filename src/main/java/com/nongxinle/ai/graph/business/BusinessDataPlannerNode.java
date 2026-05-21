@@ -5,7 +5,6 @@ import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
-import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
@@ -15,6 +14,8 @@ import com.nongxinle.ai.security.AiAnswerBoundary;
 import com.nongxinle.ai.security.AiPermissionGuard;
 import com.nongxinle.ai.security.AiPermissions;
 import com.nongxinle.ai.security.AiRoleCodes;
+import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.BusinessOverviewDrilldownMatrix;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
@@ -278,6 +279,14 @@ public class BusinessDataPlannerNode implements AgentNode {
         payload.put("groupStockReduceQuery", state.isGroupStockReduceQuery());
         payload.put("revenueOverviewPath", state.isRevenueOverviewPath());
         payload.put("tools", plan == null ? List.of() : plan);
+        payload.put("finalPlannerTools", plan == null ? List.of() : new ArrayList<>(plan));
+        if (state.isBusinessDiagnosisPath()) {
+            payload.put("plannerToolsSource", resolveBusinessDiagnosisPlannerToolsSource(rCtx));
+        } else if (overview
+                && (isBusinessOverviewMultiAgentMainline(rCtx)
+                        || resolvedContextOrchestrationMultiAgentOverview(rCtx))) {
+            payload.put("plannerToolsSource", "business_overview_matrix");
+        }
         if (overview && (plan == null || plan.isEmpty())) {
             if (isBusinessOverviewMultiAgentMainline(rCtx)
                     || resolvedContextOrchestrationMultiAgentOverview(rCtx)) {
@@ -444,34 +453,19 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setBusinessDiagnosisPath(false);
             return;
         }
-        Set<String> perms = ctx.getPermissions() == null ? Set.of() : Set.copyOf(ctx.getPermissions());
-        boolean mayPurchase = perms.contains(AiPermissions.VIEW_PURCHASE)
-                || ((AiRoleCodes.WAREHOUSE_MANAGER.equals(ctx.getRoleCode())
-                || AiRoleCodes.REGION_WAREHOUSE.equals(ctx.getRoleCode()))
-                && perms.contains(AiPermissions.VIEW_STOCK));
-        boolean mayStock = perms.contains(AiPermissions.VIEW_STOCK);
-        boolean mayDish = mayDishProfitToolForDiagnosis(ctx, perms);
-        boolean mayRevenue = perms.contains(AiPermissions.VIEW_REVENUE);
-
-        List<String> tools = new ArrayList<>();
-        if (mayPurchase) {
-            tools.add(AiBusinessToolIds.PURCHASE_OVERVIEW);
-        }
-        if (mayStock) {
-            tools.add(AiBusinessToolIds.STOCK_REDUCE_QUERY);
-        }
-        if (mayDish) {
-            tools.add(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
-        }
-        if (mayRevenue) {
-            tools.add(AiBusinessToolIds.REVENUE_QUERY);
-        }
+        String diagWire = resolveCanonicalStructuredWireFromContext(state);
+        List<String> matrixTools = BusinessDiagnosisDrilldownMatrix.plannerToolsForWire(diagWire);
+        List<String> tools = permissionFilterPlannerToolsFromMatrix(ctx, matrixTools);
         if (tools.isEmpty()) {
             state.getPermissionDenials().add(AiAnswerBoundary.forMissingToolPermission(
                     AiBusinessToolIds.PURCHASE_OVERVIEW, AiPermissions.VIEW_PURCHASE));
             state.setBusinessDiagnosisPath(false);
             return;
         }
+        boolean mayPurchase = tools.contains(AiBusinessToolIds.PURCHASE_OVERVIEW);
+        boolean mayStock = tools.contains(AiBusinessToolIds.STOCK_REDUCE_QUERY);
+        boolean mayDish = tools.contains(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        boolean mayRevenue = tools.contains(AiBusinessToolIds.REVENUE_QUERY);
 
         String roleCode = ctx.getRoleCode();
         String ts = AiTimeWindowTextFormatter.forAnswer(state).getTimeSubjectText();
@@ -578,29 +572,65 @@ public class BusinessDataPlannerNode implements AgentNode {
      * 不根据用户原文删减域。
      */
     private static List<String> buildBusinessOverviewMultiAgentToolsPermissionFiltered(AiUserContext ctx) {
-        if (ctx == null) {
+        return permissionFilterPlannerToolsFromMatrix(
+                ctx, BusinessOverviewDrilldownMatrix.defaultFourDomainPlannerTools());
+    }
+
+    private static String resolveCanonicalStructuredWireFromContext(AiRunState state) {
+        if (state == null || state.getResolvedQueryContext() == null) {
+            return null;
+        }
+        AiResolvedQueryIntent qi = state.getResolvedQueryContext().getQueryIntent();
+        if (qi == null || !StringUtils.hasText(qi.getStructuredIntentDetail())) {
+            return null;
+        }
+        return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                qi.getStructuredIntentDetail().trim());
+    }
+
+    private static String resolveBusinessDiagnosisPlannerToolsSource(AiResolvedQueryContext rq) {
+        if (rq == null || rq.getQueryIntent() == null) {
+            return "business_diagnosis_matrix";
+        }
+        String wire =
+                AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                        rq.getQueryIntent().getStructuredIntentDetail());
+        return BusinessDiagnosisDrilldownMatrix.isDualDomainPurchaseStockWire(wire)
+                ? "business_diagnosis_matrix_dual_domain"
+                : "business_diagnosis_matrix_four_domain";
+    }
+
+    /**
+     * Matrix 工具表为准：仅保留 matrix 列出的 tool，并按权限裁剪（LLM selectedTools 冲突时由 Resolver 先对齐）。
+     */
+    private static List<String> permissionFilterPlannerToolsFromMatrix(
+            AiUserContext ctx, List<String> matrixTools) {
+        if (ctx == null || matrixTools == null || matrixTools.isEmpty()) {
             return List.of();
         }
         Set<String> perms = ctx.getPermissions() == null ? Set.of() : Set.copyOf(ctx.getPermissions());
         boolean mayPurchase = perms.contains(AiPermissions.VIEW_PURCHASE)
                 || ((AiRoleCodes.WAREHOUSE_MANAGER.equals(ctx.getRoleCode())
-                || AiRoleCodes.REGION_WAREHOUSE.equals(ctx.getRoleCode()))
+                        || AiRoleCodes.REGION_WAREHOUSE.equals(ctx.getRoleCode()))
                 && perms.contains(AiPermissions.VIEW_STOCK));
         boolean mayStock = perms.contains(AiPermissions.VIEW_STOCK);
         boolean mayDish = mayDishProfitToolForDiagnosis(ctx, perms);
         boolean mayRevenue = perms.contains(AiPermissions.VIEW_REVENUE);
         List<String> tools = new ArrayList<>();
-        if (mayRevenue) {
-            tools.add(AiBusinessToolIds.REVENUE_QUERY);
-        }
-        if (mayPurchase) {
-            tools.add(AiBusinessToolIds.PURCHASE_OVERVIEW);
-        }
-        if (mayStock) {
-            tools.add(AiBusinessToolIds.STOCK_REDUCE_QUERY);
-        }
-        if (mayDish) {
-            tools.add(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        for (String toolId : matrixTools) {
+            if (!StringUtils.hasText(toolId)) {
+                continue;
+            }
+            String t = toolId.trim();
+            if (AiBusinessToolIds.PURCHASE_OVERVIEW.equals(t) && mayPurchase) {
+                tools.add(t);
+            } else if (AiBusinessToolIds.STOCK_REDUCE_QUERY.equals(t) && mayStock) {
+                tools.add(t);
+            } else if (AiBusinessToolIds.DISH_PROFIT_ANALYSIS.equals(t) && mayDish) {
+                tools.add(t);
+            } else if (AiBusinessToolIds.REVENUE_QUERY.equals(t) && mayRevenue) {
+                tools.add(t);
+            }
         }
         return tools;
     }

@@ -6,6 +6,7 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
 import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
 import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrixRow;
@@ -238,6 +239,7 @@ public final class DishSalesAnswerPlanBuilder {
                         .debug(debug)
                         .build();
         enrichDishSalesMatrixDebug(plan.getDebug(), rq, planType, wire);
+        populateDishSalesResultAnchors(plan);
         state.setDishSalesAnswerPlan(plan);
     }
 
@@ -594,7 +596,8 @@ public final class DishSalesAnswerPlanBuilder {
                         semantic(rq),
                         AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
                         merged,
-                        norm);
+                        norm,
+                        rq != null ? rq.getPreviousTurn() : null);
         if (!StringUtils.hasText(wire)) {
             if (StringUtils.hasText(raw)) {
                 wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(raw);
@@ -613,10 +616,18 @@ public final class DishSalesAnswerPlanBuilder {
         if (!StringUtils.hasText(rankingType)) {
             return null;
         }
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(rankingType.trim());
+        if (acceptedDishSalesWire(canon)) {
+            return canon;
+        }
         return switch (rankingType.trim().toUpperCase(Locale.ROOT).replace('-', '_')) {
-            case "RANKING_SALES_COUNT_LOW" -> AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_LOW;
-            case "RANKING_SALES_AMOUNT_HIGH" -> AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH;
-            case "RANKING_SALES", "RANKING_SALES_COUNT_HIGH" ->
+            case "RANKING_SALES_COUNT_LOW", "DISH_SALES_COUNT_RANKING_LOW" ->
+                    AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_LOW;
+            case "RANKING_SALES_AMOUNT_HIGH", "DISH_SALES_AMOUNT_RANKING_HIGH" ->
+                    AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH;
+            case "RANKING_SALES",
+                    "RANKING_SALES_COUNT_HIGH",
+                    "DISH_SALES_COUNT_RANKING_HIGH" ->
                     AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
             default -> null;
         };
@@ -683,5 +694,54 @@ public final class DishSalesAnswerPlanBuilder {
                         .build();
         enrichDishSalesMatrixDebug(plan.getDebug(), state.getResolvedQueryContext(), null, wire);
         state.setDishSalesAnswerPlan(plan);
+    }
+
+    private static void populateDishSalesResultAnchors(DishSalesAnswerPlan plan) {
+        if (plan == null) {
+            return;
+        }
+        if (!DishSalesDrilldownMatrix.planTypeEmitsDishSalesRankingResultAnchor(plan.getPlanType())) {
+            plan.setResultAnchors(new ArrayList<>());
+            return;
+        }
+        List<Map<String, Object>> rows = plan.getRankingRows();
+        if (rows == null || rows.isEmpty()) {
+            plan.setResultAnchors(new ArrayList<>());
+            return;
+        }
+        Map<String, Object> row = rows.get(0);
+        if (row == null) {
+            plan.setResultAnchors(new ArrayList<>());
+            return;
+        }
+        Object dn = row.get("dishName");
+        String dishName = dn == null ? null : dn.toString().trim();
+        if (!StringUtils.hasText(dishName) || "（未命名菜品）".equals(dishName)) {
+            plan.setResultAnchors(new ArrayList<>());
+            return;
+        }
+        Object fid = row.get("foodId");
+        String entityId = fid == null ? null : fid.toString().trim();
+        Integer rank = 1;
+        Object rk = row.get("rank");
+        if (rk instanceof Number n) {
+            rank = n.intValue();
+        } else if (rk != null && StringUtils.hasText(rk.toString())) {
+            try {
+                rank = Integer.parseInt(rk.toString().trim());
+            } catch (NumberFormatException ignored) {
+                rank = 1;
+            }
+        }
+        AiResultAnchor anchor =
+                AiResultAnchor.builder()
+                        .entityType(AiResultAnchor.ENTITY_TYPE_DISH)
+                        .entityId(StringUtils.hasText(entityId) ? entityId : null)
+                        .entityName(dishName)
+                        .rank(rank)
+                        .sourcePlanType(plan.getPlanType())
+                        .metric(plan.getMetricType())
+                        .build();
+        plan.setResultAnchors(new ArrayList<>(List.of(anchor)));
     }
 }

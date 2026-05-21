@@ -22,6 +22,13 @@ final class AiHarnessReplayProbeView {
         copy(m, summary, "effectiveIntentCode");
         copy(m, summary, "effectivePathCode");
         copy(m, summary, "structuredIntentDetailWire");
+        copy(m, summary, "canonicalStructuredIntentDetailWire");
+        copy(m, summary, "queryObject");
+        copy(m, summary, "operation");
+        copy(m, summary, "metric");
+        copy(m, summary, "sourceFacet");
+        copy(m, summary, "anchorPolicy");
+        copy(m, summary, "answerPlanType");
         copy(m, summary, "timeSource");
         copy(m, summary, "startDate");
         copy(m, summary, "endDate");

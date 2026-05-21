@@ -69,10 +69,31 @@
 | 6 | **previousTurn 只能补缺失，不能覆盖当前轮明确语义** | 含 slots 空字段继承（`lastSemanticSlots` pick-prefer-current）；D-1X-C 已删除 wire→slot 反推与 previousTurn 补 wire |
 | 7 | **metric.rankingType 只能 compat / debug** | 不得覆盖**本轮 LLM JSON 显式给出**的 `semanticSlots.structuredIntentDetailWire`（D-1X-D1：`currentTurnStructuredIntentDetailWire` 快照）；inherit 回填的 wire 不计入「本轮明确 slots」 |
 | 8 | **Tool 查数，AnswerPlan 选事实，Composer 只表达** | 阶段 1 只验前几层语义；不在此阶段要求 Tool 行集或 Composer 文案正确 |
+| 9 | **Wire 登记七步 + Planned/Gap** | 新 wire 须同步 Lexicon / schema / matrix contract / Java Matrix / AnswerPlan / Composer / Harness；见 [`semantic-output-schema.md`](../../src/main/resources/ai-prompts/semantic/semantic-output-schema.md)「契约治理」节 |
 
 ---
 
-## 4. 已完成摘链（阶段 1 内）
+## 4. 八域语义契约索引
+
+> **用途**：总览八域 **intent → path → Tool → 文档 → 闭环成熟度**；**不**展开 wire 全表（细节见各 `*-drilldown-matrix-contract.md` 与域能力矩阵）。  
+> **治理**：wire 登记规则见 [`semantic-output-schema.md`](../../src/main/resources/ai-prompts/semantic/semantic-output-schema.md)；Composer fallback 见 [`harness-composer-architecture.md`](./harness-composer-architecture.md) §2.7。
+
+| 域 | intent（主） | path（主） | selectedTools（主） | Matrix / Capability 文档 | AnswerPlan 文档 | Composer / Renderer | 闭环成熟度 | 主要 gap / 风险 |
+|----|--------------|------------|---------------------|---------------------------|-----------------|---------------------|------------|-----------------|
+| **Revenue** | `REVENUE_OVERVIEW` | `revenue_overview_path` | `revenue_query` | [`revenue-drilldown-matrix-contract.md`](./revenue-drilldown-matrix-contract.md) | [`revenue-answer-plan.md`](./revenue-answer-plan.md) | `BusinessOverviewDeterministicSummaryBuilder`；`StubAnswerComposerNode` 营收 Plan 宣读 | **中** | Lexicon wire 多于 Matrix 首轮行；`STORE_COMPARE` / `TREND` 等 **knownGap** |
+| **Purchase** | `PURCHASE_OVERVIEW` | `purchase_overview_path` | `purchase_overview` | [`purchase-drilldown-matrix-contract.md`](./purchase-drilldown-matrix-contract.md)、[`business-capability-registry.md`](./business-capability-registry.md) | [`purchase-answer-plan.md`](./purchase-answer-plan.md) | `StubAnswerComposerNode` 采购 Plan 宣读 | **高** | 采购帧 + Registry 最完整；改动须保持 18 wire 与 Validator 一致 |
+| **StockReduce** | `STOCK_REDUCE_QUERY` | `stock_reduce_query_path` | `stock_reduce_query` | [`stock-reduce-drilldown-matrix-contract.md`](./stock-reduce-drilldown-matrix-contract.md) | [`stock-reduce-answer-plan.md`](./stock-reduce-answer-plan.md) | `StubAnswerComposerNode` 出库 Plan 宣读 | **中高** | 与库房 path 互斥靠 Java；部分排行 **knownGap**（如 goods waste） |
+| **Warehouse** | `WAREHOUSE_STOCK_OVERVIEW` | `warehouse_stock_overview_path` | `warehouse_stock_overview` | [`warehouse-drilldown-matrix-contract.md`](./warehouse-drilldown-matrix-contract.md)、[`inventory-domain-capability-matrix.md`](./inventory-domain-capability-matrix.md) | （`WarehouseAnswerPlan`；见 inventory / warehouse 契约） | `StubAnswerComposerNode` 库房 Plan 宣读 | **中高** | `metric.rankingType` 在 Merge 仍作 slots 空时兜底；临期/缺货部分 **knownGap** |
+| **DishSales** | `DISH_SALES_QUERY` | `dish_sales_query_path` | `dish_profit_analysis`（非 `dish_sales_query`） | [`dish-sales-drilldown-matrix-contract.md`](./dish-sales-drilldown-matrix-contract.md)、[`dish-sales-domain-capability-matrix.md`](./dish-sales-domain-capability-matrix.md) | 销量 plan 类型（Builder）；交叉 [`dish-profit-answer-plan.md`](./dish-profit-answer-plan.md) | `DishSalesDeterministicRenderer` | **中高** | 跨域「那毛利呢」**knownGap**；金额排行靠 resolve 映射 |
+| **DishProfit** | `DISH_PROFIT` | `dish_profit_path` | `dish_profit_analysis` | [`dish-profit-drilldown-matrix-contract.md`](./dish-profit-drilldown-matrix-contract.md)、[`dish-profit-domain-capability-matrix.md`](./dish-profit-domain-capability-matrix.md) | [`dish-profit-answer-plan.md`](./dish-profit-answer-plan.md) | `DishProfitDeterministicRenderer`；`StubAnswerComposerNode` | **中低** | **portfolio 平均类无专 wire**；`AGGREGATED_DISH_PORTFOLIO_FALLBACK` 无专用 Composer → generic「拖累毛利」；overview.summary 双轨 |
+| **BusinessOverview** | `BUSINESS_OVERVIEW` | `business_overview_path` | 四 Tool：`revenue_query`、`purchase_overview`、`stock_reduce_query`、`dish_profit_analysis` | [`business-phase1b-semantic-harness-matrix.md`](./business-phase1b-semantic-harness-matrix.md)、[`business-overview-diagnosis-domain-capability-matrix.md`](./business-overview-diagnosis-domain-capability-matrix.md) | `BusinessOverviewAnswerPlan`（见 master / overview 文档） | `BusinessOverviewDeterministicSummaryBuilder`；Multi-Agent Stub 拼装 | **中** | **无独立 DrilldownMatrix**；子域（尤其毛利 portfolio fallback）可污染综合话术 |
+| **BusinessDiagnosis** | `BUSINESS_DIAGNOSIS` | `business_diagnosis_path` | 四 Tool 或双域 `purchase_overview` + `stock_reduce_query` | [`business-diagnosis-drilldown-matrix-contract.md`](./business-diagnosis-drilldown-matrix-contract.md)、overview 矩阵 §4 | [`diagnosis-answer-plan.md`](./diagnosis-answer-plan.md) | `DiagnosisDeterministicRenderer`；Composite 旁路 | **中** | 部分矩阵行依赖 NL/regex；子域 **knownGap**；与 `COST_DIAGNOSIS` 边界需语义区分 |
+
+**成熟度说明（简）：** **高** = 语义帧/Matrix/Plan/Composer 闭环最好（采购）；**中高** = Matrix + Plan-first 主链稳，少量 knownGap；**中** = 多 Agent 或 wire/plan 多于矩阵；**中低** = fallback / Composer 双轨、portfolio 类意图未闭环。
+
+---
+
+## 5. 已完成摘链（阶段 1 内）
 
 | 项 | 摘要 | 参考 |
 |----|------|------|
@@ -90,7 +111,7 @@
 
 ---
 
-## 5. 仍保留技术债（阶段 2 前不阻塞语义主链）
+## 6. 仍保留技术债（阶段 2 前不阻塞语义主链）
 
 | 编号 | 项 | 说明 |
 |------|-----|------|
@@ -104,7 +125,7 @@
 
 ---
 
-## 6. 下一阶段：阶段 2 — Tool Request / SQL 入参层
+## 7. 下一阶段：阶段 2 — Tool Request / SQL 入参层
 
 **目标**：证明系统**准备用什么参数去查**，而不是查出来的数据是否正确，也不是最终话术。
 
@@ -120,8 +141,9 @@
 
 ---
 
-## 7. 修订记录
+## 8. 修订记录
 
 | 日期 | 说明 |
 |------|------|
 | 2026-05-19 | 初版：阶段 1 总收口；四类 case overallPass；架构原则；摘链清单；D2–D4 技术债；阶段 2 入口。 |
+| 2026-05-21 | 新增 §4 八域语义契约索引；§3 原则 9（wire 登记）；章节 5–8 顺延编号。 |

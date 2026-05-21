@@ -5,7 +5,9 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
+import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import lombok.experimental.UtilityClass;
 import org.springframework.util.StringUtils;
 
@@ -348,5 +350,126 @@ public final class WarehouseDrilldownMatrix {
                 .allowedPriorPlanTypes(Set.of(WarehouseAnswerPlan.TYPE_WAREHOUSE_GOODS_AMOUNT_RANKING_HIGH))
                 .rejectPriorRankingWire(true)
                 .build();
+    }
+
+    public static String targetPlanTypeForWire(String wire) {
+        WarehouseDrilldownMatrixRow row = findFirstTurnRowByWire(wire);
+        return row == null ? null : row.getTargetWarehousePlanType();
+    }
+
+    /**
+     * warehouse_stock_overview_path 下 structured wire 最终口径：semanticSlots + Matrix 优先；
+     * {@code stock_reduce_*} 仅 Lexicon compat 映射为现量 overview，不静默回落 overview。
+     */
+    public static String resolveStructuredIntentDetailWire(
+            AiQuerySemanticParseResult sem, String pathCode, String mergedStructuredDetail) {
+        if (!AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(pathCode) || sem == null) {
+            return null;
+        }
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
+            return null;
+        }
+        if (AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
+            String slotCanon =
+                    canonicalWarehouseWireFromRaw(
+                            sem.getSemanticSlots().getStructuredIntentDetailWire().trim());
+            if (StringUtils.hasText(slotCanon)) {
+                return adoptWireViaMatrix(pathCode, slotCanon, sem);
+            }
+        }
+        String fromShape = inferMatrixWireFromSemanticSlots(sem);
+        if (StringUtils.hasText(fromShape)) {
+            return adoptWireViaMatrix(pathCode, fromShape, sem);
+        }
+        if (!AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
+            String fromRanking = inferWireFromMetricRankingTypeCompat(sem);
+            if (StringUtils.hasText(fromRanking)) {
+                return adoptWireViaMatrix(pathCode, fromRanking, sem);
+            }
+        }
+        String mergedCanon =
+                StringUtils.hasText(mergedStructuredDetail)
+                        ? canonicalWarehouseWireFromRaw(mergedStructuredDetail.trim())
+                        : null;
+        if (StringUtils.hasText(mergedCanon)) {
+            return adoptWireViaMatrix(pathCode, mergedCanon, sem);
+        }
+        return null;
+    }
+
+    private static String canonicalWarehouseWireFromRaw(String raw) {
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(raw);
+        if (!StringUtils.hasText(canon)) {
+            return null;
+        }
+        if (AiQuerySemanticLexicon.isStructuredWarehouseStockDetail(canon)) {
+            return canon;
+        }
+        return null;
+    }
+
+    private static String adoptWireViaMatrix(
+            String pathCode, String canonWire, AiQuerySemanticParseResult sem) {
+        if (!StringUtils.hasText(canonWire)) {
+            return null;
+        }
+        WarehouseDrilldownMatrixRow row = resolveMatrixRow(pathCode, canonWire, sem, null);
+        return row != null ? row.getStructuredIntentDetailWire() : canonWire;
+    }
+
+    /** 仅依据 semanticSlots 形状推断 wire（不读用户原话、不用 metric.rankingType）。 */
+    public static String inferMatrixWireFromSemanticSlots(AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.getSemanticSlots() == null) {
+            return null;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
+        String op = normalizeMatrixToken(s.getOperation());
+        String qo = normalizeMatrixToken(s.getQueryObject());
+        if ("RANKING".equals(op)) {
+            if ("GOODS".equals(qo)) {
+                String metric = normalizeMatrixToken(s.getMetric());
+                if (metric != null && (metric.contains("LOW") || metric.contains("MIN"))) {
+                    return AiQuerySemanticLexicon.STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW;
+                }
+                return AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_STOCK_AMOUNT_RANKING;
+            }
+            if ("STORE".equals(qo)) {
+                return AiQuerySemanticLexicon.STRUCTURED_STORE_STOCK_AMOUNT_RANKING;
+            }
+        }
+        if ("RISK".equals(op) || "LOW_STOCK".equals(normalizeMatrixToken(s.getMetric()))) {
+            return AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_STOCK_LOW_RISK;
+        }
+        if ("SUMMARY".equals(op) || "OVERVIEW".equals(op)) {
+            return AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_STOCK_OVERVIEW;
+        }
+        return null;
+    }
+
+    /** compat/debug：slots 无 canonical wire 时，才用 {@code metric.rankingType} 推断。 */
+    private static String inferWireFromMetricRankingTypeCompat(AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.getMetric() == null) {
+            return null;
+        }
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
+            return null;
+        }
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitBusinessOverviewRouteSignal(sem)
+                || AiQuerySemanticLlmMergeHelper.hasExplicitBusinessDiagnosisRouteSignal(sem)) {
+            return null;
+        }
+        String rt = sem.getMetric().getRankingType();
+        if (!StringUtils.hasText(rt)) {
+            return null;
+        }
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(rt.trim());
+        return AiQuerySemanticLexicon.isStructuredWarehouseStockDetail(canon) ? canon : null;
+    }
+
+    private static String normalizeMatrixToken(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        return raw.trim().toUpperCase(java.util.Locale.ROOT).replace('-', '_');
     }
 }

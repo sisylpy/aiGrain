@@ -1,5 +1,7 @@
 # D-PURCHASE-DRILLDOWN-MATRIX-CONTRACT-P0 — 采购下钻矩阵契约
 
+> **契约交叉引用**：wire 登记七步见 [`semantic-output-schema.md`](../../src/main/resources/ai-prompts/semantic/semantic-output-schema.md)；八域成熟度见 [`phase1-semantic-mainline-acceptance-summary.md`](./phase1-semantic-mainline-acceptance-summary.md) §4；Composer/fallback 见 [`harness-composer-architecture.md`](./harness-composer-architecture.md) §2.7。
+
 > **目的**：把采购 GOODS 锚 4 轮下钻（及 Phase 1 已注册能力）整理为 **Harness Engineering 矩阵契约**，约束 LLM / Canonical / Validator / Registry / PlanBuilder 分工，防止 Java 退化为语义二次解析器。  
 > **范围**：文档与结构梳理；**不新增** Java 特判、业务能力、SQL/Tool/Composer/TurnMemory 变更。  
 > **相关**：[follow-up-drilldown-matrix.md](./follow-up-drilldown-matrix.md)（实体+detailWanted 映射）、[purchase-v2-semantic-followup-phase1-summary.md](./purchase-v2-semantic-followup-phase1-summary.md)（1A 验收对照）、[business-capability-registry.md](./business-capability-registry.md)。

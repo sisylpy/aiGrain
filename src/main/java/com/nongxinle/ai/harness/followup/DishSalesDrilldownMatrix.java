@@ -5,8 +5,11 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
+import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import lombok.experimental.UtilityClass;
 import org.springframework.util.StringUtils;
 
@@ -191,6 +194,19 @@ public final class DishSalesDrilldownMatrix {
         return canon == null ? null : FIRST_TURN_BY_WIRE.get(canon);
     }
 
+    public static String targetPlanTypeForWire(String wire) {
+        DishSalesDrilldownMatrixRow row = findFirstTurnRowByWire(wire);
+        if (row != null) {
+            return row.getTargetDishSalesPlanType();
+        }
+        row = findTimeFollowupRowByWire(wire);
+        if (row != null) {
+            return row.getTargetDishSalesPlanType();
+        }
+        row = findRankingFollowupRowByWire(wire);
+        return row == null ? null : row.getTargetDishSalesPlanType();
+    }
+
     public static DishSalesDrilldownMatrixRow findTimeFollowupRowByWire(String wire) {
         if (!StringUtils.hasText(wire)) {
             return null;
@@ -224,49 +240,101 @@ public final class DishSalesDrilldownMatrix {
             String pathCode,
             String mergedStructuredDetail,
             String normalizedUserMessage) {
+        return resolveStructuredIntentDetailWire(
+                sem, pathCode, mergedStructuredDetail, normalizedUserMessage, null);
+    }
+
+    public static String resolveStructuredIntentDetailWire(
+            AiQuerySemanticParseResult sem,
+            String pathCode,
+            String mergedStructuredDetail,
+            String normalizedUserMessage,
+            AiConversationTurnMemory previousTurn) {
         if (!AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(pathCode)) {
             return null;
         }
-        String fromMatrixShape = inferMatrixWireFromSemantics(sem, normalizedUserMessage);
-        if (StringUtils.hasText(fromMatrixShape)) {
-            return fromMatrixShape;
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
+            return null;
         }
-        String canon =
+        if (AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
+            String slotCanon =
+                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                            sem.getSemanticSlots().getStructuredIntentDetailWire().trim());
+            return adoptWireViaMatrix(pathCode, slotCanon, sem, normalizedUserMessage, previousTurn);
+        }
+        String fromShape = inferMatrixWireFromSemantics(sem, normalizedUserMessage, previousTurn);
+        if (StringUtils.hasText(fromShape)) {
+            return adoptWireViaMatrix(pathCode, fromShape, sem, normalizedUserMessage, previousTurn);
+        }
+        String mergedCanon =
                 StringUtils.hasText(mergedStructuredDetail)
                         ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
                                 mergedStructuredDetail.trim())
                         : null;
-        if (canon == null && sem != null && sem.getSemanticSlots() != null) {
-            String slotRaw = sem.getSemanticSlots().getStructuredIntentDetailWire();
-            if (StringUtils.hasText(slotRaw)) {
-                canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(slotRaw.trim());
-            }
+        if (StringUtils.hasText(mergedCanon)
+                && AiQuerySemanticLexicon.isStructuredDishSalesDetail(mergedCanon)) {
+            return adoptWireViaMatrix(pathCode, mergedCanon, sem, normalizedUserMessage, previousTurn);
         }
-        if (canon == null) {
+        return null;
+    }
+
+    private static String adoptWireViaMatrix(
+            String pathCode,
+            String canonWire,
+            AiQuerySemanticParseResult sem,
+            String normalizedUserMessage,
+            AiConversationTurnMemory previousTurn) {
+        if (!StringUtils.hasText(canonWire)) {
             return null;
         }
-        canon = correctMislabeledDishProfitWireOnSalesPath(canon, normalizedUserMessage);
-        canon = correctMislabeledSalesRankingWireOnSalesPath(canon, normalizedUserMessage);
-        DishSalesDrilldownMatrixRow row = resolveMatrixRow(pathCode, canon, sem, null);
-        return row != null ? row.getStructuredIntentDetailWire() : canon;
+        String msgForCorrection =
+                AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)
+                        ? ""
+                        : normalizedUserMessage;
+        String corrected =
+                correctMislabeledDishProfitWireOnSalesPath(canonWire, msgForCorrection, previousTurn);
+        corrected = correctMislabeledSalesRankingWireOnSalesPath(corrected, msgForCorrection);
+        if (isCrossDomainProfitStructuredWire(corrected)
+                && !canAdoptDishSalesMatrixCrossDomainProfitFollowUp(previousTurn, msgForCorrection)) {
+            return null;
+        }
+        DishSalesDrilldownMatrixRow row =
+                resolveMatrixRow(pathCode, corrected, sem, null, previousTurn, normalizedUserMessage);
+        return row != null ? row.getStructuredIntentDetailWire() : corrected;
     }
 
     private static String inferMatrixWireFromSemantics(
-            AiQuerySemanticParseResult sem, String normalizedUserMessage) {
-        if (isCrossDomainProfitFollowupFromMessage(normalizedUserMessage)) {
+            AiQuerySemanticParseResult sem,
+            String normalizedUserMessage,
+            AiConversationTurnMemory previousTurn) {
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
+            return null;
+        }
+        if (!AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)
+                && canAdoptDishSalesMatrixCrossDomainProfitFollowUp(previousTurn, normalizedUserMessage)) {
             return AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY;
         }
-        if (isTimeFollowupFromMessage(normalizedUserMessage)) {
-            return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
+        String fromSlots = inferMatrixWireFromSemanticSlots(sem, normalizedUserMessage);
+        if (StringUtils.hasText(fromSlots)) {
+            return fromSlots;
         }
-        if (isDishSalesCountRankingFollowupMessage(normalizedUserMessage)) {
-            return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
+        if (!AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
+            String fromRanking = inferMatrixWireFromMetricRankingTypeCompat(sem, normalizedUserMessage);
+            if (StringUtils.hasText(fromRanking)) {
+                return fromRanking;
+            }
+            String fromMsg = inferMatrixWireFromNormalizedQuestion(normalizedUserMessage);
+            if (StringUtils.hasText(fromMsg)) {
+                return fromMsg;
+            }
+            if (isTimeFollowupFromMessage(normalizedUserMessage)) {
+                return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
+            }
+            if (isDishSalesCountRankingFollowupMessage(normalizedUserMessage)) {
+                return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
+            }
         }
-        String fromMsg = inferMatrixWireFromNormalizedQuestion(normalizedUserMessage);
-        if (fromMsg != null) {
-            return fromMsg;
-        }
-        return inferMatrixWireFromSemanticSlots(sem, normalizedUserMessage);
+        return null;
     }
 
     private static String inferMatrixWireFromNormalizedQuestion(String normalizedUserMessage) {
@@ -276,9 +344,6 @@ public final class DishSalesDrilldownMatrix {
         String msg = compactMessage(normalizedUserMessage);
         if (msg.contains("趋势")) {
             return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_TREND;
-        }
-        if (msg.contains("毛利") || msg.contains("毛利率") || msg.contains("利润")) {
-            return AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY;
         }
         if (isDishSalesCountRankingFollowupMessage(normalizedUserMessage)) {
             return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
@@ -304,6 +369,10 @@ public final class DishSalesDrilldownMatrix {
         }
         if ((msg.contains("最高") || msg.contains("最好") || msg.contains("最多"))
                 && (msg.contains("销量") || msg.contains("卖得") || msg.contains("份") || msg.contains("菜"))) {
+            return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
+        }
+        if (utteranceRequestsCountRankingHigh(normalizedUserMessage)
+                && !utteranceRequestsAmountRankingHigh(normalizedUserMessage)) {
             return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
         }
         return null;
@@ -332,7 +401,11 @@ public final class DishSalesDrilldownMatrix {
         }
         if ("DISH".equals(qo) && "RANKING".equals(op)) {
             String metric = normalizeMatrixToken(s.getMetric());
-            if ("SOLD_PORTIONS".equals(metric) || metric == null || metric.isBlank()) {
+            if (isSalesCountRankingMetric(metric)) {
+                if (StringUtils.hasText(normalizedUserMessage)
+                        && utteranceRequestsCountRankingLow(normalizedUserMessage)) {
+                    return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_LOW;
+                }
                 if (StringUtils.hasText(normalizedUserMessage)
                         && utteranceMentionsExplicitStoreInQuestion(normalizedUserMessage)
                         && (compactMessage(normalizedUserMessage).contains("哪个菜")
@@ -341,18 +414,94 @@ public final class DishSalesDrilldownMatrix {
                 }
                 return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
             }
+            if (isSalesAmountRankingMetric(metric)) {
+                return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH;
+            }
+            if ("SOLD_PORTIONS".equals(metric) || metric == null || metric.isBlank()) {
+                if (StringUtils.hasText(normalizedUserMessage)
+                        && utteranceMentionsExplicitStoreInQuestion(normalizedUserMessage)
+                        && (compactMessage(normalizedUserMessage).contains("哪个菜")
+                                || compactMessage(normalizedUserMessage).contains("什么菜"))) {
+                    return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_STORE_RANKING;
+                }
+                if (StringUtils.hasText(normalizedUserMessage)
+                        && utteranceRequestsCountRankingLow(normalizedUserMessage)) {
+                    return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_LOW;
+                }
+                return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
+            }
         }
         return null;
     }
 
+    /**
+     * V2 {@code metric.rankingType} compat → canonical dish_sales wire（如 {@code dish_sales_count_ranking_high}）。
+     */
+    /** compat/debug：slots 无 canonical wire 时，才用 {@code metric.rankingType} 推断。 */
+    private static String inferMatrixWireFromMetricRankingTypeCompat(
+            AiQuerySemanticParseResult sem, String normalizedUserMessage) {
+        if (sem == null || sem.getMetric() == null) {
+            return null;
+        }
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
+            return null;
+        }
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitBusinessOverviewRouteSignal(sem)
+                || AiQuerySemanticLlmMergeHelper.hasExplicitBusinessDiagnosisRouteSignal(sem)) {
+            return null;
+        }
+        String rt = sem.getMetric().getRankingType();
+        if (!StringUtils.hasText(rt)) {
+            return null;
+        }
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(rt.trim());
+        if (!StringUtils.hasText(canon) || !AiQuerySemanticLexicon.isStructuredDishSalesDetail(canon)) {
+            return null;
+        }
+        if (isCrossDomainProfitStructuredWire(canon)) {
+            return null;
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_SINGLE_DISH.equals(canon)
+                || AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_STORE_SINGLE_DISH.equals(canon)) {
+            if (!StringUtils.hasText(normalizedUserMessage)
+                    || !utteranceRequestsSingleDishSalesDetail(normalizedUserMessage)) {
+                return null;
+            }
+        }
+        return canon;
+    }
+
+    private static boolean isSalesCountRankingMetric(String metric) {
+        if (!StringUtils.hasText(metric)) {
+            return false;
+        }
+        String m = metric.trim().toUpperCase(java.util.Locale.ROOT).replace('-', '_');
+        return "SALES_COUNT".equals(m)
+                || "SOLD_PORTIONS".equals(m)
+                || "SOLD_PORTION".equals(m)
+                || m.contains("SALES_COUNT")
+                || m.contains("SOLD_PORTION");
+    }
+
+    private static boolean isSalesAmountRankingMetric(String metric) {
+        if (!StringUtils.hasText(metric)) {
+            return false;
+        }
+        String m = metric.trim().toUpperCase(java.util.Locale.ROOT).replace('-', '_');
+        return "SALES_AMOUNT".equals(m)
+                || "LIST_PRICE_REVENUE".equals(m)
+                || m.contains("SALES_AMOUNT")
+                || m.contains("REVENUE");
+    }
+
     private static String correctMislabeledDishProfitWireOnSalesPath(
-            String canon, String normalizedUserMessage) {
+            String canon, String normalizedUserMessage, AiConversationTurnMemory previousTurn) {
         if (!AiQuerySemanticLexicon.isDishProfitRankingStructuredDetail(canon)
-                && !AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(canon)) {
+                && !AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(canon)
+                && !AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(canon)) {
             return canon;
         }
-        if (isCrossDomainProfitFollowupFromMessage(normalizedUserMessage)
-                || utteranceMentionsProfit(normalizedUserMessage)) {
+        if (canAdoptDishSalesMatrixCrossDomainProfitFollowUp(previousTurn, normalizedUserMessage)) {
             return AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY;
         }
         if (utteranceRequestsCountRankingLow(normalizedUserMessage)) {
@@ -364,7 +513,7 @@ public final class DishSalesDrilldownMatrix {
         if (utteranceRequestsCountRankingHigh(normalizedUserMessage)) {
             return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
         }
-        return AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY;
+        return canon;
     }
 
     private static String correctMislabeledSalesRankingWireOnSalesPath(
@@ -480,6 +629,10 @@ public final class DishSalesDrilldownMatrix {
             AiConversationTurnMemory previousTurn,
             AiQuerySemanticParseResult sem,
             String normalizedUserMessage) {
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)
+                || AiQuerySemanticLlmMergeHelper.blocksDishSalesMatrixOverride(sem)) {
+            return false;
+        }
         if (BusinessDiagnosisDrilldownMatrix.shouldBlockDishSalesMatrixUtterancePin(
                 previousTurn, normalizedUserMessage)) {
             return false;
@@ -491,6 +644,12 @@ public final class DishSalesDrilldownMatrix {
         }
         if (isTimeFollowupFromMessage(normalizedUserMessage)
                 || isCrossDomainProfitFollowupFromMessage(normalizedUserMessage)) {
+            return false;
+        }
+        if (isFirstTurnDishProfitRankingQuestion(normalizedUserMessage)) {
+            return false;
+        }
+        if (utteranceMentionsProfit(normalizedUserMessage) && !priorDishSalesContext(previousTurn, sem)) {
             return false;
         }
         return StringUtils.hasText(inferMatrixWireFromNormalizedQuestion(normalizedUserMessage));
@@ -650,6 +809,116 @@ public final class DishSalesDrilldownMatrix {
         return isCrossDomainProfitFollowupFromMessage(normalizedUserMessage);
     }
 
+    private static final Set<String> DISH_SALES_RANKING_ANCHOR_SOURCE_PLAN_TYPES =
+            Set.of(
+                    DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_HIGH,
+                    DishSalesAnswerPlan.TYPE_DISH_SALES_AMOUNT_RANKING_HIGH,
+                    DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_LOW);
+
+    public static boolean isDishSalesRankingAnchorSourcePlanType(String planType) {
+        if (!StringUtils.hasText(planType)) {
+            return false;
+        }
+        return DISH_SALES_RANKING_ANCHOR_SOURCE_PLAN_TYPES.contains(planType.trim());
+    }
+
+    public static boolean planTypeEmitsDishSalesRankingResultAnchor(String planType) {
+        return isDishSalesRankingAnchorSourcePlanType(planType);
+    }
+
+    /**
+     * 销量排行 Top1 写入 {@link AiResultAnchor} 后，短句「毛利是多少？」等可沿用上轮唯一 DISH 锚切到 {@code dish_profit_path}。
+     * 与 DS-I「那毛利呢」互斥：后者仍走 {@link #canAdoptDishSalesMatrixCrossDomainProfitFollowUp}。
+     */
+    public static boolean canAdoptDishSalesRankingAnchorProfitDrillDownFollowUp(
+            AiConversationTurnMemory previousTurn, String normalizedUserMessage) {
+        if (previousTurn == null || !StringUtils.hasText(previousTurn.getLastPathCode())) {
+            return false;
+        }
+        if (!AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(previousTurn.getLastPathCode().trim())) {
+            return false;
+        }
+        if (!isShortProfitMetricFollowUpWithoutExplicitDish(normalizedUserMessage)) {
+            return false;
+        }
+        return resolveUniqueDishSalesRankingAnchor(previousTurn.getLastResultAnchors()) != null;
+    }
+
+    public static AiResultAnchor resolveUniqueDishSalesRankingAnchor(List<AiResultAnchor> anchors) {
+        if (anchors == null || anchors.isEmpty()) {
+            return null;
+        }
+        AiResultAnchor picked = null;
+        for (AiResultAnchor a : anchors) {
+            if (a == null || !StringUtils.hasText(a.getEntityType())) {
+                continue;
+            }
+            if (!AiResultAnchor.ENTITY_TYPE_DISH.equalsIgnoreCase(a.getEntityType().trim())) {
+                continue;
+            }
+            if (!isDishSalesRankingAnchorSourcePlanType(a.getSourcePlanType())) {
+                continue;
+            }
+            Integer rk = a.getRank();
+            boolean rankOne = rk != null && rk == 1;
+            boolean singleUnranked = rk == null && anchors.size() == 1;
+            if (!(rankOne || singleUnranked)) {
+                continue;
+            }
+            if (!StringUtils.hasText(a.getEntityName()) && !StringUtils.hasText(a.getEntityId())) {
+                continue;
+            }
+            if (picked != null) {
+                return null;
+            }
+            picked = a;
+        }
+        return picked;
+    }
+
+    private static boolean isShortProfitMetricFollowUpWithoutExplicitDish(String normalizedUserMessage) {
+        if (!StringUtils.hasText(normalizedUserMessage)) {
+            return false;
+        }
+        if (isCrossDomainProfitFollowupFromMessage(normalizedUserMessage)) {
+            return false;
+        }
+        if (isFirstTurnDishProfitRankingQuestion(normalizedUserMessage)) {
+            return false;
+        }
+        String msg = compactMessage(normalizedUserMessage);
+        if (!utteranceMentionsProfit(msg)) {
+            return false;
+        }
+        if (msg.contains("哪个菜")
+                || msg.contains("什么菜")
+                || msg.contains("哪道菜")
+                || msg.contains("哪些菜")) {
+            return false;
+        }
+        if (msg.equals("毛利") || msg.equals("毛利率") || msg.equals("利润")) {
+            return true;
+        }
+        if (msg.contains("毛利是多少")
+                || msg.contains("毛利率是多少")
+                || msg.contains("利润是多少")) {
+            return true;
+        }
+        if (msg.contains("毛利多少") || msg.contains("毛利率多少") || msg.contains("利润多少")) {
+            return true;
+        }
+        if (msg.contains("它毛利")
+                || msg.contains("它毛利率")
+                || msg.contains("这个菜毛利")
+                || msg.contains("这道菜毛利")) {
+            return true;
+        }
+        if (msg.contains("毛利怎么样") || msg.contains("毛利率怎么样")) {
+            return true;
+        }
+        return false;
+    }
+
     private static boolean isRankingFollowupFromMessage(String normalizedUserMessage) {
         String msg = compactMessage(normalizedUserMessage);
         if (!StringUtils.hasText(msg)) {
@@ -669,7 +938,58 @@ public final class DishSalesDrilldownMatrix {
         if (!StringUtils.hasText(msg)) {
             return false;
         }
-        return msg.contains("那毛利") || msg.contains("毛利呢") || msg.equals("毛利");
+        if (msg.contains("那毛利") || msg.contains("毛利呢") || msg.equals("毛利")) {
+            return true;
+        }
+        if (msg.contains("那它毛利")) {
+            return true;
+        }
+        return msg.contains("毛利")
+                && msg.contains("怎么样")
+                && (msg.startsWith("那") || msg.contains("那它") || msg.contains("它毛利"));
+    }
+
+    /**
+     * 首轮完整毛利排行问句（如「哪个菜毛利最低？」）：仅用于阻止 DishSales utterance pin 收养，不强制改写 path。
+     */
+    private static boolean isFirstTurnDishProfitRankingQuestion(String normalizedUserMessage) {
+        if (!StringUtils.hasText(normalizedUserMessage) || !utteranceMentionsProfit(normalizedUserMessage)) {
+            return false;
+        }
+        if (isCrossDomainProfitFollowupFromMessage(normalizedUserMessage)) {
+            return false;
+        }
+        String msg = compactMessage(normalizedUserMessage);
+        boolean rankingExtreme =
+                msg.contains("最低")
+                        || msg.contains("最高")
+                        || msg.contains("最少")
+                        || msg.contains("最多")
+                        || msg.contains("垫底");
+        if (!rankingExtreme) {
+            return false;
+        }
+        boolean dishCue =
+                msg.contains("哪个菜")
+                        || msg.contains("什么菜")
+                        || msg.contains("哪道菜")
+                        || msg.contains("哪些菜");
+        if (!dishCue) {
+            return false;
+        }
+        boolean salesPrimary =
+                msg.contains("销量")
+                        || msg.contains("卖得")
+                        || msg.contains("销售额")
+                        || msg.contains("营收")
+                        || msg.contains("金额");
+        return !salesPrimary;
+    }
+
+    private static boolean isCrossDomainProfitStructuredWire(String canon) {
+        return AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(canon)
+                || AiQuerySemanticLexicon.isDishProfitRankingStructuredDetail(canon)
+                || AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(canon);
     }
 
     private static boolean isTimeFollowupFromMessage(String normalizedUserMessage) {
@@ -694,6 +1014,9 @@ public final class DishSalesDrilldownMatrix {
     private static boolean utteranceRequestsCountRankingHigh(String normalizedUserMessage) {
         String msg = compactMessage(normalizedUserMessage);
         if (msg.contains("那哪个菜") && msg.contains("最高")) {
+            return true;
+        }
+        if (msg.contains("卖得好") || msg.contains("卖得最好")) {
             return true;
         }
         return (msg.contains("最高") || msg.contains("最好") || msg.contains("最多"))
@@ -767,6 +1090,18 @@ public final class DishSalesDrilldownMatrix {
             String resolvedWire,
             AiQuerySemanticParseResult sem,
             AiResolvedQueryContext rq) {
+        AiConversationTurnMemory previousTurn = rq != null ? rq.getPreviousTurn() : null;
+        String normalizedUserMessage = rq != null ? rq.getNormalizedQuestion() : null;
+        return resolveMatrixRow(pathCode, resolvedWire, sem, rq, previousTurn, normalizedUserMessage);
+    }
+
+    private static DishSalesDrilldownMatrixRow resolveMatrixRow(
+            String pathCode,
+            String resolvedWire,
+            AiQuerySemanticParseResult sem,
+            AiResolvedQueryContext rq,
+            AiConversationTurnMemory previousTurn,
+            String normalizedUserMessage) {
         if (!AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(pathCode)) {
             return null;
         }
@@ -777,9 +1112,10 @@ public final class DishSalesDrilldownMatrix {
         if (canon == null) {
             return null;
         }
-        if (AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(canon)
-                || AiQuerySemanticLexicon.isDishProfitRankingStructuredDetail(canon)
-                || AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(canon)) {
+        if (isCrossDomainProfitStructuredWire(canon)) {
+            if (!canAdoptDishSalesMatrixCrossDomainProfitFollowUp(previousTurn, normalizedUserMessage)) {
+                return null;
+            }
             return CROSS_DOMAIN_PROFIT;
         }
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_TREND.equals(canon)) {

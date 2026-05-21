@@ -80,6 +80,7 @@ public final class AiQuerySemanticParseResultDebugSerializer {
             slot.put("anchorPolicy", blankToNull(ss.getAnchorPolicy()));
             slot.put("detailWanted", blankToNull(ss.getDetailWanted()));
             slot.put("structuredIntentDetailWire", blankToNull(ss.getStructuredIntentDetailWire()));
+            slot.put("answerPlanType", blankToNull(ss.getAnswerPlanType()));
             m.put("semanticSlots", slot);
         } else {
             m.put("semanticSlots", null);

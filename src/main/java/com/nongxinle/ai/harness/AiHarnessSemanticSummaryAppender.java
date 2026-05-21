@@ -108,6 +108,11 @@ final class AiHarnessSemanticSummaryAppender {
         frameMap.put("anchorPolicy", AiHarnessSummaryUtils.blankToNull(frame.getAnchorPolicy()));
         frameMap.put("detailWanted", AiHarnessSummaryUtils.blankToNull(frame.getDetailWanted()));
         frameMap.put("structuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(frame.getStructuredIntentDetailWire()));
+        if (qsp != null && qsp.getSemanticSlots() != null) {
+            frameMap.put("answerPlanType", AiHarnessSummaryUtils.blankToNull(qsp.getSemanticSlots().getAnswerPlanType()));
+        } else {
+            frameMap.put("answerPlanType", null);
+        }
         LinkedHashMap<String, Object> valMap = new LinkedHashMap<>();
         valMap.put("ok", val.ok());
         List<String> vc = val.violationCodes();
@@ -187,6 +192,7 @@ final class AiHarnessSemanticSummaryAppender {
             slots.put("anchorPolicy", AiHarnessSummaryUtils.blankToNull(s.getAnchorPolicy()));
             slots.put("detailWanted", AiHarnessSummaryUtils.blankToNull(s.getDetailWanted()));
             slots.put("structuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(s.getStructuredIntentDetailWire()));
+            slots.put("answerPlanType", AiHarnessSummaryUtils.blankToNull(s.getAnswerPlanType()));
             m.put("semanticSlots", slots);
         } else {
             m.put("semanticSlots", null);

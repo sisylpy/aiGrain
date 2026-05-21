@@ -21,7 +21,9 @@ import com.nongxinle.ai.agent.business.BusinessAgentNames;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.BusinessOverviewDrilldownMatrix;
 import com.nongxinle.ai.harness.followup.BusinessDrilldownRequestAssembler;
+import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
 import com.nongxinle.ai.harness.followup.PurchaseFollowUpSlotSignals;
 import com.nongxinle.ai.followup.AiFollowUpHintSupport;
 import com.nongxinle.ai.harness.AiMultiStoreHarnessTrace;
@@ -471,6 +473,16 @@ public class AiResolvedQueryContextResolver {
                         new ArrayList<>(AiBusinessToolIds.BUSINESS_OVERVIEW_MULTI_AGENT_DOMAIN_TOOLS);
             }
         }
+        OrchestrationToolsMatrixReconcile matrixOrchReconcile =
+                reconcileOrchestrationSelectedToolsFromBusinessMatrix(
+                        followUp, queryIntent, orchestrationSelectedTools);
+        orchestrationSelectedTools = matrixOrchReconcile.tools();
+        if (StringUtils.hasText(matrixOrchReconcile.reasonNote())) {
+            orchestrationReasonField =
+                    StringUtils.hasText(orchestrationReasonField)
+                            ? orchestrationReasonField.trim() + "; " + matrixOrchReconcile.reasonNote()
+                            : matrixOrchReconcile.reasonNote();
+        }
         if (!clarificationRequired && businessOverviewEffectiveRouting && odPart != null) {
             if (Boolean.TRUE.equals(orchestrationClarificationRequiredFlag)) {
                 clarificationRequired = true;
@@ -543,6 +555,33 @@ public class AiResolvedQueryContextResolver {
                 effFollowUpTargetName = diagRiskFollowUp.followUpTargetEntityName();
                 effFollowUpDetail = BusinessDiagnosisAgentV1.DIAGNOSIS_QUESTION_STORE_RISK_REASONS;
                 effFollowUpSourcePlan = DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS;
+            }
+        }
+        if (!StringUtils.hasText(effFollowUpAction)
+                && queryIntent != null
+                && AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(queryIntent.getPathCode())
+                && previousTurn != null
+                && AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(
+                        blankToNullSemantic(previousTurn.getLastPathCode()))
+                && DishSalesDrilldownMatrix.canAdoptDishSalesRankingAnchorProfitDrillDownFollowUp(
+                        previousTurn, normalized)) {
+            AiResultAnchor salesAnchor =
+                    DishSalesDrilldownMatrix.resolveUniqueDishSalesRankingAnchor(
+                            previousTurn.getLastResultAnchors());
+            if (salesAnchor != null
+                    && (StringUtils.hasText(salesAnchor.getEntityName())
+                            || StringUtils.hasText(salesAnchor.getEntityId()))) {
+                effFollowUpAction = "OBJECT_DRILLDOWN";
+                effFollowUpTargetType = AiResultAnchor.ENTITY_TYPE_DISH;
+                effFollowUpTargetName =
+                        StringUtils.hasText(salesAnchor.getEntityName())
+                                ? salesAnchor.getEntityName().trim()
+                                : null;
+                effFollowUpTargetId =
+                        StringUtils.hasText(salesAnchor.getEntityId())
+                                ? salesAnchor.getEntityId().trim()
+                                : null;
+                effFollowUpSourcePlan = salesAnchor.getSourcePlanType();
             }
         }
 
@@ -1802,6 +1841,15 @@ public class AiResolvedQueryContextResolver {
                 return AiQuerySemanticLexicon.finalizeMentionedDishNameForDishProfit(inherited);
             }
         }
+        if (previousTurn != null && previousTurn.getLastResultAnchors() != null) {
+            AiResultAnchor salesAnchor =
+                    DishSalesDrilldownMatrix.resolveUniqueDishSalesRankingAnchor(
+                            previousTurn.getLastResultAnchors());
+            if (salesAnchor != null && StringUtils.hasText(salesAnchor.getEntityName())) {
+                return AiQuerySemanticLexicon.finalizeMentionedDishNameForDishProfit(
+                        salesAnchor.getEntityName().trim());
+            }
+        }
         return null;
     }
 
@@ -2028,6 +2076,39 @@ public class AiResolvedQueryContextResolver {
         return new SemanticAdoptionAttempt(syntheticSem, merged, tentative, timeContract, null, null);
     }
 
+    private SemanticAdoptionAttempt tryDishSalesRankingAnchorProfitDrillDownAdoption(
+            AiConversationTurnMemory previousTurn,
+            String normalized,
+            LocalDate today,
+            AiResolvedTimeWindow explicitTentative) {
+        AiResolvedQueryIntent merged =
+                AiQuerySemanticLlmMergeHelper.buildDishSalesRankingAnchorProfitDrillDownIntent(
+                        previousTurn, normalized);
+        if (merged == null || !StringUtils.hasText(merged.getPathCode())) {
+            return null;
+        }
+        SemanticTimeContractCheck.Result timeContract =
+                SemanticTimeContractCheck.inheritFromPreviousTurn(previousTurn);
+        if (timeContract == null || !timeContract.valid()) {
+            return null;
+        }
+        AiQuerySemanticParseResult syntheticSem =
+                AiQuerySemanticLlmMergeHelper.buildSyntheticSemanticForDishSalesRankingAnchorProfitDrillDown(
+                        normalized, previousTurn, today);
+        if (syntheticSem == null) {
+            return null;
+        }
+        AiResolvedTimeWindow tentative =
+                timeContract.toTimeWindow(
+                        previousTurn != null && StringUtils.hasText(previousTurn.getLastTimeLabel())
+                                ? previousTurn.getLastTimeLabel()
+                                : null);
+        if (tentative == null) {
+            tentative = explicitTentative;
+        }
+        return new SemanticAdoptionAttempt(syntheticSem, merged, tentative, timeContract, null, null);
+    }
+
     private SemanticAdoptionAttempt dishSalesMatrixAdoptionFromSynthetic(
             AiQuerySemanticParseResult syntheticSem,
             AiResolvedQueryIntent merged,
@@ -2081,15 +2162,16 @@ public class AiResolvedQueryContextResolver {
         if (matrixGroupSingleDish != null) {
             return matrixGroupSingleDish;
         }
-        SemanticAdoptionAttempt matrixUtterancePin =
-                tryDishSalesMatrixUtterancePinAdoption(previousTurn, normalized, today, explicitTentative);
-        if (matrixUtterancePin != null) {
-            return matrixUtterancePin;
-        }
         SemanticAdoptionAttempt matrixRankingFollowUp =
                 tryDishSalesMatrixRankingFollowUpAdoption(previousTurn, normalized, today, explicitTentative);
         if (matrixRankingFollowUp != null) {
             return matrixRankingFollowUp;
+        }
+        SemanticAdoptionAttempt matrixSalesAnchorProfit =
+                tryDishSalesRankingAnchorProfitDrillDownAdoption(
+                        previousTurn, normalized, today, explicitTentative);
+        if (matrixSalesAnchorProfit != null) {
+            return matrixSalesAnchorProfit;
         }
         SemanticAdoptionAttempt matrixCrossDomainProfit =
                 tryDishSalesMatrixCrossDomainProfitFollowUpAdoption(
@@ -2098,6 +2180,11 @@ public class AiResolvedQueryContextResolver {
             return matrixCrossDomainProfit;
         }
         if (sem == null || SemanticParseFallbackPolicy.needSemanticParseClarification(sem, querySemanticMinConfidence)) {
+            SemanticAdoptionAttempt matrixUtterancePin =
+                    tryDishSalesMatrixUtterancePinAdoption(previousTurn, normalized, today, explicitTentative);
+            if (matrixUtterancePin != null) {
+                return matrixUtterancePin;
+            }
             return null;
         }
         boolean purchaseFrameAdoption =
@@ -2112,6 +2199,8 @@ public class AiResolvedQueryContextResolver {
                             sem, previousTurn, normalized);
             // sourceFacet 主语义 → metric.purchaseSourceType，须在 Validator 前 reconcile，避免 compat 字段误伤。
             sem = AiQuerySemanticSlotMerge.reconcileMetricWithSourceFacet(sem);
+            sem = AiQuerySemanticSlotMerge.reconcilePurchaseGoodsRankingSemanticSlots(sem);
+            sem = AiQuerySemanticSlotMerge.reconcileAnswerPlanTypeFromWire(sem);
             sem = CurrentSemanticFrame.canonicalizePurchaseFollowUp(sem, previousTurn);
             CurrentSemanticFrame frame = CurrentSemanticFrame.buildFrame(sem);
             SemanticFrameValidationResult frameVal =
@@ -2277,6 +2366,67 @@ public class AiResolvedQueryContextResolver {
                 BusinessAgentNames.PURCHASE_OVERVIEW,
                 BusinessAgentNames.STOCK_REDUCE_QUERY,
                 BusinessAgentNames.DISH_PROFIT_ANALYSIS);
+    }
+
+    private record OrchestrationToolsMatrixReconcile(List<String> tools, String reasonNote) {}
+
+    /**
+     * 经营概览/诊断：Planner 工具表以 Matrix 为准；LLM {@code selectedTools} 冲突时写 reason 供 Debug。
+     */
+    private static OrchestrationToolsMatrixReconcile reconcileOrchestrationSelectedToolsFromBusinessMatrix(
+            AiFollowUpResolution followUpRes,
+            AiResolvedQueryIntent queryIntent,
+            List<String> llmSelectedTools) {
+        if (followUpRes == null || queryIntent == null) {
+            return new OrchestrationToolsMatrixReconcile(llmSelectedTools, null);
+        }
+        String path = followUpRes.getEffectivePathCode();
+        String wireRaw = queryIntent.getStructuredIntentDetail();
+        String canon =
+                StringUtils.hasText(wireRaw)
+                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wireRaw.trim())
+                        : null;
+        List<String> matrixTools = null;
+        String source = null;
+        if (AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(path)
+                && StringUtils.hasText(canon)
+                && AiQuerySemanticLexicon.isStructuredBusinessOverviewFourDomainOrchestrationSurface(canon)) {
+            matrixTools = BusinessOverviewDrilldownMatrix.defaultFourDomainPlannerTools();
+            source = "business_overview_matrix";
+        } else if (AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(path) && StringUtils.hasText(canon)) {
+            matrixTools = BusinessDiagnosisDrilldownMatrix.plannerToolsForWire(canon);
+            source =
+                    BusinessDiagnosisDrilldownMatrix.isDualDomainPurchaseStockWire(canon)
+                            ? "business_diagnosis_matrix_dual_domain"
+                            : "business_diagnosis_matrix_four_domain";
+        }
+        if (matrixTools == null || matrixTools.isEmpty()) {
+            return new OrchestrationToolsMatrixReconcile(llmSelectedTools, null);
+        }
+        String reason = null;
+        if (llmSelectedTools != null
+                && !llmSelectedTools.isEmpty()
+                && !plannerToolListsEqual(llmSelectedTools, matrixTools)) {
+            reason = "planner_tools_matrix_override_llm_selectedTools:" + source;
+        }
+        return new OrchestrationToolsMatrixReconcile(new ArrayList<>(matrixTools), reason);
+    }
+
+    private static boolean plannerToolListsEqual(List<String> a, List<String> b) {
+        if (a == null && b == null) {
+            return true;
+        }
+        if (a == null || b == null || a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            String ta = a.get(i) != null ? a.get(i).trim() : "";
+            String tb = b.get(i) != null ? b.get(i).trim() : "";
+            if (!ta.equals(tb)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String normalizeSemanticV2ActionToken(String raw) {

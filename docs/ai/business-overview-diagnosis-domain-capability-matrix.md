@@ -85,7 +85,7 @@
 
 1. **模型填错 `primaryMetric`**：A 与 B/C 边界完全依赖语义 JSON；`revenue` 与 `business_status` 混用会导致 path/wire 整条链偏移。
 2. **「哪个门店」未点 ≥2 店名**：`applyBusinessStoreStatusCompareWhenMultiStoreMentioned` **不**触发；可能停在泛问或其它 scope，需追问或默认集团 visible 范围产品策略。
-3. **v1 / v2 解析并存**：以**线上实际启用版本**为准；运维上需单一事实源，否则文档与验收易分叉。
+3. **（Historical）v1 解析已下线**：现网 **V2-only**（`semantic.query_parser.v2`）；文档与验收以 **v2 JSON + `effectiveIntentCode` / `effectivePathCode` / `AiResolvedQueryContext`** 为准，勿再假设 v1 prompt 并存。
 
 ---
 
@@ -184,7 +184,7 @@
 
 - 冻结三类用户话术的**意图对照表**：「经营怎么样」、「门店经营最好」、「门店问题最大」— 与 **§2–§4** 及 **`query_semantic_parser.v2.md` / `business-question-routing-d2-design.md`** 对齐。
 - 明确 **库存门店压力**（`store_stock_amount_ranking`）与 **经营诊断门店优先**（`store_priority_ranking`）的 **互斥与承接**话术，避免一线混线为「经营问题」。
-- **单一解析事实源**：确认线上 v1/v2 与 **`AiQuerySemanticLlmMergeHelper`** 的发布组合，避免文档与验收分叉。
+- **单一解析事实源（V2-only）**：语义以 **`query_semantic_parser.v2.md`** + **`AiQuerySemanticLlmMergeHelper`** 合并后的 **`effectiveIntentCode` / `effectivePathCode` / `structuredIntentDetail`（wire）** 为准，避免文档与 Harness 验收分叉。
 
 ### Phase 2 — Planner 是否扩展（**产品决策后**）
 

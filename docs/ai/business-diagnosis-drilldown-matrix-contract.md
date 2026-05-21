@@ -1,5 +1,7 @@
 # D-BD-DRILLDOWN-MATRIX-CONTRACT-P1 — 经营诊断内下钻矩阵契约
 
+> **契约交叉引用**：wire 登记七步见 [`semantic-output-schema.md`](../../src/main/resources/ai-prompts/semantic/semantic-output-schema.md)；八域成熟度见 [`phase1-semantic-mainline-acceptance-summary.md`](./phase1-semantic-mainline-acceptance-summary.md) §4；Composer/fallback 见 [`harness-composer-architecture.md`](./harness-composer-architecture.md) §2.7。
+
 > **目的**：把经营诊断 **门店下钻 + 子域归因确认** 收敛为 Harness Engineering 矩阵行，约束 LLM wire / Matrix / `DiagnosisPlan` debug / Composer 宣读分工。  
 > **范围（P1）**：仅诊断内下钻；**不接** `BusinessDiagnosisCompositeAnswerPlan` 主链；**不扩** Composer Plan-first 原则；**不改** SQL。  
 > **相关**：[follow-up-drilldown-matrix.md](./follow-up-drilldown-matrix.md)（D-13.2 STORE 已封版）、[result-anchor-protocol.md](./result-anchor-protocol.md)。

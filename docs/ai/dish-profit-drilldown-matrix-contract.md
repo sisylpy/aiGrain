@@ -1,5 +1,7 @@
 # D-DISH-PROFIT-DRILLDOWN-MATRIX-CONTRACT-P1 — 菜品毛利下钻矩阵契约
 
+> **契约交叉引用**：wire 登记七步见 [`semantic-output-schema.md`](../../src/main/resources/ai-prompts/semantic/semantic-output-schema.md)；八域成熟度见 [`phase1-semantic-mainline-acceptance-summary.md`](./phase1-semantic-mainline-acceptance-summary.md) §4；Composer/fallback 见 [`harness-composer-architecture.md`](./harness-composer-architecture.md) §2.7。
+
 > **目的**：把现网已支持的菜品毛利 structured wire → AnswerPlan、DISH `resultAnchors` 与 DISH 锚追问，整理为 **Harness Engineering 矩阵契约**；对齐采购矩阵分工，防止 Java 退化为语义二次解析器。  
 > **范围（P1）**：文档 + `DishProfitDrilldownMatrix` 只读骨架；**不新增**业务能力、Tool、SQL、Composer、时间合同；**不改** `DishProfitAgentNode` 挂载逻辑（P2 再迁）。  
 > **相关**：[follow-up-drilldown-matrix.md](./follow-up-drilldown-matrix.md)（D-13.3B）、[dish-profit-domain-capability-matrix.md](./dish-profit-domain-capability-matrix.md)、[purchase-drilldown-matrix-contract.md](./purchase-drilldown-matrix-contract.md)（结构参考）、[dish-sales-domain-capability-matrix.md](./dish-sales-domain-capability-matrix.md)（销量独立域）。

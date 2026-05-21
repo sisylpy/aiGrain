@@ -281,6 +281,7 @@ public final class AiQuerySemanticParseResultJsonParser {
                 .anchorPolicy(trimToNull(sjo.getStr("anchorPolicy")))
                 .detailWanted(trimToNull(sjo.getStr("detailWanted")))
                 .structuredIntentDetailWire(trimToNull(sjo.getStr("structuredIntentDetailWire")))
+                .answerPlanType(trimToNull(sjo.getStr("answerPlanType")))
                 .build();
     }
 

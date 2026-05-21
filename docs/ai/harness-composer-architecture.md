@@ -115,6 +115,39 @@
 
 菜品毛利 Composer 现有系统提示：`DISH_PROFIT_COMPOSER_SYSTEM`（`StubAnswerComposerNode`）。后续若引入 AnswerPlan，应在提示中明确「仅展开 AnswerPlan 指定焦点与 Tool 中对应字段」。
 
+### 2.7 Plan-first 与 fallback 治理
+
+> **现网主链**：`StubAnswerComposerNode` 类注释 — Plan-first 宣读；无 Plan 时固定 no-plan；**不**走「LLM + Tool fallback」拼业务事实。`src/main/resources/ai-prompts/composer/*.v1.md` 为 **草案**，非本节约束的权威源。
+
+#### 有 AnswerPlan 时
+
+- Composer / `*DeterministicRenderer` **只能表达 AnswerPlan** 内已算字段：`focusRows`、`limitations`、`knownGap` 宣读段等。
+- **禁止**在有 Plan 时，再从 **`toolResults`**、**`AiDishProfitOverviewResult.summary`**、overview 列表或 **LLM 二次生成** 中**另选事实**、重排行、心算比率。
+- **禁止**用 compat 字段（如 **`metric.rankingType`**）覆盖 Plan 已定的业务口径。
+
+#### AnswerPlanType 与 Renderer 分支
+
+- 每个进入主链路的 **`AnswerPlan.planType`** 须有 **专用 Composer / Renderer 分支**，或矩阵文档明确标 **`knownGap`** 且 Harness 接受 gap 宣读。
+- **不得**将未实现专节的 planType 挂上主链后又走 **generic** 宣读（会产出误导话术）。
+
+#### fallback 允许场景（窄）
+
+| 允许 | 禁止 |
+|------|------|
+| **no-plan**：`compose*NoPlanFallback` 固定话术 | 有 Plan 时用 fallback 替代 Plan |
+| **knownGap**：宣读 Matrix / Plan 内 `limitations`、`knownGap` | fallback **编造** Tool 未返回的数字或排行 |
+| **no-data / 权限**：边界说明、诚实降级 | fallback **抢权**：覆盖本应执行的 AnswerPlan 选行逻辑 |
+
+#### 专项治理提醒（菜品毛利）
+
+- **`AGGREGATED_DISH_PORTFOLIO_FALLBACK`**、**`BUSINESS_DIAGNOSIS_DISH_OVERVIEW`** 等 planType：若 **无** `DishProfitDeterministicRenderer` 专用分支，会落入 **generic** 路径（例如「拖累毛利最明显的是…」），与「组合平均 / 概览」产品意图不符。
+- 后续改动须：**新 wire + 新 planType + 专用 Renderer**，或禁止 `maybeAttachPortfolioAggregatePlan` 类逻辑抢权；见 [`dish-profit-domain-capability-matrix.md`](./dish-profit-domain-capability-matrix.md)、[`phase1-semantic-mainline-acceptance-summary.md`](./phase1-semantic-mainline-acceptance-summary.md) §4。
+
+#### 交叉引用
+
+- Wire 登记七步：[`semantic-output-schema.md`](../../src/main/resources/ai-prompts/semantic/semantic-output-schema.md)「契约治理」节  
+- 八域闭环总表：[`phase1-semantic-mainline-acceptance-summary.md`](./phase1-semantic-mainline-acceptance-summary.md) §4
+
 ---
 
 ## 3. 哪些必须工程硬约束 vs 哪些可以让 AI 判断

@@ -11,6 +11,49 @@
 
 ---
 
+## 契约治理 · Wire / semanticSlots 登记规则
+
+下列规则适用于 **v2 Prompt、`semantic-output-schema.md`、Java 执行链、Matrix、AnswerPlan、Composer** 的协同维护；避免「文档写了、代码没接」或「Prompt 发明 wire、Java 不认识」的漂移。
+
+### 主语义依据
+
+| 层级 | 权威 |
+|------|------|
+| **主语义** | 顶层 **`semanticSlots`**（含 **`structuredIntentDetailWire`**、`queryObject` / `operation` / `metric` / `sourceFacet` / `anchorPolicy` / `detailWanted`）→ Lexicon canonical → `queryIntent.structuredIntentDetail` |
+| **compat / debug only** | **`metric.rankingType`**、部分 **`metric.stockReduceType`** / **`metric.purchaseSourceType`**：仅观测或合法兜底补 wire，**不得**作为 AnswerPlan / Composer 主判断依据（见 [`docs/ai/d1x-rankingtype-and-duplicate-responsibility-inventory.md`](../../../../docs/ai/d1x-rankingtype-and-duplicate-responsibility-inventory.md) 现网契约） |
+
+### Prompt 不得发明未登记 wire
+
+- **`query_semantic_parser.v2.md`** 与 LLM 输出中的 **`structuredIntentDetailWire` / `structuredIntentDetail`** 必须使用 **`AiQuerySemanticLexicon`** 中已有常量或本文档 / 各域 **`*-drilldown-matrix-contract.md`** 已列出的 canonical wire。
+- **禁止**输出 Java Merge / Matrix / AnswerPlan **未登记** 的蛇形 wire；若产品需要新口径，先走下方登记清单，**再**改 Prompt 专节。
+
+### 新 wire 进入生产前同步清单（7 步）
+
+新增或变更一条 **生产 wire** 时，须在同一变更集或连续 PR 内对齐：
+
+| # | 工件 | 说明 |
+|---|------|------|
+| 1 | **`AiQuerySemanticLexicon.java`** | 增加 `STRUCTURED_*` 常量；必要时补 canonical 别名映射 |
+| 2 | **`semantic-output-schema.md`** | 域内白名单 / 枚举表增补（本文） |
+| 3 | **对应 `docs/ai/*-drilldown-matrix-contract.md`** | 矩阵行：首轮 / 追问、`knownGap` 标注 |
+| 4 | **对应 `*DrilldownMatrix.java`** | 可解析、可挂 AnswerPlan；`MATRIX_WIRE_MISSING` 行为明确 |
+| 5 | **对应 `*AnswerPlan` / `*AnswerPlanBuilder`** | `planType` 与 wire 映射 |
+| 6 | **Composer / `*DeterministicRenderer` / `StubAnswerComposerNode`** | 有 Plan 须有**专用宣读分支**；禁止仅 generic fallback |
+| 7 | **Harness** | 新增或更新 replay case；若暂不实现须写 **`knownGap`** 与文档 **Planned/Gap**，**不得**让 Prompt 当作已支持能力输出 |
+
+### Planned / Gap 与 Prompt 的关系
+
+- 若 **schema 或 v2 专节已写**、但 **Matrix 行标 `knownGap` 或 Java 未挂 Plan**，该 wire 在 Prompt 中应标注为 **Planned/Gap** 或 **勿作为默认输出**，避免模型稳定产出「假闭环」JSON。
+- Harness **strict** 失败（如 `MATRIX_WIRE_MISSING`）优于生产环境 silent 降级到错误话术。
+
+### 相关索引（勿新建独立治理文件）
+
+- 八域总表：[`docs/ai/phase1-semantic-mainline-acceptance-summary.md`](../../../../docs/ai/phase1-semantic-mainline-acceptance-summary.md) §4  
+- Plan-first / fallback：[`docs/ai/harness-composer-architecture.md`](../../../../docs/ai/harness-composer-architecture.md) §2.7  
+- Matrix P1 交叉引用：[`docs/ai/matrix-p1-stage-summary.md`](../../../../docs/ai/matrix-p1-stage-summary.md)
+
+---
+
 ## 顶层字段（必须输出）
 
 | 字段 | 类型 | 说明 |

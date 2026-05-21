@@ -5,11 +5,15 @@ import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolver;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
 import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrixRow;
+import com.nongxinle.ai.harness.followup.BusinessOverviewDrilldownMatrix;
 import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
 import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
 import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix;
 import com.nongxinle.ai.semantic.SemanticTimeContractCheck;
 import com.nongxinle.ai.semantic.TimeContractPreviousTurnSupport;
 import org.springframework.util.StringUtils;
@@ -57,25 +61,31 @@ public final class AiQuerySemanticLlmMergeHelper {
         if (diagnosisContinuation != null) {
             return diagnosisContinuation;
         }
-        AiResolvedQueryIntent matrixStoreSingleDish =
-                buildDishSalesMatrixStoreSingleDishIntent(previousTurn, sem, norm);
-        if (matrixStoreSingleDish != null) {
-            return matrixStoreSingleDish;
-        }
-        AiResolvedQueryIntent matrixGroupSingleDish =
-                buildDishSalesMatrixGroupSingleDishIntent(previousTurn, sem, norm);
-        if (matrixGroupSingleDish != null) {
-            return matrixGroupSingleDish;
-        }
-        AiResolvedQueryIntent matrixRankingFollowUp =
-                buildDishSalesMatrixRankingFollowUpIntent(previousTurn, norm);
-        if (matrixRankingFollowUp != null) {
-            return matrixRankingFollowUp;
-        }
-        AiResolvedQueryIntent matrixUtterancePin =
-                buildDishSalesMatrixUtterancePinIntent(previousTurn, sem, norm);
-        if (matrixUtterancePin != null) {
-            return matrixUtterancePin;
+        if (!blocksDishSalesMatrixOverride(sem)) {
+            AiResolvedQueryIntent matrixStoreSingleDish =
+                    buildDishSalesMatrixStoreSingleDishIntent(previousTurn, sem, norm);
+            if (matrixStoreSingleDish != null) {
+                return matrixStoreSingleDish;
+            }
+            AiResolvedQueryIntent matrixGroupSingleDish =
+                    buildDishSalesMatrixGroupSingleDishIntent(previousTurn, sem, norm);
+            if (matrixGroupSingleDish != null) {
+                return matrixGroupSingleDish;
+            }
+            AiResolvedQueryIntent matrixRankingFollowUp =
+                    buildDishSalesMatrixRankingFollowUpIntent(previousTurn, norm);
+            if (matrixRankingFollowUp != null) {
+                return matrixRankingFollowUp;
+            }
+            boolean semReliable =
+                    sem != null && !sem.isParseMissing() && sem.isStructuralConfidenceOk(minConfidence);
+            if (!(semReliable && v2MapsToExplicitDishProfitPath(sem))) {
+                AiResolvedQueryIntent matrixUtterancePin =
+                        buildDishSalesMatrixUtterancePinIntent(previousTurn, sem, norm);
+                if (matrixUtterancePin != null) {
+                    return matrixUtterancePin;
+                }
+            }
         }
         if (sem == null || sem.isParseMissing() || !sem.isStructuralConfidenceOk(minConfidence)) {
             return base;
@@ -120,12 +130,14 @@ public final class AiQuerySemanticLlmMergeHelper {
         applyPurchaseStructuredWireFromSemanticSlots(merged, sem);
         applyStockReduceStructuredWireFromSemanticSlots(merged, sem);
         applyCanonicalStructuredIntentDetailWireFromSemanticSlots(merged, sem);
-        applyRevenueStructuredWireFromSemanticSlots(merged, sem, norm);
+        applyBusinessOverviewStructuredWireFromSemanticSlots(merged, sem);
         merged = pinBusinessDiagnosisPathForDrilldownContinuation(merged, previousTurn, norm);
+        applyBusinessDiagnosisStructuredWireFromSemanticSlots(merged, sem, norm);
         applyBusinessDiagnosisStructuredWireFromMessage(merged, norm);
-        merged = pinDishSalesPathForMatrixCrossDomainProfitFollowUp(merged, previousTurn, norm);
-        merged = pinDishSalesPathForMatrixRankingFollowUp(merged, previousTurn, norm);
-        applyDishSalesStructuredWireFromSemanticSlots(merged, sem, norm);
+        applyRevenueStructuredWireFromSemanticSlots(merged, sem, norm);
+        merged = pinDishSalesPathForMatrixCrossDomainProfitFollowUp(merged, previousTurn, norm, sem);
+        merged = pinDishSalesPathForMatrixRankingFollowUp(merged, previousTurn, norm, sem);
+        applyDishSalesStructuredWireFromSemanticSlots(merged, sem, norm, previousTurn);
         applyDishProfitStructuredWireFromSemanticSlots(merged, sem);
         applyWarehouseStockStructuredWireFromSemanticSlots(merged, sem);
 
@@ -255,7 +267,8 @@ public final class AiQuerySemanticLlmMergeHelper {
                         null,
                         AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
                         null,
-                        normalizedUserMessage);
+                        normalizedUserMessage,
+                        previousTurn);
         if (!StringUtils.hasText(wire)) {
             return null;
         }
@@ -284,11 +297,74 @@ public final class AiQuerySemanticLlmMergeHelper {
                         null,
                         AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
                         null,
-                        normalizedUserMessage);
+                        normalizedUserMessage,
+                        previousTurn);
         if (!StringUtils.hasText(wire)) {
             wire = AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY;
         }
         return buildDishSalesMatrixPinnedIntent(previousTurn, normalizedUserMessage, wire);
+    }
+
+    /**
+     * 销量排行 Top1 DISH 锚承接：短句「毛利是多少？」等切到 {@link AiResolvedQueryIntent#PATH_DISH_PROFIT}，
+     * 与 DS-I「那毛利呢」互斥。
+     */
+    public static AiResolvedQueryIntent buildDishSalesRankingAnchorProfitDrillDownIntent(
+            AiConversationTurnMemory previousTurn, String normalizedUserMessage) {
+        if (!DishSalesDrilldownMatrix.canAdoptDishSalesRankingAnchorProfitDrillDownFollowUp(
+                previousTurn, normalizedUserMessage)) {
+            return null;
+        }
+        String prevIntent =
+                previousTurn != null && StringUtils.hasText(previousTurn.getLastIntentCode())
+                        ? previousTurn.getLastIntentCode()
+                        : AiResolvedQueryIntent.DISH_SALES_QUERY;
+        return AiResolvedQueryIntent.builder()
+                .intentCode(AiResolvedQueryIntent.DISH_PROFIT)
+                .pathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT)
+                .topic("菜品毛利/利润")
+                .structuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY)
+                .purchaseSourceType(null)
+                .inheritedFromPreviousTurn(true)
+                .inheritedFromIntentCode(prevIntent)
+                .build();
+    }
+
+    public static AiQuerySemanticParseResult buildSyntheticSemanticForDishSalesRankingAnchorProfitDrillDown(
+            String normalizedUserMessage, AiConversationTurnMemory previousTurn, LocalDate today) {
+        if (!DishSalesDrilldownMatrix.canAdoptDishSalesRankingAnchorProfitDrillDownFollowUp(
+                previousTurn, normalizedUserMessage)) {
+            return null;
+        }
+        AiResultAnchor anchor =
+                DishSalesDrilldownMatrix.resolveUniqueDishSalesRankingAnchor(
+                        previousTurn != null ? previousTurn.getLastResultAnchors() : null);
+        if (anchor == null) {
+            return null;
+        }
+        AiQuerySemanticParseResult.TimePart timePart =
+                buildMatrixDetailTimePart(normalizedUserMessage, previousTurn, today);
+        String dishName = StringUtils.hasText(anchor.getEntityName()) ? anchor.getEntityName().trim() : null;
+        return AiQuerySemanticParseResult.builder()
+                .parseMissing(false)
+                .confidence(1.0d)
+                .followUp(true)
+                .intent(AiResolvedQueryIntent.DISH_PROFIT)
+                .intentAction("INHERIT_PREVIOUS")
+                .timeAction("INHERIT_PREVIOUS")
+                .metricAction("OVERRIDE")
+                .mentionedDishName(dishName)
+                .semanticSlots(
+                        AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                                .queryObject("DISH")
+                                .operation("DETAIL")
+                                .metric("GROSS_MARGIN")
+                                .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS)
+                                .structuredIntentDetailWire(
+                                        AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY)
+                                .build())
+                .time(timePart)
+                .build();
     }
 
     private static AiResolvedQueryIntent buildDishSalesMatrixPinnedIntent(
@@ -300,7 +376,8 @@ public final class AiQuerySemanticLlmMergeHelper {
                         null,
                         AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
                         null,
-                        normalizedUserMessage);
+                        normalizedUserMessage,
+                        previousTurn);
         if (!StringUtils.hasText(wire)) {
             wire = defaultWire;
         }
@@ -354,7 +431,8 @@ public final class AiQuerySemanticLlmMergeHelper {
                         null,
                         AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
                         null,
-                        normalizedUserMessage);
+                        normalizedUserMessage,
+                        previousTurn);
         if (!StringUtils.hasText(wire)) {
             return null;
         }
@@ -372,7 +450,8 @@ public final class AiQuerySemanticLlmMergeHelper {
                         null,
                         AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
                         null,
-                        normalizedUserMessage);
+                        normalizedUserMessage,
+                        previousTurn);
         if (!StringUtils.hasText(wire)) {
             wire = AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
         }
@@ -419,7 +498,8 @@ public final class AiQuerySemanticLlmMergeHelper {
                         null,
                         AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
                         null,
-                        normalizedUserMessage);
+                        normalizedUserMessage,
+                        previousTurn);
         if (!StringUtils.hasText(wire)) {
             wire = defaultWire;
         }
@@ -513,8 +593,44 @@ public final class AiQuerySemanticLlmMergeHelper {
         return null;
     }
 
+    /**
+     * Phase1-F：本轮 V2 已显式路由到非销量域时，销量 Matrix pin / ranking follow-up 不得覆盖 effective intent/path。
+     */
+    public static boolean blocksDishSalesMatrixOverride(AiQuerySemanticParseResult sem) {
+        if (sem == null) {
+            return false;
+        }
+        if (hasExplicitStockReduceRouteSignal(sem)) {
+            return true;
+        }
+        if (hasExplicitRevenueRouteSignal(sem)) {
+            return true;
+        }
+        if (hasExplicitWarehouseRouteSignal(sem)) {
+            return true;
+        }
+        if (v2MapsToExplicitDishProfitPath(sem)) {
+            return true;
+        }
+        if (hasExplicitBusinessOverviewRouteSignal(sem) || hasExplicitBusinessDiagnosisRouteSignal(sem)) {
+            return true;
+        }
+        if (shouldUsePurchaseSemanticFrameAdoption(sem)) {
+            return true;
+        }
+        WireIntent mapped = mapLlmIntent(sem.getIntent());
+        return mapped != null
+                && !AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(mapped.pathCode());
+    }
+
     private static AiResolvedQueryIntent pinDishSalesPathForMatrixRankingFollowUp(
-            AiResolvedQueryIntent merged, AiConversationTurnMemory previousTurn, String normalizedUserMessage) {
+            AiResolvedQueryIntent merged,
+            AiConversationTurnMemory previousTurn,
+            String normalizedUserMessage,
+            AiQuerySemanticParseResult sem) {
+        if (blocksDishSalesMatrixOverride(sem)) {
+            return merged;
+        }
         AiResolvedQueryIntent pinned =
                 buildDishSalesMatrixRankingFollowUpIntent(previousTurn, normalizedUserMessage);
         if (pinned == null) {
@@ -524,7 +640,7 @@ public final class AiQuerySemanticLlmMergeHelper {
             return pinned;
         }
         if (!AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(merged.getPathCode())) {
-            return pinned;
+            return merged;
         }
         if (!StringUtils.hasText(merged.getStructuredIntentDetail())
                 && StringUtils.hasText(pinned.getStructuredIntentDetail())) {
@@ -565,7 +681,13 @@ public final class AiQuerySemanticLlmMergeHelper {
     }
 
     private static AiResolvedQueryIntent pinDishSalesPathForMatrixCrossDomainProfitFollowUp(
-            AiResolvedQueryIntent merged, AiConversationTurnMemory previousTurn, String normalizedUserMessage) {
+            AiResolvedQueryIntent merged,
+            AiConversationTurnMemory previousTurn,
+            String normalizedUserMessage,
+            AiQuerySemanticParseResult sem) {
+        if (blocksDishSalesMatrixOverride(sem)) {
+            return merged;
+        }
         if (merged == null || previousTurn == null || !StringUtils.hasText(previousTurn.getLastPathCode())) {
             return merged;
         }
@@ -745,8 +867,160 @@ public final class AiQuerySemanticLlmMergeHelper {
      * Resolver 用于禁止误入采购 frame 校验；merge 用于禁止 {@code intentAction=INHERIT_PREVIOUS} 钉死上一轮采购 path
      *（典型：采购后「那核销呢？」）。
      */
+    public static boolean hasExplicitBusinessOverviewRouteSignal(AiQuerySemanticParseResult sem) {
+        if (sem == null) {
+            return false;
+        }
+        WireIntent mapped = mapLlmIntent(sem.getIntent());
+        if (mapped != null && AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(mapped.pathCode())) {
+            return true;
+        }
+        if (StringUtils.hasText(sem.getSemanticDomain())) {
+            String d = sem.getSemanticDomain().trim().toUpperCase(Locale.ROOT).replace('-', '_');
+            if ("BUSINESS".equals(d) || "BUSINESS_OVERVIEW".equals(d) || "OPERATIONS".equals(d)) {
+                return true;
+            }
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
+        if (ss != null && StringUtils.hasText(ss.getStructuredIntentDetailWire())) {
+            String c =
+                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                            ss.getStructuredIntentDetailWire().trim());
+            if (StringUtils.hasText(c)
+                    && AiQuerySemanticLexicon.isStructuredBusinessOverviewFourDomainOrchestrationSurface(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean hasExplicitBusinessDiagnosisRouteSignal(AiQuerySemanticParseResult sem) {
+        if (sem == null) {
+            return false;
+        }
+        WireIntent mapped = mapLlmIntent(sem.getIntent());
+        if (mapped != null && AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(mapped.pathCode())) {
+            return true;
+        }
+        if (StringUtils.hasText(sem.getSemanticDomain())) {
+            String d = sem.getSemanticDomain().trim().toUpperCase(Locale.ROOT).replace('-', '_');
+            if ("BUSINESS_DIAGNOSIS".equals(d)) {
+                return true;
+            }
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
+        if (ss != null && StringUtils.hasText(ss.getStructuredIntentDetailWire())) {
+            String c =
+                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                            ss.getStructuredIntentDetailWire().trim());
+            if (StringUtils.hasText(c) && AiQuerySemanticLexicon.isStructuredBusinessDiagnosisDetail(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean hasExplicitRevenueRouteSignal(AiQuerySemanticParseResult sem) {
+        if (sem == null) {
+            return false;
+        }
+        if (hasExplicitBusinessOverviewRouteSignal(sem) || hasExplicitBusinessDiagnosisRouteSignal(sem)) {
+            return false;
+        }
+        WireIntent mapped = mapLlmIntent(sem.getIntent());
+        if (mapped != null && AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(mapped.pathCode())) {
+            return true;
+        }
+        if (StringUtils.hasText(sem.getSemanticDomain())) {
+            String d = sem.getSemanticDomain().trim().toUpperCase(Locale.ROOT).replace('-', '_');
+            if ("REVENUE".equals(d)) {
+                return true;
+            }
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
+        if (ss != null && StringUtils.hasText(ss.getStructuredIntentDetailWire())) {
+            String c =
+                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                            ss.getStructuredIntentDetailWire().trim());
+            if (StringUtils.hasText(c) && AiQuerySemanticLexicon.isStructuredRevenueDetail(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean hasExplicitWarehouseRouteSignal(AiQuerySemanticParseResult sem) {
+        if (sem == null) {
+            return false;
+        }
+        if (hasExplicitStockReduceRouteSignal(sem)) {
+            return false;
+        }
+        if (hasExplicitBusinessOverviewRouteSignal(sem) || hasExplicitBusinessDiagnosisRouteSignal(sem)) {
+            return false;
+        }
+        WireIntent mapped = mapLlmIntent(sem.getIntent());
+        if (mapped != null && AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(mapped.pathCode())) {
+            return true;
+        }
+        if (StringUtils.hasText(sem.getSemanticDomain())) {
+            String d = sem.getSemanticDomain().trim().toUpperCase(Locale.ROOT).replace('-', '_');
+            if ("WAREHOUSE".equals(d) || "WAREHOUSE_STOCK".equals(d) || "INVENTORY".equals(d)) {
+                return true;
+            }
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
+        if (ss != null && StringUtils.hasText(ss.getStructuredIntentDetailWire())) {
+            String c =
+                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                            ss.getStructuredIntentDetailWire().trim());
+            if (StringUtils.hasText(c) && AiQuerySemanticLexicon.isStructuredWarehouseStockDetail(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean hasExplicitDishSalesRouteSignal(AiQuerySemanticParseResult sem) {
+        if (sem == null) {
+            return false;
+        }
+        if (hasExplicitStockReduceRouteSignal(sem)) {
+            return false;
+        }
+        if (hasExplicitBusinessOverviewRouteSignal(sem) || hasExplicitBusinessDiagnosisRouteSignal(sem)) {
+            return false;
+        }
+        if (v2MapsToExplicitDishProfitPath(sem)) {
+            return false;
+        }
+        WireIntent mapped = mapLlmIntent(sem.getIntent());
+        if (mapped != null && AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(mapped.pathCode())) {
+            return true;
+        }
+        if (StringUtils.hasText(sem.getSemanticDomain())) {
+            String d = sem.getSemanticDomain().trim().toUpperCase(Locale.ROOT).replace('-', '_');
+            if ("DISH_SALES".equals(d)) {
+                return true;
+            }
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
+        if (ss != null && StringUtils.hasText(ss.getStructuredIntentDetailWire())) {
+            String c =
+                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                            ss.getStructuredIntentDetailWire().trim());
+            if (StringUtils.hasText(c) && AiQuerySemanticLexicon.isStructuredDishSalesDetail(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static boolean hasExplicitStockReduceRouteSignal(AiQuerySemanticParseResult sem) {
         if (sem == null) {
+            return false;
+        }
+        if (hasExplicitBusinessOverviewRouteSignal(sem) || hasExplicitBusinessDiagnosisRouteSignal(sem)) {
             return false;
         }
         WireIntent mapped = mapLlmIntent(sem.getIntent());
@@ -778,9 +1052,20 @@ public final class AiQuerySemanticLlmMergeHelper {
                 }
             }
         }
+        AiQuerySemanticParseResult.OrchestrationDecisionCandidatePart orch = sem.getOrchestrationDecisionCandidate();
+        if (orch != null && orch.getSelectedTools() != null) {
+            for (String t : orch.getSelectedTools()) {
+                if (t != null && "stock_reduce_query".equalsIgnoreCase(t.trim())) {
+                    return true;
+                }
+            }
+        }
         return false;
     }
 
+    /**
+     * stock_reduce_query_path：Matrix + semanticSlots 驱动 wire 收口（不以 rankingType / 问句 contains 抢权）。
+     */
     private static void applyStockReduceStructuredWireFromSemanticSlots(
             AiResolvedQueryIntent qi, AiQuerySemanticParseResult sem) {
         if (qi == null || sem == null) {
@@ -789,14 +1074,11 @@ public final class AiQuerySemanticLlmMergeHelper {
         if (!AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(qi.getPathCode())) {
             return;
         }
-        AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
-        if (ss == null || !StringUtils.hasText(ss.getStructuredIntentDetailWire())) {
-            return;
-        }
-        String canon =
-                AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(ss.getStructuredIntentDetailWire().trim());
-        if (StringUtils.hasText(canon)) {
-            qi.setStructuredIntentDetail(canon);
+        String resolved =
+                StockReduceDrilldownMatrix.resolveStructuredIntentDetailWire(
+                        sem, qi.getPathCode(), qi.getStructuredIntentDetail());
+        if (StringUtils.hasText(resolved)) {
+            qi.setStructuredIntentDetail(resolved);
         }
     }
 
@@ -815,8 +1097,85 @@ public final class AiQuerySemanticLlmMergeHelper {
         String canon =
                 AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
                         sem.getSemanticSlots().getStructuredIntentDetailWire().trim());
-        if (StringUtils.hasText(canon)) {
-            qi.setStructuredIntentDetail(canon);
+        if (!StringUtils.hasText(canon)) {
+            return;
+        }
+        if (AiQuerySemanticLexicon.isStructuredBusinessOverviewFourDomainOrchestrationSurface(canon)
+                && !AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(qi.getPathCode())) {
+            return;
+        }
+        if (AiQuerySemanticLexicon.isStructuredBusinessDiagnosisDetail(canon)
+                && !AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(qi.getPathCode())) {
+            return;
+        }
+        if (AiQuerySemanticLexicon.isStructuredStockReduceDetail(canon)
+                && !AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(qi.getPathCode())) {
+            return;
+        }
+        if (AiQuerySemanticLexicon.isStructuredWarehouseStockDetail(canon)
+                && !AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(qi.getPathCode())) {
+            return;
+        }
+        if (AiQuerySemanticLexicon.isStructuredDishSalesDetail(canon)
+                && !AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(qi.getPathCode())) {
+            return;
+        }
+        if (AiQuerySemanticLexicon.isStructuredRevenueDetail(canon)
+                && !AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(qi.getPathCode())) {
+            return;
+        }
+        if (AiQuerySemanticLexicon.isNonOverviewDishProfitStructuredDetail(canon)
+                && !AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(qi.getPathCode())) {
+            return;
+        }
+        if (AiQuerySemanticLexicon.isPurchaseOverviewDomainCanonicalWire(canon)
+                && !AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(qi.getPathCode())) {
+            return;
+        }
+        qi.setStructuredIntentDetail(canon);
+    }
+
+    private static void applyBusinessOverviewStructuredWireFromSemanticSlots(
+            AiResolvedQueryIntent qi, AiQuerySemanticParseResult sem) {
+        if (qi == null || sem == null) {
+            return;
+        }
+        if (!AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(qi.getPathCode())) {
+            return;
+        }
+        String resolved =
+                BusinessOverviewDrilldownMatrix.resolveStructuredIntentDetailWire(
+                        sem,
+                        AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW,
+                        qi.getStructuredIntentDetail());
+        if (StringUtils.hasText(resolved)
+                && !BusinessOverviewDrilldownMatrix.isMatrixWireMissing(resolved)) {
+            qi.setStructuredIntentDetail(resolved);
+        }
+    }
+
+    private static void applyBusinessDiagnosisStructuredWireFromSemanticSlots(
+            AiResolvedQueryIntent qi, AiQuerySemanticParseResult sem, String normalizedUserMessage) {
+        if (qi == null || sem == null) {
+            return;
+        }
+        if (!AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(qi.getPathCode())) {
+            return;
+        }
+        String resolved =
+                BusinessDiagnosisDrilldownMatrix.resolveStructuredIntentDetailWire(
+                        sem, AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS, qi.getStructuredIntentDetail());
+        if (StringUtils.hasText(resolved)
+                && !BusinessDiagnosisDrilldownMatrix.isMatrixWireMissing(resolved)) {
+            qi.setStructuredIntentDetail(resolved);
+        }
+        BusinessDiagnosisDrilldownMatrixRow msgRow =
+                BusinessDiagnosisDrilldownMatrix.resolveRowFromMessage(normalizedUserMessage);
+        if (msgRow != null
+                && StringUtils.hasText(msgRow.getStructuredIntentDetailWire())
+                && BusinessDiagnosisDrilldownMatrix.shouldPreferMessageRowOverWire(
+                        qi.getStructuredIntentDetail(), msgRow)) {
+            qi.setStructuredIntentDetail(msgRow.getStructuredIntentDetailWire());
         }
     }
 
@@ -846,7 +1205,10 @@ public final class AiQuerySemanticLlmMergeHelper {
      * dish_sales_query_path：Matrix P1 驱动 wire 收口（最低销量 / 跨域毛利追问不得 silent fallback 为毛利排行）。
      */
     private static void applyDishSalesStructuredWireFromSemanticSlots(
-            AiResolvedQueryIntent qi, AiQuerySemanticParseResult sem, String normalizedUserMessage) {
+            AiResolvedQueryIntent qi,
+            AiQuerySemanticParseResult sem,
+            String normalizedUserMessage,
+            AiConversationTurnMemory previousTurn) {
         if (qi == null || sem == null) {
             return;
         }
@@ -855,10 +1217,27 @@ public final class AiQuerySemanticLlmMergeHelper {
         }
         String resolved =
                 DishSalesDrilldownMatrix.resolveStructuredIntentDetailWire(
-                        sem, qi.getPathCode(), qi.getStructuredIntentDetail(), normalizedUserMessage);
+                        sem, qi.getPathCode(), qi.getStructuredIntentDetail(), normalizedUserMessage, previousTurn);
         if (StringUtils.hasText(resolved)) {
             qi.setStructuredIntentDetail(resolved);
         }
+    }
+
+    /** V2 已明确路由到 {@link AiResolvedQueryIntent#PATH_DISH_PROFIT} 时，销量 utterance pin 不得覆盖。 */
+    public static boolean v2MapsToExplicitDishProfitPath(AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.isParseMissing()) {
+            return false;
+        }
+        WireIntent mapped = mapLlmIntent(sem.getIntent());
+        return mapped != null && AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(mapped.pathCode());
+    }
+
+    private static boolean v2MapsToExplicitDishProfitPath(
+            AiQuerySemanticParseResult sem, double minConfidence) {
+        if (sem == null || sem.isParseMissing() || !sem.isStructuralConfidenceOk(minConfidence)) {
+            return false;
+        }
+        return v2MapsToExplicitDishProfitPath(sem);
     }
 
     private static void applyDishProfitStructuredWireFromSemanticSlots(
@@ -893,26 +1272,21 @@ public final class AiQuerySemanticLlmMergeHelper {
      */
     private static String resolveWarehouseStockStructuredWire(
             AiQuerySemanticParseResult sem, String currentStructuredDetail) {
-        String fromSlots = warehouseStructuredWireFromSemanticSlots(sem);
-        if (StringUtils.hasText(fromSlots)) {
-            return fromSlots;
+        String resolved =
+                WarehouseDrilldownMatrix.resolveStructuredIntentDetailWire(
+                        sem,
+                        AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK,
+                        currentStructuredDetail);
+        if (StringUtils.hasText(resolved)) {
+            return resolved;
         }
-        String fromRanking = warehouseStructuredWireFromMetricRankingType(sem);
-        if (StringUtils.hasText(fromRanking)) {
-            return fromRanking;
+        if (!AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
+            String fromRanking = warehouseStructuredWireFromMetricRankingType(sem);
+            if (StringUtils.hasText(fromRanking)) {
+                return fromRanking;
+            }
         }
-        String currentCanon =
-                StringUtils.hasText(currentStructuredDetail)
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                                currentStructuredDetail.trim())
-                        : null;
-        if (AiQuerySemanticLexicon.isStructuredWarehouseStockDetail(currentCanon)) {
-            return currentCanon;
-        }
-        if (AiQuerySemanticLexicon.isStructuredStockReduceDetail(currentCanon)) {
-            return AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_STOCK_OVERVIEW;
-        }
-        return AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_STOCK_OVERVIEW;
+        return null;
     }
 
     private static String warehouseStructuredWireFromSemanticSlots(AiQuerySemanticParseResult sem) {

@@ -3,7 +3,9 @@ package com.nongxinle.ai.harness.followup;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
+import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import lombok.experimental.UtilityClass;
 import org.springframework.util.StringUtils;
 
@@ -236,27 +238,46 @@ public final class RevenueDrilldownMatrix {
         if (!AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(pathCode)) {
             return null;
         }
-        String fromMatrixShape = inferMatrixWireFromSemantics(sem, normalizedUserMessage);
-        if (StringUtils.hasText(fromMatrixShape)) {
-            return fromMatrixShape;
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
+            return null;
         }
-        String canon =
+        if (AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
+            String slotCanon =
+                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                            sem.getSemanticSlots().getStructuredIntentDetailWire().trim());
+            return adoptWireViaMatrix(pathCode, slotCanon, sem, normalizedUserMessage);
+        }
+        String fromShape = inferMatrixWireFromSemantics(sem, normalizedUserMessage);
+        if (StringUtils.hasText(fromShape)) {
+            return adoptWireViaMatrix(pathCode, fromShape, sem, normalizedUserMessage);
+        }
+        String mergedCanon =
                 StringUtils.hasText(mergedStructuredDetail)
                         ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
                                 mergedStructuredDetail.trim())
                         : null;
-        if (canon == null && sem != null && sem.getSemanticSlots() != null) {
-            String slotRaw = sem.getSemanticSlots().getStructuredIntentDetailWire();
-            if (StringUtils.hasText(slotRaw)) {
-                canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(slotRaw.trim());
-            }
+        if (StringUtils.hasText(mergedCanon)
+                && AiQuerySemanticLexicon.isStructuredRevenueDetail(mergedCanon)) {
+            return adoptWireViaMatrix(pathCode, mergedCanon, sem, normalizedUserMessage);
         }
-        if (canon == null) {
+        return null;
+    }
+
+    private static String adoptWireViaMatrix(
+            String pathCode,
+            String canonWire,
+            AiQuerySemanticParseResult sem,
+            String normalizedUserMessage) {
+        if (!StringUtils.hasText(canonWire)) {
             return null;
         }
-        canon = correctMislabeledStoreRankingCanon(canon, sem, normalizedUserMessage);
-        RevenueDrilldownMatrixRow row = resolveMatrixRow(pathCode, canon, sem, normalizedUserMessage);
-        return row != null ? row.getStructuredIntentDetailWire() : canon;
+        String msgForCorrection =
+                AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)
+                        ? ""
+                        : normalizedUserMessage;
+        String corrected = correctMislabeledStoreRankingCanon(canonWire, sem, msgForCorrection);
+        RevenueDrilldownMatrixRow row = resolveMatrixRow(pathCode, corrected, sem, normalizedUserMessage);
+        return row != null ? row.getStructuredIntentDetailWire() : corrected;
     }
 
     /**
@@ -285,15 +306,48 @@ public final class RevenueDrilldownMatrix {
 
     private static String inferMatrixWireFromSemantics(
             AiQuerySemanticParseResult sem, String normalizedUserMessage) {
-        if (isTimeFollowupShape(sem, normalizedUserMessage)
-                || isTimeFollowupFromMessage(normalizedUserMessage)) {
+        String fromSlots = inferMatrixWireFromSemanticSlots(sem);
+        if (StringUtils.hasText(fromSlots)) {
+            return fromSlots;
+        }
+        if (isTimeFollowupShape(sem, null)
+                && !AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
             return AiQuerySemanticLexicon.STRUCTURED_REVENUE_OVERVIEW_SUMMARY;
         }
-        String fromMsg = inferMatrixWireFromNormalizedQuestion(normalizedUserMessage);
-        if (fromMsg != null) {
-            return fromMsg;
+        if (!AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
+            String fromRanking = inferWireFromMetricRankingTypeCompat(sem);
+            if (StringUtils.hasText(fromRanking)) {
+                return fromRanking;
+            }
+            String fromMsg = inferMatrixWireFromNormalizedQuestion(normalizedUserMessage);
+            if (StringUtils.hasText(fromMsg)) {
+                return fromMsg;
+            }
+            if (isTimeFollowupFromMessage(normalizedUserMessage)) {
+                return AiQuerySemanticLexicon.STRUCTURED_REVENUE_OVERVIEW_SUMMARY;
+            }
         }
-        return inferMatrixWireFromSemanticSlots(sem);
+        return null;
+    }
+
+    /** compat/debug：slots 无 canonical wire 时，才用 {@code metric.rankingType} 推断。 */
+    private static String inferWireFromMetricRankingTypeCompat(AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.getMetric() == null) {
+            return null;
+        }
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
+            return null;
+        }
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitBusinessOverviewRouteSignal(sem)
+                || AiQuerySemanticLlmMergeHelper.hasExplicitBusinessDiagnosisRouteSignal(sem)) {
+            return null;
+        }
+        String rt = sem.getMetric().getRankingType();
+        if (!StringUtils.hasText(rt)) {
+            return null;
+        }
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(rt.trim());
+        return AiQuerySemanticLexicon.isStructuredRevenueDetail(canon) ? canon : null;
     }
 
     /**

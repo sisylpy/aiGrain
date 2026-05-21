@@ -1,5 +1,10 @@
 # AI 查询语义词典（公共层 v1）
 
+> **【历史口语附录 · 非 wire 权威源】**
+> - 本文件为**历史口语附录 / 采购早期参考**，便于对照用户说法与数据库口径。
+> - **不是**当前 `structuredIntentDetailWire` / canonical wire 的权威源。
+> - 当前 wire 权威以 **`src/main/resources/ai-prompts/semantic/semantic-output-schema.md`**、**`AiQuerySemanticLexicon.java`**、各 **`*-drilldown-matrix-contract.md`** 及生产 Prompt **`query_semantic_parser.v2.md`** 为准。
+
 本文件与 **`AiFollowUpResolver` / `AiResolvedQueryContext`** 配套：统一**用户口语 → domain / path / 结构化意图 / 数据库口径**，避免各 Agent 重复猜词。
 
 扩展计划见 **`docs/TODO_MULTI_AGENT.md`**。

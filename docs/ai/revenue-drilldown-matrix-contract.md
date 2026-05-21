@@ -1,5 +1,7 @@
 # 营业额 / 营收 Matrix P1 契约（Harness Engineering）
 
+> **契约交叉引用**：wire 登记七步见 [`semantic-output-schema.md`](../../src/main/resources/ai-prompts/semantic/semantic-output-schema.md)；八域成熟度见 [`phase1-semantic-mainline-acceptance-summary.md`](./phase1-semantic-mainline-acceptance-summary.md) §4；Composer/fallback 见 [`harness-composer-architecture.md`](./harness-composer-architecture.md) §2.7。
+
 实现：`RevenueDrilldownMatrix` / `RevenueDrilldownMatrixRow`  
 Replay case：`REVENUE_MATRIX_P1`
 

@@ -156,6 +156,20 @@ public class AiConversationTurnMemory {
                 }
             }
         }
+        if (!StringUtils.hasText(dishForMemory) && state.getDishSalesAnswerPlan() != null) {
+            List<AiResultAnchor> das = state.getDishSalesAnswerPlan().getResultAnchors();
+            if (das != null) {
+                for (AiResultAnchor a : das) {
+                    if (a != null
+                            && AiResultAnchor.ENTITY_TYPE_DISH.equalsIgnoreCase(
+                                    StringUtils.hasText(a.getEntityType()) ? a.getEntityType().trim() : "")
+                            && StringUtils.hasText(a.getEntityName())) {
+                        dishForMemory = trimSummary(a.getEntityName());
+                        break;
+                    }
+                }
+            }
+        }
 
         AiQuerySemanticParseResult.SemanticSlotsPart lastSlots = null;
         if (ctx != null && ctx.getQuerySemanticParse() != null) {
@@ -284,6 +298,13 @@ public class AiConversationTurnMemory {
         }
         if (state.getDishProfitAnswerPlan() != null && state.getDishProfitAnswerPlan().getResultAnchors() != null) {
             for (AiResultAnchor a : state.getDishProfitAnswerPlan().getResultAnchors()) {
+                if (a != null) {
+                    merged.add(a);
+                }
+            }
+        }
+        if (state.getDishSalesAnswerPlan() != null && state.getDishSalesAnswerPlan().getResultAnchors() != null) {
+            for (AiResultAnchor a : state.getDishSalesAnswerPlan().getResultAnchors()) {
                 if (a != null) {
                     merged.add(a);
                 }

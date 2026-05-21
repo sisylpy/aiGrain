@@ -1,5 +1,7 @@
 # DishSales 菜品销量下钻矩阵契约（Phase 1）
 
+> **契约交叉引用**：wire 登记七步见 [`semantic-output-schema.md`](../../src/main/resources/ai-prompts/semantic/semantic-output-schema.md)；八域成熟度见 [`phase1-semantic-mainline-acceptance-summary.md`](./phase1-semantic-mainline-acceptance-summary.md) §4；Composer/fallback 见 [`harness-composer-architecture.md`](./harness-composer-architecture.md) §2.7。
+
 > 执行链：`semanticSlots` / `structuredIntentDetailWire` → **DishSalesDrilldownMatrix** → Tool `dish_profit_analysis` → **DishSalesAnswerPlan** → Composer 只读 Plan（无 toolResults 拼事实）。
 
 ## 矩阵行（A–J）

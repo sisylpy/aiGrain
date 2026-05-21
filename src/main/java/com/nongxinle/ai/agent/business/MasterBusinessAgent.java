@@ -103,12 +103,28 @@ public class MasterBusinessAgent {
                 new AgentRun(BusinessAgentNames.PURCHASE_OVERVIEW, AiBusinessToolIds.PURCHASE_OVERVIEW),
                 new AgentRun(BusinessAgentNames.STOCK_REDUCE_QUERY, AiBusinessToolIds.STOCK_REDUCE_QUERY),
                 new AgentRun(BusinessAgentNames.DISH_PROFIT_ANALYSIS, AiBusinessToolIds.DISH_PROFIT_ANALYSIS));
+        List<String> dataPlanToolIds =
+                state.getDataPlanTools() != null ? new ArrayList<>(state.getDataPlanTools()) : List.of();
+        dbg.put("businessOverviewDataPlanTools", dataPlanToolIds);
 
         boolean anyDomainOk = false;
         try {
             int stepOrder = 0;
             for (AgentRun step : sequence) {
                 stepOrder++;
+                if (!dataPlanToolIds.isEmpty() && !dataPlanToolIds.contains(step.toolIdSkipWhenFailed())) {
+                    warn.add("agent_skipped_not_in_data_plan:" + step.beanName());
+                    bizOverviewRows.add(
+                            businessOverviewTraceRowSkipped(
+                                    step.beanName(),
+                                    step.toolIdSkipWhenFailed(),
+                                    businessOverviewDomainKey(step.toolIdSkipWhenFailed()),
+                                    stepOrder,
+                                    "SKIPPED_NOT_IN_DATA_PLAN",
+                                    "tool not in DataPlanner matrix plan"));
+                    stripOverviewToolEnvelope(state, step.toolIdSkipWhenFailed(), null);
+                    continue;
+                }
                 String domainKey = businessOverviewDomainKey(step.toolIdSkipWhenFailed());
                 Optional<BusinessSubAgent> agentOpt = registry.getAgent(step.beanName());
                 if (agentOpt.isEmpty()) {

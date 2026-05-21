@@ -10,6 +10,10 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrixRow;
+import com.nongxinle.ai.harness.followup.BusinessOverviewDrilldownMatrix;
+import com.nongxinle.ai.harness.followup.BusinessOverviewDrilldownMatrixRow;
 import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
 import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
 import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrixRow;
@@ -183,18 +187,34 @@ final class AiHarnessTimeScopeSummaryAppender {
             out.put("metric", AiHarnessSummaryUtils.blankToNull(slotPart.getMetric()));
             out.put("sourceFacet", AiHarnessSummaryUtils.blankToNull(slotPart.getSourceFacet()));
             out.put("anchorPolicy", AiHarnessSummaryUtils.blankToNull(slotPart.getAnchorPolicy()));
+            out.put(
+                    "structuredIntentDetailWire",
+                    AiHarnessSummaryUtils.blankToNull(
+                            StringUtils.hasText(slotPart.getStructuredIntentDetailWire())
+                                    ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                            slotPart.getStructuredIntentDetailWire().trim())
+                                    : null));
+            out.put("answerPlanType", AiHarnessSummaryUtils.blankToNull(slotPart.getAnswerPlanType()));
         } else {
             out.put("queryObject", null);
             out.put("operation", null);
             out.put("metric", null);
             out.put("sourceFacet", null);
             out.put("anchorPolicy", null);
+            out.put("structuredIntentDetailWire", null);
+            out.put("answerPlanType", null);
         }
         String canonStructuredWire =
                 qi != null && StringUtils.hasText(qi.getStructuredIntentDetail())
                         ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
                                 qi.getStructuredIntentDetail().trim())
                         : null;
+        if (!StringUtils.hasText(canonStructuredWire) && slotPart != null) {
+            Object slotWire = out.get("structuredIntentDetailWire");
+            if (slotWire instanceof String sw && StringUtils.hasText(sw)) {
+                canonStructuredWire = sw;
+            }
+        }
         out.put("canonicalStructuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(canonStructuredWire));
 
         String effectivePath = AiHarnessSummaryUtils.blankToNull(ctx.getEffectivePathCode());
@@ -316,6 +336,56 @@ final class AiHarnessTimeScopeSummaryAppender {
             out.put("dishSalesMatrixRowId", null);
             out.put("dishSalesMatrixWireMissing", null);
             out.put("dishSalesKnownGap", null);
+        }
+
+        if (AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(effectivePath)) {
+            BusinessOverviewDrilldownMatrixRow overviewRow =
+                    BusinessOverviewDrilldownMatrix.resolveMatrixRow(effectivePath, canonStructuredWire);
+            out.put("businessOverviewMatrixRowId", overviewRow == null ? null : overviewRow.getRowId());
+            out.put(
+                    "businessOverviewMatrixMatched",
+                    overviewRow != null && !BusinessOverviewDrilldownMatrix.isMatrixWireMissing(canonStructuredWire));
+            out.put(
+                    "businessOverviewMatrixWireMissing",
+                    BusinessOverviewDrilldownMatrix.isMatrixWireMissing(canonStructuredWire)
+                            ? BusinessOverviewDrilldownMatrix.MATRIX_WIRE_MISSING
+                            : null);
+            out.put("plannerToolsSource", "business_overview_matrix");
+            out.put(
+                    "matrixPlannerTools",
+                    new ArrayList<>(BusinessOverviewDrilldownMatrix.defaultFourDomainPlannerTools()));
+        } else {
+            out.put("businessOverviewMatrixRowId", null);
+            out.put("businessOverviewMatrixMatched", null);
+            out.put("businessOverviewMatrixWireMissing", null);
+        }
+
+        if (AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(effectivePath)) {
+            BusinessDiagnosisDrilldownMatrixRow diagnosisRow =
+                    BusinessDiagnosisDrilldownMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem);
+            out.put("businessDiagnosisMatrixRowId", diagnosisRow == null ? null : diagnosisRow.getRowId());
+            out.put(
+                    "businessDiagnosisMatrixMatched",
+                    diagnosisRow != null
+                            && !BusinessDiagnosisDrilldownMatrix.isMatrixWireMissing(canonStructuredWire));
+            out.put(
+                    "businessDiagnosisMatrixWireMissing",
+                    BusinessDiagnosisDrilldownMatrix.isMatrixWireMissing(canonStructuredWire)
+                            ? BusinessDiagnosisDrilldownMatrix.MATRIX_WIRE_MISSING
+                            : null);
+            out.put(
+                    "plannerToolsSource",
+                    BusinessDiagnosisDrilldownMatrix.isDualDomainPurchaseStockWire(canonStructuredWire)
+                            ? "business_diagnosis_matrix_dual_domain"
+                            : "business_diagnosis_matrix_four_domain");
+            out.put(
+                    "matrixPlannerTools",
+                    new ArrayList<>(
+                            BusinessDiagnosisDrilldownMatrix.plannerToolsForWire(canonStructuredWire)));
+        } else {
+            out.put("businessDiagnosisMatrixRowId", null);
+            out.put("businessDiagnosisMatrixMatched", null);
+            out.put("businessDiagnosisMatrixWireMissing", null);
         }
 
         out.put("mentionedStore", resolveMentionedStore(ctx));

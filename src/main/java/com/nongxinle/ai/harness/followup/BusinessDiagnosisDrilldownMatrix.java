@@ -4,9 +4,13 @@ import com.nongxinle.ai.agent.business.BusinessDiagnosisAgentV1;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
+import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.dto.business.DiagnosisPlan;
+import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
@@ -30,6 +34,8 @@ import java.util.regex.Pattern;
  */
 @UtilityClass
 public final class BusinessDiagnosisDrilldownMatrix {
+
+    public static final String MATRIX_WIRE_MISSING = "MATRIX_WIRE_MISSING";
 
     public static final String ANCHOR_STRATEGY_NONE = "NONE";
     public static final String ANCHOR_STRATEGY_EMIT_STORE = "EMIT_STORE";
@@ -148,6 +154,19 @@ public final class BusinessDiagnosisDrilldownMatrix {
                     ANCHOR_STRATEGY_CONSUME_STORE,
                     false,
                     true,
+                    null);
+
+    public static final BusinessDiagnosisDrilldownMatrixRow STORE_COMPARE_DIAGNOSIS =
+            row(
+                    "BD-H",
+                    "STORE",
+                    "COMPARE",
+                    AiQuerySemanticLexicon.STRUCTURED_BUSINESS_STORE_COMPARE_DIAGNOSIS,
+                    FACET_SUMMARY,
+                    DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS,
+                    ANCHOR_STRATEGY_NONE,
+                    false,
+                    false,
                     null);
 
     private static BusinessDiagnosisDrilldownMatrixRow row(
@@ -344,6 +363,12 @@ public final class BusinessDiagnosisDrilldownMatrix {
         if (AiQuerySemanticLexicon.isBusinessDiagnosisSummaryStructuredDetail(canonical)) {
             return SUMMARY;
         }
+        if (AiQuerySemanticLexicon.STRUCTURED_BUSINESS_STORE_COMPARE_DIAGNOSIS.equals(canonical)) {
+            return STORE_COMPARE_DIAGNOSIS;
+        }
+        if (isDualDomainPurchaseStockWire(canonical)) {
+            return SUMMARY;
+        }
         return null;
     }
 
@@ -523,6 +548,205 @@ public final class BusinessDiagnosisDrilldownMatrix {
         return msg.contains("经营诊断")
                 || msg.contains("做一下诊断")
                 || msg.contains("做经营诊断");
+    }
+
+    public static BusinessDiagnosisDrilldownMatrixRow resolveMatrixRow(
+            String pathCode, String wire, AiQuerySemanticParseResult sem) {
+        if (!AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(pathCode)) {
+            return null;
+        }
+        String canon =
+                StringUtils.hasText(wire)
+                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim())
+                        : null;
+        if (!StringUtils.hasText(canon)) {
+            return inferRowFromSemanticSlots(sem);
+        }
+        BusinessDiagnosisDrilldownMatrixRow row = rowFromCanonicalStructuredWire(canon);
+        if (row != null) {
+            return row;
+        }
+        if (AiQuerySemanticLexicon.isStructuredBusinessDiagnosisDetail(canon)) {
+            return SUMMARY;
+        }
+        return null;
+    }
+
+    /**
+     * business_diagnosis_path：semanticSlots → Matrix canonical wire。
+     */
+    public static String resolveStructuredIntentDetailWire(
+            AiQuerySemanticParseResult sem, String pathCode, String mergedStructuredDetail) {
+        if (!AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(pathCode)) {
+            return null;
+        }
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
+            return null;
+        }
+        if (AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
+            String slotCanon =
+                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                            sem.getSemanticSlots().getStructuredIntentDetailWire().trim());
+            return adoptWireViaMatrix(pathCode, slotCanon, sem);
+        }
+        String fromShape = inferMatrixWireFromSemanticSlots(sem);
+        if (StringUtils.hasText(fromShape)) {
+            return adoptWireViaMatrix(pathCode, fromShape, sem);
+        }
+        if (!AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
+            String fromCompat = inferWireFromMetricCompat(sem);
+            if (StringUtils.hasText(fromCompat)) {
+                return adoptWireViaMatrix(pathCode, fromCompat, sem);
+            }
+        }
+        String mergedCanon =
+                StringUtils.hasText(mergedStructuredDetail)
+                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                mergedStructuredDetail.trim())
+                        : null;
+        if (StringUtils.hasText(mergedCanon)
+                && AiQuerySemanticLexicon.isStructuredBusinessDiagnosisDetail(mergedCanon)) {
+            return adoptWireViaMatrix(pathCode, mergedCanon, sem);
+        }
+        if (StringUtils.hasText(mergedCanon)) {
+            return mergedCanon;
+        }
+        return MATRIX_WIRE_MISSING;
+    }
+
+    private static String adoptWireViaMatrix(
+            String pathCode, String canonWire, AiQuerySemanticParseResult sem) {
+        if (!StringUtils.hasText(canonWire)) {
+            return MATRIX_WIRE_MISSING;
+        }
+        BusinessDiagnosisDrilldownMatrixRow row = resolveMatrixRow(pathCode, canonWire, sem);
+        return row != null ? row.getStructuredIntentDetailWire() : canonWire;
+    }
+
+    public static String inferMatrixWireFromSemanticSlots(AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.getSemanticSlots() == null) {
+            return null;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
+        String op = normalizeMatrixToken(s.getOperation());
+        String qo = normalizeMatrixToken(s.getQueryObject());
+        String metric = normalizeMatrixToken(s.getMetric());
+        boolean businessMetric =
+                metric != null
+                        && (metric.contains("BUSINESS")
+                                || "BUSINESS_STATUS".equals(metric)
+                                || "OPERATION_STATUS".equals(metric));
+        if ("RANKING".equals(op)
+                && ("STORE".equals(qo) || "BUSINESS".equals(qo))
+                && businessMetric) {
+            return STORE_PRIORITY_RANKING.getStructuredIntentDetailWire();
+        }
+        if ("COMPARE".equals(op)
+                && ("STORE".equals(qo) || "BUSINESS".equals(qo))
+                && businessMetric) {
+            return STORE_COMPARE_DIAGNOSIS.getStructuredIntentDetailWire();
+        }
+        if (("SUMMARY".equals(op) || "DIAGNOSIS".equals(op) || "OVERVIEW".equals(op))
+                && businessMetric) {
+            return SUMMARY.getStructuredIntentDetailWire();
+        }
+        if ("EXPLAIN".equals(op) && "STORE".equals(qo)) {
+            if (metric != null && metric.contains("PURCHASE")) {
+                return STORE_DOMAIN_PURCHASE.getStructuredIntentDetailWire();
+            }
+            if (metric != null && (metric.contains("STOCK") || metric.contains("OUTBOUND"))) {
+                return STORE_DOMAIN_STOCK_REDUCE.getStructuredIntentDetailWire();
+            }
+            if (metric != null && (metric.contains("DISH") || metric.contains("PROFIT"))) {
+                return STORE_DOMAIN_DISH_PROFIT.getStructuredIntentDetailWire();
+            }
+        }
+        return null;
+    }
+
+    private static BusinessDiagnosisDrilldownMatrixRow inferRowFromSemanticSlots(
+            AiQuerySemanticParseResult sem) {
+        String wire = inferMatrixWireFromSemanticSlots(sem);
+        if (!StringUtils.hasText(wire)) {
+            return null;
+        }
+        return rowFromCanonicalStructuredWire(wire);
+    }
+
+    private static String inferWireFromMetricCompat(AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.getMetric() == null) {
+            return null;
+        }
+        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
+            return null;
+        }
+        String primary = sem.getMetric().getPrimaryMetric();
+        if (StringUtils.hasText(primary)) {
+            String u = primary.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+            if (u.contains("REVENUE") || u.contains("SALES") || u.contains("TURNOVER")) {
+                return null;
+            }
+            if (u.contains("BUSINESS") || u.contains("OPERATION") || "BUSINESS_STATUS".equals(u)) {
+                return SUMMARY.getStructuredIntentDetailWire();
+            }
+        }
+        String rt = sem.getMetric().getRankingType();
+        if (!StringUtils.hasText(rt)) {
+            return null;
+        }
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(rt.trim());
+        if (AiQuerySemanticLexicon.isStructuredBusinessDiagnosisDetail(canon)) {
+            return canon;
+        }
+        return null;
+    }
+
+    public static String targetAnswerPlanTypeForWire(String wire) {
+        BusinessDiagnosisDrilldownMatrixRow row =
+                resolveMatrixRow(
+                        AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS, wire, null);
+        if (row == null) {
+            return null;
+        }
+        if (StringUtils.hasText(row.getDiagnosisQuestionType())) {
+            return row.getDiagnosisQuestionType();
+        }
+        return DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS;
+    }
+
+    public static boolean isDualDomainPurchaseStockWire(String wire) {
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire);
+        if (!StringUtils.hasText(canon)) {
+            return false;
+        }
+        return AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STOCK_REDUCE_MISMATCH.equals(canon)
+                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SLOW_MOVING_RISK.equals(canon)
+                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_INVENTORY_OVERSTOCK_RISK.equals(canon)
+                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_FRESHNESS_RISK.equals(canon);
+    }
+
+    /**
+     * 诊断 Planner 工具表：双域风险 wire 仅采购+出库；其余默认四域（权限裁剪前）。
+     */
+    public static List<String> plannerToolsForWire(String wire) {
+        if (isDualDomainPurchaseStockWire(wire)) {
+            List<String> dual = new ArrayList<>();
+            dual.add(AiBusinessToolIds.PURCHASE_OVERVIEW);
+            dual.add(AiBusinessToolIds.STOCK_REDUCE_QUERY);
+            return dual;
+        }
+        return new ArrayList<>(AiBusinessToolIds.BUSINESS_OVERVIEW_MULTI_AGENT_DOMAIN_TOOLS);
+    }
+
+    public static boolean isMatrixWireMissing(String wire) {
+        return MATRIX_WIRE_MISSING.equals(wire);
+    }
+
+    private static String normalizeMatrixToken(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        return raw.trim().toUpperCase(Locale.ROOT).replace('-', '_');
     }
 
     public static void applyResolvedRow(

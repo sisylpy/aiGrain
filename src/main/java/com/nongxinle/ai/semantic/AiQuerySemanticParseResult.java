@@ -113,6 +113,11 @@ public class AiQuerySemanticParseResult {
          * wire；业务意图源，禁止由 {@link MetricPart#getRankingType()} 反推。
          */
         private String structuredIntentDetailWire;
+        /**
+         * AnswerPlan 类型提示（采购/出库等域）；与 wire 对齐，观测用；
+         * 服务端以 {@code structuredIntentDetailWire} 为准，Matrix/Builder 推导。
+         */
+        private String answerPlanType;
     }
 
     private String intent;

@@ -51,5 +51,8 @@ public class DishSalesAnswerPlan {
     private String summary;
 
     @Builder.Default
+    private List<AiResultAnchor> resultAnchors = new ArrayList<>();
+
+    @Builder.Default
     private Map<String, Object> debug = new LinkedHashMap<>();
 }
