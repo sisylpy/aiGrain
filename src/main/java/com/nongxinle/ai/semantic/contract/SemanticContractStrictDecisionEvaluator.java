@@ -157,7 +157,7 @@ public final class SemanticContractStrictDecisionEvaluator {
         return SemanticContractStrictDecision.builder()
                 .strictEnabled(strictEnabled)
                 .modelContractViolation(true)
-                .enforceClarification(strictEnabled)
+                .enforceClarification(enforceClarificationFor(strictEnabled, code))
                 .violationCode(code)
                 .violationReason(reason)
                 .selectedDomain(selectedDomain)
@@ -174,5 +174,22 @@ public final class SemanticContractStrictDecisionEvaluator {
 
     private static String blank(String s) {
         return StringUtils.hasText(s) ? s.trim() : null;
+    }
+
+    private static boolean enforceClarificationFor(boolean strictEnabled, SemanticContractViolationCode code) {
+        return strictEnabled || isContractSelectionViolation(code);
+    }
+
+    static boolean isContractSelectionViolation(SemanticContractViolationCode code) {
+        if (code == null) {
+            return false;
+        }
+        return switch (code) {
+            case MISSING_SELECTED_CONTRACT_ID,
+                    UNSUPPORTED_CONTRACT,
+                    AMBIGUOUS_CONTRACT_MATCH,
+                    ANCHOR_CONTRACT_MISMATCH -> true;
+            default -> false;
+        };
     }
 }

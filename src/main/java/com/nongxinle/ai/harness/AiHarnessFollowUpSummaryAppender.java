@@ -55,6 +55,9 @@ final class AiHarnessFollowUpSummaryAppender {
 
         SemanticContractValidationDebug validation = ctx.getSemanticContractValidation();
         out.put(
+                "selectedContractId",
+                slots == null ? null : AiHarnessSummaryUtils.blankToNull(slots.getSelectedContractId()));
+        out.put(
                 "matchedContractId",
                 validation == null
                         ? AiHarnessSummaryUtils.blankToNull(exec.getMatchedContractId())

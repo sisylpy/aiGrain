@@ -169,6 +169,33 @@ public final class SemanticParserInputBuilder {
             SemanticParserAllowedOutputContract contract) {
         LinkedHashMap<String, Object> m = new LinkedHashMap<>();
         m.put("selectedDomain", contract.getSelectedDomain());
+        if (contract.getAllowedContracts() != null) {
+            List<LinkedHashMap<String, Object>> entries = new ArrayList<>();
+            for (SemanticParserAllowedOutputContract.AllowedContractEntry e : contract.getAllowedContracts()) {
+                if (e == null) {
+                    continue;
+                }
+                LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+                row.put("contractId", e.getContractId());
+                row.put("wire", e.getWire());
+                row.put("queryObject", e.getQueryObject());
+                row.put("queryObjects", e.getQueryObjects());
+                row.put("operation", e.getOperation());
+                row.put("operations", e.getOperations());
+                row.put("metric", e.getMetric());
+                row.put("metrics", e.getMetrics());
+                row.put("sourceFacet", e.getSourceFacet());
+                row.put("detailWanted", e.getDetailWanted());
+                row.put("answerPlanType", e.getAnswerPlanType());
+                row.put("requiresAnchor", e.getRequiresAnchor());
+                row.put("anchorType", e.getAnchorType());
+                row.put("selectedTools", e.getSelectedTools());
+                row.put("description", e.getDescription());
+                row.put("examples", e.getExamples());
+                entries.add(row);
+            }
+            m.put("allowedContracts", entries);
+        }
         m.put("allowedWires", contract.getAllowedWires());
         m.put("allowedQueryObjects", contract.getAllowedQueryObjects());
         m.put("allowedOperations", contract.getAllowedOperations());

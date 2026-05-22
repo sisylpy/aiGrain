@@ -19,6 +19,7 @@ import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import org.springframework.util.StringUtils;
 
 import java.util.*;
@@ -47,6 +48,10 @@ public final class AiQuerySemanticSlotMerge {
             AiQuerySemanticParseResult sem) {
         if (sem == null || sem.isParseMissing()) {
             return sem;
+        }
+        if (SemanticContractCompletionEngine.hasSelectedContractId(sem)) {
+            final String currentTurnWire = extractCurrentParseStructuredIntentDetailWire(sem.getSemanticSlots());
+            return attachCurrentTurnStructuredIntentDetailWire(sem, currentTurnWire);
         }
         final String currentTurnWire = extractCurrentParseStructuredIntentDetailWire(sem.getSemanticSlots());
         return attachCurrentTurnStructuredIntentDetailWire(

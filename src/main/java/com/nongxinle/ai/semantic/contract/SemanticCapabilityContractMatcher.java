@@ -37,6 +37,7 @@ final class SemanticCapabilityContractMatcher {
         SlotSnapshot slots = frame.slotSnapshot();
         SemanticCapabilityContract matched = null;
         List<String> bestMissing = null;
+        List<SemanticCapabilityContract> fullMatches = new ArrayList<>();
 
         for (SemanticCapabilityContract candidate : wireCandidates) {
             List<String> missing = missingRequiredSlots(candidate, slots);
@@ -47,9 +48,15 @@ final class SemanticCapabilityContractMatcher {
                 continue;
             }
             if (slotComboMatches(candidate, slots)) {
-                matched = candidate;
-                break;
+                fullMatches.add(candidate);
             }
+        }
+
+        if (fullMatches.size() > 1) {
+            return MatchResult.ambiguousMatch(fullMatches.size());
+        }
+        if (fullMatches.size() == 1) {
+            matched = fullMatches.get(0);
         }
 
         if (matched != null) {
@@ -236,6 +243,15 @@ final class SemanticCapabilityContractMatcher {
                     contract,
                     SemanticContractViolationCode.ANCHOR_CONTRACT_MISMATCH,
                     "requiresAnchor:" + contract.getAnchorType(),
+                    List.of(),
+                    wireCandidateCount);
+        }
+
+        static MatchResult ambiguousMatch(int wireCandidateCount) {
+            return new MatchResult(
+                    null,
+                    SemanticContractViolationCode.AMBIGUOUS_CONTRACT_MATCH,
+                    "multiple_active_contracts_match_wire_and_slots",
                     List.of(),
                     wireCandidateCount);
         }

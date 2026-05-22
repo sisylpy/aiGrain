@@ -11,6 +11,8 @@ import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import com.nongxinle.ai.semantic.contract.SemanticCapabilityContract;
 import com.nongxinle.ai.semantic.contract.SemanticCapabilityContractExportSummary;
 import com.nongxinle.ai.semantic.contract.PurchaseSemanticCapabilityContractExporter;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
+import com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer;
 import com.nongxinle.ai.semantic.frame.CurrentSemanticFrame;
 import lombok.experimental.UtilityClass;
 import org.springframework.util.StringUtils;
@@ -245,6 +247,9 @@ public final class PurchaseSemanticCapabilityMatrix {
 
     /**
      * LLM 未显式给出 detailWanted 时，按 Matrix 合同行形状推断是否命中（contract-aligned inference；不读用户原文）。
+     * <p>P4-J：GOODS 锚三类合同互斥。detailWanted + sourceFacet 都缺失时，不默认命中 SOURCE_BREAKDOWN；
+     * SOURCE_BREAKDOWN 须显式 SOURCE_ALL；SUPPLIER_BREAKDOWN 须供货商维度信号；
+     * SUPPLIER_UNIT_PRICE 须单价信号。
      */
     public static boolean slotsInferRowShape(
             AiQuerySemanticParseResult sem, PurchaseSemanticCapabilityMatrixRow row) {
@@ -264,6 +269,20 @@ public final class PurchaseSemanticCapabilityMatrix {
                 && !AiQuerySemanticSlotMerge.UNKNOWN.equalsIgnoreCase(s.getDetailWanted().trim())
                 && dw == null) {
             return false;
+        }
+        // P4-J mutual exclusion: when detailWanted is absent, sourceFacet must prove the row shape.
+        if (dw == null) {
+            String sf = normalizeSourceFacet(s.getSourceFacet());
+            if (row == SOURCE_BREAKDOWN && !AiQuerySemanticLexicon.SOURCE_ALL.equals(sf)) {
+                return false;
+            }
+            if (row == SUPPLIER_BREAKDOWN && sf != null
+                    && !AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equals(sf)) {
+                return false;
+            }
+            if (row == SUPPLIER_UNIT_PRICE && !hasUnitPriceContractSignal(sem)) {
+                return false;
+            }
         }
         return rowShapeMatchesTokens(
                 row,
@@ -648,6 +667,9 @@ public final class PurchaseSemanticCapabilityMatrix {
         if (raw == null || raw.isParseMissing() || raw.getSemanticSlots() == null) {
             return raw;
         }
+        if (SemanticContractCompletionEngine.hasSelectedContractId(raw)) {
+            return ContractFrameLightNormalizer.normalize(raw);
+        }
         AiQuerySemanticParseResult adjusted = applyPurchaseFirstTurnMatrixRowContractCompletion(raw);
         return canonicalizePurchaseFollowUp(adjusted, previousTurn);
     }
@@ -665,10 +687,12 @@ public final class PurchaseSemanticCapabilityMatrix {
         }
         adjusted = applyInferredGoodsAnchorDetailWanted(adjusted, reasons);
         adjusted = applyGoodsAnchorMatrixRowContractCompletion(adjusted, reasons);
-        adjusted = applySourceBreakdownOperationCanonical(adjusted, reasons);
-        if (shouldCanonicalSupplierAmountToUnitPrice(adjusted, previousTurn)) {
-            adjusted = applySupplierUnitPriceCanonical(adjusted);
-            reasons.add(REASON_SUPPLIER_AMOUNT_TO_SUPPLIER_UNIT_PRICE);
+        if (!SemanticContractCompletionEngine.hasSelectedContractId(adjusted)) {
+            adjusted = applySourceBreakdownOperationCanonical(adjusted, reasons);
+            if (shouldCanonicalSupplierAmountToUnitPrice(adjusted, previousTurn)) {
+                adjusted = applySupplierUnitPriceCanonical(adjusted);
+                reasons.add(REASON_SUPPLIER_AMOUNT_TO_SUPPLIER_UNIT_PRICE);
+            }
         }
         if (reasons.isEmpty()
                 && (adjusted.getPurchaseMatrixCanonicalReasons() == null
@@ -779,6 +803,10 @@ public final class PurchaseSemanticCapabilityMatrix {
         return raw;
     }
 
+    /**
+     * @deprecated Historical — P4-J2 主链禁止按 operation 切换 source_breakdown 合同；P4-J3 删除。
+     */
+    @Deprecated
     private static AiQuerySemanticParseResult applySourceBreakdownOperationCanonical(
             AiQuerySemanticParseResult raw, List<String> reasons) {
         AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();
@@ -811,6 +839,10 @@ public final class PurchaseSemanticCapabilityMatrix {
         return raw.toBuilder().semanticSlots(updated).build();
     }
 
+    /**
+     * @deprecated Historical — P4-J2 主链禁止供货商金额→单价合同切换；P4-J3 删除。
+     */
+    @Deprecated
     static AiQuerySemanticParseResult applySupplierUnitPriceCanonical(AiQuerySemanticParseResult raw) {
         AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();
         String op = normalizeToken(s != null ? s.getOperation() : null);

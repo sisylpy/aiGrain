@@ -13,6 +13,7 @@ import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.SemanticTimeContractCheck;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
@@ -90,6 +91,11 @@ public final class AiQuerySemanticLlmMergeHelper {
                         .inheritedFromPreviousTurn(intentInherited)
                         .inheritedFromIntentCode(intentInherited ? prevIntent : null)
                         .build();
+
+        if (SemanticContractCompletionEngine.hasSelectedContractId(sem)) {
+            applyCompletedContractFieldsToIntent(merged, sem);
+            return merged;
+        }
 
         applyPurchaseStructuredWireFromSemanticSlots(merged, sem);
         applyStockReduceStructuredWireFromSemanticSlots(merged, sem);
@@ -845,5 +851,26 @@ public final class AiQuerySemanticLlmMergeHelper {
                     "经营诊断");
             default -> null;
         };
+    }
+
+    /** P4-J2：completedParse 已锁定合同；structuredIntentDetail 仅来自 semanticSlots，不走 Matrix 推断。 */
+    private static void applyCompletedContractFieldsToIntent(
+            AiResolvedQueryIntent qi, AiQuerySemanticParseResult sem) {
+        if (qi == null || sem == null || sem.getSemanticSlots() == null) {
+            return;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
+        if (StringUtils.hasText(ss.getStructuredIntentDetailWire())) {
+            String canon =
+                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                            ss.getStructuredIntentDetailWire().trim());
+            if (StringUtils.hasText(canon)) {
+                qi.setStructuredIntentDetail(canon);
+            }
+        }
+        String pstFacet = purchaseSourceTypeFromSemanticSourceFacet(ss.getSourceFacet());
+        if (pstFacet != null) {
+            qi.setPurchaseSourceType(pstFacet);
+        }
     }
 }

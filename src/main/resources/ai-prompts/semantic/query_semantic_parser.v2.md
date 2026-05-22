@@ -30,14 +30,16 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 
 **补全问句**：若 `currentUserMessage` 已是服务端补全后的完整问题（非「那采购呢」类短句），**按当前问句字面解析**其业务域、指标与对象；**不得**用 `previousTurn` 的 path / wire / `semanticSlots` 覆盖其域或指标。
 
-**allowedOutputContract（P2 / P2.5）**：若输入提供非空 `allowedOutputContract.allowedWires`，则须遵守：
+**allowedOutputContract（P2 / P2.5 / P4-J2）**：若输入提供非空 `allowedOutputContract.allowedContracts`，则须遵守：
 
-1. **`semanticSlots.structuredIntentDetailWire` 必须**从 `allowedWires` **精确**选取；**禁止**自造 snake_case wire。
-2. **`operation=RANKING`**（或问法为排行/最高/最多）时，**禁止**输出 overview/summary 类 wire（如 `*_overview_summary`、`*_overview`）；须选与 **RANKING** 对齐的 entry。
-3. **`wire`、`queryObject`、`operation`、`metric`、`sourceFacet`（若 entry 要求）、`detailWanted`（若 entry 要求）、`answerPlanType`（若输出）**须与 allowedOutputContract **同一条 entry** 对齐**；不得跨 entry 混用（例如 wire=排行 wire 但 operation=SUMMARY）。
-4. 若 `allowedOutputContract.allowedDetailWanted` 非空，**`detailWanted` 必须**从该列表精确选取（采购 GOODS 锚 anchor execution 见下节）。
-5. **禁止**自行发明 wire、能力 id、或未登记字面量。
-6. **找不到**与问法匹配的 entry → `needClarification=true`（及编排侧 `clarificationRequired=true`），**禁止**编造字段或 fallback 到 PLANNED/KNOWN_GAP wire。
+1. **`semanticSlots.selectedContractId` 必须**从 `allowedContracts[].contractId` **精确**选取；**禁止**自造 contractId。
+2. **`selectedContractId`、`structuredIntentDetailWire`、`queryObject`、`operation`、`metric`、`sourceFacet`（若 entry 要求）、`detailWanted`（若 entry 要求）、`answerPlanType`（若输出）**须与所选 **同一条** `allowedContracts` entry 对齐**；不得跨 entry 混用。
+3. **`operation=RANKING`**（或问法为排行/最高/最多）时，**禁止**输出 overview/summary 类 wire（如 `*_overview_summary`、`*_overview`）；须选与 **RANKING** 对齐的 entry。
+4. 若 entry 要求 `detailWanted`，**必须**从该 entry 精确选取（采购 GOODS 锚三合同共用 wire 时**靠 `selectedContractId` + `detailWanted` 区分**）。
+5. **禁止**自行发明 wire、contractId、能力 id、或未登记字面量。
+6. **找不到**与问法匹配的 entry → `needClarification=true`（及编排侧 `clarificationRequired=true`），**禁止**编造字段、fallback overview、或 Java 兜底。
+
+散装 `allowedWires` / `allowedQueryObjects` 等 union 字段仅 debug；**主约束以 `allowedContracts` 为准**。
 
 未提供 `allowedOutputContract` 或该域 capability 缺失时，按既有 schema/Matrix 规则解析。
 
@@ -61,19 +63,20 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 | `metric` | 槽位内指标（如 `PURCHASE_AMOUNT`、`OUTBOUND_AMOUNT`、`REVENUE_AMOUNT`） |
 | `sourceFacet` | 采购来源等；出库单域一般为 null |
 | `anchorPolicy` | USE_PREVIOUS_ANCHOR / IGNORE_PREVIOUS_ANCHOR / REQUIRE_CLARIFICATION |
-| `structuredIntentDetailWire` | registered canonical wire（系统登记能力编号；须从 `allowedWires` 精确选取，**禁止**自造 snake_case 名） |
-| `detailWanted` | 追问槽；总览/独立排行可为 null；**采购 `purchase_source_goods_query` 必填**（见下节） |
+| `structuredIntentDetailWire` | registered canonical wire（系统登记能力编号；须与所选 `selectedContractId` entry 一致） |
+| `selectedContractId` | **P4-J2 必填**（当 `allowedContracts` 非空）：从 `allowedOutputContract.allowedContracts[].contractId` 精确选取 |
+| `detailWanted` | 追问槽；须与所选 contract entry 一致；采购 `purchase_source_goods_query` 三合同靠 `selectedContractId` 区分 |
 | `answerPlanType` | 可选；缺省由服务端按本域 Matrix 推导 |
 
-**采购 `purchase_source_goods_query` + `detailWanted`（P2.8）**：当 `selectedDomain=PURCHASE` 且 `structuredIntentDetailWire=purchase_source_goods_query` 时，**必须**输出与 allowed entry **一致**的 `detailWanted`（取自 `allowedDetailWanted`）：
+**采购 `purchase_source_goods_query` + `selectedContractId`（P4-J2）**：三合同共用 wire，**必须**输出匹配的 `selectedContractId` 与同 entry 的 `detailWanted`：
 
-| 问法形状 | `detailWanted` | 典型 `queryObject` / `operation` / `metric` |
-|---------|----------------|---------------------------------------------|
-| 按来源拆桶（自采/订货） | `SOURCE_BREAKDOWN` | `GOODS` + `BREAKDOWN` + 采购量/金额类 metric |
-| 商品锚下「谁供的/各供货商」 | `SUPPLIER_BREAKDOWN` | `GOODS` + `DETAIL|BREAKDOWN` + `SUPPLIER_NAME` 或采购量/金额 |
-| 商品锚下各供货商单价 | `SUPPLIER_UNIT_PRICE` | `SUPPLIER` + `RANKING|DETAIL` + `UNIT_PRICE` |
+| contractId（示例） | 问法形状 | `detailWanted` |
+|-------------------|---------|----------------|
+| `purchase.goods_anchor.source_breakdown` | 自采多少、供货商订多少、来源拆分 | `SOURCE_BREAKDOWN` |
+| `purchase.goods_anchor.supplier_breakdown` | 谁供的、哪些供货商供货 | `SUPPLIER_BREAKDOWN` |
+| `purchase.goods_anchor.supplier_unit_price` | 供货商单价、谁贵谁便宜 | `SUPPLIER_UNIT_PRICE` |
 
-**禁止**只写 `operation=DETAIL` + `metric=SUPPLIER_NAME` 却省略 `detailWanted`；三条 entry 共用同一 wire，**靠 `detailWanted` 区分**。
+**禁止**只写 `operation=DETAIL` 却省略 `selectedContractId`；**禁止**跨 entry 混用 wire 与槽位。
 
 # Prompt 正文
 
@@ -256,17 +259,24 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 
 # 输出格式硬约束
 
+**P4-J2 输出首要硬规则（`allowedOutputContract.allowedContracts` 非空时，优先于下列一切规则）**：
+
+1. **`semanticSlots.selectedContractId` 必填**；值须从输入 `allowedOutputContract.allowedContracts[].contractId` **精确**选取，**禁止**自造、省略或仅用 wire 代替。
+2. **`semanticSlots` 对象内须将 `selectedContractId` 作为第一个键**；其余槽位须与**同一条** allowed entry 对齐。
+3. 找不到匹配 entry → `needClarification=true`，**禁止**省略 `selectedContractId` 后 fallback 其它 wire/槽位组合。
+
 - 整段回复**仅一个** JSON：`{` … `}`，无前后自然语言、无 Markdown 围栏。
 - 字段与 **`semantic-output-schema.md`** 一致；采购/出库/销量/毛利须完整 **`semanticSlots`**；**`orchestrationDecisionCandidate`** 不得省略。
 
 **输出前自检（精简）**
 
+0. **（`allowedContracts` 非空时排第一）** `semanticSlots.selectedContractId` 是否已从 `allowedContracts[].contractId` **精确**选取，且为 `semanticSlots` **首键**？  
 1. 顶层 **`confidence`**（number）是否存在？  
 2. **`requestedScopeType`** 而非 `scopeType`？  
 3. `needClarification` 与 `clarificationRequired` 是否一致？  
-4. 业务域明确时是否写满 **`semanticSlots`**（含 wire + `anchorPolicy`）？  
+4. 业务域明确时是否写满 **`semanticSlots`**（含 `selectedContractId`（若 allowed）+ wire + `anchorPolicy`）？  
 5. `structuredIntentDetailWire` 是否为**本域**已登记 canonical？  
-6. 若存在 `allowedOutputContract`：wire + 槽位是否与**同一条** allowed entry 一致（排行勿用 overview wire）？  
+6. 若存在 `allowedOutputContract`：`selectedContractId` + wire + 槽位是否与**同一条** allowed entry 一致（排行勿用 overview wire）？  
 7. `selectedTools` 是否与 `intent` 同域、无跨域 Tool？
 
 # 契约引用索引
@@ -296,6 +306,7 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
   "intent": "STOCK_REDUCE_QUERY",
   "domain": "STOCK_REDUCE",
   "semanticSlots": {
+    "selectedContractId": "stock_reduce.goods_amount_ranking",
     "queryObject": "GOODS",
     "operation": "RANKING",
     "metric": "OUTBOUND_AMOUNT",

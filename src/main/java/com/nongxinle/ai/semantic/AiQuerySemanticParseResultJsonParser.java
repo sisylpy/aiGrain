@@ -274,6 +274,7 @@ public final class AiQuerySemanticParseResultJsonParser {
         }
         stripForbiddenKeysRecursive(sjo);
         return AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                .selectedContractId(trimToNull(sjo.getStr("selectedContractId")))
                 .queryObject(trimToNull(sjo.getStr("queryObject")))
                 .operation(trimToNull(sjo.getStr("operation")))
                 .metric(trimToNull(sjo.getStr("metric")))

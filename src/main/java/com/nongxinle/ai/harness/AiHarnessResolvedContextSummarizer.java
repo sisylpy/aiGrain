@@ -59,6 +59,7 @@ public final class AiHarnessResolvedContextSummarizer {
         p.put("metric", out.get("metric"));
         p.put("sourceFacet", out.get("sourceFacet"));
         p.put("structuredIntentDetailWire", out.get("structuredIntentDetailWire"));
+        p.put("selectedContractId", out.get("selectedContractId"));
         p.put("canonicalStructuredIntentDetailWire", out.get("canonicalStructuredIntentDetailWire"));
         p.put("answerPlanType", out.get("answerPlanType"));
         p.put("startDate", out.get("startDate"));

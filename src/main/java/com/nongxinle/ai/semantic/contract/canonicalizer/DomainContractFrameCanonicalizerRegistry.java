@@ -1,6 +1,7 @@
 package com.nongxinle.ai.semantic.contract.canonicalizer;
 
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
@@ -9,6 +10,8 @@ import java.util.Map;
 
 /**
  * 按 selectedDomain 选择 {@link DomainContractFrameCanonicalizer}；未知 domain 原样返回 parse。
+ * <p>P4-J2：若 parse 含 {@code selectedContractId}，仅做 {@link ContractFrameLightNormalizer}；
+ * contract selection only from selectedContractId。
  */
 public final class DomainContractFrameCanonicalizerRegistry {
 
@@ -23,6 +26,9 @@ public final class DomainContractFrameCanonicalizerRegistry {
         AiQuerySemanticParseResult parse = context.getParse();
         if (parse == null || parse.isParseMissing()) {
             return parse;
+        }
+        if (SemanticContractCompletionEngine.hasSelectedContractId(parse)) {
+            return ContractFrameLightNormalizer.normalize(parse);
         }
         String domain = normalizeDomain(context.getSelectedDomain());
         if (!StringUtils.hasText(domain)) {

@@ -3,7 +3,7 @@ package com.nongxinle.ai.semantic.contract.canonicalizer;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrix;
 
-/** 营业额域：委托 {@link RevenueSemanticCapabilityMatrix#canonicalizeRevenueContractFrame}。 */
+/** 营业额域：P4-J2 有 selectedContractId 时仅轻量规范化；否则委托 Matrix（Historical）。 */
 public final class RevenueContractFrameCanonicalizer implements DomainContractFrameCanonicalizer {
 
     public static final RevenueContractFrameCanonicalizer INSTANCE =

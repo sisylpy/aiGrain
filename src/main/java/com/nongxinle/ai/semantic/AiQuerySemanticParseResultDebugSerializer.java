@@ -73,6 +73,7 @@ public final class AiQuerySemanticParseResultDebugSerializer {
         if (r.getSemanticSlots() != null) {
             AiQuerySemanticParseResult.SemanticSlotsPart ss = r.getSemanticSlots();
             LinkedHashMap<String, Object> slot = new LinkedHashMap<>();
+            slot.put("selectedContractId", blankToNull(ss.getSelectedContractId()));
             slot.put("queryObject", blankToNull(ss.getQueryObject()));
             slot.put("operation", blankToNull(ss.getOperation()));
             slot.put("metric", blankToNull(ss.getMetric()));

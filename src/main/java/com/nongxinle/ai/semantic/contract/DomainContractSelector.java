@@ -8,6 +8,7 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Step 2：根据 Router 结果选择单域 allowed 合同摘要（只读 Catalog；不合并八域大合同）。
@@ -66,11 +67,13 @@ public final class DomainContractSelector {
         LinkedHashSet<String> sourceFacets = new LinkedHashSet<>();
         LinkedHashSet<String> detailWanted = new LinkedHashSet<>();
         LinkedHashSet<String> answerPlanTypes = new LinkedHashSet<>();
+        List<SemanticParserAllowedOutputContract.AllowedContractEntry> entries = new ArrayList<>();
 
         for (SemanticCapabilityContract c : active) {
-            if (c == null) {
+            if (c == null || c.getStatus() != SemanticCapabilityContractStatus.ACTIVE) {
                 continue;
             }
+            entries.add(toAllowedEntry(c));
             addIfText(wires, c.getWire());
             addIfText(answerPlanTypes, c.getAnswerPlanType());
             addIfText(sourceFacets, c.getSourceFacet());
@@ -88,6 +91,7 @@ public final class DomainContractSelector {
 
         return SemanticParserAllowedOutputContract.builder()
                 .selectedDomain(domain)
+                .allowedContracts(entries)
                 .allowedWires(new ArrayList<>(wires))
                 .allowedQueryObjects(new ArrayList<>(queryObjects))
                 .allowedOperations(new ArrayList<>(operations))
@@ -96,6 +100,39 @@ public final class DomainContractSelector {
                 .allowedDetailWanted(new ArrayList<>(detailWanted))
                 .allowedAnswerPlanTypes(new ArrayList<>(answerPlanTypes))
                 .build();
+    }
+
+    private static SemanticParserAllowedOutputContract.AllowedContractEntry toAllowedEntry(
+            SemanticCapabilityContract c) {
+        List<String> qos = c.getQueryObjects() != null ? new ArrayList<>(c.getQueryObjects()) : List.of();
+        List<String> ops = c.getOperations() != null ? new ArrayList<>(c.getOperations()) : List.of();
+        List<String> mets = c.getMetrics() != null ? new ArrayList<>(c.getMetrics()) : List.of();
+        SemanticParserAllowedOutputContract.AllowedContractEntry.AllowedContractEntryBuilder b =
+                SemanticParserAllowedOutputContract.AllowedContractEntry.builder()
+                        .contractId(c.getContractId())
+                        .wire(c.getWire())
+                        .queryObjects(qos.isEmpty() ? null : qos)
+                        .operations(ops.isEmpty() ? null : ops)
+                        .metrics(mets.isEmpty() ? null : mets)
+                        .sourceFacet(c.getSourceFacet())
+                        .detailWanted(c.getDetailWanted())
+                        .answerPlanType(c.getAnswerPlanType())
+                        .requiresAnchor(c.isRequiresAnchor())
+                        .anchorType(c.getAnchorType())
+                        .selectedTools(
+                                c.getSelectedTools() != null && !c.getSelectedTools().isEmpty()
+                                        ? new ArrayList<>(c.getSelectedTools())
+                                        : null);
+        if (qos.size() == 1) {
+            b.queryObject(qos.get(0));
+        }
+        if (ops.size() == 1) {
+            b.operation(ops.get(0));
+        }
+        if (mets.size() == 1) {
+            b.metric(mets.get(0));
+        }
+        return b.build();
     }
 
     private static void addIfText(LinkedHashSet<String> set, String value) {

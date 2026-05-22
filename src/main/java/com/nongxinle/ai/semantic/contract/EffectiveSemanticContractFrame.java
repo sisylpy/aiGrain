@@ -16,8 +16,8 @@ import java.util.Locale;
  * Contract validation 的有效语义视图（非业务 Frame 层）：在 {@link CurrentSemanticFrame} 与 SlotMerge 之后，
  * 经 {@link DomainContractFrameCanonicalizerRegistry} 做 domain canonicalize，再供
  * {@link SemanticContractValidator} / {@link SemanticContractStrictDecisionEvaluator} 使用。
- * <p>本类不承载业务规则；各域槽位 / wire 补齐由对应 {@link com.nongxinle.ai.semantic.contract.canonicalizer.DomainContractFrameCanonicalizer}
- * 及其 Matrix 提供。命名中的 Frame 仅表示「合同校验槽位视图」，不替代 graph/composer 侧 business context frame。
+ * <p>P4-J2：contract selection only from {@code selectedContractId}；canonicalizer 仅轻量规范化。
+ * 命名中的 Frame 仅表示「合同校验槽位视图」，不替代 graph/composer 侧 business context frame。
  */
 @Value
 @Builder

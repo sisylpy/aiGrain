@@ -187,7 +187,16 @@ public class AiResolvedQueryContextResolver {
                                 effectiveUserMessage,
                                 today,
                                 explicitTentative,
-                                followUpRewriteApplied));
+                                followUpRewriteApplied,
+                                domainContractSelection,
+                                followUpRewriteApplied && rewriteResult != null
+                                        ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
+                                                rewriteResult.getInheritedAnchorType())
+                                        : null,
+                                followUpRewriteApplied && rewriteResult != null
+                                        ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
+                                                rewriteResult.getInheritedAnchorName())
+                                        : null));
         SemanticContractValidationPipeline.Result contractPipeline =
                 SemanticContractValidationPipeline.run(
                         new SemanticContractValidationPipeline.Request(
@@ -229,6 +238,10 @@ public class AiResolvedQueryContextResolver {
                     "time_contract:"
                             + AiResolvedQueryContextDebugFactory.blankToNullSemantic(
                                     adoption.timeContract().failureReason());
+        } else if (adoption != null && adoption.contractSelectionClarificationRequired()) {
+            semanticFallbackReason =
+                    "contract_selection:"
+                            + adoption.contractViolationCode().name();
         } else if (frameClarificationRequired) {
             semanticFallbackReason =
                     "frame_validation:"

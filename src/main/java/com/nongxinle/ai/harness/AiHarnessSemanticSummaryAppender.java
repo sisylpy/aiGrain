@@ -405,6 +405,7 @@ final class AiHarnessSemanticSummaryAppender {
         if (r.getSemanticSlots() != null) {
             AiQuerySemanticParseResult.SemanticSlotsPart s = r.getSemanticSlots();
             LinkedHashMap<String, Object> slots = new LinkedHashMap<>();
+            slots.put("selectedContractId", AiHarnessSummaryUtils.blankToNull(s.getSelectedContractId()));
             slots.put("queryObject", AiHarnessSummaryUtils.blankToNull(s.getQueryObject()));
             slots.put("operation", AiHarnessSummaryUtils.blankToNull(s.getOperation()));
             slots.put("metric", AiHarnessSummaryUtils.blankToNull(s.getMetric()));

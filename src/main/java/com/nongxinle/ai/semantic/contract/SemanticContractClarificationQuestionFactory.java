@@ -34,6 +34,9 @@ public final class SemanticContractClarificationQuestionFactory {
             return defaultClarification();
         }
         return switch (request.getViolationCode()) {
+            case MISSING_SELECTED_CONTRACT_ID -> missingSelectedContractIdQuestion(request);
+            case UNSUPPORTED_CONTRACT -> unsupportedContractQuestion(request);
+            case AMBIGUOUS_CONTRACT_MATCH -> ambiguousContractMatchQuestion(request);
             case UNSUPPORTED_WIRE -> unsupportedWireQuestion(request);
             case UNSUPPORTED_SLOT_COMBO -> unsupportedSlotComboQuestion(request);
             case MISSING_REQUIRED_SLOT -> missingRequiredSlotQuestion(request);
@@ -63,6 +66,46 @@ public final class SemanticContractClarificationQuestionFactory {
                         .missingSlots(decision.getMissingSlots())
                         .candidateDomains(decision.getCandidateDomains())
                         .build());
+    }
+
+    /** P4-J2：{@link SemanticContractCompletionEngine} 违例澄清。 */
+    public static String forContractViolation(
+            SemanticContractViolationCode code, String violationReason) {
+        if (code == null) {
+            return defaultClarification();
+        }
+        return buildQuestion(
+                SemanticContractClarificationRequest.builder()
+                        .violationCode(code)
+                        .missingSlots(
+                                violationReason != null && violationReason.startsWith("missing:")
+                                        ? List.of(violationReason.substring("missing:".length()))
+                                        : null)
+                        .build());
+    }
+
+    private static String missingSelectedContractIdQuestion(SemanticContractClarificationRequest request) {
+        String domain = domainLabel(request.getSelectedDomain());
+        if ("采购".equals(domain)) {
+            return "请确认你想查采购的哪一类：总览、商品排行、供货商排行、来源拆分，还是采购异常？";
+        }
+        return "请确认你想查"
+                + domain
+                + "的具体类型（总览、排行或明细），以便准确查询。";
+    }
+
+    private static String unsupportedContractQuestion(SemanticContractClarificationRequest request) {
+        return unsupportedWireQuestion(request);
+    }
+
+    private static String ambiguousContractMatchQuestion(SemanticContractClarificationRequest request) {
+        String domain = domainLabel(request.getSelectedDomain());
+        if ("采购".equals(domain)) {
+            return "这个问题可能对应多种采购明细（例如来源拆分、供货商拆分或单价对比），请说明你想看哪一种。";
+        }
+        return "这个问题可能对应多种"
+                + domain
+                + "查询方式，请补充你想看的具体类型。";
     }
 
     private static String unsupportedWireQuestion(SemanticContractClarificationRequest request) {

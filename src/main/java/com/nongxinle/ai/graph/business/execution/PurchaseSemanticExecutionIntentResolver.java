@@ -8,6 +8,7 @@ import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.frame.CurrentSemanticFrame;
 import com.nongxinle.ai.semantic.matrix.PurchaseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.PurchaseSemanticCapabilityMatrixRow;
@@ -50,11 +51,22 @@ public final class PurchaseSemanticExecutionIntentResolver {
     }
 
     private static String matchedContractId(AiResolvedQueryContext rq) {
+        String fromSlots = selectedContractIdFromSemanticSlots(rq);
+        if (StringUtils.hasText(fromSlots)) {
+            return fromSlots.trim();
+        }
         SemanticContractValidationDebug v = rq.getSemanticContractValidation();
         if (v == null || !StringUtils.hasText(v.getMatchedContractId())) {
             return null;
         }
         return v.getMatchedContractId().trim();
+    }
+
+    private static String selectedContractIdFromSemanticSlots(AiResolvedQueryContext rq) {
+        if (rq == null || rq.getQuerySemanticParse() == null || rq.getQuerySemanticParse().getSemanticSlots() == null) {
+            return null;
+        }
+        return SemanticContractCompletionEngine.extractSelectedContractId(rq.getQuerySemanticParse());
     }
 
     private static PurchaseSemanticExecutionIntent fromMatchedContract(

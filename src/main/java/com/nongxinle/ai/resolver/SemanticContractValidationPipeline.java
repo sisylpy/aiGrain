@@ -5,6 +5,7 @@ import com.nongxinle.ai.followup.rewrite.FollowUpRewriteResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.EffectiveSemanticContractFrame;
+import com.nongxinle.ai.semantic.contract.SemanticContractClarificationQuestionFactory;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecisionEvaluator;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
@@ -71,6 +72,51 @@ public final class SemanticContractValidationPipeline {
                         request.domainContractSelection(),
                         effectiveContractFrame,
                         request.strictEnabled());
+        if (request.adoption() != null && request.adoption().contractViolationCode() != null) {
+            SemanticAdoptionAttempt adoption = request.adoption();
+            String question =
+                    org.springframework.util.StringUtils.hasText(adoption.semanticClarificationQuestion())
+                            ? adoption.semanticClarificationQuestion().trim()
+                            : SemanticContractClarificationQuestionFactory.forContractViolation(
+                                    adoption.contractViolationCode(),
+                                    adoption.rejectionReason() != null
+                                            ? adoption.rejectionReason()
+                                                    .replaceFirst("^contract_completion:", "")
+                                            : null);
+            validation =
+                    SemanticContractValidationDebug.builder()
+                            .modelContractViolation(true)
+                            .violationCode(adoption.contractViolationCode())
+                            .violationReason(
+                                    adoption.rejectionReason() != null
+                                            ? adoption.rejectionReason()
+                                                    .replaceFirst("^contract_completion:", "")
+                                            : null)
+                            .selectedDomain(
+                                    request.domainContractSelection() != null
+                                            ? request.domainContractSelection().getSelectedDomain()
+                                            : null)
+                            .allowedContractCount(
+                                    request.domainContractSelection() != null
+                                            ? request.domainContractSelection().getSelectedActiveContractCount()
+                                            : 0)
+                            .build();
+            strictDecision =
+                    SemanticContractStrictDecision.builder()
+                            .strictEnabled(request.strictEnabled())
+                            .modelContractViolation(true)
+                            .enforceClarification(true)
+                            .violationCode(adoption.contractViolationCode())
+                            .violationReason(validation.getViolationReason())
+                            .selectedDomain(validation.getSelectedDomain())
+                            .allowedContractCount(validation.getAllowedContractCount())
+                            .clarificationQuestion(question)
+                            .activeStrictBlockers(
+                                    strictDecision != null && strictDecision.getActiveStrictBlockers() != null
+                                            ? strictDecision.getActiveStrictBlockers()
+                                            : java.util.List.of())
+                            .build();
+        }
         return new Result(validation, strictDecision);
     }
 }

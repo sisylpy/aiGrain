@@ -139,8 +139,10 @@
 | `metric` | PURCHASE_AMOUNT, PURCHASE_COUNT, PURCHASE_QUANTITY, UNIT_PRICE, UNKNOWN |
 | `sourceFacet` | ALL, SELF_PURCHASE, SUPPLIER_PURCHASE, UNKNOWN |
 | `anchorPolicy` | USE_PREVIOUS_ANCHOR, IGNORE_PREVIOUS_ANCHOR, REQUIRE_CLARIFICATION |
-| `detailWanted` | 追问明细：**SOURCE_BREAKDOWN**（自采/供货商来源拆桶）、**SUPPLIER_BREAKDOWN**（商品锚下各供货商采购额/量）、GOODS_DETAIL, GOODS_UNIT_PRICE, **SUPPLIER_UNIT_PRICE**（商品锚下供货商单价排行/明细）等；总览 SUMMARY 可为 null |
-| `structuredIntentDetailWire` | canonical 蛇形 wire，如 `purchase_overview_summary`, `purchase_goods_amount_ranking`, `business_store_status_compare`, `revenue_store_amount_ranking`, `purchase_stock_reduce_mismatch`, **`warehouse_stock_overview`**（库房现量总览；**非** `stock_reduce_overview`） |
+| `detailWanted` | 追问明细：**SOURCE_BREAKDOWN**、**SUPPLIER_BREAKDOWN**、GOODS_DETAIL、GOODS_UNIT_PRICE、**SUPPLIER_UNIT_PRICE** 等；须与所选 contract entry 一致 |
+| `structuredIntentDetailWire` | canonical 蛇形 wire；须与 `selectedContractId` 所属 entry 一致 |
+| `selectedContractId` | **P4-J2**：当 Step2 提供 `allowedContracts` 时必填；从 `allowedContracts[].contractId` 精确选取 |
+| `answerPlanType` | 可选；须与所选 contract entry 一致 |
 
 **库房现量 wire 白名单（`WAREHOUSE_STOCK_OVERVIEW` / `warehouse_stock_overview_path`）：**  
 `warehouse_stock_overview`, `warehouse_stock_low_risk`, `warehouse_stock_replenishment_needed`, `warehouse_stock_overstock_risk`, `store_stock_amount_ranking`, `store_stock_item_count_ranking`, `warehouse_stock_amount_ranking`, `warehouse_stock_item_count_ranking` — **禁止**在此 path 下输出出库域 `stock_reduce_*` wire。

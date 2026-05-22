@@ -2,9 +2,11 @@ package com.nongxinle.ai.semantic.contract;
 
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.SemanticParserAllowedOutputContract;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -38,7 +40,34 @@ public final class SemanticContractValidator {
                     .build();
         }
 
+        List<SemanticParserAllowedOutputContract.AllowedContractEntry> allowedEntries =
+                allowed != null && allowed.getAllowedContracts() != null
+                        ? allowed.getAllowedContracts()
+                        : List.of();
+        String selectedContractId = SemanticContractCompletionEngine.extractSelectedContractId(frame.getParse());
+
+        if (!allowedEntries.isEmpty()) {
+            if (!StringUtils.hasText(selectedContractId)) {
+                return SemanticContractValidationDebug.builder()
+                        .modelContractViolation(true)
+                        .violationCode(SemanticContractViolationCode.MISSING_SELECTED_CONTRACT_ID)
+                        .violationReason("missing_selectedContractId")
+                        .selectedDomain(selectedDomain)
+                        .allowedWires(allowedWires.isEmpty() ? null : allowedWires)
+                        .allowedContractCount(allowedContractCount)
+                        .build();
+            }
+            return validateBySelectedContractId(
+                    frame, selection, selectedDomain, allowedWires, allowedContractCount, selectedContractId.trim());
+        }
+
         String wire = extractWire(frame);
+
+        if (StringUtils.hasText(selectedContractId)) {
+            return validateBySelectedContractId(
+                    frame, selection, selectedDomain, allowedWires, allowedContractCount, selectedContractId.trim());
+        }
+
         if (!StringUtils.hasText(wire)) {
             return SemanticContractValidationDebug.builder()
                     .modelContractViolation(false)
@@ -112,6 +141,99 @@ public final class SemanticContractValidator {
             EffectiveSemanticContractFrame frame,
             boolean strictEnabled) {
         return SemanticContractStrictDecisionEvaluator.evaluate(route, selection, frame, strictEnabled);
+    }
+
+    private static SemanticContractValidationDebug validateBySelectedContractId(
+            EffectiveSemanticContractFrame frame,
+            DomainContractSelectionResult selection,
+            String selectedDomain,
+            List<String> allowedWires,
+            int allowedContractCount,
+            String selectedContractId) {
+        List<SemanticCapabilityContract> active =
+                StringUtils.hasText(selectedDomain)
+                        ? SemanticContractCatalog.listActiveCapabilityContracts(selectedDomain)
+                        : List.of();
+        SemanticCapabilityContract matched = null;
+        for (SemanticCapabilityContract c : active) {
+            if (c != null && selectedContractId.equals(c.getContractId())) {
+                matched = c;
+                break;
+            }
+        }
+        if (matched == null || matched.getStatus() != SemanticCapabilityContractStatus.ACTIVE) {
+            return SemanticContractValidationDebug.builder()
+                    .modelContractViolation(true)
+                    .unsupportedWire(selectedContractId)
+                    .violationCode(SemanticContractViolationCode.UNSUPPORTED_CONTRACT)
+                    .violationReason("selectedContractId_not_active")
+                    .selectedDomain(selectedDomain)
+                    .allowedWires(allowedWires.isEmpty() ? null : allowedWires)
+                    .allowedContractCount(allowedContractCount)
+                    .build();
+        }
+        if (matched.isRequiresAnchor() && !frame.hasAnchorEvidence(matched.getAnchorType())) {
+            return SemanticContractValidationDebug.builder()
+                    .modelContractViolation(true)
+                    .violationCode(SemanticContractViolationCode.ANCHOR_CONTRACT_MISMATCH)
+                    .violationReason("requiresAnchor:" + matched.getAnchorType())
+                    .selectedDomain(selectedDomain)
+                    .allowedWires(allowedWires.isEmpty() ? null : allowedWires)
+                    .allowedContractCount(allowedContractCount)
+                    .matchedContractId(matched.getContractId())
+                    .build();
+        }
+        SemanticCapabilityContractMatcher.SlotSnapshot slotView = frame.slotSnapshot();
+        List<String> missing = missingSlotsAgainstContract(matched, slotView);
+        if (!missing.isEmpty()) {
+            return SemanticContractValidationDebug.builder()
+                    .modelContractViolation(true)
+                    .unsupportedWire(matched.getWire())
+                    .violationCode(SemanticContractViolationCode.UNSUPPORTED_CONTRACT)
+                    .violationReason("selectedContractId_slot_mismatch:" + String.join(",", missing))
+                    .selectedDomain(selectedDomain)
+                    .allowedWires(allowedWires.isEmpty() ? null : allowedWires)
+                    .allowedContractCount(allowedContractCount)
+                    .matchedContractId(matched.getContractId())
+                    .missingSlots(missing)
+                    .build();
+        }
+        return SemanticContractValidationDebug.builder()
+                .modelContractViolation(false)
+                .selectedDomain(selectedDomain)
+                .allowedWires(allowedWires.isEmpty() ? null : allowedWires)
+                .allowedContractCount(allowedContractCount)
+                .matchedContractId(matched.getContractId())
+                .build();
+    }
+
+    private static List<String> missingSlotsAgainstContract(
+            SemanticCapabilityContract contract, SemanticCapabilityContractMatcher.SlotSnapshot slots) {
+        ArrayList<String> missing = new ArrayList<>();
+        if (contract.getQueryObjects() != null
+                && !contract.getQueryObjects().isEmpty()
+                && !StringUtils.hasText(slots.queryObject())) {
+            missing.add("queryObject");
+        }
+        if (contract.getOperations() != null
+                && !contract.getOperations().isEmpty()
+                && !StringUtils.hasText(slots.operation())) {
+            missing.add("operation");
+        }
+        if (contract.getMetrics() != null
+                && !contract.getMetrics().isEmpty()
+                && !StringUtils.hasText(slots.metric())) {
+            missing.add("metric");
+        }
+        if (StringUtils.hasText(contract.getSourceFacet())
+                && !StringUtils.hasText(slots.sourceFacet())) {
+            missing.add("sourceFacet");
+        }
+        if (StringUtils.hasText(contract.getDetailWanted())
+                && !StringUtils.hasText(slots.detailWanted())) {
+            missing.add("detailWanted");
+        }
+        return missing;
     }
 
     private static String extractWire(EffectiveSemanticContractFrame frame) {

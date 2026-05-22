@@ -6,6 +6,8 @@ import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
+import com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer;
 import lombok.experimental.UtilityClass;
 import org.springframework.util.StringUtils;
 
@@ -258,7 +260,9 @@ public final class RevenueSemanticCapabilityMatrix {
 
     /**
      * Matrix P1 RV-H/I/J：在 LLM 误标 wire 时，用<strong>完整</strong>归一问句纠正（不识别省略追问如「上个月呢」）。
+     * @deprecated Historical — P4-J2 主链 contract selection only from {@code selectedContractId}；P4-J3 删除。
      */
+    @Deprecated
     private static String inferMatrixWireFromNormalizedQuestion(String normalizedUserMessage) {
         if (!StringUtils.hasText(normalizedUserMessage)) {
             return null;
@@ -319,6 +323,9 @@ public final class RevenueSemanticCapabilityMatrix {
     public static AiQuerySemanticParseResult canonicalizeRevenueContractFrame(AiQuerySemanticParseResult raw) {
         if (raw == null || raw.isParseMissing() || raw.getSemanticSlots() == null) {
             return raw;
+        }
+        if (SemanticContractCompletionEngine.hasSelectedContractId(raw)) {
+            return ContractFrameLightNormalizer.normalize(raw);
         }
         if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(raw)) {
             return raw;
@@ -402,12 +409,21 @@ public final class RevenueSemanticCapabilityMatrix {
         return metric != null && metric.contains("REVENUE");
     }
 
+    /**
+     * @deprecated Historical — P4-J2 主链不再用用户原文纠正 wire；P4-J3 删除。
+     */
+    @Deprecated
     private static String correctMislabeledStoreRankingCanon(
             String canon, AiQuerySemanticParseResult sem, String normalizedUserMessage) {
         if (!AiQuerySemanticLexicon.STRUCTURED_REVENUE_STORE_AMOUNT_RANKING.equals(canon)) {
             return canon;
         }
-if (utteranceRequestsStoreRanking(normalizedUserMessage)) {
+        if (utteranceRequestsStoreRanking(normalizedUserMessage)) {
+            return canon;
+        }
+        // P4-J: canonicalized slot shape already proves STORE+RANKING+REVENUE —
+        // do not downgrade to overview when no user-text evidence contradicts it.
+        if (!StringUtils.hasText(normalizedUserMessage) && slotsInferStoreAmountRankingShape(sem)) {
             return canon;
         }
         if (isSingleStoreOverviewFromSemantics(sem, normalizedUserMessage)) {
@@ -416,6 +432,10 @@ if (utteranceRequestsStoreRanking(normalizedUserMessage)) {
         return AiQuerySemanticLexicon.STRUCTURED_REVENUE_OVERVIEW_SUMMARY;
     }
 
+    /**
+     * @deprecated Historical — P4-J2 主链不再读用户原文推断排行；P4-J3 删除。
+     */
+    @Deprecated
     private static boolean isSingleStoreOverviewFromSemantics(
             AiQuerySemanticParseResult sem, String normalizedUserMessage) {
         if (utteranceRequestsStoreRanking(normalizedUserMessage)) {
@@ -441,6 +461,10 @@ if (utteranceRequestsStoreRanking(normalizedUserMessage)) {
         return msg.contains("多少") || msg.contains("营业额") || msg.contains("营收");
     }
 
+    /**
+     * @deprecated Historical — P4-J2 主链不再读用户原文推断门店排行；P4-J3 删除。
+     */
+    @Deprecated
     private static boolean utteranceRequestsStoreRanking(String normalizedUserMessage) {
         String msg = compactMessage(normalizedUserMessage);
         if (!StringUtils.hasText(msg)) {
@@ -456,6 +480,10 @@ if (utteranceRequestsStoreRanking(normalizedUserMessage)) {
         return msg.contains("门店营业额最高") || msg.contains("门店最高");
     }
 
+    /**
+     * @deprecated Historical — P4-J2 主链不再读用户原文推断上月总览；P4-J3 删除。
+     */
+    @Deprecated
     private static boolean isPreviousMonthOverviewFromMessage(String compactMsg) {
         if (!StringUtils.hasText(compactMsg)) {
             return false;

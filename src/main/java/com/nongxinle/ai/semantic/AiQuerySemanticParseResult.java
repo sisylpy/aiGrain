@@ -71,7 +71,7 @@ public class AiQuerySemanticParseResult {
      * LLM 输出的编排候选（仅解析 JSON；Java 不据此猜测用户原文）。
      */
     @Data
-    @Builder
+    @Builder(toBuilder = true)
     @NoArgsConstructor
     @AllArgsConstructor
     public static class OrchestrationDecisionCandidatePart {
@@ -119,6 +119,11 @@ public class AiQuerySemanticParseResult {
          * 服务端以 {@code structuredIntentDetailWire} 为准，Matrix/Builder 推导。
          */
         private String answerPlanType;
+        /**
+         * P4-J2：Parser 从 {@code allowedOutputContract.allowedContracts[]} 精确选择的 ACTIVE 合同 id；
+         * 与 {@code structuredIntentDetailWire} 等同一条 entry。
+         */
+        private String selectedContractId;
     }
 
     private String intent;
@@ -187,6 +192,11 @@ public class AiQuerySemanticParseResult {
      * {@code clearedPreviousAnswerPlanTypeReason}、{@code currentTurnWinsReason}、{@code crossDomainTurn}。
      */
     private Map<String, Object> multiTurnInheritanceTrace;
+
+    /**
+     * P4-J2：{@link com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine} 审计（raw vs completed）。
+     */
+    private Map<String, Object> contractCompletionTrace;
 
     /**
      * Harness：本轮若实际走了语义解析 LLM，则为对应 {@link com.nongxinle.ai.prompt.AiPromptRegistry} promptId；

@@ -300,6 +300,9 @@ public final class DishSalesSemanticCapabilityMatrix {
 
     private static String inferMatrixWireFromSemanticSlots(
             AiQuerySemanticParseResult sem, String normalizedUserMessage) {
+        if (com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.hasSelectedContractId(sem)) {
+            return null;
+        }
         if (sem == null || sem.getSemanticSlots() == null) {
             return null;
         }
@@ -308,6 +311,10 @@ public final class DishSalesSemanticCapabilityMatrix {
         String qo = normalizeMatrixToken(s.getQueryObject());
         if ("TREND".equals(op)) {
             return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_TREND;
+        }
+        // @deprecated Historical — P4-J2 主链禁止 SUMMARY/OVERVIEW→ranking 合同推断；P4-J3 删除。
+        if ("DISH".equals(qo) && ("SUMMARY".equals(op) || "OVERVIEW".equals(op))) {
+            return AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
         }
         if ("DISH".equals(qo) && "DETAIL".equals(op)) {
             if (StringUtils.hasText(normalizedUserMessage)
@@ -786,6 +793,9 @@ return COUNT_RANKING_HIGH_A;
             AiQuerySemanticParseResult raw) {
         if (raw == null || raw.isParseMissing() || raw.getSemanticSlots() == null) {
             return raw;
+        }
+        if (com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.hasSelectedContractId(raw)) {
+            return com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer.normalize(raw);
         }
         if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(raw)) {
             return raw;
