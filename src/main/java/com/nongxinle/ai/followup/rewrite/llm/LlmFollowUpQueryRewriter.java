@@ -177,12 +177,8 @@ public class LlmFollowUpQueryRewriter {
 
     private static boolean shouldClarifyAfterQualityReject(
             String qualityReject, FollowUpRewriteRequest request, LlmFollowUpRewriteParsed parsed) {
-        if ("unresolved_deictic".equals(qualityReject)
-                || "unchanged_from_raw".equals(qualityReject)
-                || "scope_pivot_leaked_stores".equals(qualityReject)) {
-            return true;
-        }
-        return parsed.isNeedClarification();
+        // 仅 LLM 显式 needClarification=true 才阻断 v2；质量门禁只写 debug，不升格为澄清。
+        return parsed != null && parsed.isNeedClarification();
     }
 
     private static String genericClarificationForQualityReject(String qualityReject) {
