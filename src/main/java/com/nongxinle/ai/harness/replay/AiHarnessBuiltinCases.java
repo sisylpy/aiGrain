@@ -9,11 +9,12 @@ import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntent;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
-import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrix;
+import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrix;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 
@@ -365,8 +366,8 @@ public final class AiHarnessBuiltinCases {
     /**
      * D-13.3A：低毛利排行 DISH anchor →「哪些原料拖累毛利」追问 → {@code dish_ingredient_cost_breakdown} 协议闭环（无真实原料明细）。
      */
-    public static final String DISH_LOW_MARGIN_DRILLDOWN_INGREDIENT_COST_2 =
-            "DISH_LOW_MARGIN_DRILLDOWN_INGREDIENT_COST_2";
+    public static final String DISH_LOW_MARGIN_ANCHOR_EXECUTION_INGREDIENT_COST_2 =
+            "DISH_LOW_MARGIN_ANCHOR_EXECUTION_INGREDIENT_COST_2";
 
     /**
      * DiagnosisAgent v1：集团「本月问题」→ 单店（AAA）成本偏高 → 双店（AAA / 汀兰）并排原因；仅 Resolver Replay + 契约探针。
@@ -414,17 +415,17 @@ public final class AiHarnessBuiltinCases {
 
     /**
      * D-13：供货商金额排行 → 「上个月呢」→ Top 供货商商品/单价明细追问（默认 {@code GRAPH_RUN}）。
-     * 预期链见 {@link #expectationsPurchaseSupplierRankingDrilldownGoodsUnitPrice3}；文档见 {@code docs/ai/follow-up-action-protocol.md}。
+     * 预期链见 {@link #expectationsPurchaseSupplierRankingAnchorExecutionGoodsUnitPrice3}；契约见 {@code docs/ai/semantic-allowed-output-contract-design.md}。
      */
-    public static final String PURCHASE_SUPPLIER_RANKING_DRILLDOWN_GOODS_UNIT_PRICE_3 =
-            "PURCHASE_SUPPLIER_RANKING_DRILLDOWN_GOODS_UNIT_PRICE_3";
+    public static final String PURCHASE_SUPPLIER_RANKING_ANCHOR_EXECUTION_GOODS_UNIT_PRICE_3 =
+            "PURCHASE_SUPPLIER_RANKING_ANCHOR_EXECUTION_GOODS_UNIT_PRICE_3";
 
     /**
      * D-13.4 第一阶段：商品采购金额 Top1 → 供应商/单价追问（协议 + Anchor + Resolver；默认 {@code GRAPH_RUN}）。
-     * 预期见 {@link #expectationsPurchaseGoodsRankingDrilldownSupplierUnitPrice2}。
+     * 预期见 {@link #expectationsPurchaseGoodsRankingAnchorExecutionSupplierUnitPrice2}。
      */
-    public static final String PURCHASE_GOODS_RANKING_DRILLDOWN_SUPPLIER_UNIT_PRICE_2 =
-            "PURCHASE_GOODS_RANKING_DRILLDOWN_SUPPLIER_UNIT_PRICE_2";
+    public static final String PURCHASE_GOODS_RANKING_ANCHOR_EXECUTION_SUPPLIER_UNIT_PRICE_2 =
+            "PURCHASE_GOODS_RANKING_ANCHOR_EXECUTION_SUPPLIER_UNIT_PRICE_2";
 
     /**
      * D-13 Phase1：商品金额排行锚之后，用户以「供货商供货的商品里哪个采购金额最大」发起**新的**商品排行，
@@ -439,14 +440,14 @@ public final class AiHarnessBuiltinCases {
     public static final String PURCHASE_GOODS_RANKING_SOURCE_BREAKDOWN_2 = "PURCHASE_GOODS_RANKING_SOURCE_BREAKDOWN_2";
 
     /**
-     * GOODS 锚四轮下钻矩阵（Harness 严格预期）：排行 → 谁供的 → 各供货商采购量 → 最高单价。
-     * 问句见 {@link #messagesDrilldownPurchaseMatrixP1()}；预期见
-     * {@link #expectationsDrilldownPurchaseMatrixP1(LocalDateAnchor)}。
+     * GOODS 锚四轮 semantic execution 矩阵（Harness 严格预期）：排行 → 谁供的 → 各供货商采购量 → 最高单价。
+     * 问句见 {@link #messagesPurchaseAnchorExecutionMatrixP1()}；预期见
+     * {@link #expectationsPurchaseAnchorExecutionMatrixP1(LocalDateAnchor)}。
      */
-    public static final String DRILLDOWN_PURCHASE_MATRIX_P1 = "DRILLDOWN_PURCHASE_MATRIX_P1";
+    public static final String PURCHASE_ANCHOR_EXECUTION_MATRIX_P1 = "PURCHASE_ANCHOR_EXECUTION_MATRIX_P1";
 
     /**
-     * DISH 锚四轮下钻矩阵（Harness 严格预期）：低毛利排行 → 原料构成 → 高毛利排行 → 点名单菜毛利。
+     * DISH 锚四轮 semantic execution 矩阵（Harness 严格预期）：低毛利排行 → 原料构成 → 高毛利排行 → 点名单菜毛利。
      * 问句见 {@link #messagesDishProfitMatrixP1()}；预期见 {@link #expectationsDishProfitMatrixP1(LocalDateAnchor)}。
      * <p><strong>当前主验收（P1-B）</strong>：与 Composite strict case 并列的 GRAPH 矩阵门禁。</p>
      */
@@ -467,25 +468,25 @@ public final class AiHarnessBuiltinCases {
 
     /**
      * 供货商金额排行锚（上月）→「在供货商订了多少钱」金额汇总追问；须走 {@code PURCHASE_SUPPLIER_OVERVIEW} /
-     * {@code purchase_source_amount_query}，不得误登记为商品明细下钻。
+     * {@code purchase_source_amount_query}，不得误登记为商品明细 anchor execution。
      */
     public static final String PURCHASE_SUPPLIER_ANCHOR_THEN_SOURCE_AMOUNT_SUMMARY_2 =
             "PURCHASE_SUPPLIER_ANCHOR_THEN_SOURCE_AMOUNT_SUMMARY_2";
 
     /**
      * D-13.2：本月经营诊断 → 门店优先级 → STORE 原因追问；默认 {@link AiHarnessReplayMode#GRAPH_RUN}，预期见
-     * {@link #expectationsBusinessStorePriorityDrilldownReasons3(LocalDateAnchor)}。
+     * {@link #expectationsBusinessStorePriorityReasonExplanation3(LocalDateAnchor)}。
      */
-    public static final String BUSINESS_STORE_PRIORITY_DRILLDOWN_REASONS_3 =
-            "BUSINESS_STORE_PRIORITY_DRILLDOWN_REASONS_3";
+    public static final String BUSINESS_STORE_PRIORITY_REASON_EXPLANATION_3 =
+            "BUSINESS_STORE_PRIORITY_REASON_EXPLANATION_3";
 
     /**
-     * 经营诊断内下钻 Matrix P1（GRAPH）：BD-A 综述 → BD-B 门店优先级 → BD-C/D 原因 → BD-E/F/G 子域归因 → BD-K 改进行动。
-     * 问句见 {@link #messagesBusinessDiagnosisDrilldownMatrixP1()}；
-     * 预期见 {@link #expectationsBusinessDiagnosisDrilldownMatrixP1(LocalDateAnchor)}。
+     * 经营诊断内 anchor execution Matrix P1（GRAPH）：BD-A 综述 → BD-B 门店优先级 → BD-C/D 原因 → BD-E/F/G 子域归因 → BD-K 改进行动。
+     * 问句见 {@link #messagesBusinessDiagnosisSemanticCapabilityMatrixP1()}；
+     * 预期见 {@link #expectationsBusinessDiagnosisSemanticCapabilityMatrixP1(LocalDateAnchor)}。
      */
-    public static final String BUSINESS_DIAGNOSIS_DRILLDOWN_MATRIX_P1 =
-            "BUSINESS_DIAGNOSIS_DRILLDOWN_MATRIX_P1";
+    public static final String BUSINESS_DIAGNOSIS_ANCHOR_EXECUTION_MATRIX_P1 =
+            "BUSINESS_DIAGNOSIS_ANCHOR_EXECUTION_MATRIX_P1";
 
     /** 出库核销单域 {@link AiHarnessReplayMode#GRAPH_RUN}。 */
     public static final String STOCK_REDUCE_AGENT_GRAPH_CORE = "STOCK_REDUCE_AGENT_GRAPH_CORE";
@@ -922,10 +923,10 @@ public final class AiHarnessBuiltinCases {
     }
 
     /**
-     * {@link #DISH_LOW_MARGIN_DRILLDOWN_INGREDIENT_COST_2}：「上个月哪个菜毛利率最低？」→「具体是哪些原料拖累了毛利？」；
+     * {@link #DISH_LOW_MARGIN_ANCHOR_EXECUTION_INGREDIENT_COST_2}：「上个月哪个菜毛利率最低？」→「具体是哪些原料拖累了毛利？」；
      * 与 {@link #DISH_PROFIT_AGENT_GRAPH_CORE} 相同为 {@code GRAPH_RUN} 默认。
      */
-    public static List<AiHarnessReplayExpectedRound> expectationsDishLowMarginDrilldownIngredientCost2(
+    public static List<AiHarnessReplayExpectedRound> expectationsDishLowMarginAnchorExecutionIngredientCost2(
             LocalDateAnchor anchor) {
         LocalDateAnchor a = anchor;
         String p0 = a.previousMonthFirstDay();
@@ -973,11 +974,10 @@ public final class AiHarnessBuiltinCases {
         r2.setHarnessReplayDishProfitAnswerPlanType(DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN);
         r2.setDishProfitAnswerPlanPresentExpected(Boolean.TRUE);
         r2.setDishProfitAnswerPlanHumanTypeExpected("原料成本构成");
-        r2.getFollowUpActionAnyOf().addAll(List.of("DETAIL_DRILLDOWN", "OBJECT_DRILLDOWN"));
-        r2.setFollowUpTargetEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_DISH);
-        r2.setFollowUpTargetEntityNameMustBeNonBlank(Boolean.TRUE);
-        r2.getFollowUpDetailWantedAnyOf().addAll(List.of("INGREDIENT_COST_BREAKDOWN", "DISH_COST_COMPONENTS"));
-        r2.setFollowUpSourcePlanTypeExpected(DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN);
+        r2.setFocusEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_DISH);
+        r2.setFocusEntityNameMustBeNonBlank(Boolean.TRUE);
+        r2.getExecutionDetailWantedAnyOf().addAll(List.of("INGREDIENT_COST_BREAKDOWN", "DISH_COST_COMPONENTS"));
+        r2.setAnchorSourcePlanTypeExpected(DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN);
         r2.setPreviousTurnSummaryResultAnchorsCountMin(1);
         r2.getPreviousTurnSummaryResultAnchorTypesMustContain().add(AiResultAnchor.ENTITY_TYPE_DISH);
         r2.getUsedToolsMustContain().add(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
@@ -1661,8 +1661,8 @@ public final class AiHarnessBuiltinCases {
         if (PURCHASE_TOOL_REQUEST_2A_CORE.equals(c)) {
             return new ArrayList<>(messagesPurchaseToolRequest2aCore());
         }
-        if (DRILLDOWN_PURCHASE_MATRIX_P1.equals(c)) {
-            return new ArrayList<>(messagesDrilldownPurchaseMatrixP1());
+        if (PURCHASE_ANCHOR_EXECUTION_MATRIX_P1.equals(c)) {
+            return new ArrayList<>(messagesPurchaseAnchorExecutionMatrixP1());
         }
         if (DISH_PROFIT_MATRIX_P1.equals(c)) {
             return new ArrayList<>(messagesDishProfitMatrixP1());
@@ -1679,14 +1679,14 @@ public final class AiHarnessBuiltinCases {
         if (DISH_SALES_MATRIX_P1.equals(c)) {
             return new ArrayList<>(messagesDishSalesMatrixP1());
         }
-        if (BUSINESS_DIAGNOSIS_DRILLDOWN_MATRIX_P1.equals(c)) {
-            return new ArrayList<>(messagesBusinessDiagnosisDrilldownMatrixP1());
+        if (BUSINESS_DIAGNOSIS_ANCHOR_EXECUTION_MATRIX_P1.equals(c)) {
+            return new ArrayList<>(messagesBusinessDiagnosisSemanticCapabilityMatrixP1());
         }
         return null;
     }
 
-    /** {@link #BUSINESS_DIAGNOSIS_DRILLDOWN_MATRIX_P1} 八轮问句（Matrix P1 契约 BD-A…BD-K）。 */
-    public static List<String> messagesBusinessDiagnosisDrilldownMatrixP1() {
+    /** {@link #BUSINESS_DIAGNOSIS_ANCHOR_EXECUTION_MATRIX_P1} 八轮问句（Matrix P1 契约 BD-A…BD-K）。 */
+    public static List<String> messagesBusinessDiagnosisSemanticCapabilityMatrixP1() {
         return List.of(
                 "这个月帮我做一下经营诊断",
                 "哪个门店问题最大？",
@@ -1758,7 +1758,7 @@ public final class AiHarnessBuiltinCases {
                 "那哪个商品废弃最多？");
     }
 
-    /** {@link #DISH_PROFIT_MATRIX_P1} 四轮问句（与 dish-profit-drilldown-matrix 契约一致）。 */
+    /** {@link #DISH_PROFIT_MATRIX_P1} 四轮问句（与 dish-profit-domain-capability-matrix 契约一致）。 */
     public static List<String> messagesDishProfitMatrixP1() {
         return List.of(
                 "上个月哪个菜毛利率最低？",
@@ -1767,8 +1767,8 @@ public final class AiHarnessBuiltinCases {
                 "核桃芽菜西芹毛利怎么样？");
     }
 
-    /** {@link #DRILLDOWN_PURCHASE_MATRIX_P1} 四轮问句（与 matrix 契约 §2 / prompt 9d 一致）。 */
-    public static List<String> messagesDrilldownPurchaseMatrixP1() {
+    /** {@link #PURCHASE_ANCHOR_EXECUTION_MATRIX_P1} 四轮问句（与 matrix 契约 §2 / prompt 9d 一致）。 */
+    public static List<String> messagesPurchaseAnchorExecutionMatrixP1() {
         return List.of(
                 "这个月采购最多的商品是什么？",
                 "第一名是谁供的？",
@@ -2314,7 +2314,7 @@ public final class AiHarnessBuiltinCases {
      * 供货商排行 → 上个月 → 商品/单价下钻：与采购 {@link AiHarnessBuiltinCases#PURCHASE_AGENT_GRAPH_CORE} 同属单域 Graph，
      * 专测 {@link com.nongxinle.ai.resolver.AiResolvedQueryContextResolver} 锚点承接与 {@code purchase_source_goods_query} 路由。
      */
-    public static List<AiHarnessReplayExpectedRound> expectationsPurchaseSupplierRankingDrilldownGoodsUnitPrice3(
+    public static List<AiHarnessReplayExpectedRound> expectationsPurchaseSupplierRankingAnchorExecutionGoodsUnitPrice3(
             LocalDateAnchor anchor) {
         LocalDateAnchor a = anchor;
         String p0 = a.previousMonthFirstDay();
@@ -2385,13 +2385,12 @@ public final class AiHarnessBuiltinCases {
         r3.setHarnessReplayPlanSource("purchaseAnswerPlan");
         r3.setHarnessReplayPurchaseAnswerPlanProbePresent(Boolean.TRUE);
         r3.setHarnessReplayPurchaseAnswerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL);
-        r3.setFollowUpActionExpected("OBJECT_DRILLDOWN");
-        r3.setFollowUpTargetEntityTypeExpected("SUPPLIER");
-        r3.setFollowUpTargetEntityNameMustBeNonBlank(Boolean.TRUE);
-        r3.setFollowUpDetailWantedExpected("GOODS_UNIT_PRICE");
-        r3.setFollowUpSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING);
+        r3.setFocusEntityTypeExpected("SUPPLIER");
+        r3.setFocusEntityNameMustBeNonBlank(Boolean.TRUE);
+        r3.setExecutionDetailWantedExpected("GOODS_UNIT_PRICE");
+        r3.setAnchorSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING);
         r3.setMatchedCapabilityIdExpected("purchase.supplier_anchor.goods_detail");
-        r3.setFollowUpRegistryQueryModeExpected("supplier_anchor_goods_detail");
+        r3.setContractExecutionQueryModeExpected("supplier_anchor_goods_detail");
         r3.setSlotDetailWantedExpected("GOODS_UNIT_PRICE");
         r3.getUsedToolsMustContain().add(AiBusinessToolIds.PURCHASE_OVERVIEW);
         r3.setMasterPurchaseToolResultSuccessExpected(Boolean.TRUE);
@@ -2408,7 +2407,7 @@ public final class AiHarnessBuiltinCases {
      * D-13.4：商品金额排行 Top1 GOODS 锚 →「哪些供应商、单价」追问；
      * 与 {@link #PURCHASE_AGENT_GRAPH_CORE} 同属单域 Graph，验收锚点协议与 {@code purchase_source_goods_query} 路由。
      */
-    public static List<AiHarnessReplayExpectedRound> expectationsPurchaseGoodsRankingDrilldownSupplierUnitPrice2(
+    public static List<AiHarnessReplayExpectedRound> expectationsPurchaseGoodsRankingAnchorExecutionSupplierUnitPrice2(
             LocalDateAnchor anchor) {
         LocalDateAnchor a = anchor;
         String m0 = a.monthStartInclusive();
@@ -2458,13 +2457,14 @@ public final class AiHarnessBuiltinCases {
         r2.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE);
         r2.setHarnessReplayPlanSource("purchaseAnswerPlan");
         r2.setHarnessReplayPurchaseAnswerPlanProbePresent(Boolean.TRUE);
-        r2.setFollowUpActionExpected("OBJECT_DRILLDOWN");
-        r2.setFollowUpTargetEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
-        r2.setFollowUpTargetEntityNameMustBeNonBlank(Boolean.TRUE);
-        r2.setFollowUpDetailWantedExpected("SUPPLIER_UNIT_PRICE");
-        r2.setFollowUpSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING);
+        r2.setFocusEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
+        r2.setFocusEntityNameMustBeNonBlank(Boolean.TRUE);
+        r2.setExecutionIntentTypeExpected(PurchaseSemanticExecutionIntent.EXEC_GOODS_SUPPLIER_UNIT_PRICE);
+
+        r2.setExecutionDetailWantedExpected("SUPPLIER_UNIT_PRICE");
+        r2.setAnchorSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING);
         r2.setMatchedCapabilityIdExpected("purchase.goods_anchor.supplier_unit_price");
-        r2.setFollowUpRegistryQueryModeExpected("goods_anchor_supplier_unit_price");
+        r2.setContractExecutionQueryModeExpected("goods_anchor_supplier_unit_price");
         r2.setSlotDetailWantedExpected("SUPPLIER_UNIT_PRICE");
         r2.setHarnessReplayPurchaseAnswerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL);
         r2.setPreviousTurnSummaryResultAnchorsCountMin(1);
@@ -2530,14 +2530,15 @@ public final class AiHarnessBuiltinCases {
         r2.getPurchaseSourceTypeAnyOf().add(AiQuerySemanticLexicon.SOURCE_ALL);
         r2.setHarnessReplayPlanSource("purchaseAnswerPlan");
         r2.setHarnessReplayPurchaseAnswerPlanProbePresent(Boolean.TRUE);
-        r2.setFollowUpActionExpected("OBJECT_DRILLDOWN");
-        r2.setFollowUpTargetEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
-        r2.setFollowUpTargetEntityNameMustBeNonBlank(Boolean.TRUE);
-        r2.setFollowUpTargetEntityIdMustBeNonBlank(Boolean.TRUE);
-        r2.setFollowUpDetailWantedExpected("SOURCE_BREAKDOWN");
-        r2.setFollowUpSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING);
+        r2.setFocusEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
+        r2.setFocusEntityNameMustBeNonBlank(Boolean.TRUE);
+        r2.setFocusEntityIdMustBeNonBlank(Boolean.TRUE);
+        r2.setExecutionIntentTypeExpected(PurchaseSemanticExecutionIntent.EXEC_GOODS_SOURCE_BREAKDOWN);
+
+        r2.setExecutionDetailWantedExpected("SOURCE_BREAKDOWN");
+        r2.setAnchorSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING);
         r2.setMatchedCapabilityIdExpected("purchase.goods_anchor.source_breakdown");
-        r2.setFollowUpRegistryQueryModeExpected("goods_source_breakdown");
+        r2.setContractExecutionQueryModeExpected("goods_source_breakdown");
         r2.setSlotDetailWantedExpected("SOURCE_BREAKDOWN");
         r2.setHarnessReplayPurchaseAnswerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN);
         r2.setPreviousTurnSummaryResultAnchorsCountMin(1);
@@ -2606,14 +2607,15 @@ public final class AiHarnessBuiltinCases {
         r2.getPurchaseSourceTypeAnyOf().add(AiQuerySemanticLexicon.SOURCE_ALL);
         r2.setHarnessReplayPlanSource("purchaseAnswerPlan");
         r2.setHarnessReplayPurchaseAnswerPlanProbePresent(Boolean.TRUE);
-        r2.setFollowUpActionExpected("OBJECT_DRILLDOWN");
-        r2.setFollowUpTargetEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
-        r2.setFollowUpTargetEntityNameMustBeNonBlank(Boolean.TRUE);
-        r2.setFollowUpTargetEntityIdMustBeNonBlank(Boolean.TRUE);
-        r2.setFollowUpDetailWantedExpected("SOURCE_BREAKDOWN");
-        r2.setFollowUpSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING);
+        r2.setFocusEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
+        r2.setFocusEntityNameMustBeNonBlank(Boolean.TRUE);
+        r2.setFocusEntityIdMustBeNonBlank(Boolean.TRUE);
+        r2.setExecutionIntentTypeExpected(PurchaseSemanticExecutionIntent.EXEC_GOODS_SOURCE_BREAKDOWN);
+
+        r2.setExecutionDetailWantedExpected("SOURCE_BREAKDOWN");
+        r2.setAnchorSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING);
         r2.setMatchedCapabilityIdExpected("purchase.goods_anchor.source_breakdown");
-        r2.setFollowUpRegistryQueryModeExpected("goods_source_breakdown");
+        r2.setContractExecutionQueryModeExpected("goods_source_breakdown");
         r2.setSlotDetailWantedExpected("SOURCE_BREAKDOWN");
         r2.setHarnessReplayPurchaseAnswerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN);
         r2.setPreviousTurnSummaryResultAnchorsCountMin(1);
@@ -2736,11 +2738,12 @@ public final class AiHarnessBuiltinCases {
         r2.setHarnessReplayPlanSource("purchaseAnswerPlan");
         r2.setHarnessReplayPurchaseAnswerPlanProbePresent(Boolean.TRUE);
         r2.setHarnessReplayPurchaseAnswerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL);
-        r2.setFollowUpActionExpected("OBJECT_DRILLDOWN");
-        r2.setFollowUpDetailWantedExpected("GOODS_DETAIL");
-        r2.setFollowUpSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_OVERVIEW);
+        r2.setExecutionIntentTypeExpected(PurchaseSemanticExecutionIntent.EXEC_CHANNEL_GOODS_DETAIL);
+
+        r2.setExecutionDetailWantedExpected("GOODS_DETAIL");
+        r2.setAnchorSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_OVERVIEW);
         r2.setMatchedCapabilityIdExpected("purchase.supplier_channel.goods_detail");
-        r2.setFollowUpRegistryQueryModeExpected("supplier_channel_goods_detail");
+        r2.setContractExecutionQueryModeExpected("supplier_channel_goods_detail");
         r2.setFramePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_OVERVIEW);
         r2.setFramePurchaseSourceTypeExpected(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE);
         r2.setSlotDetailWantedExpected("GOODS_DETAIL");
@@ -2819,9 +2822,9 @@ public final class AiHarnessBuiltinCases {
     }
 
     /**
-     * {@link #BUSINESS_STORE_PRIORITY_DRILLDOWN_REASONS_3}：本月经营怎么样 → 门店优先级 → STORE 原因追问。
+     * {@link #BUSINESS_STORE_PRIORITY_REASON_EXPLANATION_3}：本月经营怎么样 → 门店优先级 → STORE 原因追问。
      */
-    public static List<AiHarnessReplayExpectedRound> expectationsBusinessStorePriorityDrilldownReasons3(
+    public static List<AiHarnessReplayExpectedRound> expectationsBusinessStorePriorityReasonExplanation3(
             LocalDateAnchor anchor) {
         LocalDateAnchor a = anchor;
         String m0 = a.monthStartInclusive();
@@ -2906,13 +2909,12 @@ public final class AiHarnessBuiltinCases {
         r3.setEndDate(m1);
         r3.setScopeType("GROUP");
         r3.setVisibleStoreRootCountMin(2);
-        r3.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_STORE_RISK_REASONS_DRILLDOWN);
+        r3.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_STORE_RISK_REASON_EXPLANATION);
         r3.setEffectiveIntentSource("INHERITED_PREVIOUS");
-        r3.getFollowUpActionAnyOf().addAll(List.of("OBJECT_DRILLDOWN", "DETAIL_DRILLDOWN"));
-        r3.setFollowUpTargetEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_STORE);
-        r3.setFollowUpTargetEntityNameMustBeNonBlank(Boolean.TRUE);
-        r3.setFollowUpDetailWantedExpected("STORE_RISK_REASONS");
-        r3.setFollowUpSourcePlanTypeExpected(DiagnosisPlan.ANCHOR_SOURCE_STORE_PRIORITY_RANKING);
+        r3.setFocusEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_STORE);
+        r3.setFocusEntityNameMustBeNonBlank(Boolean.TRUE);
+        r3.setExecutionDetailWantedExpected("STORE_RISK_REASONS");
+        r3.setAnchorSourcePlanTypeExpected(DiagnosisPlan.ANCHOR_SOURCE_STORE_PRIORITY_RANKING);
         r3.setDiagnosisQuestionTypeExpected(BusinessDiagnosisAgentV1.DIAGNOSIS_QUESTION_STORE_RISK_REASONS);
         r3.setPreviousTurnSummaryResultAnchorsCountMin(1);
         r3.getPreviousTurnSummaryResultAnchorTypesMustContain().add(AiResultAnchor.ENTITY_TYPE_STORE);
@@ -2937,9 +2939,9 @@ public final class AiHarnessBuiltinCases {
     }
 
     /**
-     * {@link #BUSINESS_DIAGNOSIS_DRILLDOWN_MATRIX_P1}：八轮 Matrix P1（BD-A…BD-K）。
+     * {@link #BUSINESS_DIAGNOSIS_ANCHOR_EXECUTION_MATRIX_P1}：八轮 Matrix P1（BD-A…BD-K）。
      */
-    public static List<AiHarnessReplayExpectedRound> expectationsBusinessDiagnosisDrilldownMatrixP1(
+    public static List<AiHarnessReplayExpectedRound> expectationsBusinessDiagnosisSemanticCapabilityMatrixP1(
             LocalDateAnchor anchor) {
         LocalDateAnchor a = anchor;
         String m0 = a.monthStartInclusive();
@@ -2959,7 +2961,7 @@ public final class AiHarnessBuiltinCases {
         r1.setScopeType("GROUP");
         r1.setVisibleStoreRootCountMin(2);
         r1.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_BUSINESS_DIAGNOSIS_SUMMARY);
-        r1.setDiagnosisDrilldownMatrixRowIdExpected("BD-A");
+        r1.setDiagnosisReasonExplanationMatrixRowIdExpected("BD-A");
         r1.setDiagnosisFacetExpected("SUMMARY");
         r1.setBusinessOverviewMultiAgentBatchCompletedExpected(Boolean.TRUE);
         list.add(r1);
@@ -2975,7 +2977,7 @@ public final class AiHarnessBuiltinCases {
         r2.setEndDate(m1);
         r2.setScopeType("GROUP");
         r2.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_STORE_PRIORITY_RANKING);
-        r2.setDiagnosisDrilldownMatrixRowIdExpected("BD-B");
+        r2.setDiagnosisReasonExplanationMatrixRowIdExpected("BD-B");
         r2.setDiagnosisFacetExpected("STORE_PRIORITY");
         r2.setDiagnosisQuestionTypeExpected(BusinessDiagnosisAgentV1.DIAGNOSIS_QUESTION_STORE_PRIORITY_RANKING);
         r2.setDiagnosisPlanExistsExpected(Boolean.TRUE);
@@ -2996,13 +2998,12 @@ public final class AiHarnessBuiltinCases {
         r3.setStartDate(m0);
         r3.setEndDate(m1);
         r3.setScopeType("GROUP");
-        r3.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_STORE_RISK_REASONS_DRILLDOWN);
-        r3.setDiagnosisDrilldownMatrixRowIdExpected("BD-C");
+        r3.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_STORE_RISK_REASON_EXPLANATION);
+        r3.setDiagnosisReasonExplanationMatrixRowIdExpected("BD-C");
         r3.setDiagnosisFacetExpected("STORE_RISK_REASONS");
         r3.setDiagnosisQuestionTypeExpected(BusinessDiagnosisAgentV1.DIAGNOSIS_QUESTION_STORE_RISK_REASONS);
-        r3.getFollowUpActionAnyOf().addAll(List.of("OBJECT_DRILLDOWN", "DETAIL_DRILLDOWN"));
-        r3.setFollowUpTargetEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_STORE);
-        r3.setFollowUpTargetEntityNameMustBeNonBlank(Boolean.TRUE);
+        r3.setFocusEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_STORE);
+        r3.setFocusEntityNameMustBeNonBlank(Boolean.TRUE);
         r3.setPreviousTurnSummaryResultAnchorsCountMin(1);
         r3.getPreviousTurnSummaryResultAnchorTypesMustContain().add(AiResultAnchor.ENTITY_TYPE_STORE);
         r3.setDiagnosisPlanExistsExpected(Boolean.TRUE);
@@ -3020,8 +3021,8 @@ public final class AiHarnessBuiltinCases {
         r4.setStartDate(m0);
         r4.setEndDate(m1);
         r4.setScopeType("STORE");
-        r4.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_STORE_RISK_REASONS_DRILLDOWN);
-        r4.setDiagnosisDrilldownMatrixRowIdExpected("BD-D");
+        r4.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_STORE_RISK_REASON_EXPLANATION);
+        r4.setDiagnosisReasonExplanationMatrixRowIdExpected("BD-D");
         r4.setDiagnosisFacetExpected("STORE_RISK_REASONS");
         r4.setDiagnosisQuestionTypeExpected(BusinessDiagnosisAgentV1.DIAGNOSIS_QUESTION_STORE_RISK_REASONS);
         r4.setDiagnosisTargetStoreNameMustContain("AAA");
@@ -3040,7 +3041,7 @@ public final class AiHarnessBuiltinCases {
         r5.setEndDate(m1);
         r5.setScopeType("STORE");
         r5.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_STORE_DOMAIN_ATTRIBUTION_PURCHASE);
-        r5.setDiagnosisDrilldownMatrixRowIdExpected("BD-E");
+        r5.setDiagnosisReasonExplanationMatrixRowIdExpected("BD-E");
         r5.setDiagnosisFacetExpected("PURCHASE");
         r5.setDiagnosisChildDomainExpected("PURCHASE");
         r5.setDiagnosisPlanExistsExpected(Boolean.TRUE);
@@ -3059,7 +3060,7 @@ public final class AiHarnessBuiltinCases {
         r6.setEndDate(m1);
         r6.setScopeType("STORE");
         r6.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_STORE_DOMAIN_ATTRIBUTION_STOCK_REDUCE);
-        r6.setDiagnosisDrilldownMatrixRowIdExpected("BD-F");
+        r6.setDiagnosisReasonExplanationMatrixRowIdExpected("BD-F");
         r6.setDiagnosisFacetExpected("STOCK_REDUCE");
         r6.setDiagnosisChildDomainExpected("STOCK_REDUCE");
         r6.setDiagnosisPlanExistsExpected(Boolean.TRUE);
@@ -3078,7 +3079,7 @@ public final class AiHarnessBuiltinCases {
         r7.setEndDate(m1);
         r7.setScopeType("STORE");
         r7.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_STORE_DOMAIN_ATTRIBUTION_DISH_PROFIT);
-        r7.setDiagnosisDrilldownMatrixRowIdExpected("BD-G");
+        r7.setDiagnosisReasonExplanationMatrixRowIdExpected("BD-G");
         r7.setDiagnosisFacetExpected("DISH_PROFIT");
         r7.setDiagnosisChildDomainExpected("DISH_PROFIT");
         r7.setDiagnosisPlanExistsExpected(Boolean.TRUE);
@@ -3096,10 +3097,10 @@ public final class AiHarnessBuiltinCases {
         r8.setStartDate(m0);
         r8.setEndDate(m1);
         r8.setScopeType("STORE");
-        r8.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DIAGNOSIS_ACTION_FOLLOWUP);
-        r8.setDiagnosisDrilldownMatrixRowIdExpected("BD-K");
+        r8.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DIAGNOSIS_ACTION_SUGGESTION);
+        r8.setDiagnosisReasonExplanationMatrixRowIdExpected("BD-K");
         r8.setDiagnosisFacetExpected("ACTION");
-        r8.setDiagnosisQuestionTypeExpected("ACTION_FOLLOWUP");
+        r8.setDiagnosisQuestionTypeExpected("ACTION_SUGGESTION");
         r8.setDiagnosisPlanExistsExpected(Boolean.TRUE);
         r8.setHarnessReplayPlanSource("diagnosisPlan");
         r8.getAnswerPreviewContainsAnyOf().addAll(List.of("改进行动", "动作"));
@@ -3313,13 +3314,12 @@ public final class AiHarnessBuiltinCases {
         r2.setHarnessReplayDishProfitAnswerPlanType(DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN);
         r2.setDishProfitAnswerPlanPresentExpected(Boolean.TRUE);
         r2.setMentionedDishName("核桃芽菜西芹");
-        r2.setMatchedCapabilityIdExpected(DishProfitDrilldownMatrix.CAPABILITY_DISH_ANCHOR_INGREDIENT_BREAKDOWN);
-        r2.setFollowUpRegistryQueryModeExpected("dish_anchor_ingredient_breakdown");
-        r2.setFollowUpActionExpected("OBJECT_DRILLDOWN");
-        r2.setFollowUpTargetEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_DISH);
-        r2.setFollowUpTargetEntityNameMustBeNonBlank(Boolean.TRUE);
-        r2.setFollowUpDetailWantedExpected(DishProfitDrilldownMatrix.DETAIL_WANTED_INGREDIENT_COST_BREAKDOWN);
-        r2.setFollowUpSourcePlanTypeExpected(DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN);
+        r2.setMatchedCapabilityIdExpected(DishProfitSemanticCapabilityMatrix.CAPABILITY_DISH_ANCHOR_INGREDIENT_BREAKDOWN);
+        r2.setContractExecutionQueryModeExpected("dish_anchor_ingredient_breakdown");
+        r2.setFocusEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_DISH);
+        r2.setFocusEntityNameMustBeNonBlank(Boolean.TRUE);
+        r2.setExecutionDetailWantedExpected(DishProfitSemanticCapabilityMatrix.DETAIL_WANTED_INGREDIENT_COST_BREAKDOWN);
+        r2.setAnchorSourcePlanTypeExpected(DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN);
         r2.setPreviousTurnSummaryResultAnchorsCountMin(1);
         r2.getPreviousTurnSummaryResultAnchorTypesMustContain().add(AiResultAnchor.ENTITY_TYPE_DISH);
         r2.setNeedSemanticClarificationExpected(Boolean.FALSE);
@@ -3399,7 +3399,7 @@ public final class AiHarnessBuiltinCases {
                 "GROUP",
                 2,
                 null,
-                StockReduceDrilldownMatrix.OVERVIEW,
+                StockReduceSemanticCapabilityMatrix.OVERVIEW,
                 List.of("出库", "核销"),
                 null,
                 true));
@@ -3410,7 +3410,7 @@ public final class AiHarnessBuiltinCases {
                 "GROUP",
                 2,
                 null,
-                StockReduceDrilldownMatrix.STORE_AMOUNT_RANKING,
+                StockReduceSemanticCapabilityMatrix.STORE_AMOUNT_RANKING,
                 List.of("门店", "出库"),
                 null,
                 true));
@@ -3421,7 +3421,7 @@ public final class AiHarnessBuiltinCases {
                 "GROUP",
                 2,
                 null,
-                StockReduceDrilldownMatrix.PRODUCTION_OVERVIEW,
+                StockReduceSemanticCapabilityMatrix.PRODUCTION_OVERVIEW,
                 List.of("生产", "耗用"),
                 null,
                 true));
@@ -3432,7 +3432,7 @@ public final class AiHarnessBuiltinCases {
                 "GROUP",
                 2,
                 null,
-                StockReduceDrilldownMatrix.WASTE_OVERVIEW,
+                StockReduceSemanticCapabilityMatrix.WASTE_OVERVIEW,
                 List.of("废弃"),
                 null,
                 true));
@@ -3443,7 +3443,7 @@ public final class AiHarnessBuiltinCases {
                 "GROUP",
                 2,
                 null,
-                StockReduceDrilldownMatrix.LOSS_OVERVIEW,
+                StockReduceSemanticCapabilityMatrix.LOSS_OVERVIEW,
                 List.of("损失", "报损", "损耗"),
                 null,
                 true));
@@ -3454,7 +3454,7 @@ public final class AiHarnessBuiltinCases {
                 "GROUP",
                 2,
                 null,
-                StockReduceDrilldownMatrix.RETURN_OVERVIEW,
+                StockReduceSemanticCapabilityMatrix.RETURN_OVERVIEW,
                 List.of("退货"),
                 null,
                 true));
@@ -3465,9 +3465,9 @@ public final class AiHarnessBuiltinCases {
                 "GROUP",
                 2,
                 null,
-                StockReduceDrilldownMatrix.GOODS_WASTE_AMOUNT_RANKING,
+                StockReduceSemanticCapabilityMatrix.GOODS_WASTE_AMOUNT_RANKING,
                 List.of("商品", "废弃"),
-                StockReduceDrilldownMatrix.KNOWN_GAP_GOODS_WASTE_TYPE2_SQL_NOT_FILTERED,
+                StockReduceSemanticCapabilityMatrix.KNOWN_GAP_GOODS_WASTE_TYPE2_SQL_NOT_FILTERED,
                 true));
 
         list.add(stockReduceMatrixRound(
@@ -3476,7 +3476,7 @@ public final class AiHarnessBuiltinCases {
                 "STORE",
                 null,
                 "AAA",
-                StockReduceDrilldownMatrix.OVERVIEW,
+                StockReduceSemanticCapabilityMatrix.OVERVIEW,
                 List.of("出库", "核销"),
                 null,
                 true));
@@ -3487,7 +3487,7 @@ public final class AiHarnessBuiltinCases {
                 "STORE",
                 null,
                 "AAA",
-                StockReduceDrilldownMatrix.FACET_SWITCH_WASTE,
+                StockReduceSemanticCapabilityMatrix.FACET_SWITCH_WASTE,
                 List.of("废弃"),
                 null,
                 true));
@@ -3498,7 +3498,7 @@ public final class AiHarnessBuiltinCases {
                 "STORE",
                 null,
                 "AAA",
-                StockReduceDrilldownMatrix.FACET_SWITCH_LOSS,
+                StockReduceSemanticCapabilityMatrix.FACET_SWITCH_LOSS,
                 List.of("损失", "报损", "损耗"),
                 null,
                 true));
@@ -3509,9 +3509,9 @@ public final class AiHarnessBuiltinCases {
                 "STORE",
                 null,
                 "AAA",
-                StockReduceDrilldownMatrix.GOODS_WASTE_AMOUNT_RANKING,
+                StockReduceSemanticCapabilityMatrix.GOODS_WASTE_AMOUNT_RANKING,
                 List.of("商品", "废弃"),
-                StockReduceDrilldownMatrix.KNOWN_GAP_GOODS_WASTE_TYPE2_SQL_NOT_FILTERED,
+                StockReduceSemanticCapabilityMatrix.KNOWN_GAP_GOODS_WASTE_TYPE2_SQL_NOT_FILTERED,
                 true));
 
         return list;
@@ -3530,72 +3530,72 @@ public final class AiHarnessBuiltinCases {
 
         list.add(revenueMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                RevenueDrilldownMatrix.OVERVIEW,
+                RevenueSemanticCapabilityMatrix.OVERVIEW,
                 List.of("营业额", "营收"),
                 null,
                 false));
 
         list.add(revenueMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                RevenueDrilldownMatrix.STORE_AMOUNT_RANKING,
+                RevenueSemanticCapabilityMatrix.STORE_AMOUNT_RANKING,
                 List.of("门店", "营业额"),
                 null,
                 false));
 
         list.add(revenueMatrixRound(
                 m0, m1, "STORE", null, "AAA",
-                RevenueDrilldownMatrix.SINGLE_STORE_OVERVIEW,
+                RevenueSemanticCapabilityMatrix.SINGLE_STORE_OVERVIEW,
                 List.of("营业额", "营收"),
                 null,
                 false));
 
         list.add(revenueMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                RevenueDrilldownMatrix.STORE_COMPARE,
+                RevenueSemanticCapabilityMatrix.STORE_COMPARE,
                 List.of("营业额", "汀兰", "AAA"),
-                RevenueDrilldownMatrix.KNOWN_GAP_STORE_COMPARE_NOT_PAIRWISE,
+                RevenueSemanticCapabilityMatrix.KNOWN_GAP_STORE_COMPARE_NOT_PAIRWISE,
                 false));
 
         list.add(revenueMatrixRound(
                 p0, p1, "GROUP", 2, null,
-                RevenueDrilldownMatrix.OVERVIEW,
+                RevenueSemanticCapabilityMatrix.OVERVIEW,
                 List.of("营业额", "营收"),
                 null,
                 false));
 
         list.add(revenueMatrixRound(
                 p0, p1, "GROUP", 2, null,
-                RevenueDrilldownMatrix.TIME_FOLLOWUP_PREV_MONTH,
+                RevenueSemanticCapabilityMatrix.OVERVIEW,
                 List.of("营业额", "上月"),
                 null,
                 false));
 
         list.add(revenueMatrixRound(
                 p0, p1, "GROUP", 2, null,
-                RevenueDrilldownMatrix.RANKING_FOLLOWUP_STORE_TOP,
+                RevenueSemanticCapabilityMatrix.STORE_AMOUNT_RANKING,
                 List.of("门店", "最高"),
                 null,
                 true));
 
         list.add(revenueMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                RevenueDrilldownMatrix.PERIOD_COMPARE,
+                RevenueSemanticCapabilityMatrix.PERIOD_COMPARE,
                 List.of("比", "上月", "本月"),
-                RevenueDrilldownMatrix.KNOWN_GAP_PERIOD_COMPARE_NOT_IMPLEMENTED,
+                RevenueSemanticCapabilityMatrix.KNOWN_GAP_PERIOD_COMPARE_NOT_IMPLEMENTED,
                 false));
 
         list.add(revenueMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                RevenueDrilldownMatrix.DAILY_AMOUNT_RANKING,
+                RevenueSemanticCapabilityMatrix.DAILY_AMOUNT_RANKING,
                 List.of("哪天", "最高"),
-                RevenueDrilldownMatrix.KNOWN_GAP_DAILY_RANKING_CALENDAR_DATE_MISSING,
+                RevenueSemanticCapabilityMatrix.KNOWN_GAP_DAILY_RANKING_CALENDAR_DATE_MISSING,
                 false));
 
         list.add(revenueMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                RevenueDrilldownMatrix.TREND,
+                RevenueSemanticCapabilityMatrix.TREND,
                 List.of("趋势"),
-                RevenueDrilldownMatrix.KNOWN_GAP_TREND_SERIES_NOT_IMPLEMENTED,
+                RevenueSemanticCapabilityMatrix.KNOWN_GAP_TREND_SERIES_NOT_IMPLEMENTED,
                 false));
 
         return list;
@@ -3612,63 +3612,63 @@ public final class AiHarnessBuiltinCases {
 
         list.add(warehouseMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.OVERVIEW,
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.OVERVIEW,
                 List.of("库存"),
                 null,
                 true));
 
         list.add(warehouseMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.GOODS_AMOUNT_RANKING_HIGH,
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.GOODS_AMOUNT_RANKING_HIGH,
                 List.of("商品", "库存"),
                 null,
                 true));
 
         list.add(warehouseMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.GOODS_AMOUNT_RANKING_LOW,
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.GOODS_AMOUNT_RANKING_LOW,
                 List.of("商品", "库存"),
                 null,
                 true));
 
         list.add(warehouseMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.STORE_AMOUNT_RANKING,
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.STORE_AMOUNT_RANKING,
                 List.of("门店", "库存"),
                 null,
                 true));
 
         list.add(warehouseMatrixRound(
                 m0, m1, "STORE", null, "AAA",
-                com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.SINGLE_STORE_OVERVIEW,
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.SINGLE_STORE_OVERVIEW,
                 List.of("库存"),
                 null,
                 true));
 
         list.add(warehouseMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.OUT_OF_STOCK,
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.OUT_OF_STOCK,
                 List.of("缺货"),
-                com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.KNOWN_GAP_OUT_OF_STOCK_STRICT_NOT_SUPPORTED,
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.KNOWN_GAP_OUT_OF_STOCK_STRICT_NOT_SUPPORTED,
                 true));
 
         list.add(warehouseMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.NEAR_EXPIRY,
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.NEAR_EXPIRY,
                 List.of("临期"),
-                com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.KNOWN_GAP_NEAR_EXPIRY_NOT_IN_TOOL,
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.KNOWN_GAP_NEAR_EXPIRY_NOT_IN_TOOL,
                 true));
 
         list.add(warehouseMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.GOODS_RANKING_FOLLOWUP_HIGH,
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.GOODS_AMOUNT_RANKING_HIGH,
                 List.of("商品", "最多"),
                 null,
                 true));
 
         list.add(warehouseMatrixRound(
                 m0, m1, "STORE", null, "AAA",
-                com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.STORE_FOLLOWUP_AAA,
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.SINGLE_STORE_OVERVIEW,
                 List.of("库存", "AAA"),
                 null,
                 true));
@@ -3689,72 +3689,72 @@ public final class AiHarnessBuiltinCases {
 
         list.add(dishSalesMatrixRound(
                 m0, m1, "GROUP", 2, null, null,
-                DishSalesDrilldownMatrix.COUNT_RANKING_HIGH_A,
+                DishSalesSemanticCapabilityMatrix.COUNT_RANKING_HIGH_A,
                 List.of("销量", "最好"),
                 null,
                 false));
 
         list.add(dishSalesMatrixRound(
                 m0, m1, "GROUP", 2, null, null,
-                DishSalesDrilldownMatrix.COUNT_RANKING_HIGH_A,
+                DishSalesSemanticCapabilityMatrix.COUNT_RANKING_HIGH_A,
                 List.of("销量", "最高"),
                 null,
                 true));
 
         list.add(dishSalesMatrixRound(
                 m0, m1, "GROUP", 2, null, null,
-                DishSalesDrilldownMatrix.COUNT_RANKING_LOW,
+                DishSalesSemanticCapabilityMatrix.COUNT_RANKING_LOW,
                 List.of("销量", "最低"),
                 null,
                 true));
 
         list.add(dishSalesMatrixRound(
                 m0, m1, "GROUP", 2, null, "核桃芽菜西芹",
-                DishSalesDrilldownMatrix.SINGLE_DISH,
+                DishSalesSemanticCapabilityMatrix.SINGLE_DISH,
                 List.of("核桃芽菜西芹", "份"),
                 null,
                 false));
 
         list.add(dishSalesMatrixRound(
                 m0, m1, "STORE", null, "AAA", null,
-                DishSalesDrilldownMatrix.STORE_COUNT_RANKING,
+                DishSalesSemanticCapabilityMatrix.STORE_COUNT_RANKING,
                 List.of("菜", "最多"),
                 null,
                 true));
 
         list.add(dishSalesMatrixRound(
                 m0, m1, "STORE", null, "AAA", "核桃芽菜西芹",
-                DishSalesDrilldownMatrix.STORE_SINGLE_DISH,
+                DishSalesSemanticCapabilityMatrix.STORE_SINGLE_DISH,
                 List.of("核桃芽菜西芹"),
                 null,
                 false));
 
         list.add(dishSalesMatrixRound(
                 p0, p1, "STORE", null, "AAA", "核桃芽菜西芹",
-                DishSalesDrilldownMatrix.TIME_FOLLOWUP_PREV_MONTH,
+                DishSalesSemanticCapabilityMatrix.STORE_SINGLE_DISH,
                 List.of("上月"),
                 null,
                 false));
 
         list.add(dishSalesMatrixRound(
                 p0, p1, "STORE", null, "AAA", null,
-                DishSalesDrilldownMatrix.RANKING_FOLLOWUP_HIGH,
+                DishSalesSemanticCapabilityMatrix.STORE_COUNT_RANKING,
                 List.of("最高"),
                 null,
                 true));
 
         list.add(dishSalesMatrixRound(
                 p0, p1, "STORE", null, "AAA", null,
-                DishSalesDrilldownMatrix.CROSS_DOMAIN_PROFIT,
+                DishSalesSemanticCapabilityMatrix.CROSS_DOMAIN_PROFIT,
                 List.of("毛利"),
-                DishSalesDrilldownMatrix.KNOWN_GAP_CROSS_DOMAIN_DISH_PROFIT_NOT_IN_P1,
+                DishSalesSemanticCapabilityMatrix.KNOWN_GAP_CROSS_DOMAIN_DISH_PROFIT_NOT_IN_P1,
                 true));
 
         list.add(dishSalesMatrixRound(
                 m0, m1, "GROUP", 2, null, null,
-                DishSalesDrilldownMatrix.TREND,
+                DishSalesSemanticCapabilityMatrix.TREND,
                 List.of("趋势"),
-                DishSalesDrilldownMatrix.KNOWN_GAP_TREND_SERIES_NOT_IMPLEMENTED,
+                DishSalesSemanticCapabilityMatrix.KNOWN_GAP_TREND_SERIES_NOT_IMPLEMENTED,
                 false));
 
         return list;
@@ -3767,7 +3767,7 @@ public final class AiHarnessBuiltinCases {
             Integer visibleStoreRootCountMin,
             String mentionedStore,
             String mentionedDish,
-            com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrixRow matrixRow,
+            com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrixRow matrixRow,
             List<String> answerPreviewContainsAnyOf,
             String knownGapExpected,
             boolean inheritTime) {
@@ -3832,7 +3832,7 @@ public final class AiHarnessBuiltinCases {
             String scopeType,
             Integer visibleStoreRootCountMin,
             String mentionedStore,
-            com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrixRow matrixRow,
+            com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow matrixRow,
             List<String> answerPreviewContainsAnyOf,
             String knownGapExpected,
             boolean inheritTime) {
@@ -3891,7 +3891,7 @@ public final class AiHarnessBuiltinCases {
             String scopeType,
             Integer visibleStoreRootCountMin,
             String mentionedStore,
-            com.nongxinle.ai.harness.followup.RevenueDrilldownMatrixRow matrixRow,
+            com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrixRow matrixRow,
             List<String> answerPreviewContainsAnyOf,
             String knownGapExpected,
             boolean inheritTime) {
@@ -3953,7 +3953,7 @@ public final class AiHarnessBuiltinCases {
             String scopeType,
             Integer visibleStoreRootCountMin,
             String mentionedStore,
-            com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrixRow matrixRow,
+            com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrixRow matrixRow,
             List<String> answerPreviewContainsAnyOf,
             String knownGapExpected,
             boolean inheritTime) {
@@ -4009,9 +4009,9 @@ public final class AiHarnessBuiltinCases {
     }
 
     /**
-     * {@link #DRILLDOWN_PURCHASE_MATRIX_P1}：GOODS 锚 4 轮下钻矩阵严格验收（非 PROBE-only）。
+     * {@link #PURCHASE_ANCHOR_EXECUTION_MATRIX_P1}：GOODS 锚 4 轮下钻矩阵严格验收（非 PROBE-only）。
      */
-    public static List<AiHarnessReplayExpectedRound> expectationsDrilldownPurchaseMatrixP1(
+    public static List<AiHarnessReplayExpectedRound> expectationsPurchaseAnchorExecutionMatrixP1(
             LocalDateAnchor anchor) {
         LocalDateAnchor a = anchor;
         String m0 = a.monthStartInclusive();
@@ -4060,14 +4060,15 @@ public final class AiHarnessBuiltinCases {
         r2.getPurchaseSourceTypeAnyOf().add(AiQuerySemanticLexicon.SOURCE_ALL);
         r2.setHarnessReplayPlanSource("purchaseAnswerPlan");
         r2.setHarnessReplayPurchaseAnswerPlanProbePresent(Boolean.TRUE);
-        r2.setFollowUpActionExpected("OBJECT_DRILLDOWN");
-        r2.setFollowUpTargetEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
-        r2.setFollowUpTargetEntityNameMustBeNonBlank(Boolean.TRUE);
-        r2.setFollowUpTargetEntityIdMustBeNonBlank(Boolean.TRUE);
-        r2.setFollowUpDetailWantedExpected("SOURCE_BREAKDOWN");
-        r2.setFollowUpSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING);
+        r2.setFocusEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
+        r2.setFocusEntityNameMustBeNonBlank(Boolean.TRUE);
+        r2.setFocusEntityIdMustBeNonBlank(Boolean.TRUE);
+        r2.setExecutionIntentTypeExpected(PurchaseSemanticExecutionIntent.EXEC_GOODS_SOURCE_BREAKDOWN);
+
+        r2.setExecutionDetailWantedExpected("SOURCE_BREAKDOWN");
+        r2.setAnchorSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING);
         r2.setMatchedCapabilityIdExpected("purchase.goods_anchor.source_breakdown");
-        r2.setFollowUpRegistryQueryModeExpected("goods_source_breakdown");
+        r2.setContractExecutionQueryModeExpected("goods_source_breakdown");
         r2.setSlotDetailWantedExpected("SOURCE_BREAKDOWN");
         r2.setHarnessReplayPurchaseAnswerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN);
         r2.setPreviousTurnSummaryResultAnchorsCountMin(1);
@@ -4096,14 +4097,15 @@ public final class AiHarnessBuiltinCases {
         r3.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE);
         r3.setHarnessReplayPlanSource("purchaseAnswerPlan");
         r3.setHarnessReplayPurchaseAnswerPlanProbePresent(Boolean.TRUE);
-        r3.setFollowUpActionExpected("OBJECT_DRILLDOWN");
-        r3.setFollowUpTargetEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
-        r3.setFollowUpTargetEntityNameMustBeNonBlank(Boolean.TRUE);
-        r3.setFollowUpTargetEntityIdMustBeNonBlank(Boolean.TRUE);
-        r3.setFollowUpDetailWantedExpected("SUPPLIER_BREAKDOWN");
-        r3.setFollowUpSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN);
+        r3.setFocusEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
+        r3.setFocusEntityNameMustBeNonBlank(Boolean.TRUE);
+        r3.setFocusEntityIdMustBeNonBlank(Boolean.TRUE);
+        r3.setExecutionIntentTypeExpected(PurchaseSemanticExecutionIntent.EXEC_GOODS_SUPPLIER_BREAKDOWN);
+
+        r3.setExecutionDetailWantedExpected("SUPPLIER_BREAKDOWN");
+        r3.setAnchorSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN);
         r3.setMatchedCapabilityIdExpected("purchase.goods_anchor.supplier_breakdown");
-        r3.setFollowUpRegistryQueryModeExpected("goods_anchor_supplier_breakdown");
+        r3.setContractExecutionQueryModeExpected("goods_anchor_supplier_breakdown");
         r3.setSlotDetailWantedExpected("SUPPLIER_BREAKDOWN");
         r3.setHarnessReplayPurchaseAnswerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL);
         r3.setPreviousTurnSummaryResultAnchorsCountMin(1);
@@ -4133,13 +4135,14 @@ public final class AiHarnessBuiltinCases {
         r4.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE);
         r4.setHarnessReplayPlanSource("purchaseAnswerPlan");
         r4.setHarnessReplayPurchaseAnswerPlanProbePresent(Boolean.TRUE);
-        r4.setFollowUpActionExpected("OBJECT_DRILLDOWN");
-        r4.setFollowUpTargetEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
-        r4.setFollowUpTargetEntityNameMustBeNonBlank(Boolean.TRUE);
-        r4.setFollowUpDetailWantedExpected("SUPPLIER_UNIT_PRICE");
-        r4.setFollowUpSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL);
+        r4.setFocusEntityTypeExpected(AiResultAnchor.ENTITY_TYPE_GOODS);
+        r4.setFocusEntityNameMustBeNonBlank(Boolean.TRUE);
+        r4.setExecutionIntentTypeExpected(PurchaseSemanticExecutionIntent.EXEC_GOODS_SUPPLIER_UNIT_PRICE);
+
+        r4.setExecutionDetailWantedExpected("SUPPLIER_UNIT_PRICE");
+        r4.setAnchorSourcePlanTypeExpected(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL);
         r4.setMatchedCapabilityIdExpected("purchase.goods_anchor.supplier_unit_price");
-        r4.setFollowUpRegistryQueryModeExpected("goods_anchor_supplier_unit_price");
+        r4.setContractExecutionQueryModeExpected("goods_anchor_supplier_unit_price");
         r4.setSlotDetailWantedExpected("SUPPLIER_UNIT_PRICE");
         r4.setHarnessReplayPurchaseAnswerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL);
         r4.setPreviousTurnSummaryResultAnchorsCountMin(1);

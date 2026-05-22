@@ -508,6 +508,6 @@ data:{...}
 | 2026-05-10 | `answer_delta.displayText`=**回答生成中**；`AiRunSession`：`data(envelopeMap, APPLICATION_JSON)`；**`WebMvcConfig`**：`StringHttpMessageConverter` 在 FastJson 之前（见「总则 · 帧字节」）；checklist/`docs/JDK_MAVEN.md`。 |
 | 2026-05-10 | **权限第一波**：`publishError` → `data.permissionDenied`（`requiredPermission`/`subject` 等）；**§6** 明确 **Tool 软拒绝**与 **`run_finished.completed`** 共存；与 `API_INTEGRATION.md` 对齐。 |
 | 2026-05-10 | **权限第二波**：**§8** 在 **`WorkspaceRoute` → `ScopeIntersect`** → **`TimeWindow`** 间插入 **`ScopeIntersect`**；**§6** 增补 **`WORKSPACE_ACCESS_DENIED`** 信封示例与共存说明；与当时实现 **`BusinessScopeIntersectNode`** / **`AiWorkspaceAccessGuard`** 对齐。 |
-| 2026-05-17 | **`BusinessWorkspaceRouteNode` / `AiWorkspaceAccessGuard`** 等已删除（见 **`docs/legacy-reference/workspace-keyword-route-and-guard.md`**）；**`WORKSPACE_ACCESS_DENIED`** 示例在 §6 **仅作历史契约参考**；现行 Graph 以 **`BusinessScopeIntersectNode`** 起始。 |
+| 2026-05-17 | **`BusinessWorkspaceRouteNode` / `AiWorkspaceAccessGuard`** 等已删除；**`WORKSPACE_ACCESS_DENIED`** 示例在 §6 **仅作历史契约参考**；现行 Graph 以 **`BusinessScopeIntersectNode`** 起始。 |
 
 ---

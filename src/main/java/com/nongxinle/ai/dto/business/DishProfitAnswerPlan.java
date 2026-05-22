@@ -1,7 +1,7 @@
 package com.nongxinle.ai.dto.business;
 
 import com.alibaba.fastjson2.annotation.JSONField;
-import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
+import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrix;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -100,13 +100,13 @@ public class DishProfitAnswerPlan {
         return new LinkedHashMap<>();
     }
 
-    /** 产出可被「原料构成」类追问承接的上一轮锚点类型（不含聚合 fallback / 原料 wire 自身）。 */
-    public static boolean isDishDrilldownAnchorSourcePlanType(String sourcePlanType) {
-        return DishProfitDrilldownMatrix.isDishAnchorSourcePlanType(sourcePlanType);
+    /** 产出可被「原料构成」类锚 execution 承接的上一轮锚点类型（不含聚合 fallback / 原料 wire 自身）。 */
+    public static boolean isDishAnchorExecutionSourcePlanType(String sourcePlanType) {
+        return DishProfitSemanticCapabilityMatrix.isDishAnchorSourcePlanType(sourcePlanType);
     }
 
-    /** 本轮 AnswerPlan 是否在服务端生成 DISH {@link AiResultAnchor}（矩阵 {@link DishProfitDrilldownMatrix#emitsDishResultAnchor}）。 */
+    /** 本轮 AnswerPlan 是否在服务端生成 DISH {@link AiResultAnchor}（矩阵 {@link DishProfitSemanticCapabilityMatrix#emitsDishResultAnchor}）。 */
     public static boolean planTypeEmitsResultAnchor(String planType) {
-        return DishProfitDrilldownMatrix.emitsDishResultAnchor(planType);
+        return DishProfitSemanticCapabilityMatrix.emitsDishResultAnchor(planType);
     }
 }

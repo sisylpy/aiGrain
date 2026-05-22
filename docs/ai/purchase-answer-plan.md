@@ -1,6 +1,6 @@
 # 采购链路：PurchaseAnswerPlan 与 Harness 契约
 
-> **前提**：采购金额、自采/供货商拆分、Top 商品与供货商、门店合并范围等**不重新发明口径**——以旧版单 Agent 事实拼装（`GbAiChatServiceImpl` 采购块）、`PurchaseMethodLegacyAggRow` / `GbDistributerPurchaseGoodsMapper.xml`（`purGoodsWhereLegacyPurchaseMethodFocus`、`queryGbPurchaseGoodsAggByLegacyPurchaseMethod`）、以及当前 Harness 的 **`PurchaseOverviewTool`** 为准。  
+> **前提**：采购金额、自采/供货商拆分、Top 商品与供货商、门店合并范围等**不重新发明口径**——以 `PurchaseMethodLegacyAggRow` / `GbDistributerPurchaseGoodsMapper.xml`（`purGoodsWhereLegacyPurchaseMethodFocus`、`queryGbPurchaseGoodsAggByLegacyPurchaseMethod`）、以及当前 Harness 的 **`PurchaseOverviewTool`** 为准。  
 > **目标**：把采购问答从「Tool JSON + Composer/兜底 if-else 即兴拼答」收敛为 **`PurchaseAnswerPlan` → Composer 只读计划**，与 **`DishProfitAnswerPlan`** 同一工程范式；Debug / Replay 可核对计划与上下文。  
 > **本轮**：仅本文档；**不要**改 Java、不要动 SQL、不要扩散经营诊断/菜品毛利/出库链路。
 
@@ -35,12 +35,11 @@ AiResolvedQueryContext（timeWindow、dataScope、queryIntent.structuredIntentDe
 
 ---
 
-## 2. 与旧版单 Agent 的对照（必须复用的能力）
+## 2. 采购口径真值（必须复用）
 
-### 2.1 `GbAiChatServiceImpl`
+### 2.1 统计与表述约定
 
-- Skill 路由：`ai-skill-procurement-structure.md`（见 `LEGACY_AI_ANSWER_ASSETS.md` 索引）。
-- 采购事实块：「本月采购数据」口径说明——**金额** `gb_DPG_buy_subtotal`，日期 **`gb_DPG_stock_finish_date`（入库完成日）**，状态 `gb_DPG_status > 2`，排除 `gb_DPG_purchase_type = 9`（与现有统计接口一致）。
+- **金额** `gb_DPG_buy_subtotal`，日期 **`gb_DPG_stock_finish_date`（入库完成日）**，状态 `gb_DPG_status > 2`，排除 `gb_DPG_purchase_type = 9`（与现有统计接口一致）。
 - **自采 vs 供货商**：强调 **`gb_DPG_purchase_nx_supplier_id`** 与入库批次 `gb_dgs_nx_supplier_id` 同语义：**-1 = 自采**；正整数 = 供货商 ID；勿只对用户念 `type=5`/`type=1`。
 - 与库存减少 `type=1` **不是**同一口径（禁止把出库成本表里的 type=1 说成采购额）。
 
@@ -327,9 +326,7 @@ AiResolvedQueryContext（timeWindow、dataScope、queryIntent.structuredIntentDe
 
 | 资源 | 路径 |
 |------|------|
-| Legacy 资产索引 | `docs/LEGACY_AI_ANSWER_ASSETS.md` |
-| 采购 Skill | `src/main/resources/ai-skill-procurement-structure.md` |
-| 旧版事实拼装 | `src/main/java/com/nongxinle/service/impl/GbAiChatServiceImpl.java`（采购块、`appendPurchase*` 等） |
+| 主链与 Tool 索引 | `docs/AI_MAINLINE_INDEX.md` |
 | Legacy 采购 Mapper | `src/main/resources/mapper/GbDistributerPurchaseGoodsMapper.xml` |
 | 采购方式桶 DTO | `src/main/java/com/nongxinle/dto/PurchaseMethodLegacyAggRow.java` |
 | Harness Tool | `src/main/java/com/nongxinle/ai/tool/business/PurchaseOverviewTool.java` |

@@ -4,6 +4,8 @@ import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
+import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
+import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
@@ -31,21 +33,64 @@ public final class SemanticParserInputBuilder {
      * @param previousTurn          可为 null（首轮）
      * @param orgScope              可为 null；非 null 时从 {@link AiResolvedOrgScope#getVisibleStores()} 仅取店名
      */
+    /**
+     * FollowUp rewrite 已补全问句时：仅保留 time/scope/锚点摘要供 v2 输入，去掉易污染 completed 问句的 path/wire/slots。
+     */
+    public static AiConversationTurnMemory reducePreviousTurnForFollowUpRewrite(AiConversationTurnMemory mem) {
+        if (mem == null) {
+            return null;
+        }
+        return AiConversationTurnMemory.builder()
+                .conversationId(mem.getConversationId())
+                .previousRunId(mem.getPreviousRunId())
+                .lastStartDate(mem.getLastStartDate())
+                .lastEndDate(mem.getLastEndDate())
+                .lastTimeLabel(mem.getLastTimeLabel())
+                .lastScopeType(mem.getLastScopeType())
+                .lastVisibleStoreIds(mem.getLastVisibleStoreIds())
+                .lastFocusedStoreId(mem.getLastFocusedStoreId())
+                .lastFocusedStoreName(mem.getLastFocusedStoreName())
+                .lastMentionedStore(mem.getLastMentionedStore())
+                .lastMentionedDishName(mem.getLastMentionedDishName())
+                .lastHarnessMultiStoreMatchedStores(mem.getLastHarnessMultiStoreMatchedStores())
+                .lastResultAnchors(mem.getLastResultAnchors())
+                .lastEffectiveScopeSource(mem.getLastEffectiveScopeSource())
+                .lastEffectiveQuestion(mem.getLastEffectiveQuestion())
+                .build();
+    }
+
     public static SemanticParserInput build(
             String normalizedUserMessage,
             LocalDate today,
             AiConversationTurnMemory previousTurn,
             AiResolvedOrgScope orgScope) {
+        return build(normalizedUserMessage, today, previousTurn, orgScope, null, null);
+    }
+
+    public static SemanticParserInput build(
+            String normalizedUserMessage,
+            LocalDate today,
+            AiConversationTurnMemory previousTurn,
+            AiResolvedOrgScope orgScope,
+            SemanticDomainRouteResult domainRoute,
+            DomainContractSelectionResult contractSelection) {
         if (today == null) {
             throw new IllegalArgumentException("today must not be null");
         }
         String msg = normalizedUserMessage == null ? "" : normalizedUserMessage.trim();
-        return SemanticParserInput.builder()
-                .currentUserMessage(msg)
-                .today(today.toString())
-                .previousTurn(mapPreviousTurn(previousTurn))
-                .visibleStores(mapVisibleStores(orgScope))
-                .build();
+        SemanticParserInput.SemanticParserInputBuilder b =
+                SemanticParserInput.builder()
+                        .currentUserMessage(msg)
+                        .today(today.toString())
+                        .previousTurn(mapPreviousTurn(previousTurn))
+                        .visibleStores(mapVisibleStores(orgScope));
+        if (domainRoute != null) {
+            b.semanticRoute(mapSemanticRoute(domainRoute));
+        }
+        if (contractSelection != null && contractSelection.getParserAllowedOutputContract() != null) {
+            b.allowedOutputContract(contractSelection.getParserAllowedOutputContract());
+        }
+        return b.build();
     }
 
     /**
@@ -101,7 +146,46 @@ public final class SemanticParserInputBuilder {
             }
         }
         root.put("visibleStores", vis);
+        if (input.getSemanticRoute() != null) {
+            LinkedHashMap<String, Object> route = new LinkedHashMap<>();
+            SemanticParserRouteInput sr = input.getSemanticRoute();
+            route.put("primaryDomain", sr.getPrimaryDomain());
+            route.put("candidateDomains", sr.getCandidateDomains());
+            route.put("routeType", sr.getRouteType());
+            route.put("confidence", sr.getConfidence());
+            root.put("semanticRoute", route);
+        } else {
+            root.put("semanticRoute", null);
+        }
+        if (input.getAllowedOutputContract() != null) {
+            root.put("allowedOutputContract", mapAllowedOutputContract(input.getAllowedOutputContract()));
+        } else {
+            root.put("allowedOutputContract", null);
+        }
         return root;
+    }
+
+    private static LinkedHashMap<String, Object> mapAllowedOutputContract(
+            SemanticParserAllowedOutputContract contract) {
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        m.put("selectedDomain", contract.getSelectedDomain());
+        m.put("allowedWires", contract.getAllowedWires());
+        m.put("allowedQueryObjects", contract.getAllowedQueryObjects());
+        m.put("allowedOperations", contract.getAllowedOperations());
+        m.put("allowedMetrics", contract.getAllowedMetrics());
+        m.put("allowedSourceFacets", contract.getAllowedSourceFacets());
+        m.put("allowedDetailWanted", contract.getAllowedDetailWanted());
+        m.put("allowedAnswerPlanTypes", contract.getAllowedAnswerPlanTypes());
+        return m;
+    }
+
+    private static SemanticParserRouteInput mapSemanticRoute(SemanticDomainRouteResult route) {
+        return SemanticParserRouteInput.builder()
+                .primaryDomain(route.getPrimaryDomain())
+                .candidateDomains(route.getCandidateDomains())
+                .routeType(route.getRouteType() != null ? route.getRouteType().name() : null)
+                .confidence(route.getConfidence())
+                .build();
     }
 
     private static SemanticParserPreviousTurn mapPreviousTurn(AiConversationTurnMemory mem) {

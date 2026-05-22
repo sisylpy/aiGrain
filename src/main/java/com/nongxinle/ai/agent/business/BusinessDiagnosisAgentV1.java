@@ -4,8 +4,8 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
-import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrixRow;
+import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
@@ -51,7 +51,8 @@ public final class BusinessDiagnosisAgentV1 {
     static final String FINDING_PROFIT_QUALITY_RISK = "PROFIT_QUALITY_RISK";
 
     /** {@link DiagnosisPlan#getDebug()}：与 Harness 扁平探针对齐。 */
-    public static final String DEBUG_DIAGNOSIS_DRILLDOWN_MATRIX_ROW_ID = "diagnosisDrilldownMatrixRowId";
+    public static final String DEBUG_DIAGNOSIS_REASON_EXPLANATION_MATRIX_ROW_ID =
+            "diagnosisReasonExplanationMatrixRowId";
     public static final String DEBUG_DIAGNOSIS_QUESTION_TYPE = "diagnosisQuestionType";
     public static final String DEBUG_DIAGNOSIS_FACET = "diagnosisFacet";
     public static final String DEBUG_DIAGNOSIS_CHILD_DOMAIN = "diagnosisChildDomain";
@@ -252,15 +253,15 @@ public final class BusinessDiagnosisAgentV1 {
             }
         }
 
-        BusinessDiagnosisDrilldownMatrixRow matrixRow = BusinessDiagnosisDrilldownMatrix.resolveRow(state);
+        BusinessDiagnosisSemanticCapabilityMatrixRow matrixRow = BusinessDiagnosisSemanticCapabilityMatrix.resolveRow(state);
         if (matrixRow != null) {
-            BusinessDiagnosisDrilldownMatrix.applyResolvedRow(
+            BusinessDiagnosisSemanticCapabilityMatrix.applyResolvedRow(
                     state, plan, matrixRow, pPurchase, pStock, pDish, pRevenue);
-        } else if (BusinessDiagnosisDrilldownMatrix.isStorePriorityHarnessTextFallback(state)) {
-            BusinessDiagnosisDrilldownMatrix.applyResolvedRow(
+        } else if (BusinessDiagnosisSemanticCapabilityMatrix.isStorePriorityHarnessTextFallback(state)) {
+            BusinessDiagnosisSemanticCapabilityMatrix.applyResolvedRow(
                     state,
                     plan,
-                    BusinessDiagnosisDrilldownMatrix.STORE_PRIORITY_RANKING,
+                    BusinessDiagnosisSemanticCapabilityMatrix.STORE_PRIORITY_RANKING,
                     pPurchase,
                     pStock,
                     pDish,

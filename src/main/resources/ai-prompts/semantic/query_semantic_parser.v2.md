@@ -1,7 +1,7 @@
 > **维护说明（契约治理，非业务规则）**  
 > - 本文件是**生产唯一**语义 Prompt（`semantic.query_parser.v2`）。  
 > - 字段 / 枚举 / `semanticSlots` 形状见 [`semantic-output-schema.md`](./semantic-output-schema.md)。  
-> - wire 登记、Matrix 行、AnswerPlan、Composer 分工见各域 `docs/ai/*-drilldown-matrix-contract.md` 与 [`harness-composer-architecture.md`](../../docs/ai/harness-composer-architecture.md)。  
+> - wire 登记、Matrix 行、AnswerPlan、Composer 分工见各域 `docs/ai/domain capability matrix / answer-plan docs` 与 [`harness-composer-architecture.md`](../../docs/ai/harness-composer-architecture.md)。  
 > - **不要**在本文件堆历史 bug 补丁、Java 类名、D 编号叙事或长 JSON 示例墙；细则以契约为准。
 
 # Prompt ID
@@ -21,10 +21,25 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 | `today` | 锚点日 `yyyy-MM-dd` |
 | `previousTurn` | 上一轮快照；首轮 `null` |
 | `visibleStores` | 可见门店简表，每项仅 `storeName` |
+| `semanticRoute` | **P2** Step 1 选域摘要：`primaryDomain`、`candidateDomains`、`routeType`、`confidence`（不含 wire） |
+| `allowedOutputContract` | **P2** Step 2 单域 ACTIVE 能力摘要；仅当该域已有 capability contract 时出现；**禁止**注入空 `allowedWires` |
 
 `previousTurn` 可含：`intentCode`、`pathCode`、`structuredIntentDetail`、`purchaseSourceType`、时间/范围、`mentionedDishName`、`resultAnchorsSummary`、**`semanticSlots`**（与输出同形，含七/八字段 + schema 要求的追问槽）。
 
-**`previousTurn` 冲突优先级**：`structuredIntentDetail`（服务端 merge 最终口径）**优先于** `semanticSlots` 残留（如上一轮 final 为经营概览，槽位仍带排行 wire 时，仅改时间须继承概览，不得改回排行）。
+**`previousTurn` 冲突优先级**：`structuredIntentDetail`（服务端 merge 最终口径）**优先于** `semanticSlots` 残留（如上一轮 final 为经营概览，槽位仍带排行 wire 时，仅改时间须继承概览，不得改回排行）。**当前句已写明的 `semanticSlots` / `intent` / path 优先**；`previousTurn` 仅补本句空缺槽，**不得覆盖**当前句。独立 `RANKING` / `SUMMARY` / `COMPARE` / `OVERVIEW` 默认 `anchorPolicy=IGNORE_PREVIOUS_ANCHOR`；仅省略追问（指代上一轮结果实体）用 `USE_PREVIOUS_ANCHOR`。
+
+**补全问句**：若 `currentUserMessage` 已是服务端补全后的完整问题（非「那采购呢」类短句），**按当前问句字面解析**其业务域、指标与对象；**不得**用 `previousTurn` 的 path / wire / `semanticSlots` 覆盖其域或指标。
+
+**allowedOutputContract（P2 / P2.5）**：若输入提供非空 `allowedOutputContract.allowedWires`，则须遵守：
+
+1. **`semanticSlots.structuredIntentDetailWire` 必须**从 `allowedWires` **精确**选取；**禁止**自造 snake_case wire。
+2. **`operation=RANKING`**（或问法为排行/最高/最多）时，**禁止**输出 overview/summary 类 wire（如 `*_overview_summary`、`*_overview`）；须选与 **RANKING** 对齐的 entry。
+3. **`wire`、`queryObject`、`operation`、`metric`、`sourceFacet`（若 entry 要求）、`detailWanted`（若 entry 要求）、`answerPlanType`（若输出）**须与 allowedOutputContract **同一条 entry** 对齐**；不得跨 entry 混用（例如 wire=排行 wire 但 operation=SUMMARY）。
+4. 若 `allowedOutputContract.allowedDetailWanted` 非空，**`detailWanted` 必须**从该列表精确选取（采购 GOODS 锚 anchor execution 见下节）。
+5. **禁止**自行发明 wire、能力 id、或未登记字面量。
+6. **找不到**与问法匹配的 entry → `needClarification=true`（及编排侧 `clarificationRequired=true`），**禁止**编造字段或 fallback 到 PLANNED/KNOWN_GAP wire。
+
+未提供 `allowedOutputContract` 或该域 capability 缺失时，按既有 schema/Matrix 规则解析。
 
 **全局禁止键**（输入忽略、输出禁止）：`queryStoreIds`、`queryRealDepartmentIds`、`expandedSqlDepartmentIds`、`storeToDepartmentIds`、`queryDistributerId`、`distributerId`、`departmentIds`，及任意 SQL / 数值 ID。
 
@@ -46,9 +61,19 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 | `metric` | 槽位内指标（如 `PURCHASE_AMOUNT`、`OUTBOUND_AMOUNT`、`REVENUE_AMOUNT`） |
 | `sourceFacet` | 采购来源等；出库单域一般为 null |
 | `anchorPolicy` | USE_PREVIOUS_ANCHOR / IGNORE_PREVIOUS_ANCHOR / REQUIRE_CLARIFICATION |
-| `structuredIntentDetailWire` | canonical 蛇形 wire（**仅** Lexicon 已登记字面量） |
-| `detailWanted` | 追问槽；总览/独立排行可为 null |
+| `structuredIntentDetailWire` | registered canonical wire（系统登记能力编号；须从 `allowedWires` 精确选取，**禁止**自造 snake_case 名） |
+| `detailWanted` | 追问槽；总览/独立排行可为 null；**采购 `purchase_source_goods_query` 必填**（见下节） |
 | `answerPlanType` | 可选；缺省由服务端按本域 Matrix 推导 |
+
+**采购 `purchase_source_goods_query` + `detailWanted`（P2.8）**：当 `selectedDomain=PURCHASE` 且 `structuredIntentDetailWire=purchase_source_goods_query` 时，**必须**输出与 allowed entry **一致**的 `detailWanted`（取自 `allowedDetailWanted`）：
+
+| 问法形状 | `detailWanted` | 典型 `queryObject` / `operation` / `metric` |
+|---------|----------------|---------------------------------------------|
+| 按来源拆桶（自采/订货） | `SOURCE_BREAKDOWN` | `GOODS` + `BREAKDOWN` + 采购量/金额类 metric |
+| 商品锚下「谁供的/各供货商」 | `SUPPLIER_BREAKDOWN` | `GOODS` + `DETAIL|BREAKDOWN` + `SUPPLIER_NAME` 或采购量/金额 |
+| 商品锚下各供货商单价 | `SUPPLIER_UNIT_PRICE` | `SUPPLIER` + `RANKING|DETAIL` + `UNIT_PRICE` |
+
+**禁止**只写 `operation=DETAIL` + `metric=SUPPLIER_NAME` 却省略 `detailWanted`；三条 entry 共用同一 wire，**靠 `detailWanted` 区分**。
 
 # Prompt 正文
 
@@ -60,10 +85,10 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 
 - 输入：**`previousTurn.resultAnchorsSummary`**（如 `GOODS#`、`SUPPLIER#`）+ 本句指代。
 - **`USE_PREVIOUS_ANCHOR`**：本句语义承接上一轮**已锁定的结果实体**且摘要/槽位可承接时**必须**使用；**禁止** reason 写「承接上一轮商品/供货商」却填 `IGNORE_PREVIOUS_ANCHOR`。
-- **`IGNORE_PREVIOUS_ANCHOR`**：完整独立排行/总览、无实体锚、明示换对象、子空间重新开榜、供货商渠道 overview 后问「定了什么货」类**商品明细**（无 `SUPPLIER#`/`GOODS#` 实体锚）等。
-- **无锚不得假用 USE**：上一轮仅为供货商渠道金额汇总、无 `SUPPLIER#`/`GOODS#` 时，追问商品明细须 `IGNORE` + `GOODS` + `DETAIL` + `purchase_source_goods_query`（细则见 [purchase-drilldown-matrix-contract.md](../../docs/ai/purchase-drilldown-matrix-contract.md)）。
+- **`IGNORE_PREVIOUS_ANCHOR`**：完整独立排行/总览/对比（`operation` 为 `RANKING`/`SUMMARY`/`COMPARE`/`OVERVIEW`）、无实体锚、明示换对象、子空间重新开榜、跨域切换（如营业额→采购→出库）、供货商渠道 overview 后问「定了什么货」类**商品明细**（无 `SUPPLIER#`/`GOODS#` 实体锚）等。
+- **无锚不得假用 USE**：上一轮仅为供货商渠道金额汇总、无 `SUPPLIER#`/`GOODS#` 时，追问商品明细须 `IGNORE` + `GOODS` + `DETAIL` + `purchase_source_goods_query`（细则见 [purchase-answer-plan.md](../../docs/ai/purchase-answer-plan.md)）。
 
-**`detailWanted` 与锚维度**（防 Registry 不匹配）：**SUPPLIER 锚**下问商品清单/单价 → `GOODS_DETAIL` / `GOODS_UNIT_PRICE`（**禁止** `SUPPLIER_UNIT_PRICE`）；**GOODS 锚**下问各供货商单价 → `SUPPLIER_UNIT_PRICE`。四轮下钻 R1–R4 槽位以采购 Matrix 契约为准。
+**`detailWanted` 与锚维度**（防 Registry 不匹配）：**SUPPLIER 锚**下问商品清单/单价 → `GOODS_DETAIL` / `GOODS_UNIT_PRICE`（**禁止** `SUPPLIER_UNIT_PRICE`）；**GOODS 锚**下问各供货商单价 → `SUPPLIER_UNIT_PRICE`。四轮 anchor execution 接力 R1–R4 槽位以采购 Matrix 契约为准。
 
 ## 时间输出合同（全局）
 
@@ -78,6 +103,12 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 硬规则：有本句时间 → 不得 `INHERITED_PREVIOUS`；无本句时间 → 不得 `CURRENT_MESSAGE_EXPLICIT`；继承时须写出继承后的具体日期。
 
 **仅改时间短句**（如「上个月呢？」）：继承 `domain` / `intent` / **`semanticSlots`**（完整对象，禁止 `semanticSlots:null`），仅更新 `time` 与 `timeAction=OVERRIDE`。
+
+**范围切换短句**（Rewrite 已补全为「{时间}{单店名}{指标问法}」，如「上个月 AAA 营业额是多少？」）：继承 `domain` / `intent` / **`semanticSlots`** 与 **时间**；**必须**切换范围为该单店：
+- `scopeAction=OVERRIDE`
+- `requestedScopeType=STORE`
+- `mentionedStoreName` / `mentionedStoreNames` **仅**该店（**禁止**仍填上一轮多店 GROUP 的全部店名）
+- `scopeSource=CURRENT_MESSAGE`，`needInheritFromPrevious=false`
 
 ## OrchestrationDecision（`orchestrationDecisionCandidate`）
 
@@ -111,7 +142,7 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 ## 跨域互斥（全局）
 
 - 单轮只选一个**主业务域** `intent` + path；`semanticSlots.structuredIntentDetailWire` **只能**输出该域 Lexicon 已登记 wire。
-- **`metric.rankingType` / `metric.stockReduceType` / `metric.primaryMetric`** 仅为 compat/观测，**不得**覆盖已明确的 `semanticSlots`。
+- **`metric.rankingType` / `metric.stockReduceType` / `metric.primaryMetric`** 仅为 **deprecated / debug** 观测字段；**服务端不以之推断 wire、path 或 AnswerPlan**。**不得**覆盖已明确的 `semanticSlots`。
 - **禁止**顶层 `intent=COMPARE_STORE`（已废弃）；多店对比见下节，直接输出目标域 `intent` + 完整 `semanticSlots`。
 - 服务端 Matrix 无匹配时保留 canonical wire 或 `MATRIX_WIRE_MISSING`，**禁止**静默改成其它域 overview。
 
@@ -122,7 +153,7 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 - 问**营业额、销售额、营收、堂食/外卖订单、客单价**等 → **`intent=REVENUE_OVERVIEW`**，`domain=REVENUE`，**`selectedTools=["revenue_query"]`**。
 - **不是**「经营怎么样/生意如何」综合问法（那是 BusinessOverview）。
 - 多店比营业额：**禁止** `COMPARE_STORE`；`queryObject=STORE`，`operation=RANKING|COMPARE`，`metric=REVENUE_AMOUNT`，`wire=revenue_store_amount_ranking`，`mentionedStoreNames` 填店名数组。
-- 基础问句「这个月营业额多少」：`semanticSlots` 建议 `STORE` + `SUMMARY` + `REVENUE_AMOUNT` + `revenue_overview_summary`；细则见 [revenue-drilldown-matrix-contract.md](../../docs/ai/revenue-drilldown-matrix-contract.md)。
+- 基础问句「这个月营业额多少」：`semanticSlots` 建议 `STORE` + `SUMMARY` + `REVENUE_AMOUNT` + `revenue_overview_summary`；细则见 [revenue-answer-plan.md](../../docs/ai/revenue-answer-plan.md)。
 
 ---
 
@@ -130,9 +161,11 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 
 - **`intent=PURCHASE_OVERVIEW`**，`domain=PURCHASE`，**`selectedTools=["purchase_overview"]`**。
 - **必须**完整 **`semanticSlots`**；wire **仅**采购 canonical 集合（见 schema / Lexicon），**禁止**输出 `purchase.xxx` 能力 id 或自造蛇形名。
-- **三句勿混（示意）**：① 哪个供货商金额最高 → `SUPPLIER` + `RANKING` + `supplier_amount_ranking`；② 供货商侧哪些商品金额最高 → `GOODS` + `purchase_goods_amount_ranking` + `SUPPLIER_PURCHASE`；③ 供货商渠道订了多少钱 → `SUPPLIER` + `SUMMARY` + `purchase_source_amount_query`。
+- **采购概览 / 情况怎么样**（如「这个月采购情况怎么样」「本月采购怎么样」「采购概览」）：`queryObject=PURCHASE_ORDER`，`operation=SUMMARY`（或 `OVERVIEW`），`metric=PURCHASE_AMOUNT`，`sourceFacet=ALL`（用户**未**明确自采/供货商渠道时**禁止**填 `SUPPLIER_PURCHASE`），`structuredIntentDetailWire=purchase_overview_summary`，`answerPlanType=PURCHASE_OVERVIEW`。**禁止**对该类问法输出 `purchase_source_amount_query`（该 wire 仅用于 **点名供货商渠道金额** 问法，见下条）。
+- **三句勿混（示意）**：① 哪个供货商金额最高 → `SUPPLIER` + `RANKING` + `supplier_amount_ranking`；② 供货商侧哪些商品金额最高 → `GOODS` + `purchase_goods_amount_ranking` + `SUPPLIER_PURCHASE`；③ **某供货商渠道**订了多少钱 → `SUPPLIER` + `SUMMARY` + `purchase_source_amount_query`（**不是**集团采购总览）。
 - **排行 vs 明细 vs 拆桶**：独立商品金额排行 → `purchase_goods_amount_ranking` + `IGNORE`；GOODS 锚追问拆桶/供货商单价 → 见 Matrix **§2 GOODS 锚 R0–R3**。
-- 采购异常（单价/次数/数量/金额突增）wire：`purchase_goods_anomaly`、`purchase_price_anomaly` 等 — 表见 [purchase-drilldown-matrix-contract.md](../../docs/ai/purchase-drilldown-matrix-contract.md)；**未**同时出现采购↔出库脱节语义时走本域，**不走**双域诊断。
+- 采购异常（单价/次数/数量/金额突增）wire：`purchase_goods_anomaly`、`purchase_price_anomaly` 等 — 表见 [purchase-answer-plan.md](../../docs/ai/purchase-answer-plan.md)；**未**同时出现采购↔出库脱节语义时走本域，**不走**双域诊断。
+- **采购异常 sourceFacet**：未指定自采/供货商渠道时 **`sourceFacet=ALL`**（用户明确自采 → `SELF_PURCHASE`，明确供货商/供应商 → `SUPPLIER_PURCHASE`）；示例：`GOODS` + `ANOMALY_DETECTION` + `purchase_price_anomaly` + `sourceFacet=ALL`，**禁止** `sourceFacet=null`。
 
 ---
 
@@ -141,19 +174,21 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 - **`intent=STOCK_REDUCE_QUERY`**（**禁止** legacy `STOCK_OUT` / `WRITE_OFF`），path **`stock_reduce_query_path`**，**`selectedTools=["stock_reduce_query"]`**，**勿** `domain=PURCHASE`。
 - 出库、核销、耗用、报损、退货、出品耗用等；**仅**问出库排行/金额时走本域，**勿** `PURCHASE_OVERVIEW`。
 - **`semanticSlots` 七键必填**；子口径 wire 以槽位为准；`TYPE1`–`TYPE4` / `ALL` **只能**在 **`metric.stockReduceType`**，**禁止**写入 `structuredIntentDetailWire`。
+- **出库/核销概览**（如「这个月出库情况怎么样」「出库概览」）：`queryObject=ALL`（或 `STORE` 单店 scope），`operation=SUMMARY`（或 `OVERVIEW`），`metric=OUTBOUND_AMOUNT`，`wire=stock_reduce_overview`。**禁止**对该类问法输出 `store_outbound_amount_ranking`（门店排行 wire 仅配 `operation=RANKING`）。
 - **商品出库金额排行**：`queryObject=GOODS`，`operation=RANKING`，`metric=OUTBOUND_AMOUNT`，`wire=goods_outbound_ranking` — **禁止**落成 DishSales 的 `dish_sales_amount_ranking_high` 或营收/采购 wire。
-- **门店出库对比**：`queryObject=STORE`，`wire=store_outbound_amount_ranking`（**禁止** `goods_outbound_ranking`）。
+- **门店出库金额排行**：`queryObject=STORE`，`operation=RANKING`，`metric=OUTBOUND_AMOUNT`，`wire=store_outbound_amount_ranking`（**禁止** `goods_outbound_ranking`）。
 - 浅追问「那核销呢/那废弃呢」：切 **`STOCK_REDUCE_QUERY`** + 对应 wire，**不得**因上轮采购 path 继续采购。
-- 白名单与 Replay 见 [stock-reduce-drilldown-matrix-contract.md](../../docs/ai/stock-reduce-drilldown-matrix-contract.md)。
+- 白名单与 Replay 见 [stock-reduce-answer-plan.md](../../docs/ai/stock-reduce-answer-plan.md)。
 
 ---
 
 ## Warehouse（库存现量）
 
-- 问**还剩多少、结余、现货、库存不足/补货、库存偏高**（**无**采购↔出库对照）→ **`intent=WAREHOUSE_STOCK_OVERVIEW`**，**仅** **`warehouse_stock_overview`**。
+- 问**还剩多少、结余、现货、库存情况/怎么样、库存不足/补货、库存偏高**（**无**采购↔出库对照）→ **`intent=WAREHOUSE_STOCK_OVERVIEW`**，**仅** **`warehouse_stock_overview`**；`operation=SUMMARY`，`sourceFacet=OVERVIEW`（单店 scope 时 `queryObject=STORE`，仍用 **`warehouse_stock_overview`**，**禁止**误填 `store_stock_amount_ranking`）。
 - **不是**出库流水（「这个月出库多少钱」→ StockReduce）。
 - **不是**门店综合风险排序（「哪个门店问题最大」→ BusinessDiagnosis `store_priority_ranking`）。
-- 门店库存金额/SKU 排行：`store_stock_amount_ranking` / `store_stock_item_count_ranking`；细则见 [warehouse-drilldown-matrix-contract.md](../../docs/ai/warehouse-drilldown-matrix-contract.md)。
+- **商品库存排行**：`queryObject=GOODS`，`operation=RANKING`，`metric=STOCK_AMOUNT`；**偏多/最多/最高/偏高** → **`warehouse_stock_amount_ranking`** + `sourceFacet=GOODS_RANKING_HIGH`；**偏少/最少/最低/偏低** → **`goods_stock_amount_ranking_low`** + `sourceFacet=GOODS_RANKING_LOW`（**禁止** high/low 颠倒）。
+- **门店库存金额/SKU 排行**（哪个门店库存最多）：`store_stock_amount_ranking` / `store_stock_item_count_ranking`，`operation=RANKING`，`sourceFacet=STORE_RANKING`；细则见 [inventory-domain-capability-matrix.md](../../docs/ai/inventory-domain-capability-matrix.md)。
 
 ---
 
@@ -163,7 +198,7 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 - **销量/份数**排行 → `dish_sales_count_ranking_high`；**销售额**排行 → `dish_sales_amount_ranking_high`；须完整 **`semanticSlots`**（`queryObject=DISH`，`metric` 为 `SOLD_PORTIONS` / `SALES_AMOUNT` 等）。
 - **禁止**走 `DISH_PROFIT`（毛利/成本排行）、`REVENUE_OVERVIEW`（门店营业额）、`STOCK_REDUCE`（商品出库金额）。
 - **「出库金额最高」类问法属于 StockReduce**，不属于本域（即使句中含「金额」「最高」）。
-- Matrix 见 [dish-sales-drilldown-matrix-contract.md](../../docs/ai/dish-sales-drilldown-matrix-contract.md)。
+- Matrix 见 [dish-sales-domain-capability-matrix.md](../../docs/ai/dish-sales-domain-capability-matrix.md)。
 
 ---
 
@@ -172,9 +207,9 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 - **`intent=DISH_PROFIT`**，**`selectedTools=["dish_profit_analysis"]`**。
 - 毛利率排行 → `dish_profit_ranking_low_margin` / `dish_profit_ranking_high_margin`（**须**写入 `semanticSlots.wire`，**禁止**只写 `metric.rankingType`）。
 - **成本金额最高** → `dish_actual_cost_ranking_high`；**成本偏差最大** → `dish_gap_ranking_max`（**禁止**用实际成本最高代替）。
-- 单菜「某某菜毛利怎么样」：`mentionedDishName` + `dish_gross_margin_query`，`rankingType=null`。
-- 上轮毛利率排行后点名单菜：须 **`metricAction=OVERRIDE`**，`rankingType=null`，**禁止**继承排行子口径。
-- Matrix 见 [dish-profit-domain-capability-matrix.md](../../docs/ai/dish-profit-domain-capability-matrix.md) 与 [dish-profit-drilldown-matrix-contract.md](../../docs/ai/dish-profit-drilldown-matrix-contract.md)。
+- 单菜「某某菜毛利怎么样」：`mentionedDishName` + `dish_gross_margin_query`；`semanticSlots` 完整时 **`metric.rankingType` 应为 null**（debug 字段，非主语义）。
+- 上轮毛利率排行后点名单菜：须 **`metricAction=OVERRIDE`**，完整 **`semanticSlots`** 切到 `dish_gross_margin_query`；**禁止**继承排行 wire / 排行 metric。
+- Matrix 见 [dish-profit-domain-capability-matrix.md](../../docs/ai/dish-profit-domain-capability-matrix.md) 与 [dish-profit-domain-capability-matrix.md](../../docs/ai/dish-profit-domain-capability-matrix.md)。
 
 ---
 
@@ -189,10 +224,11 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 | 典型 wire | `business_overview_summary`、`business_store_status_compare` | `business_diagnosis_summary`、`store_priority_ranking`、双域 `purchase_*_risk` |
 | 编排 | 四域 `MULTI_AGENT` + 四 Tool | 视子场景：四域 / 双域(Purchase+StockReduce) |
 
+- **经营情况怎么样 / 经营概览**（如「这个月经营情况怎么样」「生意怎么样」）：`queryObject=GROUP`（或 `STORE` 单店 scope），`operation=SUMMARY`（或 `DIAGNOSIS` / `OVERVIEW`），`metric=BUSINESS_STATUS`，`structuredIntentDetailWire=business_diagnosis_summary`，`answerPlanType=OVERALL_BUSINESS_DIAGNOSIS`。**禁止** wire 与 `operation` 跨 entry 混用（如 `business_diagnosis_summary` + `RANKING`）。
 - **营业额数字** → Revenue，**不是** BusinessOverview（`metric.primaryMetric` 用 `business_status` 表综合，**禁止**用 `revenue` 表经营综合）。
 - **门店综合风险排序**（哪个门店最需要关注）→ `store_priority_ranking`，四域 Agent+Tool；**不是**库存门店排行、不是营收/采购/出库单域排行。
 - **采购+出库商品侧风险**（买得多但没怎么用、采购未核销等）→ `BUSINESS_DIAGNOSIS` + wire 之一：`purchase_stock_reduce_mismatch`、`purchase_slow_moving_risk`、`purchase_inventory_overstock_risk`、`purchase_freshness_risk`；Tools 仅 `purchase_overview` + `stock_reduce_query`。
-- 诊断内门店下钻（为什么、是采购问题吗、怎么改）wire 表见 [business-diagnosis-drilldown-matrix-contract.md](../../docs/ai/business-diagnosis-drilldown-matrix-contract.md)；概览见 [business-overview-diagnosis-domain-capability-matrix.md](../../docs/ai/business-overview-diagnosis-domain-capability-matrix.md)。
+- 诊断内门店下钻（为什么、是采购问题吗、怎么改）wire 表见 [business-overview-diagnosis-domain-capability-matrix.md](../../docs/ai/business-overview-diagnosis-domain-capability-matrix.md)；概览见 [business-overview-diagnosis-domain-capability-matrix.md](../../docs/ai/business-overview-diagnosis-domain-capability-matrix.md)。
 
 ---
 
@@ -210,11 +246,12 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 ## scopeAction（Harness）
 
 - 浅追问换业务线（那采购呢/那出库呢）且本句未再点名门店 → **`scopeAction=INHERIT_PREVIOUS`**。
+- **单店范围切换**（Rewrite 补全句中**只出现一家** `visibleStores` 店名，如「上个月 AAA 营业额是多少？」）→ **`scopeAction=OVERRIDE`** + **`requestedScopeType=STORE`** + 点名该店；**勿**继承上一轮 GROUP 多店 `mentionedStoreNames`。
 - 完整新问且未点名门店 → **`scopeAction=NEW` 或 `OVERRIDE`**，勿误继承对比收窄范围。
 
 ## `previousTurn` 覆盖规则
 
-- `previousTurn` **只补全**本句未说清项；**不得**用上一轮 metric/rankingType 覆盖本句**已明确**的指标。
+- `previousTurn` **只补全**本句未说清项；**不得**用上一轮 **`metric.rankingType`**（debug）覆盖本句**已明确**的 `semanticSlots`。
 - 时间：本句明确新时间 → `timeAction` 为 `NEW`/`OVERRIDE`；仅换指标/多店 → 可 `INHERIT_PREVIOUS` 时间窗。
 
 # 输出格式硬约束
@@ -229,20 +266,21 @@ Harness「用户语义 LLM」v2：**User 消息为 JSON**（本轮问句、`toda
 3. `needClarification` 与 `clarificationRequired` 是否一致？  
 4. 业务域明确时是否写满 **`semanticSlots`**（含 wire + `anchorPolicy`）？  
 5. `structuredIntentDetailWire` 是否为**本域**已登记 canonical？  
-6. `selectedTools` 是否与 `intent` 同域、无跨域 Tool？
+6. 若存在 `allowedOutputContract`：wire + 槽位是否与**同一条** allowed entry 一致（排行勿用 overview wire）？  
+7. `selectedTools` 是否与 `intent` 同域、无跨域 Tool？
 
 # 契约引用索引
 
 | 主题 | 文档 |
 |------|------|
 | JSON 字段 / 枚举 / D-13 | [`semantic-output-schema.md`](./semantic-output-schema.md) |
-| 采购 Matrix / GOODS 锚下钻 | [`docs/ai/purchase-drilldown-matrix-contract.md`](../../docs/ai/purchase-drilldown-matrix-contract.md) |
-| 出库 Matrix | [`docs/ai/stock-reduce-drilldown-matrix-contract.md`](../../docs/ai/stock-reduce-drilldown-matrix-contract.md) |
-| 库存 Matrix | [`docs/ai/warehouse-drilldown-matrix-contract.md`](../../docs/ai/warehouse-drilldown-matrix-contract.md) |
-| 营业额 Matrix | [`docs/ai/revenue-drilldown-matrix-contract.md`](../../docs/ai/revenue-drilldown-matrix-contract.md) |
-| 销量 Matrix | [`docs/ai/dish-sales-drilldown-matrix-contract.md`](../../docs/ai/dish-sales-drilldown-matrix-contract.md) |
-| 毛利 Matrix | [`docs/ai/dish-profit-drilldown-matrix-contract.md`](../../docs/ai/dish-profit-drilldown-matrix-contract.md) |
-| 经营诊断 Matrix | [`docs/ai/business-diagnosis-drilldown-matrix-contract.md`](../../docs/ai/business-diagnosis-drilldown-matrix-contract.md) |
+| 采购 Matrix / GOODS 锚 anchor execution | [`docs/ai/purchase-answer-plan.md`](../../docs/ai/purchase-answer-plan.md) |
+| 出库 Matrix | [`docs/ai/stock-reduce-answer-plan.md`](../../docs/ai/stock-reduce-answer-plan.md) |
+| 库存 Matrix | [`docs/ai/inventory-domain-capability-matrix.md`](../../docs/ai/inventory-domain-capability-matrix.md) |
+| 营业额 Matrix | [`docs/ai/revenue-answer-plan.md`](../../docs/ai/revenue-answer-plan.md) |
+| 销量 Matrix | [`docs/ai/dish-sales-domain-capability-matrix.md`](../../docs/ai/dish-sales-domain-capability-matrix.md) |
+| 毛利 Matrix | [`docs/ai/dish-profit-domain-capability-matrix.md`](../../docs/ai/dish-profit-domain-capability-matrix.md) |
+| 经营诊断 Matrix | [`docs/ai/business-overview-diagnosis-domain-capability-matrix.md`](../../docs/ai/business-overview-diagnosis-domain-capability-matrix.md) |
 | 经营概览/诊断能力表 | [`docs/ai/business-overview-diagnosis-domain-capability-matrix.md`](../../docs/ai/business-overview-diagnosis-domain-capability-matrix.md) |
 | Composer / Plan-first | [`docs/ai/harness-composer-architecture.md`](../../docs/ai/harness-composer-architecture.md) |
 

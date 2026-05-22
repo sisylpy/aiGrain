@@ -6,8 +6,8 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
-import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrixRow;
+import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import org.springframework.util.StringUtils;
@@ -486,25 +486,25 @@ public final class DailyRevenueAnswerPlanBuilder {
                 StringUtils.hasText(wire)
                         ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim())
                         : null;
-        RevenueDrilldownMatrixRow row =
-                RevenueDrilldownMatrix.resolveMatrixRow(path, canonWire, sem);
+        RevenueSemanticCapabilityMatrixRow row =
+                RevenueSemanticCapabilityMatrix.resolveMatrixRow(path, canonWire, sem);
         if (row != null) {
             dbg.put("revenueMatrixRowId", row.getRowId());
             dbg.put("revenueStructuredIntentDetailWire", row.getStructuredIntentDetailWire());
-            String gap = RevenueDrilldownMatrix.knownGapForResolvedRow(row);
+            String gap = RevenueSemanticCapabilityMatrix.knownGapForResolvedRow(row);
             if (gap != null) {
                 dbg.put("revenueKnownGap", gap);
             }
         } else if (StringUtils.hasText(canonWire)) {
             dbg.put("revenueStructuredIntentDetailWire", canonWire);
         }
-        if (RevenueDrilldownMatrix.detectMatrixWireMissing(sem, path, canonWire)) {
-            dbg.put("revenueMatrixWireMissing", RevenueDrilldownMatrix.MATRIX_WIRE_MISSING);
+        if (RevenueSemanticCapabilityMatrix.detectMatrixWireMissing(sem, path, canonWire)) {
+            dbg.put("revenueMatrixWireMissing", RevenueSemanticCapabilityMatrix.MATRIX_WIRE_MISSING);
         }
         dbg.put("revenueAnswerPlanType", planType);
         String prevWire = prevStructuredWire(rq);
         if (StringUtils.hasText(prevWire) && StringUtils.hasText(canonWire)) {
-            String leak = RevenueDrilldownMatrix.detectPriorCompareOrRankingWireLeak(prevWire, canonWire);
+            String leak = RevenueSemanticCapabilityMatrix.detectPriorCompareOrRankingWireLeak(prevWire, canonWire);
             if (leak != null) {
                 dbg.put("revenuePriorWireLeak", leak);
             }
@@ -518,7 +518,7 @@ public final class DailyRevenueAnswerPlanBuilder {
         String merged = rq.getQueryIntent().getStructuredIntentDetail();
         String norm = rq.getNormalizedQuestion();
         String resolved =
-                RevenueDrilldownMatrix.resolveStructuredIntentDetailWire(
+                RevenueSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         rq.getQuerySemanticParse(), safePath(rq), merged, norm);
         if (StringUtils.hasText(resolved)) {
             return resolved.trim();
@@ -559,8 +559,8 @@ public final class DailyRevenueAnswerPlanBuilder {
             String normalizedUserMessage) {
         String c = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire);
         String w = c != null ? c : (wire == null ? "" : wire.trim());
-        RevenueDrilldownMatrixRow matrixRow =
-                RevenueDrilldownMatrix.resolveMatrixRow(
+        RevenueSemanticCapabilityMatrixRow matrixRow =
+                RevenueSemanticCapabilityMatrix.resolveMatrixRow(
                         AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW, w, sem, normalizedUserMessage);
         if (matrixRow != null && StringUtils.hasText(matrixRow.getTargetRevenuePlanType())) {
             return matrixRow.getTargetRevenuePlanType();
@@ -570,9 +570,6 @@ public final class DailyRevenueAnswerPlanBuilder {
             return fromWire;
         }
         if (inheritedPlanType != null && !inheritedPlanType.isBlank()) {
-            if (sem != null && RevenueDrilldownMatrix.isTimeFollowupShape(sem)) {
-                return DailyRevenueAnswerPlan.TYPE_REVENUE_OVERVIEW;
-            }
             return inheritedPlanType;
         }
         return DailyRevenueAnswerPlan.TYPE_REVENUE_OVERVIEW;

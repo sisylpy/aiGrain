@@ -25,7 +25,8 @@ public final class AiFollowUpResolver {
     }
 
     /**
-     * 结构化语义 LLM 达阈短路：不跑 Java keyword follow-up 分支；合并后的 intent/时间/草案组织范围已在外层算好。
+     * 结构化语义 LLM 达阈后组装 {@link AiFollowUpResolution}（非 bypass：仅包装 merge 结果）。
+     * Phase1-J：{@code followUpRewriteApplied} 时视为首轮完整问句，不再标记 followUp。
      */
     public static AiFollowUpResolution semanticStructuralBypassResolution(
             AiConversationTurnMemory previousTurn,
@@ -33,7 +34,8 @@ public final class AiFollowUpResolver {
             AiResolvedTimeWindow mergedTwPostLlm,
             AiResolvedOrgScope orgScopeDraft,
             String rawMessage,
-            AiQuerySemanticParseResult sem) {
+            AiQuerySemanticParseResult sem,
+            boolean followUpRewriteApplied) {
         String norm = rawMessage == null ? "" : AiUserMessageSanitizer.stripLeadingEnumeration(rawMessage).trim();
         AiResolvedQueryIntent merged =
                 copyIntent(
@@ -44,7 +46,8 @@ public final class AiFollowUpResolver {
         AiResolvedOrgScope mergedOrg = orgScopeDraft;
 
         boolean fu =
-                previousTurn != null
+                !followUpRewriteApplied
+                        && previousTurn != null
                         && StringUtils.hasText(previousTurn.getLastPathCode())
                         && sem != null
                         && Boolean.TRUE.equals(sem.getFollowUp());
@@ -155,8 +158,11 @@ public final class AiFollowUpResolver {
     }
 
     /**
-     * 继承上一轮会话意图（path / structured / purchaseSource）；{@code norm} 预留参数，当前未使用。
+     * 继承上一轮会话意图（path / structured / purchaseSource）。
+     *
+     * @deprecated Phase1-J 第三批：主链不再调用；省略追问须先经 LlmFollowUpQueryRewriter + v2 intent。
      */
+    @Deprecated
     public static AiResolvedQueryIntent inheritIntentFromMemory(
             AiConversationTurnMemory prev, @SuppressWarnings("unused") String norm) {
         if (prev == null || !StringUtils.hasText(prev.getLastPathCode())) {

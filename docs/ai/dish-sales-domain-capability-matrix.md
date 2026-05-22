@@ -237,4 +237,4 @@
 
 ---
 
-**文档版本**：**D-8 Phase 1 已收口**（2026-05-15）；**D-CLEAN-DISH-SALES-P2**（2026-05-20）删除独立 **`dish_sales_query` Tool**，保留 **`DISH_SALES_QUERY` / `dish_sales_query_path`**，执行 **`dish_profit_analysis`**。见 [dish-sales-query-tool-removed.md](../legacy-reference/dish-sales-query-tool-removed.md)。
+**文档版本**：**D-8 Phase 1 已收口**（2026-05-15）；**D-CLEAN-DISH-SALES-P2**（2026-05-20）删除独立 **`dish_sales_query` Tool**，保留 **`DISH_SALES_QUERY` / `dish_sales_query_path`**，执行 **`dish_profit_analysis`**。见 `docs/AI_MAINLINE_INDEX.md`。

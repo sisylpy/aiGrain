@@ -3,26 +3,24 @@ package com.nongxinle.ai.semantic;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
-import com.nongxinle.ai.conversation.AiFollowUpResolver;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.dto.business.AiResultAnchor;
-import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrixRow;
-import com.nongxinle.ai.harness.followup.BusinessOverviewDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix;
+import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.BusinessOverviewSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.PurchaseSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.SemanticTimeContractCheck;
-import com.nongxinle.ai.semantic.TimeContractPreviousTurnSupport;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.util.Locale;
 
 /**
- * 将 {@link AiQuerySemanticParseResult} 合并入意图/时间草稿（时间日期镜像 LLM {@code startDate}/{@code endDate}，合同见 {@link SemanticTimeContractCheck}）；不得在合并阶段写入任何数据库 ID。
+ * 将 {@link AiQuerySemanticParseResult} 合并入意图/时间草稿（时间日期镜像 LLM {@code startDate}/{@code endDate}，合同见 {@link SemanticTimeContractCheck}）。
+ * Phase1-J 第三批：intent 路由仅读 v2 {@code intent} + semanticSlots；不读用户原文做 Matrix wire 纠偏，不 {@code inheritIntentFromMemory}。
  */
 public final class AiQuerySemanticLlmMergeHelper {
 
@@ -55,657 +53,55 @@ public final class AiQuerySemanticLlmMergeHelper {
             String normalizedUserMessage,
             AiConversationTurnMemory previousTurn) {
         AiResolvedQueryIntent base = baselineIntent != null ? copyIntent(baselineIntent) : AiResolvedQueryIntent.builder().build();
-        String norm = normalizedUserMessage != null ? normalizedUserMessage.trim() : "";
-        AiResolvedQueryIntent diagnosisContinuation =
-                buildBusinessDiagnosisDrilldownContinuationIntent(previousTurn, norm);
-        if (diagnosisContinuation != null) {
-            return diagnosisContinuation;
-        }
-        if (!blocksDishSalesMatrixOverride(sem)) {
-            AiResolvedQueryIntent matrixStoreSingleDish =
-                    buildDishSalesMatrixStoreSingleDishIntent(previousTurn, sem, norm);
-            if (matrixStoreSingleDish != null) {
-                return matrixStoreSingleDish;
-            }
-            AiResolvedQueryIntent matrixGroupSingleDish =
-                    buildDishSalesMatrixGroupSingleDishIntent(previousTurn, sem, norm);
-            if (matrixGroupSingleDish != null) {
-                return matrixGroupSingleDish;
-            }
-            AiResolvedQueryIntent matrixRankingFollowUp =
-                    buildDishSalesMatrixRankingFollowUpIntent(previousTurn, norm);
-            if (matrixRankingFollowUp != null) {
-                return matrixRankingFollowUp;
-            }
-            boolean semReliable =
-                    sem != null && !sem.isParseMissing() && sem.isStructuralConfidenceOk(minConfidence);
-            if (!(semReliable && v2MapsToExplicitDishProfitPath(sem))) {
-                AiResolvedQueryIntent matrixUtterancePin =
-                        buildDishSalesMatrixUtterancePinIntent(previousTurn, sem, norm);
-                if (matrixUtterancePin != null) {
-                    return matrixUtterancePin;
-                }
-            }
-        }
         if (sem == null || sem.isParseMissing() || !sem.isStructuralConfidenceOk(minConfidence)) {
             return base;
         }
 
         String ia = semanticActionNormalize(sem.getIntentAction());
-
         boolean requestedInheritPrevious =
                 "INHERIT_PREVIOUS".equals(ia) && previousTurn != null && StringUtils.hasText(previousTurn.getLastPathCode());
-        boolean inheritPrevIntent =
-                requestedInheritPrevious && !hasExplicitStockReduceRouteSignal(sem);
-
-        AiResolvedQueryIntent merged;
-        if (inheritPrevIntent) {
-            merged =
-                    AiFollowUpResolver.inheritIntentFromMemory(
-                            previousTurn, StringUtils.hasText(norm) ? norm : "");
-        } else {
-            WireIntent mapped = mapLlmIntent(sem.getIntent());
-            if (mapped == null && hasExplicitStockReduceRouteSignal(sem)) {
-                mapped =
-                        new WireIntent(
-                                AiResolvedQueryIntent.STOCK_REDUCE_QUERY,
-                                AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY,
-                                "出库/核销查询");
-            }
-            if (mapped == null) {
-                return base;
-            }
-            merged =
-                    AiResolvedQueryIntent.builder()
-                            .intentCode(mapped.intentCode())
-                            .pathCode(mapped.pathCode())
-                            .topic(mapped.topic())
-                            .structuredIntentDetail(base.getStructuredIntentDetail())
-                            .purchaseSourceType(base.getPurchaseSourceType())
-                            .inheritedFromPreviousTurn(base.isInheritedFromPreviousTurn())
-                            .inheritedFromIntentCode(base.getInheritedFromIntentCode())
-                            .build();
+        WireIntent mappedFromCurrent = mapLlmIntent(sem.getIntent());
+        if (mappedFromCurrent == null && hasExplicitStockReduceRouteSignal(sem)) {
+            mappedFromCurrent =
+                    new WireIntent(
+                            AiResolvedQueryIntent.STOCK_REDUCE_QUERY,
+                            AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY,
+                            "出库/核销查询");
         }
+        if (mappedFromCurrent == null) {
+            return base;
+        }
+        boolean currentPathDiffersFromPrevious =
+                previousTurn != null
+                        && StringUtils.hasText(previousTurn.getLastPathCode())
+                        && !previousTurn.getLastPathCode().trim().equals(mappedFromCurrent.pathCode());
+        boolean intentInherited = requestedInheritPrevious && !currentPathDiffersFromPrevious;
+        String prevIntent =
+                previousTurn != null && StringUtils.hasText(previousTurn.getLastIntentCode())
+                        ? previousTurn.getLastIntentCode()
+                        : null;
+        AiResolvedQueryIntent merged =
+                AiResolvedQueryIntent.builder()
+                        .intentCode(mappedFromCurrent.intentCode())
+                        .pathCode(mappedFromCurrent.pathCode())
+                        .topic(mappedFromCurrent.topic())
+                        .structuredIntentDetail(base.getStructuredIntentDetail())
+                        .purchaseSourceType(base.getPurchaseSourceType())
+                        .inheritedFromPreviousTurn(intentInherited)
+                        .inheritedFromIntentCode(intentInherited ? prevIntent : null)
+                        .build();
 
         applyPurchaseStructuredWireFromSemanticSlots(merged, sem);
         applyStockReduceStructuredWireFromSemanticSlots(merged, sem);
         applyCanonicalStructuredIntentDetailWireFromSemanticSlots(merged, sem);
         applyBusinessOverviewStructuredWireFromSemanticSlots(merged, sem);
-        merged = pinBusinessDiagnosisPathForDrilldownContinuation(merged, previousTurn, norm);
-        applyBusinessDiagnosisStructuredWireFromSemanticSlots(merged, sem, norm);
-        applyBusinessDiagnosisStructuredWireFromMessage(merged, norm);
-        applyRevenueStructuredWireFromSemanticSlots(merged, sem, norm);
-        merged = pinDishSalesPathForMatrixCrossDomainProfitFollowUp(merged, previousTurn, norm, sem);
-        merged = pinDishSalesPathForMatrixRankingFollowUp(merged, previousTurn, norm, sem);
-        applyDishSalesStructuredWireFromSemanticSlots(merged, sem, norm, previousTurn);
+        applyBusinessDiagnosisStructuredWireFromSemanticSlots(merged, sem);
+        applyRevenueStructuredWireFromSemanticSlots(merged, sem);
+        applyDishSalesStructuredWireFromSemanticSlots(merged, sem);
         applyDishProfitStructuredWireFromSemanticSlots(merged, sem);
         applyWarehouseStockStructuredWireFromSemanticSlots(merged, sem);
 
         return merged;
-    }
-
-    /**
-     * 销量 Matrix 多轮：「那毛利呢」等跨域追问须留在 {@link AiResolvedQueryIntent#PATH_DISH_SALES_QUERY}，
-     * 由 {@link DishSalesDrilldownMatrix#CROSS_DOMAIN_PROFIT} + knownGap 承接，不得切到毛利专线。
-     */
-    /**
-     * 销量 Matrix 排行追问：上一轮 dish_sales_query_path + 本句「那哪个菜最高/最多」等，
-     * 钉住 path/wire，不依赖本句 V2 intent 或「销量」字样。
-     */
-    /**
-     * 诊断 Matrix 多轮：上一轮 {@link AiResolvedQueryIntent#PATH_BUSINESS_DIAGNOSIS} + 本句子域归因 / 改进行动，
-     * 钉住 diagnosis path/wire，不得被销量 Matrix utterance pin（「毛利」→ dish_sales）抢走。
-     */
-    public static AiResolvedQueryIntent buildBusinessDiagnosisDrilldownContinuationIntent(
-            AiConversationTurnMemory previousTurn, String normalizedUserMessage) {
-        if (!BusinessDiagnosisDrilldownMatrix.canAdoptDiagnosisDrilldownContinuation(
-                previousTurn, normalizedUserMessage)) {
-            return null;
-        }
-        BusinessDiagnosisDrilldownMatrixRow row =
-                BusinessDiagnosisDrilldownMatrix.resolveRowFromMessage(normalizedUserMessage);
-        if (row == null
-                || (row.getChildDomain() == null && !BusinessDiagnosisDrilldownMatrix.ACTION_FOLLOWUP.equals(row))) {
-            return null;
-        }
-        String wire = row.getStructuredIntentDetailWire();
-        if (!StringUtils.hasText(wire)) {
-            return null;
-        }
-        String prevIntent =
-                previousTurn != null && StringUtils.hasText(previousTurn.getLastIntentCode())
-                        ? previousTurn.getLastIntentCode()
-                        : AiResolvedQueryIntent.BUSINESS_DIAGNOSIS;
-        return AiResolvedQueryIntent.builder()
-                .intentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS)
-                .pathCode(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS)
-                .topic("经营诊断")
-                .structuredIntentDetail(wire)
-                .purchaseSourceType(null)
-                .inheritedFromPreviousTurn(true)
-                .inheritedFromIntentCode(prevIntent)
-                .build();
-    }
-
-    public static AiQuerySemanticParseResult buildSyntheticSemanticForBusinessDiagnosisDrilldownContinuation(
-            String normalizedUserMessage, AiConversationTurnMemory previousTurn, LocalDate today) {
-        BusinessDiagnosisDrilldownMatrixRow row =
-                BusinessDiagnosisDrilldownMatrix.resolveRowFromMessage(normalizedUserMessage);
-        if (row == null || !StringUtils.hasText(row.getStructuredIntentDetailWire())) {
-            return null;
-        }
-        if (!BusinessDiagnosisDrilldownMatrix.canAdoptDiagnosisDrilldownContinuation(
-                previousTurn, normalizedUserMessage)) {
-            return null;
-        }
-        if (row.getChildDomain() == null && !BusinessDiagnosisDrilldownMatrix.ACTION_FOLLOWUP.equals(row)) {
-            return null;
-        }
-        AiQuerySemanticParseResult.TimePart timePart =
-                buildMatrixDetailTimePart(normalizedUserMessage, previousTurn, today);
-        String operation = row.getChildDomain() != null ? "EXPLAIN" : "ADVISE";
-        return AiQuerySemanticParseResult.builder()
-                .parseMissing(false)
-                .confidence(1.0d)
-                .followUp(true)
-                .intent(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS)
-                .intentAction("INHERIT_PREVIOUS")
-                .timeAction(
-                        timePart != null
-                                        && SemanticTimeContractCheck.SOURCE_INHERITED_PREVIOUS.equals(
-                                                timePart.getTimeSource())
-                                ? "INHERIT_PREVIOUS"
-                                : "NEW")
-                .semanticSlots(
-                        AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                                .queryObject("STORE")
-                                .operation(operation)
-                                .structuredIntentDetailWire(row.getStructuredIntentDetailWire())
-                                .build())
-                .time(timePart)
-                .build();
-    }
-
-    public static AiResolvedQueryIntent buildDishSalesMatrixStoreSingleDishIntent(
-            AiConversationTurnMemory previousTurn,
-            AiQuerySemanticParseResult sem,
-            String normalizedUserMessage) {
-        if (!DishSalesDrilldownMatrix.canAdoptDishSalesStoreSingleDishQuestion(
-                previousTurn, sem, normalizedUserMessage)) {
-            return null;
-        }
-        return buildDishSalesMatrixPinnedIntent(
-                previousTurn,
-                normalizedUserMessage,
-                AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_STORE_SINGLE_DISH);
-    }
-
-    public static AiResolvedQueryIntent buildDishSalesMatrixGroupSingleDishIntent(
-            AiConversationTurnMemory previousTurn,
-            AiQuerySemanticParseResult sem,
-            String normalizedUserMessage) {
-        if (!DishSalesDrilldownMatrix.canAdoptDishSalesGroupSingleDishQuestion(
-                previousTurn, sem, normalizedUserMessage)) {
-            return null;
-        }
-        return buildDishSalesMatrixPinnedIntent(
-                previousTurn,
-                normalizedUserMessage,
-                AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_SINGLE_DISH);
-    }
-
-    public static AiResolvedQueryIntent buildDishSalesMatrixUtterancePinIntent(
-            AiConversationTurnMemory previousTurn,
-            AiQuerySemanticParseResult sem,
-            String normalizedUserMessage) {
-        if (!DishSalesDrilldownMatrix.canAdoptDishSalesMatrixUtterancePin(
-                previousTurn, sem, normalizedUserMessage)) {
-            return null;
-        }
-        String wire =
-                DishSalesDrilldownMatrix.resolveStructuredIntentDetailWire(
-                        null,
-                        AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
-                        null,
-                        normalizedUserMessage,
-                        previousTurn);
-        if (!StringUtils.hasText(wire)) {
-            return null;
-        }
-        return buildDishSalesMatrixPinnedIntent(previousTurn, normalizedUserMessage, wire);
-    }
-
-    public static AiResolvedQueryIntent buildDishSalesMatrixRankingFollowUpIntent(
-            AiConversationTurnMemory previousTurn, String normalizedUserMessage) {
-        if (!DishSalesDrilldownMatrix.canPinDishSalesPathForRankingFollowUp(previousTurn, normalizedUserMessage)) {
-            return null;
-        }
-        return buildDishSalesMatrixPinnedIntent(
-                previousTurn,
-                normalizedUserMessage,
-                AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH);
-    }
-
-    public static AiResolvedQueryIntent buildDishSalesMatrixCrossDomainProfitFollowUpIntent(
-            AiConversationTurnMemory previousTurn, String normalizedUserMessage) {
-        if (!DishSalesDrilldownMatrix.canAdoptDishSalesMatrixCrossDomainProfitFollowUp(
-                previousTurn, normalizedUserMessage)) {
-            return null;
-        }
-        String wire =
-                DishSalesDrilldownMatrix.resolveStructuredIntentDetailWire(
-                        null,
-                        AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
-                        null,
-                        normalizedUserMessage,
-                        previousTurn);
-        if (!StringUtils.hasText(wire)) {
-            wire = AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY;
-        }
-        return buildDishSalesMatrixPinnedIntent(previousTurn, normalizedUserMessage, wire);
-    }
-
-    /**
-     * 销量排行 Top1 DISH 锚承接：短句「毛利是多少？」等切到 {@link AiResolvedQueryIntent#PATH_DISH_PROFIT}，
-     * 与 DS-I「那毛利呢」互斥。
-     */
-    public static AiResolvedQueryIntent buildDishSalesRankingAnchorProfitDrillDownIntent(
-            AiConversationTurnMemory previousTurn, String normalizedUserMessage) {
-        if (!DishSalesDrilldownMatrix.canAdoptDishSalesRankingAnchorProfitDrillDownFollowUp(
-                previousTurn, normalizedUserMessage)) {
-            return null;
-        }
-        String prevIntent =
-                previousTurn != null && StringUtils.hasText(previousTurn.getLastIntentCode())
-                        ? previousTurn.getLastIntentCode()
-                        : AiResolvedQueryIntent.DISH_SALES_QUERY;
-        return AiResolvedQueryIntent.builder()
-                .intentCode(AiResolvedQueryIntent.DISH_PROFIT)
-                .pathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT)
-                .topic("菜品毛利/利润")
-                .structuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY)
-                .purchaseSourceType(null)
-                .inheritedFromPreviousTurn(true)
-                .inheritedFromIntentCode(prevIntent)
-                .build();
-    }
-
-    public static AiQuerySemanticParseResult buildSyntheticSemanticForDishSalesRankingAnchorProfitDrillDown(
-            String normalizedUserMessage, AiConversationTurnMemory previousTurn, LocalDate today) {
-        if (!DishSalesDrilldownMatrix.canAdoptDishSalesRankingAnchorProfitDrillDownFollowUp(
-                previousTurn, normalizedUserMessage)) {
-            return null;
-        }
-        AiResultAnchor anchor =
-                DishSalesDrilldownMatrix.resolveUniqueDishSalesRankingAnchor(
-                        previousTurn != null ? previousTurn.getLastResultAnchors() : null);
-        if (anchor == null) {
-            return null;
-        }
-        AiQuerySemanticParseResult.TimePart timePart =
-                buildMatrixDetailTimePart(normalizedUserMessage, previousTurn, today);
-        String dishName = StringUtils.hasText(anchor.getEntityName()) ? anchor.getEntityName().trim() : null;
-        return AiQuerySemanticParseResult.builder()
-                .parseMissing(false)
-                .confidence(1.0d)
-                .followUp(true)
-                .intent(AiResolvedQueryIntent.DISH_PROFIT)
-                .intentAction("INHERIT_PREVIOUS")
-                .timeAction("INHERIT_PREVIOUS")
-                .metricAction("OVERRIDE")
-                .mentionedDishName(dishName)
-                .semanticSlots(
-                        AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                                .queryObject("DISH")
-                                .operation("DETAIL")
-                                .metric("GROSS_MARGIN")
-                                .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS)
-                                .structuredIntentDetailWire(
-                                        AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY)
-                                .build())
-                .time(timePart)
-                .build();
-    }
-
-    private static AiResolvedQueryIntent buildDishSalesMatrixPinnedIntent(
-            AiConversationTurnMemory previousTurn,
-            String normalizedUserMessage,
-            String defaultWire) {
-        String wire =
-                DishSalesDrilldownMatrix.resolveStructuredIntentDetailWire(
-                        null,
-                        AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
-                        null,
-                        normalizedUserMessage,
-                        previousTurn);
-        if (!StringUtils.hasText(wire)) {
-            wire = defaultWire;
-        }
-        String prevIntent =
-                previousTurn != null && StringUtils.hasText(previousTurn.getLastIntentCode())
-                        ? previousTurn.getLastIntentCode()
-                        : AiResolvedQueryIntent.DISH_SALES_QUERY;
-        boolean inherited =
-                previousTurn != null
-                        && StringUtils.hasText(previousTurn.getLastPathCode())
-                        && AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(
-                                previousTurn.getLastPathCode().trim());
-        return AiResolvedQueryIntent.builder()
-                .intentCode(AiResolvedQueryIntent.DISH_SALES_QUERY)
-                .pathCode(AiResolvedQueryIntent.PATH_DISH_SALES_QUERY)
-                .topic("菜品销量/销售额")
-                .structuredIntentDetail(wire)
-                .purchaseSourceType(null)
-                .inheritedFromPreviousTurn(inherited)
-                .inheritedFromIntentCode(inherited ? prevIntent : null)
-                .build();
-    }
-
-    /**
-     * V2 parse 失败时的 Matrix 收养用最小语义帧（非 parseMissing，供 {@link com.nongxinle.ai.resolver.SemanticAdoptionAttempt#adopted()}）。
-     */
-    public static AiQuerySemanticParseResult buildSyntheticSemanticForDishSalesStoreSingleDish(
-            String normalizedUserMessage, AiConversationTurnMemory previousTurn, LocalDate today) {
-        return buildSyntheticSemanticForDishSalesMatrixDetail(
-                normalizedUserMessage,
-                previousTurn,
-                today,
-                AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_STORE_SINGLE_DISH,
-                true);
-    }
-
-    public static AiQuerySemanticParseResult buildSyntheticSemanticForDishSalesGroupSingleDish(
-            String normalizedUserMessage, AiConversationTurnMemory previousTurn, LocalDate today) {
-        return buildSyntheticSemanticForDishSalesMatrixDetail(
-                normalizedUserMessage,
-                previousTurn,
-                today,
-                AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_SINGLE_DISH,
-                false);
-    }
-
-    public static AiQuerySemanticParseResult buildSyntheticSemanticForDishSalesMatrixUtterancePin(
-            String normalizedUserMessage, AiConversationTurnMemory previousTurn, LocalDate today) {
-        String wire =
-                DishSalesDrilldownMatrix.resolveStructuredIntentDetailWire(
-                        null,
-                        AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
-                        null,
-                        normalizedUserMessage,
-                        previousTurn);
-        if (!StringUtils.hasText(wire)) {
-            return null;
-        }
-        boolean storeScoped =
-                AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_STORE_SINGLE_DISH.equals(wire)
-                        || AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_STORE_RANKING.equals(wire);
-        return buildSyntheticSemanticForDishSalesMatrixDetail(
-                normalizedUserMessage, previousTurn, today, wire, storeScoped);
-    }
-
-    public static AiQuerySemanticParseResult buildSyntheticSemanticForDishSalesRankingFollowUp(
-            String normalizedUserMessage, AiConversationTurnMemory previousTurn) {
-        String wire =
-                DishSalesDrilldownMatrix.resolveStructuredIntentDetailWire(
-                        null,
-                        AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
-                        null,
-                        normalizedUserMessage,
-                        previousTurn);
-        if (!StringUtils.hasText(wire)) {
-            wire = AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
-        }
-        AiQuerySemanticParseResult.TimePart timePart = null;
-        if (TimeContractPreviousTurnSupport.hasTurnMemoryDates(previousTurn)) {
-            timePart =
-                    AiQuerySemanticParseResult.TimePart.builder()
-                            .timeType(
-                                    StringUtils.hasText(previousTurn.getLastTimeLabel())
-                                            ? previousTurn.getLastTimeLabel()
-                                            : AiResolvedTimeWindow.CUSTOM)
-                            .startDate(previousTurn.getLastStartDate())
-                            .endDate(previousTurn.getLastEndDate())
-                            .timeSource(SemanticTimeContractCheck.SOURCE_INHERITED_PREVIOUS)
-                            .needInheritFromPrevious(true)
-                            .build();
-        }
-        return AiQuerySemanticParseResult.builder()
-                .parseMissing(false)
-                .confidence(1.0d)
-                .followUp(true)
-                .intent(AiResolvedQueryIntent.DISH_SALES_QUERY)
-                .intentAction("INHERIT_PREVIOUS")
-                .timeAction("INHERIT_PREVIOUS")
-                .semanticSlots(
-                        AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                                .queryObject("DISH")
-                                .operation("RANKING")
-                                .metric("SOLD_PORTIONS")
-                                .structuredIntentDetailWire(wire)
-                                .build())
-                .time(timePart)
-                .build();
-    }
-
-    private static AiQuerySemanticParseResult buildSyntheticSemanticForDishSalesMatrixDetail(
-            String normalizedUserMessage,
-            AiConversationTurnMemory previousTurn,
-            LocalDate today,
-            String defaultWire,
-            boolean storeScoped) {
-        String wire =
-                DishSalesDrilldownMatrix.resolveStructuredIntentDetailWire(
-                        null,
-                        AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
-                        null,
-                        normalizedUserMessage,
-                        previousTurn);
-        if (!StringUtils.hasText(wire)) {
-            wire = defaultWire;
-        }
-        AiQuerySemanticParseResult.TimePart timePart = buildMatrixDetailTimePart(normalizedUserMessage, previousTurn, today);
-        String dishName =
-                DishSalesDrilldownMatrix.extractMentionedDishNameFromSingleDishDetailQuestion(normalizedUserMessage);
-        AiQuerySemanticParseResult.RequestedScopePart scopePart = null;
-        if (storeScoped) {
-            String storeLabel =
-                    DishSalesDrilldownMatrix.extractMentionedStoreLabelFromQuestion(normalizedUserMessage);
-            if (StringUtils.hasText(storeLabel)) {
-                scopePart =
-                        AiQuerySemanticParseResult.RequestedScopePart.builder()
-                                .mentionedStoreName(storeLabel)
-                                .build();
-            }
-        }
-        String operation = matrixSlotsOperationForWire(wire);
-        AiQuerySemanticParseResult.SemanticSlotsPart slots =
-                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                        .queryObject("DISH")
-                        .operation(operation)
-                        .metric("SOLD_PORTIONS")
-                        .structuredIntentDetailWire(wire)
-                        .build();
-        AiQuerySemanticParseResult.AiQuerySemanticParseResultBuilder builder =
-                AiQuerySemanticParseResult.builder()
-                        .parseMissing(false)
-                        .confidence(1.0d)
-                        .followUp(previousTurn != null)
-                        .intent(AiResolvedQueryIntent.DISH_SALES_QUERY)
-                        .intentAction("NEW")
-                        .timeAction(
-                                timePart != null
-                                                && SemanticTimeContractCheck.SOURCE_INHERITED_PREVIOUS.equals(
-                                                        timePart.getTimeSource())
-                                        ? "INHERIT_PREVIOUS"
-                                        : "NEW")
-                        .semanticSlots(slots)
-                        .requestedScope(scopePart)
-                        .time(timePart);
-        if (StringUtils.hasText(dishName)) {
-            builder.mentionedDishName(dishName);
-        }
-        return builder.build();
-    }
-
-    private static String matrixSlotsOperationForWire(String wire) {
-        if (!StringUtils.hasText(wire)) {
-            return "RANKING";
-        }
-        if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_TREND.equals(wire)) {
-            return "TREND";
-        }
-        if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_SINGLE_DISH.equals(wire)
-                || AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_STORE_SINGLE_DISH.equals(wire)) {
-            return "DETAIL";
-        }
-        return "RANKING";
-    }
-
-    private static AiQuerySemanticParseResult.TimePart buildMatrixDetailTimePart(
-            String normalizedUserMessage, AiConversationTurnMemory previousTurn, LocalDate today) {
-        String msg =
-                normalizedUserMessage != null
-                        ? normalizedUserMessage.replace(" ", "").replace("\u3000", "")
-                        : "";
-        if (msg.contains("这个月") || msg.contains("当月")) {
-            SemanticTimeContractCheck.Result explicit =
-                    SemanticTimeContractCheck.defaultMonthToDateOnAnchor(today);
-            if (explicit != null && explicit.valid()) {
-                return AiQuerySemanticParseResult.TimePart.builder()
-                        .timeType(AiResolvedTimeWindow.THIS_MONTH)
-                        .startDate(explicit.normalizedStartDate().toString())
-                        .endDate(explicit.normalizedEndDate().toString())
-                        .timeSource(SemanticTimeContractCheck.SOURCE_CURRENT_MESSAGE_EXPLICIT)
-                        .needInheritFromPrevious(false)
-                        .build();
-            }
-        }
-        SemanticTimeContractCheck.Result fallback = SemanticTimeContractCheck.defaultMonthToDateOnAnchor(today);
-        if (fallback != null && fallback.valid()) {
-            return AiQuerySemanticParseResult.TimePart.builder()
-                    .timeType(AiResolvedTimeWindow.THIS_MONTH)
-                    .startDate(fallback.normalizedStartDate().toString())
-                    .endDate(fallback.normalizedEndDate().toString())
-                    .timeSource(SemanticTimeContractCheck.SOURCE_DEFAULT_MONTH_TO_DATE)
-                    .needInheritFromPrevious(false)
-                    .build();
-        }
-        return null;
-    }
-
-    /**
-     * Phase1-F：本轮 V2 已显式路由到非销量域时，销量 Matrix pin / ranking follow-up 不得覆盖 effective intent/path。
-     */
-    public static boolean blocksDishSalesMatrixOverride(AiQuerySemanticParseResult sem) {
-        if (sem == null) {
-            return false;
-        }
-        if (hasExplicitStockReduceRouteSignal(sem)) {
-            return true;
-        }
-        if (hasExplicitRevenueRouteSignal(sem)) {
-            return true;
-        }
-        if (hasExplicitWarehouseRouteSignal(sem)) {
-            return true;
-        }
-        if (v2MapsToExplicitDishProfitPath(sem)) {
-            return true;
-        }
-        if (hasExplicitBusinessOverviewRouteSignal(sem) || hasExplicitBusinessDiagnosisRouteSignal(sem)) {
-            return true;
-        }
-        if (shouldUsePurchaseSemanticFrameAdoption(sem)) {
-            return true;
-        }
-        WireIntent mapped = mapLlmIntent(sem.getIntent());
-        return mapped != null
-                && !AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(mapped.pathCode());
-    }
-
-    private static AiResolvedQueryIntent pinDishSalesPathForMatrixRankingFollowUp(
-            AiResolvedQueryIntent merged,
-            AiConversationTurnMemory previousTurn,
-            String normalizedUserMessage,
-            AiQuerySemanticParseResult sem) {
-        if (blocksDishSalesMatrixOverride(sem)) {
-            return merged;
-        }
-        AiResolvedQueryIntent pinned =
-                buildDishSalesMatrixRankingFollowUpIntent(previousTurn, normalizedUserMessage);
-        if (pinned == null) {
-            return merged;
-        }
-        if (merged == null || !StringUtils.hasText(merged.getPathCode())) {
-            return pinned;
-        }
-        if (!AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(merged.getPathCode())) {
-            return merged;
-        }
-        if (!StringUtils.hasText(merged.getStructuredIntentDetail())
-                && StringUtils.hasText(pinned.getStructuredIntentDetail())) {
-            return AiResolvedQueryIntent.builder()
-                    .intentCode(merged.getIntentCode())
-                    .pathCode(merged.getPathCode())
-                    .topic(merged.getTopic())
-                    .structuredIntentDetail(pinned.getStructuredIntentDetail())
-                    .purchaseSourceType(merged.getPurchaseSourceType())
-                    .inheritedFromPreviousTurn(merged.isInheritedFromPreviousTurn())
-                    .inheritedFromIntentCode(merged.getInheritedFromIntentCode())
-                    .build();
-        }
-        return merged;
-    }
-
-    private static void applyBusinessDiagnosisStructuredWireFromMessage(
-            AiResolvedQueryIntent qi, String normalizedUserMessage) {
-        if (qi == null || !AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(qi.getPathCode())) {
-            return;
-        }
-        BusinessDiagnosisDrilldownMatrixRow msgRow =
-                BusinessDiagnosisDrilldownMatrix.resolveRowFromMessage(normalizedUserMessage);
-        if (msgRow == null || !StringUtils.hasText(msgRow.getStructuredIntentDetailWire())) {
-            return;
-        }
-        if (BusinessDiagnosisDrilldownMatrix.shouldPreferMessageRowOverWire(
-                qi.getStructuredIntentDetail(), msgRow)) {
-            qi.setStructuredIntentDetail(msgRow.getStructuredIntentDetailWire());
-        }
-    }
-
-    private static AiResolvedQueryIntent pinBusinessDiagnosisPathForDrilldownContinuation(
-            AiResolvedQueryIntent merged, AiConversationTurnMemory previousTurn, String normalizedUserMessage) {
-        AiResolvedQueryIntent pinned =
-                buildBusinessDiagnosisDrilldownContinuationIntent(previousTurn, normalizedUserMessage);
-        return pinned != null ? pinned : merged;
-    }
-
-    private static AiResolvedQueryIntent pinDishSalesPathForMatrixCrossDomainProfitFollowUp(
-            AiResolvedQueryIntent merged,
-            AiConversationTurnMemory previousTurn,
-            String normalizedUserMessage,
-            AiQuerySemanticParseResult sem) {
-        if (blocksDishSalesMatrixOverride(sem)) {
-            return merged;
-        }
-        if (merged == null || previousTurn == null || !StringUtils.hasText(previousTurn.getLastPathCode())) {
-            return merged;
-        }
-        if (!AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(previousTurn.getLastPathCode().trim())) {
-            return merged;
-        }
-        if (!DishSalesDrilldownMatrix.isCrossDomainProfitFollowupMessage(normalizedUserMessage)) {
-            return merged;
-        }
-        return AiResolvedQueryIntent.builder()
-                .intentCode(AiResolvedQueryIntent.DISH_SALES_QUERY)
-                .pathCode(AiResolvedQueryIntent.PATH_DISH_SALES_QUERY)
-                .topic("菜品销量/销售额")
-                .structuredIntentDetail(merged.getStructuredIntentDetail())
-                .purchaseSourceType(merged.getPurchaseSourceType())
-                .inheritedFromPreviousTurn(merged.isInheritedFromPreviousTurn())
-                .inheritedFromIntentCode(merged.getInheritedFromIntentCode())
-                .build();
     }
 
     public static boolean mapsToPurchaseOverviewPath(String llmIntent) {
@@ -821,18 +217,29 @@ public final class AiQuerySemanticLlmMergeHelper {
         if (!AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(qi.getPathCode())) {
             return;
         }
+        String resolved =
+                PurchaseSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
+                        sem, qi.getPathCode(), qi.getStructuredIntentDetail());
+        if (StringUtils.hasText(resolved)) {
+            qi.setStructuredIntentDetail(resolved);
+        } else {
+            AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
+            if (ss != null && StringUtils.hasText(ss.getStructuredIntentDetailWire())) {
+                String canon =
+                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                ss.getStructuredIntentDetailWire().trim());
+                if (StringUtils.hasText(canon)
+                        && AiQuerySemanticLexicon.isPurchaseOverviewDomainCanonicalWire(canon)) {
+                    qi.setStructuredIntentDetail(canon);
+                }
+            }
+        }
         AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
-        if (ss == null || !StringUtils.hasText(ss.getStructuredIntentDetailWire())) {
-            return;
-        }
-        String canon =
-                AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(ss.getStructuredIntentDetailWire().trim());
-        if (StringUtils.hasText(canon)) {
-            qi.setStructuredIntentDetail(canon);
-        }
-        String pstFacet = purchaseSourceTypeFromSemanticSourceFacet(ss.getSourceFacet());
-        if (pstFacet != null) {
-            qi.setPurchaseSourceType(pstFacet);
+        if (ss != null) {
+            String pstFacet = purchaseSourceTypeFromSemanticSourceFacet(ss.getSourceFacet());
+            if (pstFacet != null) {
+                qi.setPurchaseSourceType(pstFacet);
+            }
         }
     }
 
@@ -1075,7 +482,7 @@ public final class AiQuerySemanticLlmMergeHelper {
             return;
         }
         String resolved =
-                StockReduceDrilldownMatrix.resolveStructuredIntentDetailWire(
+                StockReduceSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem, qi.getPathCode(), qi.getStructuredIntentDetail());
         if (StringUtils.hasText(resolved)) {
             qi.setStructuredIntentDetail(resolved);
@@ -1144,18 +551,18 @@ public final class AiQuerySemanticLlmMergeHelper {
             return;
         }
         String resolved =
-                BusinessOverviewDrilldownMatrix.resolveStructuredIntentDetailWire(
+                BusinessOverviewSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem,
                         AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW,
                         qi.getStructuredIntentDetail());
         if (StringUtils.hasText(resolved)
-                && !BusinessOverviewDrilldownMatrix.isMatrixWireMissing(resolved)) {
+                && !BusinessOverviewSemanticCapabilityMatrix.isMatrixWireMissing(resolved)) {
             qi.setStructuredIntentDetail(resolved);
         }
     }
 
     private static void applyBusinessDiagnosisStructuredWireFromSemanticSlots(
-            AiResolvedQueryIntent qi, AiQuerySemanticParseResult sem, String normalizedUserMessage) {
+            AiResolvedQueryIntent qi, AiQuerySemanticParseResult sem) {
         if (qi == null || sem == null) {
             return;
         }
@@ -1163,19 +570,11 @@ public final class AiQuerySemanticLlmMergeHelper {
             return;
         }
         String resolved =
-                BusinessDiagnosisDrilldownMatrix.resolveStructuredIntentDetailWire(
+                BusinessDiagnosisSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem, AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS, qi.getStructuredIntentDetail());
         if (StringUtils.hasText(resolved)
-                && !BusinessDiagnosisDrilldownMatrix.isMatrixWireMissing(resolved)) {
+                && !BusinessDiagnosisSemanticCapabilityMatrix.isMatrixWireMissing(resolved)) {
             qi.setStructuredIntentDetail(resolved);
-        }
-        BusinessDiagnosisDrilldownMatrixRow msgRow =
-                BusinessDiagnosisDrilldownMatrix.resolveRowFromMessage(normalizedUserMessage);
-        if (msgRow != null
-                && StringUtils.hasText(msgRow.getStructuredIntentDetailWire())
-                && BusinessDiagnosisDrilldownMatrix.shouldPreferMessageRowOverWire(
-                        qi.getStructuredIntentDetail(), msgRow)) {
-            qi.setStructuredIntentDetail(msgRow.getStructuredIntentDetailWire());
         }
     }
 
@@ -1183,7 +582,7 @@ public final class AiQuerySemanticLlmMergeHelper {
      * revenue_overview_path：Matrix P1 驱动 wire 收口（环比/日峰/趋势不得 silent fallback 为门店排行）。
      */
     private static void applyRevenueStructuredWireFromSemanticSlots(
-            AiResolvedQueryIntent qi, AiQuerySemanticParseResult sem, String normalizedUserMessage) {
+            AiResolvedQueryIntent qi, AiQuerySemanticParseResult sem) {
         if (qi == null || sem == null) {
             return;
         }
@@ -1191,8 +590,8 @@ public final class AiQuerySemanticLlmMergeHelper {
             return;
         }
         String resolved =
-                RevenueDrilldownMatrix.resolveStructuredIntentDetailWire(
-                        sem, qi.getPathCode(), qi.getStructuredIntentDetail(), normalizedUserMessage);
+                RevenueSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
+                        sem, qi.getPathCode(), qi.getStructuredIntentDetail(), null);
         if (StringUtils.hasText(resolved)) {
             qi.setStructuredIntentDetail(resolved);
         }
@@ -1205,10 +604,7 @@ public final class AiQuerySemanticLlmMergeHelper {
      * dish_sales_query_path：Matrix P1 驱动 wire 收口（最低销量 / 跨域毛利追问不得 silent fallback 为毛利排行）。
      */
     private static void applyDishSalesStructuredWireFromSemanticSlots(
-            AiResolvedQueryIntent qi,
-            AiQuerySemanticParseResult sem,
-            String normalizedUserMessage,
-            AiConversationTurnMemory previousTurn) {
+            AiResolvedQueryIntent qi, AiQuerySemanticParseResult sem) {
         if (qi == null || sem == null) {
             return;
         }
@@ -1216,28 +612,20 @@ public final class AiQuerySemanticLlmMergeHelper {
             return;
         }
         String resolved =
-                DishSalesDrilldownMatrix.resolveStructuredIntentDetailWire(
-                        sem, qi.getPathCode(), qi.getStructuredIntentDetail(), normalizedUserMessage, previousTurn);
+                DishSalesSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
+                        sem, qi.getPathCode(), qi.getStructuredIntentDetail(), null, null);
         if (StringUtils.hasText(resolved)) {
             qi.setStructuredIntentDetail(resolved);
         }
     }
 
-    /** V2 已明确路由到 {@link AiResolvedQueryIntent#PATH_DISH_PROFIT} 时，销量 utterance pin 不得覆盖。 */
+    /** V2 已明确路由到 {@link AiResolvedQueryIntent#PATH_DISH_PROFIT}（省略毛利追问经 LlmFollowUpQueryRewriter 补全后由 v2 产出）。 */
     public static boolean v2MapsToExplicitDishProfitPath(AiQuerySemanticParseResult sem) {
         if (sem == null || sem.isParseMissing()) {
             return false;
         }
         WireIntent mapped = mapLlmIntent(sem.getIntent());
         return mapped != null && AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(mapped.pathCode());
-    }
-
-    private static boolean v2MapsToExplicitDishProfitPath(
-            AiQuerySemanticParseResult sem, double minConfidence) {
-        if (sem == null || sem.isParseMissing() || !sem.isStructuralConfidenceOk(minConfidence)) {
-            return false;
-        }
-        return v2MapsToExplicitDishProfitPath(sem);
     }
 
     private static void applyDishProfitStructuredWireFromSemanticSlots(
@@ -1249,7 +637,7 @@ public final class AiQuerySemanticLlmMergeHelper {
             return;
         }
         String resolved =
-                DishProfitDrilldownMatrix.resolveStructuredIntentDetailWire(
+                DishProfitSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem, qi.getPathCode(), qi.getStructuredIntentDetail());
         if (StringUtils.hasText(resolved)) {
             qi.setStructuredIntentDetail(resolved);
@@ -1273,7 +661,7 @@ public final class AiQuerySemanticLlmMergeHelper {
     private static String resolveWarehouseStockStructuredWire(
             AiQuerySemanticParseResult sem, String currentStructuredDetail) {
         String resolved =
-                WarehouseDrilldownMatrix.resolveStructuredIntentDetailWire(
+                WarehouseSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem,
                         AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK,
                         currentStructuredDetail);

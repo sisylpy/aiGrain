@@ -3,6 +3,10 @@ package com.nongxinle.ai.context;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
+import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
+import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -171,19 +175,45 @@ public class AiResolvedQueryContext {
     private Double orchestrationConfidence;
     private String orchestrationReason;
 
-    // ── 多轮下钻（锚点）：Resolver 合并层写入，仅观测 / Harness ──
+    // ── Phase1-H FollowUp Query Rewrite（仅观测 / Harness） ──
 
-    /** 如 OBJECT_DRILLDOWN、DETAIL_DRILLDOWN */
-    private String followUpAction;
-    private String followUpTargetEntityType;
-    /** GOODS 锚 {@code disGoodsId} 等（Phase2-A 追问贯通）。 */
-    private String followUpTargetEntityId;
-    private String followUpTargetEntityName;
-    private String followUpDetailWanted;
-    private String followUpSourcePlanType;
+    /** 用户原始问句（与 {@link #originalQuestion} 对齐，便于 Harness 摊平）。 */
+    private String rawUserMessage;
+    /** 是否在进入 v2 前完成省略追问补全。 */
+    private Boolean followUpRewriteApplied;
+    /** 补全后的自然语言问句；未 rewrite 时为 null。 */
+    private String completedUserQuery;
+    /** rewrite 规则 id（debug）；非 path/wire/Tool。 */
+    private String followUpRewriteReason;
+    private Map<String, Object> followUpRewriteDebug;
+    private Boolean rewriteInheritedTime;
+    private Boolean rewriteInheritedScope;
+    /** rewrite 补全引用的实体 type（debug）；非业务 path。 */
+    private String rewriteInheritedAnchorType;
+    /** rewrite 补全引用的实体名（debug）；非 wire/Tool。 */
+    private String rewriteInheritedAnchorName;
+    /** rewrite 层 clarification（未 canRewrite 时观测）。 */
+    private String followUpRewriteClarificationQuestion;
+    /** LLM rewrite 引用的锚点（观测）。 */
+    private List<Map<String, String>> rewriteUsedAnchors;
 
-    /**
-     * D-13 Registry / Frame Composer Phase 1：扁平 Debug（matchedCapabilityId、queryMode、frame 镜像等）。
-     */
-    private Map<String, Object> businessFollowUpCapabilityDebug;
+    /** 上一轮 TurnMemory 中 resultAnchors 条数（Rewrite 前观测）。 */
+    private Integer previousTurnResultAnchorsCount;
+    /** 传入 Rewrite Prompt 的 resultAnchors 条数（Rewrite 前观测）。 */
+    private Integer rewritePromptResultAnchorsCount;
+
+    // ── P2 两段式语义：Router + ContractSelector（主链观测；Validator 暂不强拦截） ──
+
+    private SemanticDomainRouteResult semanticDomainRoute;
+    private DomainContractSelectionResult domainContractSelection;
+    private SemanticContractValidationDebug semanticContractValidation;
+    /** P3：合同 strict 统一决策（observe / enforce 共用；默认 strict=false 不阻断）。 */
+    private SemanticContractStrictDecision semanticContractStrictDecision;
+
+    /** v2 LLM 顶层 domain（观测；与 Router primaryDomain 对比）。 */
+    private String querySemanticV2Domain;
+    /** Router primaryDomain 与 v2 domain 是否不一致（观测；不阻断）。 */
+    private Boolean routeParserDomainMismatch;
+    /** mismatch 原因摘要（观测）。 */
+    private String routeParserDomainMismatchReason;
 }

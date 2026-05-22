@@ -1,11 +1,10 @@
-# Composite 经营诊断 — **C-50：Composer 只读 `BusinessDiagnosisCompositeAnswerPlan`（设计）**
+# Composite 经营诊断 — Readonly Composer（`BusinessDiagnosisCompositeAnswerPlan`）
 
 > **读者**：Harness / Composer 工程师。  
-> **阶段**：**C-50** — **仅文档**：定义 **最终回答 Composer** 如何 **只读取** **`BusinessDiagnosisCompositeAnswerPlan`**（下称 **Composite AnswerPlan**），**不**重新解析 **`toolResults`** / 原始 Tool payload，**不**另起炉灶做诊断。  
-> **不在本轮**：**不接** Master 生产主链路、**不接**前台、**不**调用 LLM、**不**写 SQL、**不**改 Tool / Adapter / Resolver / 既有 Composer **主逻辑**、**不**在 Composite 层新增用户原文 **contains/regex**。  
-> **Java**：**C-51** 才允许落地 **Composer skeleton**；**C-50 不写 Java**。  
+> **现网**：**`com.nongxinle.ai.planner.BusinessDiagnosisCompositeReadonlyComposer`**（`COMPOSER_VERSION=C-51_READONLY_COMPOSER`）已落地；**只读** **`BusinessDiagnosisCompositeAnswerPlan`**，**不**解析 **`toolResults`** / 原始 Tool payload，**不**另起炉灶做诊断，**不调 LLM**。  
+> **生产终稿**：普通 **`/api/ai/runs`** 仍以 **semantic contract + 各域 AnswerPlan + `StubAnswerComposerNode`** 为准；Composite Readonly Composer 用于 **Harness `GRAPH_RUN` / `HARNESS_ONLY` / `SHADOW` 观测**（**不替换** `finalAnswerText`，见 **[`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md)**）。  
 > **权威 DTO**：**[`business-diagnosis-answer-plan-design.md`](./business-diagnosis-answer-plan-design.md)**。  
-> **Harness 上下文**：**[`planner-executor-v1-design.md`](./planner-executor-v1-design.md)** §1、**§27**；Composite 计划：**[`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md)**；GROUP 口径：**[`business-diagnosis-composite-group-design.md`](./business-diagnosis-composite-group-design.md)**。
+> **编排**：**[`planner-executor-v1-design.md`](./planner-executor-v1-design.md)**、**[`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md)**。
 
 ---
 
@@ -20,7 +19,7 @@ AiResolvedQueryContext（唯一解析入口，冻结）
 
 - **上游**：**`BusinessDiagnosisCompositeAnswerPlan`** 已由 Builder 从 **各域 AnswerPlan / overview** 与 **诚实的 `dataCoverage`** 物化；**事实与诊断信号**在此闭合。  
 - **本 Composer 段**：处于 **「结构化计划已冻结」之后**；**不**承担再规划、**不**再调 Tool、**不**修改 **`PlannerExecutionPlan`**。  
-- **与 Master / 前台**：**C-50 设计范围** **不**接入 **MasterBusinessAgent** 生产主链路，**不**绑定具体 UI；未来接入时须 **仍**以 AnswerPlan 为唯一事实源。
+- **与 Master / 前台**：生产 **`finalAnswerText`** 不由本 Composer 写入；**SHADOW** 仅旁路产出 **`compositeFinalAnswerText`** 等观测字段。未来若 **PRIMARY** 切换策略，须 **仍**以 AnswerPlan 为唯一事实源。
 
 ---
 
@@ -149,9 +148,9 @@ Composer **必须**仅基于下列字段组织用户可见叙事（**不得**用
 
 ---
 
-## 10. C-52 生产入口 Composite Gate（仅文档，前置）
+## 10. C-52 生产入口 Composite Gate（已实装）
 
-真实聊天主链路**在 Resolver / BusinessDataPlanner 之后、四域 Tool 执行与 Master 调用 Composite 之前**，须经 **`CompositeProductionGate`（类名 C-53 定稿）** 判定；**禁止**用户原文 **`contains`/`regex`**，**只读**结构化上下文。**允许/禁止意图**、**STORE/GROUP 条件**、**fallback / 降级**、**SSE 调试字段**、**C-53 Java checklist** 见 **[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**。**现网 intent / path / `structuredIntentDetail` wire 权威表**：同文档 **C-52.1 §3.3**。
+真实聊天主链路在 **`AiRunService#startRun`** 写入 **`businessDiagnosisCompositeGateResult`**（**`BusinessDiagnosisCompositeProductionGate`**）；**只读**结构化 intent/path/scope/time，**禁止**用户原文 **`contains`/`regex`**。**规则与 intent 映射表**见 **[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)** §3.3。
 
 ---
 
@@ -163,6 +162,6 @@ Composer **必须**仅基于下列字段组织用户可见叙事（**不得**用
 | [`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md) | caseId、六步、C-49 |
 | [`business-diagnosis-composite-group-design.md`](./business-diagnosis-composite-group-design.md) | GROUP **`scopeLabel` / `summaryText`** |
 | [`planner-executor-v1-design.md`](./planner-executor-v1-design.md) | 流水线位置、§27 |
-| [`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md) | **C-52** 生产入口 Gate（仅文档） |
+| [`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md) | **C-52** 生产入口 Gate（**`BusinessDiagnosisCompositeProductionGate`**） |
 
-**文档版本**：**C-50**（设计）+ **C-51**（**`BusinessDiagnosisCompositeReadonlyComposer`** / **`BusinessDiagnosisCompositeComposeResult`** 实装 + Harness 摘要字段）+ **C-52**（生产入口 Gate 设计指针）+ **C-52.1**（**§3.3 结构化意图映射表**），详 **[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**。
+**文档版本**：**`BusinessDiagnosisCompositeReadonlyComposer`** + **`BusinessDiagnosisCompositeComposeResult`** 已实装；Harness 摘要 **`businessDiagnosisFinalAnswerText`** / **`businessDiagnosisComposerVersion`**。

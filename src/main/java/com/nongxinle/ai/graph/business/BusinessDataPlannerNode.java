@@ -14,8 +14,8 @@ import com.nongxinle.ai.security.AiAnswerBoundary;
 import com.nongxinle.ai.security.AiPermissionGuard;
 import com.nongxinle.ai.security.AiPermissions;
 import com.nongxinle.ai.security.AiRoleCodes;
-import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.BusinessOverviewDrilldownMatrix;
+import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.BusinessOverviewSemanticCapabilityMatrix;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
@@ -454,7 +454,7 @@ public class BusinessDataPlannerNode implements AgentNode {
             return;
         }
         String diagWire = resolveCanonicalStructuredWireFromContext(state);
-        List<String> matrixTools = BusinessDiagnosisDrilldownMatrix.plannerToolsForWire(diagWire);
+        List<String> matrixTools = BusinessDiagnosisSemanticCapabilityMatrix.plannerToolsForWire(diagWire);
         List<String> tools = permissionFilterPlannerToolsFromMatrix(ctx, matrixTools);
         if (tools.isEmpty()) {
             state.getPermissionDenials().add(AiAnswerBoundary.forMissingToolPermission(
@@ -544,7 +544,7 @@ public class BusinessDataPlannerNode implements AgentNode {
 
     /**
      * {@code business_overview_summary/status/compare} + MULTI_AGENT 唯一主线：只计划四域专线工具，
-     * 权限裁剪为空时保持空 plan，禁止 silent 回退 classic 六工具链（已删除，见 docs/legacy-reference/classic-business-overview-removed.md）。
+     * 权限裁剪为空时保持空 plan，禁止 silent 回退 classic 六工具链（已删除，见 docs/AI_MAINLINE_INDEX.md）。
      */
     private static boolean isBusinessOverviewMultiAgentMainline(AiResolvedQueryContext rq) {
         if (rq == null) {
@@ -573,7 +573,7 @@ public class BusinessDataPlannerNode implements AgentNode {
      */
     private static List<String> buildBusinessOverviewMultiAgentToolsPermissionFiltered(AiUserContext ctx) {
         return permissionFilterPlannerToolsFromMatrix(
-                ctx, BusinessOverviewDrilldownMatrix.defaultFourDomainPlannerTools());
+                ctx, BusinessOverviewSemanticCapabilityMatrix.defaultFourDomainPlannerTools());
     }
 
     private static String resolveCanonicalStructuredWireFromContext(AiRunState state) {
@@ -595,7 +595,7 @@ public class BusinessDataPlannerNode implements AgentNode {
         String wire =
                 AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
                         rq.getQueryIntent().getStructuredIntentDetail());
-        return BusinessDiagnosisDrilldownMatrix.isDualDomainPurchaseStockWire(wire)
+        return BusinessDiagnosisSemanticCapabilityMatrix.isDualDomainPurchaseStockWire(wire)
                 ? "business_diagnosis_matrix_dual_domain"
                 : "business_diagnosis_matrix_four_domain";
     }

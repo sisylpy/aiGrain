@@ -88,6 +88,20 @@ public final class AiQuerySemanticParseResultDebugSerializer {
         m.put("needClarification", r.getNeedClarification());
         m.put("clarificationQuestion", blankToNull(r.getClarificationQuestion()));
         m.put("reason", blankToNull(r.getReason()));
+        m.put("multiTurnInheritanceTrace", r.getMultiTurnInheritanceTrace());
+        if (r.getTime() != null) {
+            m.put(
+                    "inheritedTime",
+                    SemanticTimeContractCheck.SOURCE_INHERITED_PREVIOUS.equals(
+                            blankToNull(r.getTime().getTimeSource())));
+        }
+        if (r.getRequestedScope() != null) {
+            String ss = blankToNull(r.getRequestedScope().getScopeSource());
+            m.put(
+                    "inheritedScope",
+                    "INHERITED_PREVIOUS".equals(ss)
+                            || Boolean.TRUE.equals(r.getRequestedScope().getNeedInheritFromPrevious()));
+        }
         if (r.getOrchestrationDecisionCandidate() != null) {
             var od = r.getOrchestrationDecisionCandidate();
             LinkedHashMap<String, Object> oc = new LinkedHashMap<>();

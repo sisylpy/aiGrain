@@ -259,7 +259,7 @@ Harness 摘要（每轮 `resolvedQueryContextSummary`）建议新增顶层键：
 | **toolId** | `purchase_overview` |
 | **wire / 来源** | `structuredIntentDetailWire=purchase_source_goods_query`；`purchaseSourceType=SUPPLIER_PURCHASE`；`sourceFacet=SUPPLIER_PURCHASE` |
 | **args 必含** | `purchaseNarrativeMode=purchase_source_goods_query`；`purchaseSourceFocus=SUPPLIER_PURCHASE` |
-| **args 可选（下钻）** | `focusSupplierId` / `followUpDetailWanted` 等 — 仅当 RQC 锚点存在时由 `PurchaseOverviewGoodsDrilldownArgs` 写入；阶段 2 只验 **键是否存在**，不验 SQL 结果 |
+| **args 可选（锚 execution）** | `focusSupplierId` / `executionDetailWanted` / `executionIntentType` 等 — 由 `PurchaseSemanticExecutionArgs.putIntoToolArgsIfApplicable(resolvedQueryContext)` 写入；阶段 2 只验 **键是否存在**，不验 SQL 结果 |
 
 ---
 

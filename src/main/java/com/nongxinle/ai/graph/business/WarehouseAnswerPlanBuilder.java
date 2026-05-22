@@ -7,8 +7,8 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
-import com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrixRow;
+import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import lombok.extern.slf4j.Slf4j;
@@ -117,10 +117,10 @@ public final class WarehouseAnswerPlanBuilder {
         dbg.put("resolvedPlanType", planType);
         dbg.put("structuredIntentDetailWire", wire.isEmpty() ? null : wire);
 
-        WarehouseDrilldownMatrixRow matrixRow =
-                WarehouseDrilldownMatrix.resolveMatrixRow(
+        WarehouseSemanticCapabilityMatrixRow matrixRow =
+                WarehouseSemanticCapabilityMatrix.resolveMatrixRow(
                         AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK, wire, semantic(rq), rq);
-        String knownGap = WarehouseDrilldownMatrix.knownGapForResolvedRow(matrixRow);
+        String knownGap = WarehouseSemanticCapabilityMatrix.knownGapForResolvedRow(matrixRow);
         if (knownGap != null) {
             dbg.put("warehouseKnownGap", knownGap);
         }
@@ -182,21 +182,21 @@ public final class WarehouseAnswerPlanBuilder {
                 StringUtils.hasText(wire)
                         ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim())
                         : null;
-        WarehouseDrilldownMatrixRow row =
-                WarehouseDrilldownMatrix.resolveMatrixRow(path, canonWire, semantic(rq), rq);
+        WarehouseSemanticCapabilityMatrixRow row =
+                WarehouseSemanticCapabilityMatrix.resolveMatrixRow(path, canonWire, semantic(rq), rq);
         if (row != null) {
             dbg.put("warehouseMatrixRowId", row.getRowId());
             dbg.put("warehouseStructuredIntentDetailWire", row.getStructuredIntentDetailWire());
             dbg.put("warehouseStockFacet", row.getStockFacet());
-            String gap = WarehouseDrilldownMatrix.knownGapForResolvedRow(row);
+            String gap = WarehouseSemanticCapabilityMatrix.knownGapForResolvedRow(row);
             if (gap != null) {
                 dbg.put("warehouseKnownGap", gap);
             }
         } else if (StringUtils.hasText(canonWire)) {
             dbg.put("warehouseStructuredIntentDetailWire", canonWire);
         }
-        if (WarehouseDrilldownMatrix.detectMatrixWireMissing(semantic(rq), path, canonWire)) {
-            dbg.put("warehouseMatrixWireMissing", WarehouseDrilldownMatrix.MATRIX_WIRE_MISSING);
+        if (WarehouseSemanticCapabilityMatrix.detectMatrixWireMissing(semantic(rq), path, canonWire)) {
+            dbg.put("warehouseMatrixWireMissing", WarehouseSemanticCapabilityMatrix.MATRIX_WIRE_MISSING);
         }
         dbg.put("warehouseAnswerPlanType", planType);
     }

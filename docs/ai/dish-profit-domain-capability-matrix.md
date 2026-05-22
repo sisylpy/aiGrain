@@ -1,7 +1,7 @@
 # DishProfit / 菜品毛利域 — 能力矩阵与语义梳理（只读）
 
 > **范围**：本轮仅做代码与 prompt 契约梳理，**不**改 Java、MergeHelper、Tool、SQL、Planner、Composer、Gate、Shadow、PRIMARY、test。  
-> **关联文档**：`docs/ai/dish-profit-answer-plan.md`、`docs/ai/dish-profit-planner-adapter-design.md`、`docs/ai/dish-profit-legacy-review.md`。
+> **关联文档**：`docs/ai/dish-profit-answer-plan.md`、`docs/ai/dish-profit-planner-adapter-design.md`、`docs/gb-dish-cost-analysis-frontend.md`。
 
 ---
 
@@ -27,7 +27,7 @@
 | `STRUCTURED_DISH_COST_GAP` | `dish_cost_gap` |
 | `STRUCTURED_DISH_LOW_PROFIT_REASON` | `dish_low_profit_reason` |
 
-**排行类（现网：V2 `semanticSlots.structuredIntentDetailWire` → merge → `structuredIntentDetail`；LLM 可填 `metric.rankingType` 作 compat，服务端不以其写 wire）**
+**排行类（现网：V2 `semanticSlots.structuredIntentDetailWire` → merge → `structuredIntentDetail`；LLM 可填 `metric.rankingType` 作 **debug/deprecated**，服务端不以其写 wire）**
 
 | LLM 常见输出（v2 表格） | canonical 归一后（示例） |
 |------------------------|--------------------------|

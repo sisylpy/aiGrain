@@ -1,12 +1,10 @@
-# BusinessDiagnosisCompositeAnswerPlan — **C-36 设计（无代码）+ C-50 Composer 只读引用**
+# BusinessDiagnosisCompositeAnswerPlan — Composite 结构化 AnswerPlan 契约
 
 > **读者**：Planner / Diagnosis / Composer 工程师。  
-> **阶段**：**C-36** — **仅**定义结构化 **`BusinessDiagnosisCompositeAnswerPlan`**（下文 **Composite AnswerPlan**），承接四域真实读数摘要，并为后续 **确定性诊断汇总**（C-37）、**Composer**、可选 LLM **稳定输入**。  
-> **阶段**：**C-50** — **仅文档**：Composite **Composer** **只读**本 DTO 的 **权威字段**（见 **§8.12**），**不**重读 **`toolResults`**；全文 **[`business-diagnosis-composer-readonly-design.md`](./business-diagnosis-composer-readonly-design.md)**。  
-> **本阶段**：**不写 Java**、**不接** Master / 生产 Graph、**不**改 Resolver / Composer、**不**调 LLM、**不**写 SQL、**不**触发真实 action。  
-> **权威编排上下文**：**[`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md)**（C-30～C-35）；Planner trace：**[`planner-executor-v1-design.md`](./planner-executor-v1-design.md)** §12 / §27；单域 AnswerPlan 边界：**[`diagnosis-answer-plan.md`](./diagnosis-answer-plan.md)**。  
-> **C-43 GROUP 规格 + C-48 Harness + C-49 收口**：**[`business-diagnosis-composite-group-design.md`](./business-diagnosis-composite-group-design.md)**（§10 **curl 快照与限制**）；**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_GROUP_CORE`** — **`AiPlannerExecutorBusinessDiagnosisCompositeGroupGraphCase#toHarnessSummary`**（与 **§8.11**）；**`BusinessDiagnosisCompositeAnswerPlanBuilder#BUILDER_VERSION=C-49`**。  
-> **C-41 阶段总收口（仅文档）**：**C-36～C-40** 与 Composite 全链路的汇总、验收 caseId、限制与下一阶段见 **[`planner-executor-composite-c30-c40-summary.md`](./planner-executor-composite-c30-c40-summary.md)**。
+> **现网**：**`com.nongxinle.ai.dto.business.BusinessDiagnosisCompositeAnswerPlan`** + **`BusinessDiagnosisCompositeAnswerPlanBuilder`**（`BUILDER_VERSION=C-49`）已落地；由 Composite **`PlannerExecutor`** trace 与各域 AnswerPlan 物化。  
+> **边界**：承接四域真实读数摘要 + **`dataCoverage` / `diagnosisSignals` / `riskLevel`**；**不**在 Builder 内调 LLM、**不**写 SQL；**不**替代单域 **`DiagnosisPlan`**（见 **[`diagnosis-answer-plan.md`](./diagnosis-answer-plan.md)**）。  
+> **Composer**：**[`business-diagnosis-composer-readonly-design.md`](./business-diagnosis-composer-readonly-design.md)** — **`BusinessDiagnosisCompositeReadonlyComposer`** 只读本 DTO，**不**重读 **`toolResults`**。  
+> **编排**：**[`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md)**；Harness caseId 见 **[`planner-executor-v1-design.md`](./planner-executor-v1-design.md)** §27；GROUP 口径见 **[`business-diagnosis-composite-group-design.md`](./business-diagnosis-composite-group-design.md)**。
 
 ---
 
@@ -198,7 +196,7 @@
 | **8.10 C-42 出库 Harness 降级** | CaseId **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_STOCK_DEGRADED_CORE`**：**`step_stock_reduce_hydrated`** **DEGRADED**、`usedTools` **空** → **`stockReduceSummary=null`**、**`mappingNotes.stockReduce`** 记录 **无 Tool 结果 / `degradedReason`**；**不假 SUCCESS**；**`summaryText` 不**写「四类均已读取」、**不**写无来源的出库 **0**；**`riskLevel=INSUFFICIENT_DATA`** |
 | **8.11 C-43 / C-48 GROUP 多店 + C-49 收口** | **规格（C-43）**：**`scopeLabel` / `timeLabel`** 与 **`visibleStores`** 一致；各域 summary **有则填、无则不编造**；**`dataCoverage`** / **`riskLevel`** / **禁止单店 fallback 冒充集团** 见 §8.8 与 **`business-diagnosis-composite-group-design.md` §7–§8**。**Harness（C-48）**：CaseId **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_GROUP_CORE`** — **`scopeType=GROUP`** 时 **`summaryText`** **集团安全措辞**（示例：营收 **`totalRevenue`** 口径不确定则不强判集团合计；采购明细极少不编排行；菜品 **`AGGREGATED_DISH_PORTFOLIO_FALLBACK`** 保守）；**不**默认 **「AAA 在……」** 单店主语。**C-49**：**curl SUCCESS** 观测与 **已知限制** 见 **`business-diagnosis-composite-group-design.md` §10**；**`builderVersion=C-49`**；**`mappingNotes.phase` / `signalsPhase` / `summaryPhase`** 仍 **§8.7**。 |
 | **8.12 C-50 / C-51 Composite Composer** | **C-50** 设计 + **C-51** Java：**[`business-diagnosis-composer-readonly-design.md`](./business-diagnosis-composer-readonly-design.md)** §9；**不接** Master / 前台 / LLM（主链路）。 |
-| **8.13 C-52 生产入口 Gate** | **仅文档**：主链路进入 Composite 前须满足结构化 Gate（**不**用用户原文 pattern）；与 **`dataCoverage` / `riskLevel` / fallback** 对齐。**[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**。 |
+| **8.13 C-52 生产入口 Gate** | **`BusinessDiagnosisCompositeProductionGate`** 已实装；主链路进入 Composite 旁路前须 **`allowed=true`**（**不**用用户原文 pattern）。**[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**。 |
 
 ---
 
@@ -211,7 +209,7 @@
 | **调用 LLM** | C-37 / C-38 诊断与 summary 映射 **确定性优先** |
 | **真实 action** | **无**通知 / 调价 / 下单 |
 | **新 SQL** | **无** |
-| **改 Resolver / Composer 主逻辑** | **C-50** 仅设计 Composite 只读 Composer 契约；**不**动既有 Composer **主模板** |
+| **改 Resolver / Composer 主逻辑** | Composite Readonly Composer **已实装**；**不**动生产 **`StubAnswerComposerNode`** 主模板 |
 | **用户原文 contains/regex** | **禁止**在映射层新增 |
 | **修改既有 Replay 期望** | **非必要**不改 **`src/test/**`** |
 
@@ -225,7 +223,7 @@
 | [`business-diagnosis-composite-group-design.md`](./business-diagnosis-composite-group-design.md) | **C-43** 规格 + **C-48** Harness + **C-49** §10 |
 | [`planner-executor-v1-design.md`](./planner-executor-v1-design.md) | `PlannerExecutorTrace`、`stepResults` |
 | [`business-diagnosis-composer-readonly-design.md`](./business-diagnosis-composer-readonly-design.md) | **C-50** Composite Composer **只读 AnswerPlan** |
-| [`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md) | **C-52** 生产入口 Gate（仅文档） |
+| [`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md) | **C-52** 生产入口 Gate |
 | [`diagnosis-answer-plan.md`](./diagnosis-answer-plan.md) | DiagnosisPlan / 单域 AnswerPlan |
 
-**文档版本**：**C-43 / C-48 / C-49 / C-50 / C-51 / C-52** — §8.7 **`BUILDER_VERSION=C-49`**（**`phase` / `signalsPhase` / `summaryPhase` 键与语义不变**）+ **§8.11** + **§8.12** + **§8.13**（**[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**，仅设计）。
+**文档版本**：**`BusinessDiagnosisCompositeAnswerPlan` + Builder（C-49）+ Readonly Composer（C-51）+ Production Gate（C-52）** 已实装；§8.13 见 Gate 设计文档。

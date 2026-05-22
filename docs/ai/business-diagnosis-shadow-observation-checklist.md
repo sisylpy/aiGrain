@@ -1,10 +1,11 @@
-# **C-65：`SHADOW` 灰度观测与复盘清单（仅设计）**
+# **`SHADOW` 灰度观测与复盘清单**
 
 > **读者**：架构 / SRE / 后端负责人 / 运营值班。  
-> **权威依赖**：**[`business-diagnosis-shadow-rollout-plan.md`](./business-diagnosis-shadow-rollout-plan.md)**（**C-64** 放量范围、限流、关闸总则）、**[`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md)**（**§13～§17** 字段语义、**`ShadowPolicy`**）、**[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**（**Gate** 仅结构化 **`allowed` / `reasonCode`**）。  
-> **阶段**：**C-65** — **只写文档**；**不改** Java / SQL / Tool / Adapter / Resolver / Master / Composer / 前台 / **`src/test`**；**不接 PRIMARY**；**不替换** **`finalAnswerText` / `answerPreview`**。  
-> **目标**：给出 **每批次 / 每日** 固定要看的 **SSE / trace 字段**、**日表口径**、**扩灰度准入** 与 **暂停关闸** 判据，确保观测 **只依赖** **`Gate` + Resolver 物化上下文 + `composite*`**，**不**用用户原文 **`contains`/regex** 做分流判断。  
-> **状态（收口）**：**C-65** 文档 **已完成**，作 **`SHADOW` 批次人工复盘** 清单即可。当前工程 **无真实用户流量**，**不建设**自动化 **dashboard**；**C-66** 观测工程化 **暂缓**（与 **[`PROJECT_HANDOFF_D1.md`](./PROJECT_HANDOFF_D1.md)** 一致）。
+> **现网**：旁路 Composite 时 SSE / Harness 摘要已输出 **`compositeShadow*`**、**`compositeGate*`**、**`compositePlanner*`** 等字段（见 **[`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md)** §13～§16）。  
+> **放量策略**：**[`business-diagnosis-shadow-rollout-plan.md`](./business-diagnosis-shadow-rollout-plan.md)**。  
+> **Gate**：**`BusinessDiagnosisCompositeProductionGate`** — 仅结构化 **`allowed` / `reasonCode`**，**禁止**用户原文 **`contains`/regex** 分流。  
+> **边界**：**不接 PRIMARY**；**不替换** **`finalAnswerText` / `answerPreview`**。  
+> **用途**：**`SHADOW` 批次人工复盘** 固定字段表与日表口径；自动化 dashboard（**C-66**）见路线图 §6。
 
 ---
 
@@ -104,4 +105,4 @@
 - [`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md) — **§13～§17**  
 - [`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md) — **§C-65** 索引  
 
-**文档版本**：**C-65** — **`SHADOW` 灰度观测与复盘清单（仅文档）**；**已完成** · **自动化 dashboard / C-66 暂缓** · **D-1 交接** — **[`PROJECT_HANDOFF_D1.md`](./PROJECT_HANDOFF_D1.md)** — **已收口**；**C-66 / dashboard 暂缓** — **[`PROJECT_HANDOFF_D1.md`](./PROJECT_HANDOFF_D1.md)**
+**文档版本**：**`SHADOW` 灰度观测与复盘清单**（字段与 composite execution 设计 §13～§16 对齐）；**C-66** 自动化 dashboard 见 **[`next-business-capability-roadmap.md`](./next-business-capability-roadmap.md)** §6。

@@ -17,7 +17,7 @@ import java.util.Map;
  *   <li>{@code stock_reduce_query}</li>
  * </ul>
  * 禁止读取：{@code purchase_overview}、{@code purchase_query}、{@code dish_sales_query}、
- * {@code business_overview_query}、{@code stock_query}（Historical removed Tool id，见 legacy-reference）。
+ * {@code business_overview_query}、{@code stock_query}（已删 Tool id，见 docs/AI_MAINLINE_INDEX.md）。
  */
 public final class CostMarginDerivation {
 

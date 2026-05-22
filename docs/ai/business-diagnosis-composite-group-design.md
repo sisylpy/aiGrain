@@ -1,9 +1,10 @@
-# Composite 经营诊断 — **GROUP 多门店（C-43 规格 + C-48 Harness + C-49 文档收口 + C-44～C-47 单域切片）**
+# Composite 经营诊断 — GROUP 多门店
 
 > **读者**：Planner / Harness / Tool / Resolver 工程师。  
-> **阶段**：**C-43** — **GROUP 规格与设计前置**（§1～§8）；**C-48** — **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_GROUP_CORE`** Harness（六步、四域 real Tool、诊断确定性、建议 mock）；**C-49** — **curl 验收快照与已知限制**（§10）、**`BusinessDiagnosisCompositeAnswerPlanBuilder#BUILDER_VERSION=C-49`**（mappingNotes 相位键不变）。**C-44～C-47** — 各域独立 GROUP Hydrated 切片。**不**写 SQL、**不**接 Master / 前台调度 LLM、**不**改 Resolver / Composer 主逻辑、**不**在 Composite 层新增用户原文 **contains/regex**。  
-> **STORE 单店 Composite**（C-30～C-42）权威：**[`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md)**。  
-> **Composite AnswerPlan 通用字段**：**[`business-diagnosis-answer-plan-design.md`](./business-diagnosis-answer-plan-design.md)**；本文仅 **GROUP 增量口径** 与 **C-44 实装门禁**。
+> **现网**：**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_GROUP_CORE`**（C-48）已实装 — 六步 Composite、四域 real Tool、**`BusinessDiagnosisCompositeAnswerPlanBuilder`**（C-49）、Readonly Composer；**`scopeType=GROUP`** + 多店 **`visibleStores`**。  
+> **边界（运行时约束）**：Composite 层 **不写 SQL**、**不调 LLM**、**不**用用户原文 **contains/regex**；生产 **`finalAnswerText`** 仍走 legacy 主链（**SHADOW** 仅旁路观测）。  
+> **单域 GROUP 切片**：C-44～C-47 单域 Harness case 已移除；物化见 **`PlannerCompositeHarnessContext`**。  
+> **STORE 单店**：**[`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md)**。AnswerPlan 通用字段：**[`business-diagnosis-answer-plan-design.md`](./business-diagnosis-answer-plan-design.md)**。
 
 ---
 
@@ -275,6 +276,6 @@
 | [`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md) | STORE caseId、六步、C-42 降级 |
 | [`business-diagnosis-answer-plan-design.md`](./business-diagnosis-answer-plan-design.md) | Composite AnswerPlan DTO、§8 C-37～C-49 |
 | [`planner-executor-v1-design.md`](./planner-executor-v1-design.md) | Executor、§22 营收 Hydrated、§27 Composite、Tool 路径 |
-| [`planner-executor-composite-c30-c40-summary.md`](./planner-executor-composite-c30-c40-summary.md) | C-30～C-42 收口与路线图 |
+| [`planner-executor-v1-design.md`](./planner-executor-v1-design.md) §27 | C-30～C-42 收口与路线图 |
 
 **文档版本**：**C-43**（GROUP 规格）+ **C-48**（**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_GROUP_CORE`** Harness）+ **C-49**（§10 curl 快照与限制、**`BUILDER_VERSION=C-49`**）+ **C-44～C-47**（单域 GROUP Hydrated §11～§14）。

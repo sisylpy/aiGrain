@@ -11,13 +11,13 @@
 ### 前端联调（成本主线，`VITE_USE_MOCK=false`）
 
 - **稳定端点**（勿改路径与动词）：`POST /api/ai/runs` → `GET /api/ai/runs/{runId}/events`（SSE）→ 可选 `POST /api/ai/runs/{runId}/stop`。
-- **经营路由 vs 成本意图（`BusinessDataPlanner`）**：**显式「菜品毛利 / 菜品分析 / 哪些菜赚钱…」优先 `dish_profit_path`**（单 Tool **`dish_profit_analysis`** + **`DishProfitAgent`**，`answer_delta.data.dishProfitOverview`）。否则，含 **成本/毛利（泛指）/核销/采购/出库…** 子串会先命中 **成本类原始意图**。在 Run 挂载 **`AiUserContext`** 时执行 **意图收敛**（全额 **4 Tool + `CostDiagnosisAgent`** ｜ **采购视角 Tool 链** ｜ **优惠券端拒答**），规则与话术见 **`docs/PERMISSION_MODEL.md` §7**。再否则，话术如 **「这个月生意怎么样」** → **`business_overview_path`**：**MULTI_AGENT 四域**（`revenue_query` + `purchase_overview` + `stock_reduce_query` + `dish_profit_analysis`，权限裁剪）→ **`BusinessOverviewAnswerPlan.MULTI_AGENT_V1`** → **`StubAnswerComposerNode` 确定性 Markdown**；非 MULTI 时为 **空 plan**（classic 六工具 + **`BusinessOverviewAgent` 已删**，见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)）。最终以 **`answer_delta.data.text`** 展示：**【查询范围】/【意图说明】/【权限提示】** 等可由 **`StubAnswerComposerNode`** 前置拼接；有 DeepSeek 时为其扩写段落 + 确定性摘要分段；仅调试 **`ai.agent.llm.stub=true`** 时为**纯确定性摘要**，不再向前端附带「LLM未接入」类占位句。**成本诊断卡片**仍仅 **`answer_delta.data.costDiagnosis`**（全链成功时）。
+- **经营路由 vs 成本意图（`BusinessDataPlanner`）**：**显式「菜品毛利 / 菜品分析 / 哪些菜赚钱…」优先 `dish_profit_path`**（单 Tool **`dish_profit_analysis`** + **`DishProfitAgent`**，`answer_delta.data.dishProfitOverview`）。否则，含 **成本/毛利（泛指）/核销/采购/出库…** 子串会先命中 **成本类原始意图**。在 Run 挂载 **`AiUserContext`** 时执行 **意图收敛**（全额 **4 Tool + `CostDiagnosisAgent`** ｜ **采购视角 Tool 链** ｜ **优惠券端拒答**），规则与话术见 **`docs/PERMISSION_MODEL.md` §7**。再否则，话术如 **「这个月生意怎么样」** → **`business_overview_path`**：**MULTI_AGENT 四域**（`revenue_query` + `purchase_overview` + `stock_reduce_query` + `dish_profit_analysis`，权限裁剪）→ **`BusinessOverviewAnswerPlan.MULTI_AGENT_V1`** → **`StubAnswerComposerNode` 确定性 Markdown**；非 MULTI 时为 **空 plan**（classic 六工具 + **`BusinessOverviewAgent` 已删**，见 `docs/AI_MAINLINE_INDEX.md`）。最终以 **`answer_delta.data.text`** 展示：**【查询范围】/【意图说明】/【权限提示】** 等可由 **`StubAnswerComposerNode`** 前置拼接；有 DeepSeek 时为其扩写段落 + 确定性摘要分段；仅调试 **`ai.agent.llm.stub=true`** 时为**纯确定性摘要**，不再向前端附带「LLM未接入」类占位句。**成本诊断卡片**仍仅 **`answer_delta.data.costDiagnosis`**（全链成功时）。
 - **SSE 信封**：扁平 JSON（见下节「扁平信封」），顶层含 `event`、`runId`、`timestamp`、`status`、`displayText`，按需 `agent`、`tool`、`data` 等；**不要**解析旧的 `{ type, payload }` 形态。
 - **成本诊断 UI**：**仅**在 **`purchaseCostInsightPath` / `couponCostInsightBlocked` 均未命中**且 **`CostDiagnosisAgent`** 已产出结构化结果时，使用 SSE **`answer_delta`** 的 **`data.costDiagnosis`**（稳定契约见下文）；采购视角或优惠券拒答链路**无此卡片**。**不要**依赖 **`GET /api/ai/runs/{runId}`** 的 **`answerPreview`**。
 - **菜品毛利 UI**：命中 **`dish_profit_path`**（如「菜品毛利怎么样」「水煮鱼毛利怎么样」「哪些菜赚钱」）且 **`DishProfitAgent`** 已产出结构化结果时，使用 **`answer_delta.data.dishProfitOverview`**（与 **`AiDishProfitOverviewResult`** 一致，契约见下文「`dishProfitOverview`」）；正文仍为 **`data.text`**。
 - **采购视角 AnswerPlan（2026-05-12 收口）**：走 **`purchase_overview_path` / `purchaseCostInsightPath`**、`purchase_overview` 已执行且 **`PurchaseAnswerPlanBuilder`** 成功挂载时，**`answer_delta.data`** 可含 **`purchaseAnswerPlan`**（字段名 **`type`** 对应 Java `planType`，见下文专节）。**`StubAnswerComposerNode`** 在 **`purchaseAnswerPlan.focusRows != null`** 时 **优先按该计划宣读** **`focusRows` / `secondaryRows`**（不重排、不重算）；工具快照 **`purchaseOverview`** 与旧 Composer 摘要 **不再主导** 核心数字。**整机前台验收** 由负责人在业务环境完成；仓库内 IDE Agent **无需代跑** 前台测试。
 - **营收 AnswerPlan（2026-05-12 收口）**：走 **`revenue_overview_path`**、**`revenue_query`** 成功且 **`DailyRevenueAnswerPlanBuilder`** 挂载计划时，**`answer_delta.data`** 可含 **`revenueAnswerPlan`**（字段名 **`type`** 对应 Java **`planType`**，见下文「`revenueAnswerPlan`」专节）。**`resolvedQueryContextSummary`** 同源透出 **`revenueAnswerPlan*`** 扁平摘要字段供 Harness Debug / Replay。**`StubAnswerComposerNode`** 在营收 path 且计划可用时 **优先宣读 AnswerPlan**。外卖「平台」问法无分列明细时的降级口径见 **`docs/ai/revenue-answer-plan.md`** §4.2、§11。
-- **经营概览 UI（MULTI_AGENT，现网）**：**`BUSINESS_OVERVIEW`** + **`business_overview_path`** + Resolver **`MULTI_AGENT` / `orchestrationMultiAgentRequired`** → DataPlanner 四域 Tool → Master 挂载 **`BusinessOverviewAnswerPlan`**（**`planType`**: **`BUSINESS_OVERVIEW_MULTI_AGENT_V1`**）→ **`StubAnswerComposerNode`** **确定性四域 Markdown**。前端 **以 `answer_delta.data.text` 为准**；**勿**按 classic **`BusinessOverviewAgent`** 卡片链路集成。Classic 编排已删：[classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)。
+- **经营概览 UI（MULTI_AGENT，现网）**：**`BUSINESS_OVERVIEW`** + **`business_overview_path`** + Resolver **`MULTI_AGENT` / `orchestrationMultiAgentRequired`** → DataPlanner 四域 Tool → Master 挂载 **`BusinessOverviewAnswerPlan`**（**`planType`**: **`BUSINESS_OVERVIEW_MULTI_AGENT_V1`**）→ **`StubAnswerComposerNode`** **确定性四域 Markdown**。前端 **以 `answer_delta.data.text` 为准**；**勿**按 classic **`BusinessOverviewAgent`** 卡片链路集成。Classic 编排已删（六工具 `business_overview_query` 链）；见 `docs/AI_MAINLINE_INDEX.md`。
 - **经营概览 legacy 字段（已删除，P1F-F2）**：**`answer_delta.data.businessOverview`** / **`AiBusinessOverviewResult`** / **`AiRunState.businessOverviewResult`** 已于 P1F-F2 移除；MULTI_AGENT 经营概览 **仅** `data.text`（及可选 debug AnswerPlan 字段）。形态见下文 Historical removed 专节。
 - **超时**：整机 Run 当前常见 **50s+**（仅占位数据时约 **55～60s**）；**真实主键** 下成本主线若 **`dish_profit_analysis` 占主导**（`DEFAULT_COST_INSIGHT_TOOLS` 第 4 步），常见 **~90s+**。联调请把 **EventSource / fetch 的 read 超时** 调到 **≥120s**；性能优化见 `docs/TODO_MULTI_AGENT.md` backlog，**非本阶段必做**。
 - **跨域（CORS）**：前端在 **`http://localhost:5173`**（或其它本机 dev 端口）、API 在 **`http://localhost:8090`** 时属于**跨源**；`POST` + `application/json` 会先发 **OPTIONS** 预检。后端通过 **`WebMvcConfig` 中注册的 `CorsFilter`** 放行本地源（含显式 **`http://localhost:5173`** / **`http://127.0.0.1:5173`** 与本机端口通配），并 **`Access-Control-Allow-Credentials: true`**，以兼容 `fetch`/SSE 使用 **`credentials:'include'`**（否则浏览器会因凭据模式报 CORS 失败，即使 HTTP 状态为 200）。避免仅依赖 `WebMvcConfigurer#addCorsMappings` 时预检仍为 **403**。若 OPTIONS 仍为 403：**重启后端**使 Filter 生效，并在 Network 核对响应体是否仍为 CORS 拒绝。
@@ -26,7 +26,7 @@
 
 ## `AiUserContext` · `AiOrgScope` · 范围求交 · `permissionDenied`（第一、二波已落地）
 
-> **状态（2026-05-17）**：Run 起始由 **`AiUserContextResolver`** / **`AiOrgScopeResolver`**（`POST` Body）装配上下文并写入 **`AiRunState`**；**`AiPermissionGuard`** 在 **`BusinessToolExecutionNode`**（逐 Tool）、**`CostDiagnosisAgentNode`**（`VIEW_COST`）前判定。无 **`AiUserContext`** 挂载时 Guard **放行**（兼容仅用 bare `AiRunState` 的单元测试）。**`AiRunScopeIntersectService`** 在 **`BusinessScopeIntersectNode`** 内参与范围求交。旧 **`BusinessWorkspaceRouteNode` / `WorkspaceRouterService` / `AiWorkspaceAccessGuard`**（关键词工作台路由 + **`WORKSPACE_ACCESS_DENIED`**）已删除，见 **`docs/legacy-reference/workspace-keyword-route-and-guard.md`**。**身份主数据**：**`userId` ↔ `gb_department_user`**，`gb_du_admin` → **`AiRoleMapper`** → **`roleCode` / `permissions`**（完整表见 **`docs/PERMISSION_MODEL.md`**）。
+> **状态（2026-05-17）**：Run 起始由 **`AiUserContextResolver`** / **`AiOrgScopeResolver`**（`POST` Body）装配上下文并写入 **`AiRunState`**；**`AiPermissionGuard`** 在 **`BusinessToolExecutionNode`**（逐 Tool）、**`CostDiagnosisAgentNode`**（`VIEW_COST`）前判定。无 **`AiUserContext`** 挂载时 Guard **放行**（兼容仅用 bare `AiRunState` 的单元测试）。**`AiRunScopeIntersectService`** 在 **`BusinessScopeIntersectNode`** 内参与范围求交。旧 **`BusinessWorkspaceRouteNode` / `WorkspaceRouterService` / `AiWorkspaceAccessGuard`**（关键词工作台路由 + **`WORKSPACE_ACCESS_DENIED`**）已删除；现网用 **`AiUserContextResolver`** + **`AiPermissionGuard`**。**身份主数据**：**`userId` ↔ `gb_department_user`**，`gb_du_admin` → **`AiRoleMapper`** → **`roleCode` / `permissions`**（完整表见 **`docs/PERMISSION_MODEL.md`**）。
 
 ### 服务端解析顺序
 
@@ -365,7 +365,7 @@ es.addEventListener('run_finished', () => {
 
 ## 经营概览 MULTI_AGENT 活跃链路（`business_overview_path`，现网）
 
-> Classic **`BusinessOverviewAgent` / `BusinessOverviewAgentNode`** 与六工具 / 四工具序已删除，见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)。
+> Classic **`BusinessOverviewAgent` / `BusinessOverviewAgentNode`** 与六工具 / 四工具序已删除；见 `docs/AI_MAINLINE_INDEX.md`。
 
 | 阶段 | 说明 |
 |------|------|
@@ -392,7 +392,7 @@ es.addEventListener('run_finished', () => {
 | `agentName` | `string` | Historical 默认 **`BusinessOverviewAgent`**（Agent 已删） |
 | `summary` / `riskLevel` / `keyMetrics` / `findings` 等 | 各类型 | Historical 结构化卡片字段（完整表见 Git 历史 P1F-F2 前版本） |
 
-详见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)。
+详见 `docs/AI_MAINLINE_INDEX.md`。
 
 ---
 
@@ -543,6 +543,8 @@ es.addEventListener('run_finished', () => {
 ### `resolvedQueryContextSummary` 镜像字段（Debug / GET）
 
 与 Summarizer 实现一致时可包含：**`revenueAnswerPlan`**、**`revenueAnswerPlanPresent`**、**`revenueAnswerPlanType`**、**`revenueAnswerPlanFocusRows`**、**`revenueAnswerPlanSecondaryRows`**、**`revenueAnswerPlanDebug`**、**`revenueAnswerPlanSortKey`**、**`revenueAnswerPlanSortDirection`**。失败或未挂载时 **`revenueAnswerPlanPresent === false`**，并可能带 attach 诊断（见 **`revenue-answer-plan.md`** §5.1）。**MasterBusinessAgent 四条专线**（2026-05-13 起）：另含采购 / 出库 / 菜品毛利 / 营收相关的 **`revenue*`**、**`purchase*`**、**`stockReduce*`**、**`dishProfit*`**、**`*MasterAgent*`**、**`*Fallback*`**、**`legacy*Skipped`** 等扁平键（完整列表以 **`AiHarnessResolvedContextSummarizer`** 与 **`docs/ai/master-business-agent-design.md`** 为准）。
+
+**语义 / 合同 / 执行 Debug（P4-G3，全域通用）**：同一 `resolvedQueryContextSummary` 还可能含 **`semanticDomainRoute`**、**`semanticContractValidation`**、**`semanticContractStrictDecision`**、**`querySemanticLlm`**（含 **`semanticSlots`**）、**`executionIntentType`** / **`executionDetailWanted`** / **`focusEntity*`** / **`anchorPolicy`** / **`resultAnchorsCount`** 等。推荐前台分组与已删字段清单见 **`docs/api/frontend-api-contract.md` §7.12～§7.13**；**推荐优先读取，若为空则隐藏**。**勿**再依赖 `followUpDetailWanted`、采购 drilldown 旧键或 **`metric.rankingType`** 作主链展示。
 
 ### 示例（形态示意）
 

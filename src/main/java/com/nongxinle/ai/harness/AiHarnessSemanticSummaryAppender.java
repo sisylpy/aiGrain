@@ -7,6 +7,13 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
+import com.nongxinle.ai.semantic.SemanticTimeContractCheck;
+import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractCatalog;
+import com.nongxinle.ai.semantic.contract.SemanticContractStrictBlockerCatalog;
+import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
+import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
+import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
 import com.nongxinle.ai.semantic.frame.CurrentSemanticFrame;
 import com.nongxinle.ai.semantic.frame.CurrentSemanticFrameValidator;
 import com.nongxinle.ai.semantic.frame.SemanticFrameValidationResult;
@@ -67,6 +74,23 @@ final class AiHarnessSemanticSummaryAppender {
         out.put("querySemanticV2ParseMissing", ctx.getQuerySemanticV2ParseMissing());
         out.put("querySemanticV2Confidence", ctx.getQuerySemanticV2Confidence());
         out.put("querySemanticV2TimeAction", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2TimeAction()));
+        out.put("rawUserMessage", AiHarnessSummaryUtils.blankToNull(ctx.getRawUserMessage()));
+        out.put("followUpRewriteApplied", ctx.getFollowUpRewriteApplied());
+        out.put("completedUserQuery", AiHarnessSummaryUtils.blankToNull(ctx.getCompletedUserQuery()));
+        out.put("followUpRewriteReason", AiHarnessSummaryUtils.blankToNull(ctx.getFollowUpRewriteReason()));
+        out.put(
+                "followUpRewriteDebug",
+                AiHarnessSummaryUtils.jsonDeepCopyMap(ctx.getFollowUpRewriteDebug()));
+        out.put("rewriteInheritedTime", ctx.getRewriteInheritedTime());
+        out.put("rewriteInheritedScope", ctx.getRewriteInheritedScope());
+        out.put("rewriteInheritedAnchorType", AiHarnessSummaryUtils.blankToNull(ctx.getRewriteInheritedAnchorType()));
+        out.put("rewriteInheritedAnchorName", AiHarnessSummaryUtils.blankToNull(ctx.getRewriteInheritedAnchorName()));
+        out.put(
+                "followUpRewriteClarificationQuestion",
+                AiHarnessSummaryUtils.blankToNull(ctx.getFollowUpRewriteClarificationQuestion()));
+        out.put("rewriteUsedAnchors", copyRewriteUsedAnchors(ctx.getRewriteUsedAnchors()));
+        out.put("previousTurnResultAnchorsCount", ctx.getPreviousTurnResultAnchorsCount());
+        out.put("rewritePromptResultAnchorsCount", ctx.getRewritePromptResultAnchorsCount());
         out.put("querySemanticV2ScopeAction", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2ScopeAction()));
         out.put("querySemanticV2IntentAction", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2IntentAction()));
         out.put("querySemanticV2MetricAction", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2MetricAction()));
@@ -77,7 +101,183 @@ final class AiHarnessSemanticSummaryAppender {
         out.put("querySemanticV2MentionedDishName", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2MentionedDishName()));
         out.put("querySemanticV2RawText", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2RawText()));
         out.put("querySemanticV2ParseError", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2ParseError()));
+        appendMultiTurnInheritanceDebug(out, ctx);
         appendScopeMergeDebugFields(out, ctx);
+        appendSemanticDomainRoutingDebug(out, ctx);
+        appendSemanticContractCatalogDebug(out);
+    }
+
+    /** P2：Router + ContractSelector + 合同观测（主链已接入；Validator 暂不强拦截）。 */
+    private static void appendSemanticDomainRoutingDebug(
+            LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx) {
+        if (ctx == null) {
+            out.put("semanticDomainRoute", null);
+            out.put("domainContractSelection", null);
+            out.put("semanticContractValidation", null);
+            out.put("semanticContractStrictDecision", null);
+            out.put("querySemanticV2Domain", null);
+            out.put("routeParserDomainMismatch", null);
+            out.put("routeParserDomainMismatchReason", null);
+            return;
+        }
+        out.put("semanticDomainRoute", mapDomainRoute(ctx.getSemanticDomainRoute()));
+        out.put("domainContractSelection", mapDomainContractSelection(ctx.getDomainContractSelection()));
+        out.put("semanticContractValidation", mapContractValidation(ctx.getSemanticContractValidation()));
+        out.put("semanticContractStrictDecision", mapStrictDecision(ctx.getSemanticContractStrictDecision()));
+        out.put("querySemanticV2Domain", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2Domain()));
+        out.put("routeParserDomainMismatch", ctx.getRouteParserDomainMismatch());
+        out.put(
+                "routeParserDomainMismatchReason",
+                AiHarnessSummaryUtils.blankToNull(ctx.getRouteParserDomainMismatchReason()));
+    }
+
+    private static Map<String, Object> mapDomainRoute(SemanticDomainRouteResult route) {
+        if (route == null) {
+            return null;
+        }
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        m.put("routeType", route.getRouteType() != null ? route.getRouteType().name() : null);
+        m.put("primaryDomain", AiHarnessSummaryUtils.blankToNull(route.getPrimaryDomain()));
+        List<String> candidates = route.getCandidateDomains();
+        m.put(
+                "candidateDomains",
+                candidates == null || candidates.isEmpty() ? null : new ArrayList<>(candidates));
+        m.put("confidence", route.getConfidence());
+        List<String> reasons = route.getReasonCodes();
+        m.put("reasonCodes", reasons == null || reasons.isEmpty() ? null : new ArrayList<>(reasons));
+        List<String> matched = route.getMatchedBusinessObjects();
+        m.put(
+                "matchedBusinessObjects",
+                matched == null || matched.isEmpty() ? null : new ArrayList<>(matched));
+        m.put("usedPreviousContext", route.isUsedPreviousContext() ? Boolean.TRUE : null);
+        m.put("needsClarification", route.isNeedsClarification() ? Boolean.TRUE : null);
+        return m;
+    }
+
+    private static Map<String, Object> mapDomainContractSelection(DomainContractSelectionResult selection) {
+        if (selection == null) {
+            return null;
+        }
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        m.put("selectedDomain", AiHarnessSummaryUtils.blankToNull(selection.getSelectedDomain()));
+        m.put("selectedCapabilityContractCount", selection.getSelectedCapabilityContractCount());
+        m.put("selectedActiveContractCount", selection.getSelectedActiveContractCount());
+        m.put("selectedKnownGapCount", selection.getSelectedKnownGapCount());
+        m.put("capabilityContractMissing", selection.isCapabilityContractMissing() ? Boolean.TRUE : null);
+        m.put(
+                "contractSelectionSkippedReason",
+                AiHarnessSummaryUtils.blankToNull(selection.getContractSelectionSkippedReason()));
+        return m;
+    }
+
+    private static Map<String, Object> mapContractValidation(SemanticContractValidationDebug validation) {
+        if (validation == null) {
+            return null;
+        }
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        m.put("modelContractViolation", validation.isModelContractViolation() ? Boolean.TRUE : null);
+        m.put("unsupportedWire", AiHarnessSummaryUtils.blankToNull(validation.getUnsupportedWire()));
+        m.put(
+                "violationCode",
+                validation.getViolationCode() != null ? validation.getViolationCode().name() : null);
+        m.put("selectedDomain", AiHarnessSummaryUtils.blankToNull(validation.getSelectedDomain()));
+        m.put("matchedContractId", AiHarnessSummaryUtils.blankToNull(validation.getMatchedContractId()));
+        m.put(
+                "violationReason",
+                AiHarnessSummaryUtils.blankToNull(validation.getViolationReason()));
+        m.put("allowedContractCount", validation.getAllowedContractCount());
+        List<String> wires = validation.getAllowedWires();
+        m.put("allowedWires", wires == null || wires.isEmpty() ? null : new ArrayList<>(wires));
+        List<String> missing = validation.getMissingSlots();
+        m.put("missingSlots", missing == null || missing.isEmpty() ? null : new ArrayList<>(missing));
+        return m;
+    }
+
+    private static Map<String, Object> mapStrictDecision(SemanticContractStrictDecision decision) {
+        if (decision == null) {
+            return null;
+        }
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        m.put("strictEnabled", decision.isStrictEnabled() ? Boolean.TRUE : null);
+        m.put("modelContractViolation", decision.isModelContractViolation() ? Boolean.TRUE : null);
+        m.put("enforceClarification", decision.isEnforceClarification() ? Boolean.TRUE : null);
+        m.put(
+                "violationCode",
+                decision.getViolationCode() != null ? decision.getViolationCode().name() : null);
+        m.put("violationReason", AiHarnessSummaryUtils.blankToNull(decision.getViolationReason()));
+        m.put("selectedDomain", AiHarnessSummaryUtils.blankToNull(decision.getSelectedDomain()));
+        m.put("unsupportedWire", AiHarnessSummaryUtils.blankToNull(decision.getUnsupportedWire()));
+        m.put("matchedContractId", AiHarnessSummaryUtils.blankToNull(decision.getMatchedContractId()));
+        m.put("allowedContractCount", decision.getAllowedContractCount());
+        m.put(
+                "clarificationQuestion",
+                AiHarnessSummaryUtils.blankToNull(decision.getClarificationQuestion()));
+        List<String> missing = decision.getMissingSlots();
+        m.put("missingSlots", missing == null || missing.isEmpty() ? null : new ArrayList<>(missing));
+        List<String> candidates = decision.getCandidateDomains();
+        m.put(
+                "candidateDomains",
+                candidates == null || candidates.isEmpty() ? null : new ArrayList<>(candidates));
+        List<String> wires = decision.getAllowedWires();
+        m.put("allowedWires", wires == null || wires.isEmpty() ? null : new ArrayList<>(wires));
+        List<String> blockers = decision.getActiveStrictBlockers();
+        m.put(
+                "activeStrictBlockers",
+                blockers == null || blockers.isEmpty() ? null : new ArrayList<>(blockers));
+        return m;
+    }
+
+    /** P1：只读两段式合同 Catalog 快照。 */
+    private static void appendSemanticContractCatalogDebug(LinkedHashMap<String, Object> out) {
+        out.put("semanticContractCatalog", SemanticContractCatalog.dump());
+        out.put("semanticContractStrictBlockers", SemanticContractStrictBlockerCatalog.dump());
+    }
+
+    private static void appendMultiTurnInheritanceDebug(
+            LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx) {
+        if (ctx == null) {
+            return;
+        }
+        AiQuerySemanticParseResult qsp = ctx.getQuerySemanticParse();
+        if (qsp != null && qsp.getMultiTurnInheritanceTrace() != null) {
+            out.put("multiTurnInheritanceTrace", AiHarnessSummaryUtils.jsonDeepCopyMap(qsp.getMultiTurnInheritanceTrace()));
+        } else {
+            out.put("multiTurnInheritanceTrace", null);
+        }
+        if (qsp != null && qsp.getTime() != null) {
+            String ts = qsp.getTime().getTimeSource();
+            out.put(
+                    "inheritedTime",
+                    SemanticTimeContractCheck.SOURCE_INHERITED_PREVIOUS.equals(
+                            ts != null ? ts.trim() : null));
+        } else {
+            out.put("inheritedTime", null);
+        }
+        if (qsp != null && qsp.getRequestedScope() != null) {
+            String ss = qsp.getRequestedScope().getScopeSource();
+            boolean inheritedScope =
+                    "INHERITED_PREVIOUS".equals(ss != null ? ss.trim() : null)
+                            || Boolean.TRUE.equals(qsp.getRequestedScope().getNeedInheritFromPrevious());
+            out.put("inheritedScope", inheritedScope);
+        } else {
+            out.put("inheritedScope", null);
+        }
+        boolean inheritedEntityAnchor = false;
+        if (qsp != null && qsp.getMultiTurnInheritanceTrace() != null) {
+            Object v = qsp.getMultiTurnInheritanceTrace().get("inheritedEntityAnchor");
+            inheritedEntityAnchor = Boolean.TRUE.equals(v);
+        }
+        out.put("inheritedEntityAnchor", inheritedEntityAnchor ? true : null);
+        if (ctx.getQueryIntent() != null) {
+            out.put("inheritedFromPreviousIntent", ctx.getQueryIntent().isInheritedFromPreviousTurn());
+        } else {
+            out.put("inheritedFromPreviousIntent", null);
+        }
+        if (ctx.getTimeWindow() != null) {
+            out.put("inheritedFromPreviousTimeWindow", ctx.getTimeWindow().isInheritedFromPreviousTurn());
+        } else {
+            out.put("inheritedFromPreviousTimeWindow", null);
+        }
     }
 
     private static void appendPurchaseSemanticFrameHarnessDebug(
@@ -99,7 +299,11 @@ final class AiHarnessSemanticSummaryAppender {
         CurrentSemanticFrame frame = CurrentSemanticFrame.fromParseResult(qsp);
         SemanticFrameValidationResult val =
                 CurrentSemanticFrameValidator.validate(
-                        frame, qsp, ctx.getPreviousTurn(), ctx.getNormalizedQuestion());
+                        frame,
+                        qsp,
+                        ctx.getPreviousTurn(),
+                        ctx.getNormalizedQuestion(),
+                        Boolean.TRUE.equals(ctx.getFollowUpRewriteApplied()));
         LinkedHashMap<String, Object> frameMap = new LinkedHashMap<>();
         frameMap.put("queryObject", AiHarnessSummaryUtils.blankToNull(frame.getQueryObject()));
         frameMap.put("operation", AiHarnessSummaryUtils.blankToNull(frame.getOperation()));
@@ -124,6 +328,22 @@ final class AiHarnessSemanticSummaryAppender {
         valMap.put("semanticClarificationQuestion", AiHarnessSummaryUtils.blankToNull(val.semanticClarificationQuestion()));
         out.put("currentSemanticFrame", frameMap);
         out.put("semanticFrameValidation", valMap);
+        appendPurchaseContractExportDebug(out);
+    }
+
+    /** P1-B：Purchase 小合同计数（兼容字段）；详见 {@code semanticContractCatalog}。 */
+    private static void appendPurchaseContractExportDebug(LinkedHashMap<String, Object> out) {
+        Map<String, Object> catalog = SemanticContractCatalog.dump();
+        out.put("exportedPurchaseContractCount", catalog.get("purchaseCapabilityContractCount"));
+        out.put("activePurchaseContractCount", catalog.get("activePurchaseCapabilityContractCount"));
+        out.put("plannedPurchaseContractCount", catalog.get("plannedPurchaseCapabilityContractCount"));
+        out.put("knownGapPurchaseContractCount", catalog.get("knownGapPurchaseCapabilityContractCount"));
+        Object markers = catalog.get("knownGapPurchaseContractMarkers");
+        out.put(
+                "knownGapPurchaseContractMarkers",
+                markers instanceof List && !((List<?>) markers).isEmpty()
+                        ? new ArrayList<>((List<?>) markers)
+                        : null);
     }
     private static Map<String, Object> summarizeQuerySemanticParse(AiQuerySemanticParseResult r) {
         LinkedHashMap<String, Object> m = new LinkedHashMap<>();
@@ -433,5 +653,19 @@ final class AiHarnessSemanticSummaryAppender {
             }
         }
         return null;
+    }
+
+    private static List<Map<String, String>> copyRewriteUsedAnchors(List<Map<String, String>> in) {
+        if (in == null || in.isEmpty()) {
+            return null;
+        }
+        List<Map<String, String>> out = new ArrayList<>();
+        for (Map<String, String> row : in) {
+            if (row == null || row.isEmpty()) {
+                continue;
+            }
+            out.add(new LinkedHashMap<>(row));
+        }
+        return out.isEmpty() ? null : out;
     }
 }

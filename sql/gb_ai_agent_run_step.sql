@@ -1,4 +1,4 @@
--- AI Run / Step Trace（与 PROJECT_AGENT_ARCHITECTURE.md §21 对齐）
+-- AI Run / Step Trace（见 docs/AI_AGENT_DEVELOPMENT_GUIDE.md、docs/API_INTEGRATION.md）
 -- 执行前请确认库名与字符集；id 可与应用内 runId 一致（INPUT 写入）。
 
 CREATE TABLE IF NOT EXISTS gb_ai_agent_run (

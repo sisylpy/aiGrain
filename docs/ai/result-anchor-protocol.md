@@ -49,7 +49,7 @@
 ## 5. 语义 / Resolver 输入
 
 - **`SemanticParserPreviousTurn.resultAnchorsSummary`**：由 `SemanticParserInputBuilder` 根据 `lastResultAnchors` 生成简短可读摘要，便于 LLM / 合并层识别「上一轮 Top 供货商是谁」。
-- 详见 **`docs/ai/follow-up-action-protocol.md`**：锚点与 `followUpAction`、`detailWanted` 如何 jointly 触发路由。
+- 详见 [`semantic-allowed-output-contract-design.md`](./semantic-allowed-output-contract-design.md)：`semanticSlots.detailWanted` + `anchorPolicy` + `SemanticExecutionIntent` 如何 jointly 触发路由。
 
 ---
 

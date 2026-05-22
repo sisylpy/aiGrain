@@ -134,7 +134,8 @@ final class AiHarnessReplayProbeSummaryAppender {
         Map<String, Object> d = pap.getDebug();
         String gn =
                 d == null ? null : AiHarnessSummaryUtils.blankToNull(
-                        AiHarnessSummaryUtils.stringifyHarnessDbg(d.get("purchaseGoodsDrilldownTargetGoodsName")));
+                        AiHarnessSummaryUtils.stringifyHarnessDbg(
+                                d.get(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_NAME)));
         Object cntObj = d == null ? null : d.get("purchaseSupplierGoodsDetailRowsCount");
         int cnt = cntObj instanceof Number ? ((Number) cntObj).intValue() : -1;
         String reason =

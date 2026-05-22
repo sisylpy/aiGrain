@@ -29,12 +29,12 @@
 | `dish_sales_query` / **DishSalesQueryTool** | `dish_profit_analysis`（保留 D-8 intent/path） |
 | `gross_margin_calculator` / **GrossMarginCalculatorTool** | **CostMarginDerivation** + **CostDiagnosisAgent** |
 | `business_overview_query` / **BusinessOverviewQueryTool** | MULTI 四域 + `revenue_query` |
-| **classic business overview**（`BusinessOverviewAgentNode` 六工具序） | 见 [classic-business-overview-removed.md](../../legacy-reference/classic-business-overview-removed.md) |
+| **classic business overview**（`BusinessOverviewAgentNode` 六工具序） | 见 `docs/AI_MAINLINE_INDEX.md` |
 
 ## 本目录专题
 
 | 文档 | 说明 |
 |------|------|
-| （采购下钻见 Skills） | Planner / Executor 以 **`purchase_overview`** 为主 Tool，见 [supplier-drilldown-skill.md](../skills/supplier-drilldown-skill.md) |
+| （采购锚 execution 见 Skills） | Planner / Executor 以 **`purchase_overview`** 为主 Tool，见 [`purchase-answer-plan.md`](../purchase-answer-plan.md) |
 
-新增领域 Agent 说明时，在本目录增加短文 md，更新上表，并在 `docs/ai/protocols/README.md` 中链回（若适用）。
+新增领域 Agent 说明时，在本目录增加短文 md，更新上表；契约交叉引用见 `docs/AI_MAINLINE_INDEX.md`、`docs/ai/semantic-allowed-output-contract-design.md`、`docs/ai/result-anchor-protocol.md`。

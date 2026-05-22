@@ -4,7 +4,7 @@
 
 本项目正在从原来的单体式 AI 编排器，逐步改造为多智能体系统。
 
-以前核心逻辑集中在 `GbAiChatServiceImpl` 里，包括：
+以前核心逻辑曾集中在已删除的 `GbAiChatServiceImpl` 里，包括：
 
 ```text
 1. 范围解析
@@ -716,7 +716,7 @@ docs/DOMAIN_ORG_MODEL.md
 docs/TODO_MULTI_AGENT.md
 docs/API_INTEGRATION.md
 docs/PERMISSION_MODEL.md
-docs/LEGACY_AI_ANSWER_ASSETS.md
+docs/AI_MAINLINE_INDEX.md
 ```
 
 ## 17.2 不要同时改多个业务链路

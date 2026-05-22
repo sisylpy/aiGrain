@@ -4,29 +4,29 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.graph.business.PurchaseAnswerPlanBuilder;
-import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrixRow;
-import com.nongxinle.ai.harness.followup.BusinessOverviewDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.BusinessOverviewDrilldownMatrixRow;
-import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrixRow;
-import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrixRow;
-import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrixRow;
-import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrixRow;
-import com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrixRow;
+import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.matrix.BusinessOverviewSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.BusinessOverviewSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.matrix.PurchaseSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow;
 import org.springframework.util.StringUtils;
 
-import java.util.Locale;
+import java.util.*;
 
 /**
- * V2 {@code semanticSlots} 多轮空槽继承与 compat 对齐（D-1X 主链路）。
- * 仅做：当前轮显式槽优先、上一轮 {@code lastSemanticSlots} 填空（不含 wire 继承）、
- * {@code sourceFacet}→{@code metric.purchaseSourceType} 单向 reconcile、会话记忆落库对齐。
- * 不猜 wire、不读用户话术补语义；采购/出库/营业额/库存/菜品毛利/菜品销量域在 reconcile 链中不以 {@code rankingType} 覆盖明确 slots。
+ * V2 {@code semanticSlots} 多轮 reconcile（D-1X 主链路）。
+ * 仅做：当前轮 slots → Matrix wire/planType 对齐、{@code sourceFacet}→{@code metric.purchaseSourceType} reconcile、
+ * 会话记忆落库对齐。不继承上一轮 wire/answerPlanType；省略追问须先经 LlmFollowUpQueryRewriter。
  */
 public final class AiQuerySemanticSlotMerge {
 
@@ -40,136 +40,63 @@ public final class AiQuerySemanticSlotMerge {
     }
 
     /**
-     * 首轮继承：当前句槽位字段显式（非空且非 UNKNOWN）优先；否则用上一轮 {@code lastSemanticSlots}。
-     * {@code structuredIntentDetailWire} 仅来自当前轮 LLM JSON，不从 {@code lastSemanticSlots} 继承。
+     * Merge 后 reconcile 入口：仅对<strong>当前轮</strong> semanticSlots 跑 Matrix reconcile 链
+     * （wire / planType / sourceFacet 等）；不继承上一轮 wire / answerPlanType / 业务槽。
      */
-    public static AiQuerySemanticParseResult applyPreviousFrameInheritance(
-            AiQuerySemanticParseResult sem, AiConversationTurnMemory previousTurn) {
-        return applyPreviousFrameInheritance(sem, previousTurn, null, true);
-    }
-
-    /**
-     * @param normalizedUserMessage 归一用户句；预留签名（与 temporal 采购路径一致），当前空槽继承逻辑不读原文。
-     */
-    public static AiQuerySemanticParseResult applyPreviousFrameInheritance(
-            AiQuerySemanticParseResult sem,
-            AiConversationTurnMemory previousTurn,
-            String normalizedUserMessage) {
-        return applyPreviousFrameInheritance(sem, previousTurn, normalizedUserMessage, true);
-    }
-
-    public static AiQuerySemanticParseResult applyPreviousFrameInheritance(
-            AiQuerySemanticParseResult sem,
-            AiConversationTurnMemory previousTurn,
-            String normalizedUserMessage,
-            boolean inheritBusinessSemanticSlots) {
+    public static AiQuerySemanticParseResult reconcileSemanticSlotsViaCapabilityMatrices(
+            AiQuerySemanticParseResult sem) {
         if (sem == null || sem.isParseMissing()) {
             return sem;
         }
         final String currentTurnWire = extractCurrentParseStructuredIntentDetailWire(sem.getSemanticSlots());
-        if (!inheritBusinessSemanticSlots) {
-            return attachCurrentTurnStructuredIntentDetailWire(
-                    reconcileMetricWithSourceFacet(sem), currentTurnWire);
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart prevFrame =
-                previousTurn != null ? previousTurn.getLastSemanticSlots() : null;
-        AiQuerySemanticParseResult.SemanticSlotsPart merged =
-                mergeSlotPartsPreferCurrent(sem.getSemanticSlots(), prevFrame);
-        AiQuerySemanticParseResult out = sem.toBuilder().semanticSlots(merged).build();
-        out =
-                attachCurrentTurnStructuredIntentDetailWire(
-                        reconcileBusinessDiagnosisAnswerPlanTypeFromWire(
-                                reconcileBusinessDiagnosisSemanticSlots(
-                                        reconcileBusinessOverviewAnswerPlanTypeFromWire(
-                                                reconcileBusinessOverviewSemanticSlots(
-                                                        reconcileDishSalesAnswerPlanTypeFromWire(
-                                                                reconcileDishSalesSemanticSlots(
-                                                                        reconcileWarehouseAnswerPlanTypeFromWire(
-                                                                                reconcileWarehouseSemanticSlots(
-                                                                                        reconcileRevenueAnswerPlanTypeFromWire(
-                                                                                                reconcileRevenueSemanticSlots(
-                                                                                                        reconcileDishProfitAnswerPlanTypeFromWire(
-                                                                                                                reconcileDishProfitSemanticSlots(
-                                                                                                                        reconcileStockReduceSemanticSlots(
-                                                                                                                                reconcileStockReduceAnswerPlanTypeFromWire(
-                                                                                                                                        reconcilePurchaseGoodsRankingSemanticSlots(
+        return attachCurrentTurnStructuredIntentDetailWire(
+                reconcileBusinessDiagnosisAnswerPlanTypeFromWire(
+                        reconcileBusinessDiagnosisSemanticSlots(
+                                reconcileBusinessOverviewAnswerPlanTypeFromWire(
+                                        reconcileBusinessOverviewSemanticSlots(
+                                                reconcileDishSalesAnswerPlanTypeFromWire(
+                                                        reconcileDishSalesSemanticSlots(
+                                                                reconcileWarehouseAnswerPlanTypeFromWire(
+                                                                        reconcileWarehouseSemanticSlots(
+                                                                                reconcileRevenueAnswerPlanTypeFromWire(
+                                                                                        reconcileRevenueSemanticSlots(
+                                                                                                reconcileDishProfitAnswerPlanTypeFromWire(
+                                                                                                        reconcileDishProfitSemanticSlots(
+                                                                                                                reconcileStockReduceSemanticSlots(
+                                                                                                                        reconcileStockReduceAnswerPlanTypeFromWire(
+                                                                                                                                reconcilePurchaseGoodsRankingSemanticSlots(
+                                                                                                                                        reconcilePurchaseSourceFacetDefaults(
                                                                                                                                                 reconcileAnswerPlanTypeFromWire(
                                                                                                                                                         reconcileMetricWithSourceFacet(
-                                                                                                                                                                out))))))))))))))))),
-                        currentTurnWire);
-        return out;
+                                                                                                                                                                sem)))))))))))))))))),
+                currentTurnWire);
     }
 
-    /**
-     * 采购 frame 校验路径、{@link CurrentSemanticFrameValidator} 前：纯时间换窗追问且 core 槽稀疏时，
-     * 提前从 {@code lastSemanticSlots} 继承 queryObject/operation/metric/sourceFacet 等（不含 wire）。
-     * 不满足条件时原样返回 {@code sem}。
-     */
-    public static AiQuerySemanticParseResult applyPreviousFrameInheritanceIfTemporalPurchaseFollowUp(
+    /** @deprecated Phase1-J 第三批：请用 {@link #reconcileSemanticSlotsViaCapabilityMatrices}。 */
+    @Deprecated
+    public static AiQuerySemanticParseResult applyPreviousFrameInheritance(
+            AiQuerySemanticParseResult sem, AiConversationTurnMemory previousTurn) {
+        return reconcileSemanticSlotsViaCapabilityMatrices(sem);
+    }
+
+    /** @deprecated Phase1-J 第三批：请用 {@link #reconcileSemanticSlotsViaCapabilityMatrices}。 */
+    @Deprecated
+    public static AiQuerySemanticParseResult applyPreviousFrameInheritance(
             AiQuerySemanticParseResult sem,
             AiConversationTurnMemory previousTurn,
             String normalizedUserMessage) {
-        if (sem == null || previousTurn == null) {
-            return sem;
-        }
-        String lastPath = normalizeToken(previousTurn.getLastPathCode());
-        if (!AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(lastPath)) {
-            return sem;
-        }
-        if (!AiQuerySemanticLlmMergeHelper.shouldUsePurchaseSemanticFrameAdoption(sem)) {
-            return sem;
-        }
-        if (!previousTurnHasRecoverablePurchaseSemanticFrame(previousTurn)) {
-            return sem;
-        }
-        if (!temporalPurchaseFollowUpTimeActionIndicatesWindowRewrite(sem.getTimeAction())
-                || !temporalPurchaseFollowUpScopeInheritedOrNeutral(sem.getScopeAction())) {
-            return sem;
-        }
-        String norm = normalizedUserMessage != null ? normalizedUserMessage : "";
-        return applyPreviousFrameInheritance(sem, previousTurn, norm, true);
+        return reconcileSemanticSlotsViaCapabilityMatrices(sem);
     }
 
-    private static boolean previousTurnHasRecoverablePurchaseSemanticFrame(AiConversationTurnMemory p) {
-        if (p == null) {
-            return false;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart slots = p.getLastSemanticSlots();
-        if (slots == null) {
-            return false;
-        }
-        return StringUtils.hasText(slots.getQueryObject())
-                || StringUtils.hasText(slots.getOperation())
-                || StringUtils.hasText(slots.getMetric())
-                || StringUtils.hasText(slots.getSourceFacet());
+    /** @deprecated Phase1-J 第三批：请用 {@link #reconcileSemanticSlotsViaCapabilityMatrices}。 */
+    @Deprecated
+    public static AiQuerySemanticParseResult applyPreviousFrameInheritance(
+            AiQuerySemanticParseResult sem,
+            AiConversationTurnMemory previousTurn,
+            String normalizedUserMessage,
+            @SuppressWarnings("unused") boolean inheritBusinessSemanticSlots) {
+        return reconcileSemanticSlotsViaCapabilityMatrices(sem);
     }
-
-    private static boolean temporalPurchaseFollowUpTimeActionIndicatesWindowRewrite(String timeAction) {
-        String u = normalizeToken(timeAction);
-        if (!StringUtils.hasText(u)) {
-            return false;
-        }
-        return switch (u) {
-            case "OVERRIDE",
-                    "NEW_TIME",
-                    "SEMANTIC_EXPLICIT",
-                    "EXPLICIT",
-                    "EXPLICIT_TIME",
-                    "TIME_OVERRIDE",
-                    "RESET",
-                    "SHIFT" -> true;
-            default -> false;
-        };
-    }
-
-    private static boolean temporalPurchaseFollowUpScopeInheritedOrNeutral(String scopeAction) {
-        if (!StringUtils.hasText(scopeAction)) {
-            return true;
-        }
-        String u = normalizeToken(scopeAction);
-        return "INHERIT_PREVIOUS".equals(u) || "INHERIT".equals(u);
-    }
-
 
     /**
      * 本轮 LLM JSON 已显式给出 {@code semanticSlots.structuredIntentDetailWire} 且可 canonical；
@@ -300,15 +227,15 @@ public final class AiQuerySemanticSlotMerge {
             return sem;
         }
         String resolved =
-                BusinessOverviewDrilldownMatrix.resolveStructuredIntentDetailWire(
+                BusinessOverviewSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem,
                         AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW,
                         s.getStructuredIntentDetailWire());
         if (!StringUtils.hasText(resolved)) {
             return sem;
         }
-        BusinessOverviewDrilldownMatrixRow row =
-                BusinessOverviewDrilldownMatrix.resolveMatrixRow(
+        BusinessOverviewSemanticCapabilityMatrixRow row =
+                BusinessOverviewSemanticCapabilityMatrix.resolveMatrixRow(
                         AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW, resolved);
         String queryObject = pickPreferCurrent(s.getQueryObject(), row != null ? row.getQueryObject() : null);
         String operation = pickPreferCurrent(s.getOperation(), row != null ? row.getOperation() : null);
@@ -348,7 +275,7 @@ public final class AiQuerySemanticSlotMerge {
         if (!StringUtils.hasText(wire)) {
             return sem;
         }
-        String planType = BusinessOverviewDrilldownMatrix.targetPlanTypeForWire(wire);
+        String planType = BusinessOverviewSemanticCapabilityMatrix.targetPlanTypeForWire(wire);
         if (!StringUtils.hasText(planType)) {
             return sem;
         }
@@ -367,15 +294,15 @@ public final class AiQuerySemanticSlotMerge {
             return sem;
         }
         String resolved =
-                BusinessDiagnosisDrilldownMatrix.resolveStructuredIntentDetailWire(
+                BusinessDiagnosisSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem,
                         AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS,
                         s.getStructuredIntentDetailWire());
         if (!StringUtils.hasText(resolved)) {
             return sem;
         }
-        BusinessDiagnosisDrilldownMatrixRow row =
-                BusinessDiagnosisDrilldownMatrix.resolveMatrixRow(
+        BusinessDiagnosisSemanticCapabilityMatrixRow row =
+                BusinessDiagnosisSemanticCapabilityMatrix.resolveMatrixRow(
                         AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS, resolved, sem);
         String queryObject = pickPreferCurrent(s.getQueryObject(), row != null ? row.getQueryObject() : null);
         String operation = pickPreferCurrent(s.getOperation(), row != null ? row.getOperation() : null);
@@ -419,7 +346,7 @@ public final class AiQuerySemanticSlotMerge {
         if (!StringUtils.hasText(wire)) {
             return sem;
         }
-        String planType = BusinessDiagnosisDrilldownMatrix.targetAnswerPlanTypeForWire(wire);
+        String planType = BusinessDiagnosisSemanticCapabilityMatrix.targetAnswerPlanTypeForWire(wire);
         if (!StringUtils.hasText(planType)) {
             return sem;
         }
@@ -516,57 +443,20 @@ public final class AiQuerySemanticSlotMerge {
         return false;
     }
 
-    private static AiQuerySemanticParseResult.SemanticSlotsPart mergeSlotPartsPreferCurrent(
-            AiQuerySemanticParseResult.SemanticSlotsPart current,
-            AiQuerySemanticParseResult.SemanticSlotsPart prev) {
-        if (current == null && prev == null) {
-            return AiQuerySemanticParseResult.SemanticSlotsPart.builder().build();
+    private static String pickPreferCurrent(String current, String inherited) {
+        if (!isBlankOrUnknown(current)) {
+            return normalizeToken(current);
         }
-        AiQuerySemanticParseResult.SemanticSlotsPart cur =
-                current != null
-                        ? current
-                        : AiQuerySemanticParseResult.SemanticSlotsPart.builder().build();
-        if (prev == null) {
-            return AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                    .queryObject(pickPreferCurrent(cur.getQueryObject(), null))
-                    .operation(pickPreferCurrent(cur.getOperation(), null))
-                    .metric(pickPreferCurrent(cur.getMetric(), null))
-                    .sourceFacet(pickPreferCurrent(cur.getSourceFacet(), null))
-                    .anchorPolicy(pickPreferCurrent(cur.getAnchorPolicy(), null))
-                    .detailWanted(pickPreferCurrent(cur.getDetailWanted(), null))
-                    .structuredIntentDetailWire(extractCurrentParseStructuredIntentDetailWire(cur))
-                    .answerPlanType(pickPreferCurrent(cur.getAnswerPlanType(), null))
-                    .build();
-        }
-        boolean blockAnchorSensitiveInherit =
-                isIndependentStandaloneSemanticQuery(cur)
-                        || isIndependentPurchaseRankingQuery(cur)
-                        || isDishProfitSingleDishStandaloneQuery(cur);
-        return AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                .queryObject(pickPreferCurrent(cur.getQueryObject(), prev.getQueryObject()))
-                .operation(pickPreferCurrent(cur.getOperation(), prev.getOperation()))
-                .metric(pickPreferCurrent(cur.getMetric(), prev.getMetric()))
-                .sourceFacet(pickPreferCurrent(cur.getSourceFacet(), prev.getSourceFacet()))
-                .anchorPolicy(
-                        blockAnchorSensitiveInherit
-                                ? pickPreferCurrent(cur.getAnchorPolicy(), null)
-                                : pickPreferCurrent(cur.getAnchorPolicy(), prev.getAnchorPolicy()))
-                .detailWanted(
-                        blockAnchorSensitiveInherit
-                                ? pickPreferCurrent(cur.getDetailWanted(), null)
-                                : pickPreferCurrent(cur.getDetailWanted(), prev.getDetailWanted()))
-                .structuredIntentDetailWire(extractCurrentParseStructuredIntentDetailWire(cur))
-                .answerPlanType(
-                        blockAnchorSensitiveInherit
-                                ? pickPreferCurrent(cur.getAnswerPlanType(), null)
-                                : pickPreferCurrent(cur.getAnswerPlanType(), prev.getAnswerPlanType()))
-                .build();
+        return isBlankOrUnknown(inherited) ? null : normalizeToken(inherited);
     }
 
-    /**
-     * 本轮为独立采购排行（{@code IGNORE_PREVIOUS_ANCHOR} + RANKING / 商品金额排行 wire）时，
-     * 禁止从上一轮 {@code lastSemanticSlots} 继承锚点追问槽（detailWanted / USE 锚策略），避免 resultAnchor 覆盖新排行问法。
-     */
+    private static boolean isBlankOrUnknown(String v) {
+        if (!StringUtils.hasText(v)) {
+            return true;
+        }
+        return UNKNOWN.equalsIgnoreCase(v.trim());
+    }
+
     /**
      * 本轮为独立单域问法（{@code IGNORE_PREVIOUS_ANCHOR} + {@code RANKING}/{@code SUMMARY}/{@code COMPARE}）时，
      * 禁止从上一轮继承 detailWanted / anchorPolicy / answerPlanType / wire。
@@ -602,40 +492,6 @@ public final class AiQuerySemanticSlotMerge {
                 || AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(wire);
     }
 
-    private static boolean isIndependentPurchaseRankingQuery(
-            AiQuerySemanticParseResult.SemanticSlotsPart cur) {
-        if (cur == null) {
-            return false;
-        }
-        if (!ANCHOR_IGNORE_PREVIOUS.equals(normalizeToken(cur.getAnchorPolicy()))) {
-            return false;
-        }
-        if ("RANKING".equals(normalizeToken(cur.getOperation()))) {
-            return true;
-        }
-        String wire =
-                StringUtils.hasText(cur.getStructuredIntentDetailWire())
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                                cur.getStructuredIntentDetailWire().trim())
-                        : null;
-        return AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING.equals(wire)
-                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_COUNT_RANKING.equals(wire);
-    }
-
-    private static String pickPreferCurrent(String current, String inherited) {
-        if (!isBlankOrUnknown(current)) {
-            return normalizeToken(current);
-        }
-        return isBlankOrUnknown(inherited) ? null : normalizeToken(inherited);
-    }
-
-    private static boolean isBlankOrUnknown(String v) {
-        if (!StringUtils.hasText(v)) {
-            return true;
-        }
-        return UNKNOWN.equalsIgnoreCase(v.trim());
-    }
-
     private static String normalizeSourceFacet(String raw) {
         if (!StringUtils.hasText(raw)) {
             return null;
@@ -651,6 +507,168 @@ public final class AiQuerySemanticSlotMerge {
             return AiQuerySemanticLexicon.SOURCE_ALL;
         }
         return u;
+    }
+
+    /**
+     * 采购完整问句：LLM 未填 {@code sourceFacet} 时补 Matrix/ wire 合法默认值，
+     * 避免 {@link com.nongxinle.ai.semantic.frame.CurrentSemanticFrameValidator} 误报 {@code SOURCE_FACET_UNKNOWN}。
+     * 异常 wire 族 / {@code ANOMALY_DETECTION} 未指定渠道时默认 {@code ALL}；
+     * STORE/SUMMARY/金额总览默认 {@code ALL}（{@link AiQuerySemanticLexicon#SOURCE_ALL}）；
+     * {@code purchase_source_goods_query}（商品→供货商明细等）默认 {@code SUPPLIER_PURCHASE}
+     * （{@link AiQuerySemanticLexicon#SOURCE_SUPPLIER_PURCHASE}）或矩阵行要求值。
+     */
+    /**
+     * 采购 GOODS 锚供货商明细：按 Matrix 合同帧补全槽位（非 alias）。
+     * 须在 {@link #reconcilePurchaseSourceFacetDefaults} 之前执行，避免 {@code SOURCE_FACET_UNKNOWN}。
+     */
+    public static AiQuerySemanticParseResult reconcilePurchaseGoodsAnchorSupplierBreakdownFrame(
+            AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.getSemanticSlots() == null) {
+            return sem;
+        }
+        if (AiQuerySemanticLlmMergeHelper.currentTurnMapsToExplicitNonPurchasePath(sem)
+                || !AiQuerySemanticLlmMergeHelper.shouldUsePurchaseSemanticFrameAdoption(sem)) {
+            return sem;
+        }
+        if (!PurchaseSemanticCapabilityMatrix.matchesGoodsAnchorSupplierBreakdownFrame(sem)) {
+            return sem;
+        }
+        return PurchaseSemanticCapabilityMatrix.completeGoodsAnchorSupplierBreakdownFrame(sem);
+    }
+
+    public static AiQuerySemanticParseResult reconcilePurchaseSourceFacetDefaults(
+            AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.getSemanticSlots() == null) {
+            return sem;
+        }
+        sem = reconcilePurchaseGoodsAnchorSupplierBreakdownFrame(sem);
+        if (AiQuerySemanticLlmMergeHelper.currentTurnMapsToExplicitNonPurchasePath(sem)) {
+            return sem;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
+        if (StringUtils.hasText(normalizeSourceFacet(s.getSourceFacet()))) {
+            return sem;
+        }
+        String defaultSf = PurchaseSemanticCapabilityMatrix.inferDefaultSourceFacetWhenMissing(sem);
+        if (defaultSf == null) {
+            String qo = normalizeToken(s.getQueryObject());
+            String op = normalizeToken(s.getOperation());
+            String metric = normalizeToken(s.getMetric());
+            String wireCanon =
+                    StringUtils.hasText(s.getStructuredIntentDetailWire())
+                            ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                    s.getStructuredIntentDetailWire().trim())
+                            : null;
+            boolean purchaseStoreSummaryAmount =
+                    "STORE".equals(qo)
+                            && "SUMMARY".equals(op)
+                            && StringUtils.hasText(metric)
+                            && (metric.contains("PURCHASE") || "AMOUNT".equals(metric));
+            boolean purchaseOverviewWire =
+                    StringUtils.hasText(wireCanon)
+                            && AiQuerySemanticLexicon.isPurchaseOverviewDomainCanonicalWire(wireCanon)
+                            && ("SUMMARY".equals(op) || "OVERVIEW".equals(op) || !StringUtils.hasText(op));
+            if (!purchaseStoreSummaryAmount && !purchaseOverviewWire) {
+                return sem;
+            }
+            defaultSf = AiQuerySemanticLexicon.SOURCE_ALL;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart updated =
+                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                        .queryObject(s.getQueryObject())
+                        .operation(s.getOperation())
+                        .metric(s.getMetric())
+                        .sourceFacet(defaultSf)
+                        .anchorPolicy(s.getAnchorPolicy())
+                        .detailWanted(s.getDetailWanted())
+                        .structuredIntentDetailWire(s.getStructuredIntentDetailWire())
+                        .answerPlanType(s.getAnswerPlanType())
+                        .build();
+        return sem.toBuilder().semanticSlots(updated).build();
+    }
+
+    /**
+     * 采购域：四槽完整但 LLM wire 非法/自造时，由 Matrix 从 semanticSlots 推导 canonical wire 并写回 slots。
+     */
+    public static AiQuerySemanticParseResult reconcilePurchaseStructuredWireFromSemanticSlots(
+            AiQuerySemanticParseResult sem) {
+        if (sem == null || sem.getSemanticSlots() == null) {
+            return sem;
+        }
+        if (AiQuerySemanticLlmMergeHelper.currentTurnMapsToExplicitNonPurchasePath(sem)
+                || !AiQuerySemanticLlmMergeHelper.shouldUsePurchaseSemanticFrameAdoption(sem)) {
+            return sem;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
+        String currentRaw = s.getStructuredIntentDetailWire();
+        String currentCanon =
+                StringUtils.hasText(currentRaw)
+                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(currentRaw.trim())
+                        : null;
+        String resolved =
+                PurchaseSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
+                        sem, AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW, null);
+        if (!StringUtils.hasText(resolved)) {
+            return sem;
+        }
+        if (resolved.equals(currentCanon)) {
+            return sem;
+        }
+        List<String> reasons = new ArrayList<>();
+        if (sem.getPurchaseMatrixCanonicalReasons() != null) {
+            reasons.addAll(sem.getPurchaseMatrixCanonicalReasons());
+        }
+        if (AiQuerySemanticLexicon.isPurchaseOverviewDomainCanonicalWire(currentCanon)) {
+            reasons.add(PurchaseSemanticCapabilityMatrix.REASON_LLM_WIRE_OVERRIDDEN_BY_SLOTS);
+        } else {
+            reasons.add(PurchaseSemanticCapabilityMatrix.REASON_STRUCTURED_WIRE_REWRITTEN_FROM_SLOTS);
+        }
+        String anchorPolicy = s.getAnchorPolicy();
+        if (!StringUtils.hasText(normalizeToken(anchorPolicy)) || UNKNOWN.equals(normalizeToken(anchorPolicy))) {
+            anchorPolicy = ANCHOR_IGNORE_PREVIOUS;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart updated =
+                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                        .queryObject(s.getQueryObject())
+                        .operation(s.getOperation())
+                        .metric(s.getMetric())
+                        .sourceFacet(s.getSourceFacet())
+                        .anchorPolicy(anchorPolicy)
+                        .detailWanted(s.getDetailWanted())
+                        .structuredIntentDetailWire(resolved)
+                        .answerPlanType(s.getAnswerPlanType())
+                        .build();
+        return sem.toBuilder()
+                .semanticSlots(updated)
+                .purchaseMatrixCanonicalReasons(reasons)
+                .build();
+    }
+
+    /**
+     * LLM FollowUp Rewrite 已产出完整问句时：默认首轮 anchorPolicy，避免旧下钻门禁误伤。
+     */
+    public static AiQuerySemanticParseResult reconcilePurchaseCompleteUtteranceDefaults(
+            AiQuerySemanticParseResult sem, boolean followUpRewriteApplied) {
+        if (!followUpRewriteApplied || sem == null || sem.getSemanticSlots() == null) {
+            return sem;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
+        String ap = normalizeToken(s.getAnchorPolicy());
+        if (StringUtils.hasText(ap) && !UNKNOWN.equals(ap)) {
+            return sem;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart updated =
+                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                        .queryObject(s.getQueryObject())
+                        .operation(s.getOperation())
+                        .metric(s.getMetric())
+                        .sourceFacet(s.getSourceFacet())
+                        .anchorPolicy(ANCHOR_IGNORE_PREVIOUS)
+                        .detailWanted(s.getDetailWanted())
+                        .structuredIntentDetailWire(s.getStructuredIntentDetailWire())
+                        .answerPlanType(s.getAnswerPlanType())
+                        .build();
+        return sem.toBuilder().semanticSlots(updated).build();
     }
 
     /**
@@ -718,15 +736,15 @@ public final class AiQuerySemanticSlotMerge {
             return sem;
         }
         String resolved =
-                StockReduceDrilldownMatrix.resolveStructuredIntentDetailWire(
+                StockReduceSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem,
                         AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY,
                         s.getStructuredIntentDetailWire());
         if (!StringUtils.hasText(resolved)) {
             return sem;
         }
-        StockReduceDrilldownMatrixRow row =
-                StockReduceDrilldownMatrix.resolveMatrixRow(
+        StockReduceSemanticCapabilityMatrixRow row =
+                StockReduceSemanticCapabilityMatrix.resolveMatrixRow(
                         AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY, resolved, sem);
         String queryObject = pickPreferCurrent(s.getQueryObject(), row != null ? row.getQueryObject() : null);
         String operation = pickPreferCurrent(s.getOperation(), row != null ? row.getOperation() : null);
@@ -775,7 +793,7 @@ public final class AiQuerySemanticSlotMerge {
         if (!AiQuerySemanticLexicon.isStructuredStockReduceDetail(wire)) {
             return sem;
         }
-        String planType = StockReduceDrilldownMatrix.targetPlanTypeForWire(wire);
+        String planType = StockReduceSemanticCapabilityMatrix.targetPlanTypeForWire(wire);
         if (!StringUtils.hasText(planType)) {
             return sem;
         }
@@ -807,14 +825,14 @@ public final class AiQuerySemanticSlotMerge {
             return sem;
         }
         String resolved =
-                DishProfitDrilldownMatrix.resolveStructuredIntentDetailWire(
+                DishProfitSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem,
                         AiResolvedQueryIntent.PATH_DISH_PROFIT,
                         s.getStructuredIntentDetailWire());
         if (!StringUtils.hasText(resolved)) {
             return sem;
         }
-        DishProfitDrilldownMatrixRow row = DishProfitDrilldownMatrix.findFirstTurnRowByWire(resolved);
+        DishProfitSemanticCapabilityMatrixRow row = DishProfitSemanticCapabilityMatrix.findFirstTurnRowByWire(resolved);
         String queryObject = pickPreferCurrent(s.getQueryObject(), row != null ? row.getQueryObject() : null);
         String operation = pickPreferCurrent(s.getOperation(), row != null ? row.getOperation() : null);
         String metric = pickPreferCurrent(s.getMetric(), row != null ? row.getMetric() : null);
@@ -860,7 +878,7 @@ public final class AiQuerySemanticSlotMerge {
         if (!StringUtils.hasText(wire)) {
             return sem;
         }
-        String planType = DishProfitDrilldownMatrix.targetPlanTypeForWire(wire);
+        String planType = DishProfitSemanticCapabilityMatrix.targetPlanTypeForWire(wire);
         if (!StringUtils.hasText(planType)) {
             return sem;
         }
@@ -879,7 +897,7 @@ public final class AiQuerySemanticSlotMerge {
             return sem;
         }
         String resolved =
-                RevenueDrilldownMatrix.resolveStructuredIntentDetailWire(
+                RevenueSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem,
                         AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW,
                         s.getStructuredIntentDetailWire(),
@@ -887,8 +905,8 @@ public final class AiQuerySemanticSlotMerge {
         if (!StringUtils.hasText(resolved)) {
             return sem;
         }
-        RevenueDrilldownMatrixRow row =
-                RevenueDrilldownMatrix.resolveMatrixRow(
+        RevenueSemanticCapabilityMatrixRow row =
+                RevenueSemanticCapabilityMatrix.resolveMatrixRow(
                         AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW, resolved, sem, null);
         String queryObject = pickPreferCurrent(s.getQueryObject(), row != null ? row.getQueryObject() : null);
         String operation = pickPreferCurrent(s.getOperation(), row != null ? row.getOperation() : null);
@@ -938,7 +956,7 @@ public final class AiQuerySemanticSlotMerge {
         if (!AiQuerySemanticLexicon.isStructuredRevenueDetail(wire)) {
             return sem;
         }
-        String planType = RevenueDrilldownMatrix.targetPlanTypeForWire(wire);
+        String planType = RevenueSemanticCapabilityMatrix.targetPlanTypeForWire(wire);
         if (!StringUtils.hasText(planType)) {
             return sem;
         }
@@ -957,19 +975,21 @@ public final class AiQuerySemanticSlotMerge {
             return sem;
         }
         String resolved =
-                WarehouseDrilldownMatrix.resolveStructuredIntentDetailWire(
+                WarehouseSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem,
                         AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK,
                         s.getStructuredIntentDetailWire());
         if (!StringUtils.hasText(resolved)) {
             return sem;
         }
-        WarehouseDrilldownMatrixRow row =
-                WarehouseDrilldownMatrix.resolveMatrixRow(
+        WarehouseSemanticCapabilityMatrixRow row =
+                WarehouseSemanticCapabilityMatrix.resolveMatrixRow(
                         AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK, resolved, sem, null);
         String queryObject = pickPreferCurrent(s.getQueryObject(), row != null ? row.getQueryObject() : null);
         String operation = pickPreferCurrent(s.getOperation(), row != null ? row.getOperation() : null);
         String metric = pickPreferCurrent(s.getMetric(), row != null ? row.getMetric() : null);
+        String sourceFacet =
+                pickPreferCurrent(s.getSourceFacet(), row != null ? row.getStockFacet() : null);
         String anchor = pickPreferCurrent(s.getAnchorPolicy(), null);
         if (!StringUtils.hasText(anchor)) {
             anchor = ANCHOR_IGNORE_PREVIOUS;
@@ -983,7 +1003,7 @@ public final class AiQuerySemanticSlotMerge {
                         .queryObject(queryObject)
                         .operation(operation)
                         .metric(metric)
-                        .sourceFacet(s.getSourceFacet())
+                        .sourceFacet(sourceFacet)
                         .anchorPolicy(anchor)
                         .detailWanted(detailWanted)
                         .structuredIntentDetailWire(resolved)
@@ -1015,7 +1035,7 @@ public final class AiQuerySemanticSlotMerge {
         if (!AiQuerySemanticLexicon.isStructuredWarehouseStockDetail(wire)) {
             return sem;
         }
-        String planType = WarehouseDrilldownMatrix.targetPlanTypeForWire(wire);
+        String planType = WarehouseSemanticCapabilityMatrix.targetPlanTypeForWire(wire);
         if (!StringUtils.hasText(planType)) {
             return sem;
         }
@@ -1034,7 +1054,7 @@ public final class AiQuerySemanticSlotMerge {
             return sem;
         }
         String resolved =
-                DishSalesDrilldownMatrix.resolveStructuredIntentDetailWire(
+                DishSalesSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
                         sem,
                         AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
                         s.getStructuredIntentDetailWire(),
@@ -1043,14 +1063,8 @@ public final class AiQuerySemanticSlotMerge {
         if (!StringUtils.hasText(resolved)) {
             return sem;
         }
-        DishSalesDrilldownMatrixRow row =
-                DishSalesDrilldownMatrix.findFirstTurnRowByWire(resolved);
-        if (row == null) {
-            row = DishSalesDrilldownMatrix.findTimeFollowupRowByWire(resolved);
-        }
-        if (row == null) {
-            row = DishSalesDrilldownMatrix.findRankingFollowupRowByWire(resolved);
-        }
+        DishSalesSemanticCapabilityMatrixRow row =
+                DishSalesSemanticCapabilityMatrix.findFirstTurnRowByWire(resolved);
         String queryObject = pickPreferCurrent(s.getQueryObject(), row != null ? row.getQueryObject() : null);
         String operation = pickPreferCurrent(s.getOperation(), row != null ? row.getOperation() : null);
         String metric = pickPreferCurrent(s.getMetric(), row != null ? row.getMetric() : null);
@@ -1099,7 +1113,7 @@ public final class AiQuerySemanticSlotMerge {
         if (!AiQuerySemanticLexicon.isStructuredDishSalesDetail(wire)) {
             return sem;
         }
-        String planType = DishSalesDrilldownMatrix.targetPlanTypeForWire(wire);
+        String planType = DishSalesSemanticCapabilityMatrix.targetPlanTypeForWire(wire);
         if (!StringUtils.hasText(planType)) {
             return sem;
         }
@@ -1151,10 +1165,13 @@ public final class AiQuerySemanticSlotMerge {
             return sem;
         }
         String wire =
-                StringUtils.hasText(s.getStructuredIntentDetailWire())
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                                s.getStructuredIntentDetailWire().trim())
-                        : null;
+                PurchaseSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
+                        sem, AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW, null);
+        if (!StringUtils.hasText(wire) && StringUtils.hasText(s.getStructuredIntentDetailWire())) {
+            wire =
+                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                            s.getStructuredIntentDetailWire().trim());
+        }
         if (!StringUtils.hasText(wire)) {
             return sem;
         }
@@ -1177,7 +1194,7 @@ public final class AiQuerySemanticSlotMerge {
                         .sourceFacet(s.getSourceFacet())
                         .anchorPolicy(s.getAnchorPolicy())
                         .detailWanted(s.getDetailWanted())
-                        .structuredIntentDetailWire(s.getStructuredIntentDetailWire())
+                        .structuredIntentDetailWire(wire)
                         .answerPlanType(planType)
                         .build();
         return sem.toBuilder().semanticSlots(updated).build();

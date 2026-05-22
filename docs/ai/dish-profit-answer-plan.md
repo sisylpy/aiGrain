@@ -1,8 +1,8 @@
 # 菜品毛利：AnswerPlan 与字段契约
 
-> **前提**：算法与口径**不重新发明**——以 `GbDepFoodBusinessInsightService#buildInsight`、`GbDishCostAnalysisServiceImpl`、`DishProfitAnalysisTool` 及 `docs/ai/dish-profit-legacy-review.md` 为准。  
+> **前提**：算法与口径**不重新发明**——以 `GbDepFoodBusinessInsightService#buildInsight`、`GbDishCostAnalysisServiceImpl`、`DishProfitAnalysisTool` 及 `docs/gb-dish-cost-analysis-frontend.md` 为准。  
 > **目标**：用少量稳定的 **AnswerPlan** 类型收口「哪个最低/最高/为什么/差异多大」等问法，**避免**为每种口语写 `message.contains(...)`。  
-> **Composer**：只根据 AnswerPlan + Tool 返回说人话；**禁止**心算毛利率（与 `ai-skill-dish-cost-diagnosis.md` 一致）。
+> **Composer**：只根据 AnswerPlan + Tool 返回说人话；**禁止**心算毛利率（与 `harness-composer-architecture.md` 一致）。
 
 ---
 
@@ -144,9 +144,9 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
 
 | 资源 | 路径 |
 |------|------|
-| Legacy 复盘 | `docs/ai/dish-profit-legacy-review.md` |
+| 字段与 API | `docs/gb-dish-cost-analysis-frontend.md`、`docs/gb-dish-cost-allocation-model.md` |
 | Harness 总架构 | `docs/ai/harness-composer-architecture.md` |
-| Skill | `src/main/resources/ai-skill-dish-cost-diagnosis.md` |
+| Composer 约束 | `src/main/resources/ai-prompts/composer/dish_profit.v1.md` |
 | Tool | `DishProfitAnalysisTool.java` |
 | Agent（迁移参考） | `DishProfitAgentNode.java` |
 | Composer | `StubAnswerComposerNode.java`（`DISH_PROFIT_COMPOSER_SYSTEM`） |

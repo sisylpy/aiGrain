@@ -9,7 +9,7 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
-import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
+import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrix;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.graph.business.CostInsightIntentConvergence;
@@ -52,7 +52,7 @@ public final class DiagnosisDeterministicRenderer {
         if (state == null || state.getResolvedQueryContext() == null) {
             return false;
         }
-        if (isBusinessDiagnosisStoreRiskReasonsDrilldownTurn(state)) {
+        if (isBusinessDiagnosisStoreRiskReasonExplanationTurn(state)) {
             return false;
         }
         AiResolvedQueryIntent qi = state.getResolvedQueryContext().getQueryIntent();
@@ -60,17 +60,17 @@ public final class DiagnosisDeterministicRenderer {
                 && AiQuerySemanticLexicon.isStorePriorityRankingStructuredDetail(qi.getStructuredIntentDetail());
     }
 
-    /** D-13.2：承接上一轮 STORE 锚点的「原因 / 具体问题」追问（wire {@code store_risk_reasons_drilldown}）。 */
-    public static boolean isBusinessDiagnosisStoreRiskReasonsDrilldownTurn(AiRunState state) {
+    /** BD-C：承接上一轮 STORE 锚点的「原因 / 具体问题」追问（wire {@code store_risk_reason_explanation}）。 */
+    public static boolean isBusinessDiagnosisStoreRiskReasonExplanationTurn(AiRunState state) {
         if (state == null || state.getResolvedQueryContext() == null) {
             return false;
         }
-        if (isBusinessDiagnosisDomainAttributionTurn(state) || isBusinessDiagnosisActionFollowupTurn(state)) {
+        if (isBusinessDiagnosisDomainAttributionTurn(state) || isBusinessDiagnosisActionSuggestionTurn(state)) {
             return false;
         }
         AiResolvedQueryIntent qi = state.getResolvedQueryContext().getQueryIntent();
         return qi != null
-                && AiQuerySemanticLexicon.isStoreRiskReasonsDrilldownStructuredDetail(qi.getStructuredIntentDetail());
+                && AiQuerySemanticLexicon.isStoreRiskReasonExplanationStructuredDetail(qi.getStructuredIntentDetail());
     }
 
     /** BD-E/F/G：诊断内子域归因确认（仅宣读 Plan / debug，不切单域 AnswerPlan）。 */
@@ -89,13 +89,13 @@ public final class DiagnosisDeterministicRenderer {
     }
 
     /** BD-K：改进行动追问（宣读 {@link DiagnosisPlan#getActionSuggestions()}）。 */
-    public static boolean isBusinessDiagnosisActionFollowupTurn(AiRunState state) {
+    public static boolean isBusinessDiagnosisActionSuggestionTurn(AiRunState state) {
         if (state == null || state.getResolvedQueryContext() == null) {
             return false;
         }
         AiResolvedQueryIntent qi = state.getResolvedQueryContext().getQueryIntent();
         return qi != null
-                && AiQuerySemanticLexicon.isDiagnosisActionFollowupStructuredDetail(qi.getStructuredIntentDetail());
+                && AiQuerySemanticLexicon.isDiagnosisActionSuggestionStructuredDetail(qi.getStructuredIntentDetail());
     }
 
     /** D-11：库房端 Scope（{@link AiResolvedOrgScope#SCOPE_WAREHOUSE}），禁止集团/多门店经营诊断话术边界。 */
@@ -184,11 +184,11 @@ public final class DiagnosisDeterministicRenderer {
         if (isDomainAttributionAnswerTurn(state, plan)) {
             return renderDomainAttributionAnswer(state, plan);
         }
-        if (isActionFollowupAnswerTurn(state, plan)) {
-            return renderActionFollowupAnswer(state, plan);
+        if (isActionSuggestionAnswerTurn(state, plan)) {
+            return renderActionSuggestionAnswer(state, plan);
         }
-        if (isStoreRiskReasonsDrilldownAnswerTurn(state, plan)) {
-            return renderStoreRiskReasonsDrilldownAnswer(state, plan);
+        if (isStoreRiskReasonExplanationAnswerTurn(state, plan)) {
+            return renderStoreRiskReasonExplanationAnswer(state, plan);
         }
         if (isStorePriorityRankingAnswerTurn(state, plan)) {
             return renderStorePriorityRankingAnswer(state, plan);
@@ -199,14 +199,14 @@ public final class DiagnosisDeterministicRenderer {
     /**
      * 门店风险/优先级追问（{@code store_priority_ranking} 或同类口语）单独编排：首句点店名，再按域简述依据；不先宣读单一出库段落。
      */
-    public static boolean isStoreRiskReasonsDrilldownAnswerTurn(AiRunState state, DiagnosisPlan plan) {
+    public static boolean isStoreRiskReasonExplanationAnswerTurn(AiRunState state, DiagnosisPlan plan) {
         if (plan == null) {
             return false;
         }
         if (isWarehouseOrgScope(state)) {
             return false;
         }
-        if (isBusinessDiagnosisStoreRiskReasonsDrilldownTurn(state)) {
+        if (isBusinessDiagnosisStoreRiskReasonExplanationTurn(state)) {
             return true;
         }
         Map<String, Object> dbg = plan.getDebug();
@@ -222,7 +222,7 @@ public final class DiagnosisDeterministicRenderer {
         if (isWarehouseOrgScope(state)) {
             return false;
         }
-        if (isStoreRiskReasonsDrilldownAnswerTurn(state, plan)) {
+        if (isStoreRiskReasonExplanationAnswerTurn(state, plan)) {
             return false;
         }
         if (isBusinessDiagnosisStorePriorityTurn(state)) {
@@ -235,7 +235,7 @@ public final class DiagnosisDeterministicRenderer {
             return true;
         }
         if (state != null
-                && BusinessDiagnosisDrilldownMatrix.isStorePriorityHarnessTextFallback(state)
+                && BusinessDiagnosisSemanticCapabilityMatrix.isStorePriorityHarnessTextFallback(state)
                 && state.getDiagnosisPlan() != null) {
             return true;
         }
@@ -258,28 +258,28 @@ public final class DiagnosisDeterministicRenderer {
             return false;
         }
         String f = facet.toString().trim();
-        return BusinessDiagnosisDrilldownMatrix.FACET_PURCHASE.equals(f)
-                || BusinessDiagnosisDrilldownMatrix.FACET_STOCK_REDUCE.equals(f)
-                || BusinessDiagnosisDrilldownMatrix.FACET_DISH_PROFIT.equals(f);
+        return BusinessDiagnosisSemanticCapabilityMatrix.FACET_PURCHASE.equals(f)
+                || BusinessDiagnosisSemanticCapabilityMatrix.FACET_STOCK_REDUCE.equals(f)
+                || BusinessDiagnosisSemanticCapabilityMatrix.FACET_DISH_PROFIT.equals(f);
     }
 
-    public static boolean isActionFollowupAnswerTurn(AiRunState state, DiagnosisPlan plan) {
+    public static boolean isActionSuggestionAnswerTurn(AiRunState state, DiagnosisPlan plan) {
         if (plan == null || isWarehouseOrgScope(state)) {
             return false;
         }
-        if (isBusinessDiagnosisActionFollowupTurn(state)) {
+        if (isBusinessDiagnosisActionSuggestionTurn(state)) {
             return true;
         }
         Map<String, Object> dbg = plan.getDebug();
         return dbg != null
-                && "ACTION_FOLLOWUP".equals(
+                && "ACTION_SUGGESTION".equals(
                         str(dbg.get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_QUESTION_TYPE)));
     }
 
     private static String renderDomainAttributionAnswer(AiRunState state, DiagnosisPlan plan) {
         StringBuilder sb = new StringBuilder();
         sb.append("【门店子域归因·诊断内说明】\n");
-        String store = resolveDrilldownAnchorStoreLabel(state, plan);
+        String store = resolveAnchorExecutionStoreLabel(state, plan);
         String childLabel = domainAttributionChildLabel(plan);
         if (StringUtils.hasText(store)) {
             sb.append('「').append(store.trim()).append("」");
@@ -298,7 +298,7 @@ public final class DiagnosisDeterministicRenderer {
         List<String> lines =
                 plan.getDebug() != null
                         ? (List<String>)
-                                plan.getDebug().get(BusinessDiagnosisDrilldownMatrix.DEBUG_DOMAIN_ATTRIBUTION_LINES)
+                                plan.getDebug().get(BusinessDiagnosisSemanticCapabilityMatrix.DEBUG_DOMAIN_ATTRIBUTION_LINES)
                         : null;
         if (lines != null && !lines.isEmpty()) {
             for (String line : lines) {
@@ -324,17 +324,17 @@ public final class DiagnosisDeterministicRenderer {
             return "该子域";
         }
         return switch (cd.toString().trim()) {
-            case BusinessDiagnosisDrilldownMatrix.CHILD_PURCHASE -> "采购";
-            case BusinessDiagnosisDrilldownMatrix.CHILD_STOCK_REDUCE -> "出库/核销";
-            case BusinessDiagnosisDrilldownMatrix.CHILD_DISH_PROFIT -> "菜品毛利";
+            case BusinessDiagnosisSemanticCapabilityMatrix.CHILD_PURCHASE -> "采购";
+            case BusinessDiagnosisSemanticCapabilityMatrix.CHILD_STOCK_REDUCE -> "出库/核销";
+            case BusinessDiagnosisSemanticCapabilityMatrix.CHILD_DISH_PROFIT -> "菜品毛利";
             default -> cd.toString().trim();
         };
     }
 
-    private static String renderActionFollowupAnswer(AiRunState state, DiagnosisPlan plan) {
+    private static String renderActionSuggestionAnswer(AiRunState state, DiagnosisPlan plan) {
         StringBuilder sb = new StringBuilder();
         sb.append("【改进行动建议】\n");
-        String store = resolveDrilldownAnchorStoreLabel(state, plan);
+        String store = resolveAnchorExecutionStoreLabel(state, plan);
         if (StringUtils.hasText(store)) {
             sb.append("针对门店「").append(store.trim()).append("」，");
         }
@@ -411,10 +411,10 @@ public final class DiagnosisDeterministicRenderer {
         return sb.toString().trim();
     }
 
-    private static String renderStoreRiskReasonsDrilldownAnswer(AiRunState state, DiagnosisPlan plan) {
+    private static String renderStoreRiskReasonExplanationAnswer(AiRunState state, DiagnosisPlan plan) {
         StringBuilder sb = new StringBuilder();
         sb.append("【门店综合风险·原因说明】\n");
-        String anchorStore = resolveDrilldownAnchorStoreLabel(state, plan);
+        String anchorStore = resolveAnchorExecutionStoreLabel(state, plan);
         boolean named = StringUtils.hasText(anchorStore);
 
         if (named) {
@@ -451,9 +451,9 @@ public final class DiagnosisDeterministicRenderer {
         return sb.toString().trim();
     }
 
-    private static String resolveDrilldownAnchorStoreLabel(AiRunState state, DiagnosisPlan plan) {
+    private static String resolveAnchorExecutionStoreLabel(AiRunState state, DiagnosisPlan plan) {
         if (state != null && state.getResolvedQueryContext() != null) {
-            String fn = state.getResolvedQueryContext().getFollowUpTargetEntityName();
+            String fn = state.getResolvedQueryContext().getRewriteInheritedAnchorName();
             if (StringUtils.hasText(fn)) {
                 return fn.trim();
             }

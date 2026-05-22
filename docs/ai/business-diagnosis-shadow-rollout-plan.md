@@ -1,11 +1,11 @@
-# **C-64：`SHADOW` Composite 灰度上线策略（仅设计）**
+# **`SHADOW` Composite 灰度上线策略**
 
 > **读者**：架构 / SRE / 后端负责人。  
-> **权威依赖**：**[`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md)**（**Gate / `SHADOW` / `ShadowPolicy` / §13～§19**）、**[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**（**C-52～C-65 §C-64～C-65**）。  
-> **C-65（逐请求字段 / 日复盘表 / 扩灰度准入 / 暂停判据操作化）**：**[`business-diagnosis-shadow-observation-checklist.md`](./business-diagnosis-shadow-observation-checklist.md)**。  
-> **阶段**：**C-64～C-65** — **只写文档**；**不改** Java / SQL / Tool / Adapter / Resolver / Master / Composer / 前台 / **`src/test`**；**不接 PRIMARY**；**不替换** **`finalAnswerText` / `answerPreview`**；**不新增 LLM 诊断**。  
-> **目标（C-64）**：在 **C-63**（**`ShadowPolicy`** 接线 + **三轮 curl 验收通过**）基础上，约定 **何时能开、开给谁、开多久、看哪些指标、什么情况必须关**。**目标（C-65）**：见 **观测清单** — **批次字段、日复盘表、扩大/暂停的显式条件**。  
-> **文档定位（收口）**：本文 **不作为下一开发窗口的立即任务**；供 **日后真实生产灰度**（开 `shadow.enabled`、扩白名单、调 cap）时 **与 SRE/运营对齐** 使用。**C-66**（集中 **metrics**、**dashboard**、**跨实例 / Redis 限流**）**暂缓**，与 **composite 文档「阶段收口」**、**[`PROJECT_HANDOFF_D1.md`](./PROJECT_HANDOFF_D1.md)** 一致。
+> **现网**：**`ShadowPolicy`** / **`ShadowDecision`**、**`BusinessDiagnosisCompositeProductionGate`**、**`maybeExecuteShadowCompositePlanner`** 已落地；默认 **`ai.composite.businessDiagnosis.shadow.enabled=false`**（不旁路 Composite）。  
+> **权威依赖**：**[`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md)**（**`SHADOW` 语义 / SSE 字段**）、**[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**。  
+> **观测清单**：**[`business-diagnosis-shadow-observation-checklist.md`](./business-diagnosis-shadow-observation-checklist.md)**。  
+> **边界**：**不接 PRIMARY**；**不替换** **`finalAnswerText` / `answerPreview`**；**`compositeShadowFinalAnswerReplaced` 须恒 `false`**。  
+> **用途**：真实生产开灰度（`shadow.enabled`、白名单、限流 cap）时与 SRE/运营对齐；**C-66** 集中 dashboard / 跨实例限流见 **[`next-business-capability-roadmap.md`](./next-business-capability-roadmap.md)** §6。
 
 ## **1. `SHADOW` 当前状态（基线）**
 
@@ -98,7 +98,7 @@
 
 ---
 
-## **6. C-65：**[`business-diagnosis-shadow-observation-checklist.md`](./business-diagnosis-shadow-observation-checklist.md)**（观测与复盘；仅文档）**
+## **6. C-65：**[`business-diagnosis-shadow-observation-checklist.md`](./business-diagnosis-shadow-observation-checklist.md)**（观测与复盘清单）**
 
 **不重复粘贴全文**：批次须记录的 **字段表**（**`userId` / `distributerId` / `departmentId` / `scopeType`**、`compositeGate*`、`compositeExecuted`、`compositeExecutionSuccess`、`compositeFallbackRequired`、`compositeExecutionError*`、`compositePlanner*`、`compositeShadow*`、**`compositeFinalAnswerText` 非空**、**legacy 正常**）、**每日复盘表**、**扩大灰度** 与 **暂停灰度** 条件 — 均以 **该文件**为 **C-65 权威**。
 
@@ -124,4 +124,4 @@
 - [`business-diagnosis-shadow-observation-checklist.md`](./business-diagnosis-shadow-observation-checklist.md) — **C-65** 观测与复盘清单  
 - [`planner-executor-v1-design.md`](./planner-executor-v1-design.md) — **§27** Composite 生产链路索引  
 
-**文档版本**：**C-64**（灰度策略）+ **§6 → C-65 清单** + **§7 C-66+ backlog（暂缓实施）** + **收口**：日后灰度参考，非下一迭代任务 — **[`PROJECT_HANDOFF_D1.md`](./PROJECT_HANDOFF_D1.md)**
+**文档版本**：灰度策略（**`ShadowPolicy` 已实装**）+ **C-65 观测清单**；**C-66** dashboard 见 **[`next-business-capability-roadmap.md`](./next-business-capability-roadmap.md)** §6。

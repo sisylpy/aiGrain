@@ -5,8 +5,8 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
-import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrixRow;
+import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.alibaba.fastjson2.JSON;
@@ -339,20 +339,20 @@ public final class StockReduceAnswerPlanBuilder {
                 StringUtils.hasText(wire)
                         ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim())
                         : null;
-        StockReduceDrilldownMatrixRow row =
-                StockReduceDrilldownMatrix.resolveMatrixRow(path, canonWire, sem);
+        StockReduceSemanticCapabilityMatrixRow row =
+                StockReduceSemanticCapabilityMatrix.resolveMatrixRow(path, canonWire, sem);
         if (row != null) {
             dbg.put("stockReduceMatrixRowId", row.getRowId());
             dbg.put("stockReduceStructuredIntentDetailWire", row.getStructuredIntentDetailWire());
-            String gap = StockReduceDrilldownMatrix.knownGapForResolvedRow(row);
+            String gap = StockReduceSemanticCapabilityMatrix.knownGapForResolvedRow(row);
             if (gap != null) {
                 dbg.put("stockReduceKnownGap", gap);
             }
         } else if (StringUtils.hasText(canonWire)) {
             dbg.put("stockReduceStructuredIntentDetailWire", canonWire);
         }
-        if (StockReduceDrilldownMatrix.detectMatrixWireMissing(sem, path, canonWire)) {
-            dbg.put("stockReduceMatrixWireMissing", StockReduceDrilldownMatrix.MATRIX_WIRE_MISSING);
+        if (StockReduceSemanticCapabilityMatrix.detectMatrixWireMissing(sem, path, canonWire)) {
+            dbg.put("stockReduceMatrixWireMissing", StockReduceSemanticCapabilityMatrix.MATRIX_WIRE_MISSING);
         }
         dbg.put("stockReduceAnswerPlanType", planType);
         dbg.put("stockReduceReduceType", resolveReduceType(planType));

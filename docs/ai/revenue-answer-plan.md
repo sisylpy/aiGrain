@@ -1,7 +1,7 @@
 # 日营业额 / 营收链路：DailyRevenueAnswerPlan 与 Harness 契约
 
 > **状态（2026-05-12 更新）**：**核心 Harness 已落地**——**`DailyRevenueAnswerPlan`**（下称 **营收 AnswerPlan**）由 **`DailyRevenueAnswerPlanBuilder`** 在 **`revenue_overview_path`** 下挂载至 **`AiRunState`**；**`StubAnswerComposerNode`** 在计划可用时 **优先宣读** **`focusRows` / `secondaryRows`**（不重算营业额、不重排行）；**`AiHarnessResolvedContextSummarizer`** / **`resolvedQueryContextSummary.revenueAnswerPlan*`** 与 SSE **`answer_delta.data.revenueAnswerPlan`** 供 Debug / Replay / 前台与 **`docs/API_INTEGRATION.md`** 对齐。  
-> **前提**：口径不重新发明——以 **`RevenueQueryTool`** → **`GbAiDailyRevenueService#getStatsByDepartmentId`**（**`rawStats`**）及既有 Mapper 字段为准（见 **`docs/LEGACY_AI_ANSWER_ASSETS.md`**、**`docs/TODO_MULTI_AGENT.md`**）。  
+> **前提**：口径不重新发明——以 **`RevenueQueryTool`** → **`GbAiDailyRevenueService#getStatsByDepartmentId`**（**`rawStats`**）及既有 Mapper 字段为准（见 **`docs/AI_MAINLINE_INDEX.md`**、**`docs/TODO_MULTI_AGENT.md`**）。  
 > **边界**：本链路 **不替代** **`business_overview_path`** 经营概览四 Tool 编排；成本主线仍可 **`revenue_query`**；营收 AnswerPlan **仅服务** **`revenue_overview_path`** / **`REVENUE_OVERVIEW`** 意图下的直连营业额问答。  
 > **经营诊断**：**`BusinessDiagnosisPlan`** 为更上层综合；可消费 Tool 事实，**不替代**本条 AnswerPlan 契约。
 

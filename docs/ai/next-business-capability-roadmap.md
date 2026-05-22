@@ -1,10 +1,10 @@
 # 下一阶段业务能力路线图（**D-1**）
 
 > **读者**：产品经理、Harness / Planner 工程师、后端负责人。  
-> **性质**：路线图与优先级 — **不涉及**本轮 Java/SQL 实现；重大编码任务须另开 **`docs/ai/*.md`** 设计后再动工。  
-> **前提**：阶段 **C-1～C-65** — Composite 经营诊断 **生产安全框架** 已收口（四域 Hydrated、`BusinessDiagnosisCompositeAnswerPlan`、`BusinessDiagnosisCompositeProductionGate`、`HARNESS_ONLY`、`SHADOW` + `ShadowPolicy`、 rollout 文档与复盘清单）。
+> **性质**：路线图与优先级；重大编码任务须另开 **`docs/ai/*.md`** 设计后再动工。  
+> **前提**：Composite 经营诊断 **生产安全框架** 已实装（四域 RealBridge、`BusinessDiagnosisCompositeAnswerPlan`、`BusinessDiagnosisCompositeProductionGate`、`HARNESS_ONLY`、`SHADOW` + `ShadowPolicy`）；灰度运营见 shadow rollout / observation 文档。
 
-**交叉引用**：阶段边界与交接入口 — **[`PROJECT_HANDOFF_D1.md`](./PROJECT_HANDOFF_D1.md)**；PlannerExecutor / Composite **设计细节** — [`planner-executor-v1-design.md`](./planner-executor-v1-design.md)、[`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md)。
+**交叉引用**：阶段边界与进度 — **[`TODO_MULTI_AGENT.md`](../TODO_MULTI_AGENT.md)**；PlannerExecutor / Composite **设计细节** — [`planner-executor-v1-design.md`](./planner-executor-v1-design.md)、[`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md)。
 
 ---
 
@@ -108,7 +108,7 @@
 
 ## 6. C-66（metrics / dashboard / Redis 跨实例限流）— 明确暂缓
 
-以下内容 **本阶段不立项、不排期、不补充实现级设计**（与 **[`PROJECT_HANDOFF_D1.md`](./PROJECT_HANDOFF_D1.md)** 一致）：
+以下内容 **本阶段不立项、不排期、不补充实现级设计**（与 **Composite 阶段收口**、**`TODO_MULTI_AGENT.md`** 一致）：
 
 - 集中 **metrics** 与 **Shadow dashboard**  
 - **Redis** 或跨实例 **分布式限流**  

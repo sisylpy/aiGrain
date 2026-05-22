@@ -129,7 +129,7 @@ LLM 别名 `STOCK_OUT`、`WRITE_OFF` 服务端会归一到上述 intent/path。
 | **R07** | 哪些商品出库金额最高 | 同上 / `goods_outbound_ranking` | **不应**因 ALL 或 stockReduceType 覆盖排行语义 |
 | **R08** | 哪些商品出库次数最多 | 同上 / `goods_outbound_count_ranking` | |
 | **R09** | AAA 和汀兰餐厅哪个出库金额高 | 同上 / `store_outbound_amount_ranking` | 要求 **≥2 店** 被识别或继承并排范围；具体字段以 scope / harness 多店标记为准 |
-| **R10** | 哪个门店出库金额最高 | 同上 / `store_outbound_amount_ranking` | 主断言 **`structuredIntentDetailWire`**（`semanticSlots`）；LLM 可输出 **`metric.rankingType`** 作 compat，**服务端不**以其写 wire |
+| **R10** | 哪个门店出库金额最高 | 同上 / `store_outbound_amount_ranking` | 主断言 **`structuredIntentDetailWire`**（`semanticSlots`）；LLM 可输出 **`metric.rankingType`** 作 **debug/deprecated**，**服务端不**以其写 wire |
 | **R11** | 时间继承 | 第一轮：同 R01；第二轮：「那上个月呢？」 | 第二轮仍为 `STOCK_REDUCE_QUERY` / `stock_reduce_query_path`；**时间**切到上月（`timeType` 或起止日期对上 LAST_MONTH）；`querySemanticV2TimeAction` **AnyOf**：`OVERRIDE` \| `INHERIT_PREVIOUS` |
 | **R12** | 经营 → 出库 | 第一轮：本月经营；第二轮：「那出库呢？」 | 第一轮 wire **AnyOf**：`business_overview_summary` \| `business_overview_status` \| `business_store_status_compare` \| `business_store_status_compare_diagnosis`（多店上下文，见 §8）；第二轮：`STOCK_REDUCE_QUERY` / `stock_reduce_overview`；**时间、scope 可继承** |
 | **R13** | 采购 → 核销 | 第一轮：本月采购；第二轮：「那核销呢？」 | 第二轮：`STOCK_REDUCE_QUERY` / `produce_consume`；**不应**仍停留在采购 wire；`querySemanticV2TimeAction` **AnyOf**：`INHERIT_PREVIOUS` \| `OVERRIDE`（不硬绑继承） |

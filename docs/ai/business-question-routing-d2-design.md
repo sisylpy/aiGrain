@@ -1,8 +1,9 @@
-# 真实老板问法 → intent / path → Composite / 单域 边界设计（**D-2**）
+# 真实老板问法 → intent / path → Composite / 单域 边界（D-2）
 
 > **读者**：语义解析、Resolver、`BusinessDataPlannerNode`、Composite Gate 对接工程师。  
-> **阶段**：**D-2** — **仅文档**；对齐现网 **`AiResolvedQueryIntent`**、**pathCode**、**`AiQuerySemanticLexicon` wire**（canonical **`structuredIntentDetail`**）及 **[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md) §3.3**。  
-> **不做什么**：不接 **PRIMARY**；不继续 **C-66** metrics/dashboard/Redis；**禁止**用户原文 **contains/regex** 路由；不把 **Harness GraphCase** 当生产主入口（见 §7）。
+> **性质**：**路由契约 SSOT** — 对齐现网 **`AiResolvedQueryIntent`**、**pathCode`**、**`AiQuerySemanticLexicon` wire** 与 **`BusinessDiagnosisCompositeProductionGate`**（§3.3 映射表见 gate 文档）。  
+> **现网**：语义 v2 + Resolver + Gate + **`/api/ai/runs`** 主链已落地；Composite 经 **`SHADOW`/`HARNESS_ONLY`** 旁路，**不替换**终稿。  
+> **局部待做**：**PRIMARY** 切换；**C-66** metrics/dashboard — 见路线图。**禁止**用户原文 **contains/regex** 路由。
 
 **交叉引用**：Gate 权威白名单 **[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)** §3.3；业务能力优先级 **[`next-business-capability-roadmap.md`](./next-business-capability-roadmap.md)**；常量定义 **`AiResolvedQueryIntent`**、`AiQuerySemanticLexicon`。
 
@@ -249,7 +250,7 @@
 
 ### 10.5 **主路由与 Composite 接入策略评审表**（D-2.2 增补）
 
-本节与 **[`main-routing-to-composite-integration-review.md`](./main-routing-to-composite-integration-review.md)**（调用链）、**[`main-business-routing-and-composite-integration-map.md`](./main-business-routing-and-composite-integration-map.md)**（Gate/SHADOW 挂接）对齐；与 **§10.3「逐句例」**互为补充：**本节按「问法类型」归类**，便于评审 **Composite 放行边界**与 **legacy 主链**分工。
+本节与 **[`main-business-routing-and-composite-integration-map.md`](./main-business-routing-and-composite-integration-map.md)**（调用链与 Gate/SHADOW 挂接）、**[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**（Gate 白名单）对齐；与 **§10.3「逐句例」**互为补充：**本节按「问法类型」归类**，便于评审 **Composite 放行边界**与 **legacy 主链**分工。
 
 #### 10.5.1 分层原则（须同时满足）
 
@@ -301,4 +302,4 @@
 
 **交叉索引**  
 - **主链路时序 / Gate-SHADOW 挂接**：[`main-business-routing-and-composite-integration-map.md`](./main-business-routing-and-composite-integration-map.md)。  
-- **Resolver→DataPlanner→Master→Composite 代码梳理**：[`main-routing-to-composite-integration-review.md`](./main-routing-to-composite-integration-review.md)。
+- **Resolver→DataPlanner→Master→Composite**：[`main-business-routing-and-composite-integration-map.md`](./main-business-routing-and-composite-integration-map.md)、[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)。

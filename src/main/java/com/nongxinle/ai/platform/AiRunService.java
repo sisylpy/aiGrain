@@ -25,9 +25,6 @@ import com.nongxinle.ai.planner.ShadowDecision;
 import com.nongxinle.ai.planner.ShadowPolicy;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.trace.AiAgentTraceService;
-import com.nongxinle.ai.followup.AiFollowUpConversationMemory;
-import com.nongxinle.ai.followup.AiFollowUpIntentSnapshotSupport;
-import com.nongxinle.ai.followup.AiFollowUpIntentSnapshot;
 import com.nongxinle.ai.harness.AiHarnessResolvedContextSummarizer;
 import com.nongxinle.ai.trace.AiRunSession;
 import com.nongxinle.ai.trace.AiRunSessionRegistry;
@@ -66,7 +63,6 @@ public class AiRunService {
     private final AiRunAsyncExecutor asyncExecutor;
     private final AiAgentTraceService traceService;
     private final AiUserContextResolver userContextResolver;
-    private final AiFollowUpConversationMemory followUpConversationMemory;
     private final AiResolvedQueryContextResolver resolvedQueryContextResolver;
     private final AiConversationMemoryService conversationMemoryService;
     private final AiConversationCoreService conversationCoreService;
@@ -309,10 +305,6 @@ public class AiRunService {
             if (turnMemory != null && ended.getUserId() != null) {
                 conversationMemoryService.rememberCompletedTurn(
                         ended.getUserId(), ended.getConversationId(), turnMemory);
-            }
-            AiFollowUpIntentSnapshot snap = AiFollowUpIntentSnapshotSupport.snapshotFromCompletedState(ended);
-            if (snap != null && ended.getUserId() != null) {
-                followUpConversationMemory.remember(ended.getUserId(), ended.getConversationId(), snap);
             }
         }
         return ended;
@@ -628,10 +620,6 @@ public class AiRunService {
                 if (turnMemory != null && endedState.getUserId() != null) {
                     conversationMemoryService.rememberCompletedTurn(
                             endedState.getUserId(), endedState.getConversationId(), turnMemory);
-                }
-                AiFollowUpIntentSnapshot snap = AiFollowUpIntentSnapshotSupport.snapshotFromCompletedState(endedState);
-                if (snap != null && endedState.getUserId() != null) {
-                    followUpConversationMemory.remember(endedState.getUserId(), endedState.getConversationId(), snap);
                 }
             }
         } catch (Exception e) {

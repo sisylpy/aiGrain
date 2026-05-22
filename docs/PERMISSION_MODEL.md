@@ -5,7 +5,7 @@
 # AI Run 权限模型（第一版 · 代码配置）
 
 > **事实来源**：业务用户主数据表 **`gb_department_user`**，字段 **`gb_du_admin`**（与 `GbConstants.DepartmentUserRole` 常量一致）。  
-> **AI 层原则**：数字 `admin` **不**在 Tool/日志/文档中直接当主键使用；统一经 **`com.nongxinle.ai.mapping.AiRoleMapper`** 映射为可读 **`roleCode`**，再绑定 **`AiPermissions`**，最后由 **`AiPermissionGuard`** 在 Tool / 专线 Agent 前校验。旧 **`AiWorkspaceAccessGuard`**（关键词工作台路由）已删除，见 **`docs/legacy-reference/workspace-keyword-route-and-guard.md`**。  
+> **AI 层原则**：数字 `admin` **不**在 Tool/日志/文档中直接当主键使用；统一经 **`com.nongxinle.ai.mapping.AiRoleMapper`** 映射为可读 **`roleCode`**，再绑定 **`AiPermissions`**，最后由 **`AiPermissionGuard`** 在 Tool / 专线 Agent 前校验。旧 **`AiWorkspaceAccessGuard`**（关键词工作台路由）已删除；现网用 **`AiUserContextResolver`** + **`AiPermissionGuard`**。  
 > **`AiUserContext`**：`sourceAdminRole` 存原始 **`admin`**，`roleCode` / `roleName` 为映射结果；`departmentId`/`distributerId`/`departmentFatherId` 来自 `gb_department_user` 挂靠列。
 
 ---
@@ -111,7 +111,7 @@
 
 ## 5. Workspace 入口（权限码保留 · 关键词路由已删）
 
-**`ACCESS_MARKETING_WORKSPACE`**、**`MARKETING_GROWTH`** 等仍可作为 **`AiPermissions` / `AiUserContext`** 的一部分用于未来产品入口，但 **Runtime 已不再通过 `WorkspaceRouterService` 从用户话术解析 `workspaceMode`**（该类与 **`AiWorkspaceAccessGuard`** 已删除）。历史 **`WORKSPACE_ACCESS_DENIED`** 信封见 **`docs/SSE_BACKEND_EVENT_CONTRACT.md`** §6 与 **`docs/legacy-reference/workspace-keyword-route-and-guard.md`**。
+**`ACCESS_MARKETING_WORKSPACE`**、**`MARKETING_GROWTH`** 等仍可作为 **`AiPermissions` / `AiUserContext`** 的一部分用于未来产品入口，但 **Runtime 已不再通过 `WorkspaceRouterService` 从用户话术解析 `workspaceMode`**（该类与 **`AiWorkspaceAccessGuard`** 已删除）。历史 **`WORKSPACE_ACCESS_DENIED`** 信封见 **`docs/SSE_BACKEND_EVENT_CONTRACT.md`** §6（Runtime 已不再从用户话术解析 `workspaceMode`）。
 
 ---
 
@@ -126,7 +126,7 @@
 | `dish_profit_analysis` | **`VIEW_DISH_SALES`** 且 **`VIEW_COST`**（专用 **`evaluateDishProfitAnalysisInvocation`**，非 `requiredPermissionForTool` OR 语义）。**D-8** `dish_sales_query_path` 与 **成本链**（`cost_diagnosis_path`）第 4 步均执行本品；标价收入读 **`businessInsightSummary.totalListPriceRevenue`**。另有 **角色拒答**：采购类（**`CostInsightIntentConvergence#isProcurementCostConvergenceRole`**）→ **`forDishProfitPurchaserDenied`**；**`WAREHOUSE_MANAGER` / `REGION_WAREHOUSE`** → **`forDishProfitWarehouseDenied`**；**`DELIVERY_SUPPLIER` / `DELIVERY_DRIVER` / `COUPON_OPERATOR`** → **`forDishProfitUnsupportedRoleDenied`** |
 > **Historical removed（D-CLEAN-GROSS-MARGIN-P2B）**：`gross_margin_calculator` / **`GrossMarginCalculatorTool`** 已删除；毛利权限收敛到 **`CostDiagnosisAgent`**（`VIEW_COST`）+ **`CostMarginDerivation`** 内部推导，**无**独立 Tool 权限表项。
 
-> **Historical removed（D-CLEAN-BOV-TOOL-DELETE）**：`business_overview_query` / **`BusinessOverviewQueryTool`** 已删除，**不再**有活跃 Tool 权限表项。现网 **`BUSINESS_OVERVIEW` / `business_overview_path`** 仅 **MULTI_AGENT 四域**：**`revenue_query` + `purchase_overview` + `stock_reduce_query` + `dish_profit_analysis`** → **`BusinessOverviewAnswerPlan.MULTI_AGENT_V1`** → **`StubAnswerComposerNode` 确定性 Composer**（前端以 **`answer_delta.data.text`** 为准）。classic 六工具链见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)。
+> **Historical removed（D-CLEAN-BOV-TOOL-DELETE）**：`business_overview_query` / **`BusinessOverviewQueryTool`** 已删除，**不再**有活跃 Tool 权限表项。现网 **`BUSINESS_OVERVIEW` / `business_overview_path`** 仅 **MULTI_AGENT 四域**：**`revenue_query` + `purchase_overview` + `stock_reduce_query` + `dish_profit_analysis`** → **`BusinessOverviewAnswerPlan.MULTI_AGENT_V1`** → **`StubAnswerComposerNode` 确定性 Composer**（前端以 **`answer_delta.data.text`** 为准）。classic 六工具链见 `docs/AI_MAINLINE_INDEX.md`。
 
 > **Historical removed（D-CLEAN-STOCK-QUERY-P2）**：`stock_query` / **`StockQueryTool`** 已删除；库存/库房执行 Tool 权限仅 **`warehouse_stock_overview` → `VIEW_STOCK`**（上表）。语义 wire **`"STOCK_QUERY"`** 仍映射到 **`WAREHOUSE_STOCK_OVERVIEW`**，**不**恢复独立 Tool 权限项。
 
@@ -175,6 +175,6 @@
 | 2026-05-20 | **D-CLEAN-GROSS-MARGIN-P2A**：**`DEFAULT_COST_INSIGHT_TOOLS`** 移除 **`gross_margin_calculator`**（四步链）；毛利由 **`CostDiagnosisAgentNode` + `CostMarginDerivation`** 内部推导。 |
 | 2026-05-20 | **D-CLEAN-COST-P1**：**`DEFAULT_COST_INSIGHT_TOOLS`** 第 4 步 **`dish_sales_query` → `dish_profit_analysis`**。 |
 | 2026-05-20 | **D-CLEAN-DISH-SALES-P2**：**`DishSalesQueryTool`** / Tool id **`dish_sales_query`** 已删除；**`AiResolvedQueryIntent.DISH_SALES_QUERY`** / **`PATH_DISH_SALES_QUERY`** 保留；D-8 与成本链均执行 **`dish_profit_analysis`**。 |
-| 2026-05-10 | **`dish_profit_analysis`**：双权限 **`VIEW_DISH_SALES`+`VIEW_COST`** + 采购/库房/配送/优惠券角色拒答话术；Planner **`dish_profit_path`** 先于泛泛「毛利」成本意图。**`AnswerComposer`** / **`answer_delta.data.dishProfitOverview`**。关联文档：**`API_INTEGRATION`、`LEGACY_AI_ANSWER_ASSETS`、`TODO`**。 |
+| 2026-05-10 | **`dish_profit_analysis`**：双权限 **`VIEW_DISH_SALES`+`VIEW_COST`** + 采购/库房/配送/优惠券角色拒答话术；Planner **`dish_profit_path`** 先于泛泛「毛利」成本意图。**`AnswerComposer`** / **`answer_delta.data.dishProfitOverview`**。关联文档：**`API_INTEGRATION`、`AI_MAINLINE_INDEX`、`TODO`**。 |
 | 2026-05-10 | 首版：文档化 `admin` → `roleCode` → `AiPermissions` → `AiOrgScope`；与 `AiRoleMapper` / `AiUserContextResolver` 对齐。 |
 | 2026-05-10 | 「本月成本怎么样」：**成本意图收敛**（集团门店/采购/优惠券）；**`STORE_MANAGER`** 增补 **`VIEW_PURCHASE`**（与 Tool 链一致）。 |

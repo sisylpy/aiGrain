@@ -29,7 +29,7 @@
   - `orchestrationMultiAgentRequired == true`。
 - **此时 `dataPlanTools`**：`buildBusinessOverviewMultiAgentToolsPermissionFiltered` — 在具备权限的前提下，**按固定顺序**保留子集：
   - `revenue_query` → `purchase_overview` → `stock_reduce_query` → `dish_profit_analysis`
-  - 若过滤后为空，**保持空 plan**（不回退 classic；见 [classic-business-overview-removed.md](../legacy-reference/classic-business-overview-removed.md)）。
+  - 若过滤后为空，**保持空 plan**（不回退 classic；见 `docs/AI_MAINLINE_INDEX.md`）。
 - **Legacy classic 条件（已删除）**：非 MULTI 的 `business_overview_path` → **`dataPlanTools` 为空** + `businessOverviewClassicPlanSuppressed`。
 
 **执行侧重**：`BusinessToolExecutionNode` 在 Multi 门闸满足时先调 `MasterBusinessAgent.tryOrchestrateBusinessOverviewMultiAgent`；四域工具成功则由 Master **跳过**循环内对同 id 的重复执行。
@@ -101,7 +101,7 @@
 
 1. **解析层**产出 `BUSINESS_DIAGNOSIS` + `business_diagnosis_path` + structured 为 priority/risk 归一后的 **`store_priority_ranking`**。
 2. **Planner**：`applyBusinessDiagnosisBranch` 设置 `businessDiagnosisPath` 与 tools；**`syncResolvedQueryContextToBusinessDiagnosis`** 将有效 intent/path 与 Harness 可见上下文对齐为诊断；若 structured **为空**会默认补 `business_diagnosis_summary`（**有** 明确 priority wire 时以解析为准）。
-3. **计划**：`StubOutcomeReviewNode` → **`DiagnosisPlanBuilder.attachIfApplicable`**；`store_priority_ranking` 时由 **`BusinessDiagnosisAgentV1.enrich`** 写入 `DiagnosisPlan.debug`（如 `diagnosisQuestionType=STORE_PRIORITY_RANKING`）。**Historical removed**：`BusinessDiagnosisPlanNode` / `BusinessDiagnosisPlanBuilder`（见 [business-diagnosis-plan-removed.md](../legacy-reference/business-diagnosis-plan-removed.md)）。
+3. **计划**：`StubOutcomeReviewNode` → **`DiagnosisPlanBuilder.attachIfApplicable`**；`store_priority_ranking` 时由 **`BusinessDiagnosisAgentV1.enrich`** 写入 `DiagnosisPlan.debug`（如 `diagnosisQuestionType=STORE_PRIORITY_RANKING`）。**Historical removed**：`BusinessDiagnosisPlanNode` / `BusinessDiagnosisPlanBuilder`（见 `docs/AI_MAINLINE_INDEX.md`）。
 
 ### 4.3 答复链（现网）
 
@@ -173,7 +173,7 @@
 | **`DiagnosisPlan`** | **现网主计划**：`DiagnosisPlanBuilder`（`StubOutcomeReviewNode` 内）**只读聚合** 四域 `*AnswerPlan`；`business_diagnosis_path` 上 **`BusinessDiagnosisAgentV1.enrich`**。**Phase 2A**：wire 为 **`business_store_status_compare_diagnosis`** 时从 **`toolResults`** 组装 **`storeCompareEvidence`**（§11） |
 | **`BusinessDiagnosisAgentV1`** | **现网 enrich**（非 Graph 节点）：规则型 findings、门店优先/风险追问 debug；**勿**与 Composite 主链混淆 |
 | **`BusinessDiagnosisCompositeAnswerPlan`** | **非现网用户正文**：SHADOW / HARNESS_ONLY 旁路（§8）；**PRIMARY 未接** |
-| **`BusinessDiagnosisPlan`** | **Historical removed**（P2）：见 [business-diagnosis-plan-removed.md](../legacy-reference/business-diagnosis-plan-removed.md) |
+| **`BusinessDiagnosisPlan`** | **Historical removed**（P2）：见 `docs/AI_MAINLINE_INDEX.md` |
 | **缺口** | **无** Warehouse 工具 / 库存 AnswerPlan 进入诊断默认 tools；**无** `DishSalesAnswerPlan` 进入四方聚合 |
 
 ---
@@ -265,7 +265,7 @@ Planner 在诊断分支下已为该路径准备 **四域工具**（权限裁剪�
 
 ## 12. D-9 Phase 2B — 集团权限范围内各门店综合风险优先排序（已落地 · Replay 已验收）
 
-本节描述 **`store_priority_ranking`**（§4）在 **Phase 2B** 的 **Harness / GRAPH_RUN Replay** 收口结果；现网排序与 debug 在 **`DiagnosisPlan`** + **`BusinessDiagnosisAgentV1`**（`DiagnosisDeterministicRenderer` 宣读）。Harness **推荐**扁平键 **`diagnosisPlan*`**；**deprecated compat**（`businessDiagnosisPlan*`、`harnessReplayBusinessDiagnosisPlan*`、`storePriorityRanking*`）由 Summarizer 镜像，**非**已删 `BusinessDiagnosisPlan` DTO — 见 [business-diagnosis-plan-removed.md](../legacy-reference/business-diagnosis-plan-removed.md) · Harness 键名表。
+本节描述 **`store_priority_ranking`**（§4）在 **Phase 2B** 的 **Harness / GRAPH_RUN Replay** 收口结果；现网排序与 debug 在 **`DiagnosisPlan`** + **`BusinessDiagnosisAgentV1`**（`DiagnosisDeterministicRenderer` 宣读）。Harness **推荐**扁平键 **`diagnosisPlan*`**；**deprecated compat**（`businessDiagnosisPlan*`、`harnessReplayBusinessDiagnosisPlan*`、`storePriorityRanking*`）由 Summarizer 镜像，**非**已删 `BusinessDiagnosisPlan` DTO — 见 `docs/AI_MAINLINE_INDEX.md` · Harness 键名表。
 
 ### 12.1 产品表述（与 §4.4 一致）
 

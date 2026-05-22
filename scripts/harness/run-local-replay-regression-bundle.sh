@@ -175,7 +175,7 @@ print(json.dumps(base, ensure_ascii=False))
 PY
 )"
 
-run_one "PURCHASE_SUPPLIER_RANKING_DRILLDOWN_GOODS_UNIT_PRICE_3" "$(python3 - "$BASE_JSON" <<'PY'
+run_one "PURCHASE_SUPPLIER_RANKING_ANCHOR_EXECUTION_GOODS_UNIT_PRICE_3" "$(python3 - "$BASE_JSON" <<'PY'
 import json, sys
 base = json.loads(sys.argv[1])
 msgs = [
@@ -183,19 +183,19 @@ msgs = [
     "上个月呢",
     "采购了哪些商品？单价分别是多少？",
 ]
-base.update({"caseId": "PURCHASE_SUPPLIER_RANKING_DRILLDOWN_GOODS_UNIT_PRICE_3", "messages": msgs})
+base.update({"caseId": "PURCHASE_SUPPLIER_RANKING_ANCHOR_EXECUTION_GOODS_UNIT_PRICE_3", "messages": msgs})
 print(json.dumps(base, ensure_ascii=False))
 PY
 )"
 
-run_one "PURCHASE_GOODS_RANKING_DRILLDOWN_SUPPLIER_UNIT_PRICE_2" "$(python3 - "$BASE_JSON" <<'PY'
+run_one "PURCHASE_GOODS_RANKING_ANCHOR_EXECUTION_SUPPLIER_UNIT_PRICE_2" "$(python3 - "$BASE_JSON" <<'PY'
 import json, sys
 base = json.loads(sys.argv[1])
 msgs = [
     "这个月采购金额最高的商品是什么？",
     "这个商品是哪些供应商供的？单价分别是多少？",
 ]
-base.update({"caseId": "PURCHASE_GOODS_RANKING_DRILLDOWN_SUPPLIER_UNIT_PRICE_2", "messages": msgs})
+base.update({"caseId": "PURCHASE_GOODS_RANKING_ANCHOR_EXECUTION_SUPPLIER_UNIT_PRICE_2", "messages": msgs})
 print(json.dumps(base, ensure_ascii=False))
 PY
 )"
@@ -259,20 +259,20 @@ PY
 )"
 
 # D-13.3A：DISH anchor → 原料构成下钻协议（无真实原料明细）
-run_one "DISH_LOW_MARGIN_DRILLDOWN_INGREDIENT_COST_2" "$(python3 - "$BASE_JSON" <<'PY'
+run_one "DISH_LOW_MARGIN_ANCHOR_EXECUTION_INGREDIENT_COST_2" "$(python3 - "$BASE_JSON" <<'PY'
 import json, sys
 base = json.loads(sys.argv[1])
 msgs = [
     "上个月哪个菜毛利率最低？",
     "具体是哪些原料拖累了毛利？",
 ]
-base.update({"caseId": "DISH_LOW_MARGIN_DRILLDOWN_INGREDIENT_COST_2", "messages": msgs})
+base.update({"caseId": "DISH_LOW_MARGIN_ANCHOR_EXECUTION_INGREDIENT_COST_2", "messages": msgs})
 print(json.dumps(base, ensure_ascii=False))
 PY
 )"
 
-# --- D-13.2：经营概览 → 门店优先级 → STORE 原因追问（与 D-13.1 供应商 drilldown 独立）---
-run_one "BUSINESS_STORE_PRIORITY_DRILLDOWN_REASONS_3" "$(python3 - "$BASE_JSON" <<'PY'
+# --- D-13.2：经营概览 → 门店优先级 → STORE 原因追问（与 D-13.1 供应商锚 execution 独立）---
+run_one "BUSINESS_STORE_PRIORITY_REASON_EXPLANATION_3" "$(python3 - "$BASE_JSON" <<'PY'
 import json, sys
 base = json.loads(sys.argv[1])
 msgs = [
@@ -280,7 +280,7 @@ msgs = [
     "哪个门店问题最大？",
     "具体是什么问题？",
 ]
-base.update({"caseId": "BUSINESS_STORE_PRIORITY_DRILLDOWN_REASONS_3", "messages": msgs})
+base.update({"caseId": "BUSINESS_STORE_PRIORITY_REASON_EXPLANATION_3", "messages": msgs})
 print(json.dumps(base, ensure_ascii=False))
 PY
 )"

@@ -99,13 +99,14 @@ public class AiConversationMemoryService {
         }
         log.info(
                 "[AiConversationMemory] remember userId={} conversationId={} path={} intent={} "
-                        + "lastMentionedDish={} lastStructured={} toolSummarySnippet={}",
+                        + "lastMentionedDish={} lastStructured={} resultAnchorsCount={} toolSummarySnippet={}",
                 userId,
                 conversationId,
                 turn.getLastPathCode(),
                 turn.getLastIntentCode(),
                 turn.getLastMentionedDishName(),
                 turn.getLastStructuredIntentDetail(),
+                turn.getLastResultAnchors() == null ? 0 : turn.getLastResultAnchors().size(),
                 turn.getLastToolSummary() == null ? null
                         : (turn.getLastToolSummary().length() > 120
                         ? turn.getLastToolSummary().substring(0, 120) + "…"

@@ -41,11 +41,11 @@ class BusinessDiagnosisLexiconRoutingTest {
     }
 
     @Test
-    void canonical_wire_unifies_store_risk_to_priority() {
+    void canonical_wire_noLongerUnifies_store_risk_to_priority() {
         Assertions.assertThat(AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire("store_risk_ranking"))
-                .isEqualTo(AiQuerySemanticLexicon.STRUCTURED_STORE_PRIORITY_RANKING);
+                .isEqualTo("store_risk_ranking");
         Assertions.assertThat(AiQuerySemanticLexicon.isStorePriorityRankingStructuredDetail("STORE_RISK_RANKING"))
-                .isTrue();
+                .isFalse();
     }
 
     @Test

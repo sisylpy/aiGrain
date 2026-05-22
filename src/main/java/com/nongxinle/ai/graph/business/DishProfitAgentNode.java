@@ -11,8 +11,8 @@ import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.AiOverviewStoreIssueItem;
 import com.nongxinle.ai.dto.business.AiOverviewVisibleStoreItem;
-import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrixRow;
+import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
@@ -361,14 +361,14 @@ public class DishProfitAgentNode {
         dbg.put("structuredIntentDetailWire", wire);
         AiResolvedQueryContext rctx = state.getResolvedQueryContext();
         if (state.isDishProfitPath()
-                && DishProfitDrilldownMatrix.detectMatrixWireMissing(
+                && DishProfitSemanticCapabilityMatrix.detectMatrixWireMissing(
                         rctx != null ? rctx.getQuerySemanticParse() : null,
                         qi.getPathCode(),
                         wire)) {
-            dbg.put("matrixWireMissing", DishProfitDrilldownMatrix.MATRIX_WIRE_MISSING);
+            dbg.put("matrixWireMissing", DishProfitSemanticCapabilityMatrix.MATRIX_WIRE_MISSING);
             log.info(
                     "[DishProfitAgentNode] dishProfitAnswerPlan {} runId={} structuredIntentDetail={} wire={}",
-                    DishProfitDrilldownMatrix.MATRIX_WIRE_MISSING,
+                    DishProfitSemanticCapabilityMatrix.MATRIX_WIRE_MISSING,
                     state.getRunId(),
                     sid,
                     wire);
@@ -379,7 +379,7 @@ public class DishProfitAgentNode {
             dbg.put("mentionedDishName", dbgMention);
         }
 
-        DishProfitDrilldownMatrixRow matrixRow = DishProfitDrilldownMatrix.findFirstTurnRowByWire(wire);
+        DishProfitSemanticCapabilityMatrixRow matrixRow = DishProfitSemanticCapabilityMatrix.findFirstTurnRowByWire(wire);
         if (matrixRow != null) {
             dbg.put("dishProfitMatrixRowId", matrixRow.getRowId());
             if (tryAttachFirstTurnPlanFromMatrix(
@@ -529,10 +529,10 @@ public class DishProfitAgentNode {
     }
 
     /**
-     * Phase 1 dish matrix first-turn entry：按 {@link DishProfitDrilldownMatrixRow#getTargetDishProfitPlanType()} 挂载 plan。
+     * Phase 1 dish matrix first-turn entry：按 {@link DishProfitSemanticCapabilityMatrixRow#getTargetDishProfitPlanType()} 挂载 plan。
      */
     private static boolean tryAttachFirstTurnPlanFromMatrix(
-            DishProfitDrilldownMatrixRow matrixRow,
+            DishProfitSemanticCapabilityMatrixRow matrixRow,
             AiRunState state,
             AiDishProfitOverviewResult out,
             List<Map<String, Object>> dishRowsAllPeers,
@@ -594,7 +594,7 @@ public class DishProfitAgentNode {
         if (dishProfitMatrixWireMissing(state)) {
             log.info(
                     "[DishProfitAgentNode] skip portfolio aggregate {} runId={}",
-                    DishProfitDrilldownMatrix.MATRIX_WIRE_MISSING,
+                    DishProfitSemanticCapabilityMatrix.MATRIX_WIRE_MISSING,
                     state.getRunId());
             return;
         }
@@ -1141,7 +1141,7 @@ public class DishProfitAgentNode {
         }
         String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail());
         AiResolvedQueryContext rctx = state.getResolvedQueryContext();
-        return DishProfitDrilldownMatrix.detectMatrixWireMissing(
+        return DishProfitSemanticCapabilityMatrix.detectMatrixWireMissing(
                 rctx != null ? rctx.getQuerySemanticParse() : null, qi.getPathCode(), wire);
     }
 

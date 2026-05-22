@@ -1,15 +1,11 @@
-# 组合型经营诊断 Composite Plan — **C-30 设计 + C-31 骨架 + C-31.1 trace + C-35 ALL_REAL + C-36 AnswerPlan + C-42 降级 + C-43 GROUP 规格 + C-48 GROUP Harness + C-49 文档收口 + C-50 Composer 只读 AnswerPlan（设计）+ C-52 生产入口 Gate（设计）+ C-57 生产执行编排（设计，外链）**
+# 组合型经营诊断 Composite Plan
 
 > **读者**：Harness / Planner 工程师。  
-> **阶段**：**C-30** — 组合计划、六步、trace、失败策略等 **设计**（下文不变）。  
-> **阶段**：**C-31 Removed（P1-B Final）** — **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`** 与 GraphCase 已删。**当前主验收**：**§2.4 / §2.5 / §2.6**（C-35 / C-42 / C-48）及 **`DISH_PROFIT_MATRIX_P1`**。  
-> **C-31.1**：前四步 **`targetTool`** 为 **`mock_*_hydrated_adapter`**，trace **`usedTools`** **不**含生产 **`revenue_query`** 等 id，避免误读为已真实执行；生产 Tool 名仅见于 **`inputSummary` / `acceptanceCriteria`** 文案。  
-> **C-32～C-34（Historical / Retired，P1-A）**：历史分步 Composite Harness case（单域 / 双域 / 三域渐进真实）已从注册与路由摘除；**请用** **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`（C-35）** 或 **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_GROUP_CORE`（C-48）** / **`…_STOCK_DEGRADED_CORE`（C-42）** 做 strict 验收。`stepId` 契约见 **`CompositeBusinessDiagnosisStepIds`**。  
-> **C-35**：**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`** — 四数据步 **`revenue_query`** / **`purchase_overview`** / **`stock_reduce_query`** / **`dish_profit_analysis`** 均 Hydrated 真实；**`step_diagnosis_compose`** / **`step_recommendation`** 仍为 mock（**`plannerCompositeHonesty=COMPOSITE_ALL_DATA_REAL_DIAGNOSIS_MOCK`**；**无** LLM 诊断、**无**真实 Action）。
-> **C-36**：**`BusinessDiagnosisCompositeAnswerPlan`** — **仅文档**定义结构化承接四域摘要 + **`diagnosisSignals` / `dataCoverage` / 降级与 `riskLevel` 规则**；**不接** LLM、**不**生成最终自然语言；见 **[`business-diagnosis-answer-plan-design.md`](./business-diagnosis-answer-plan-design.md)** 全文。**实现路线 = C-37**（从 trace + adapter AnswerPlan 映射；诊断 compose **确定性**）。
-> **依赖（全链路 Hydrated 组合，非 C-31）**：四条域 **Hydrated RealBridge** 均已 **curl 验收**（**Revenue → `revenue_query`**、**Purchase → `purchase_overview`**、**StockReduce → `stock_reduce_query`**、**DishProfit → `dish_profit_analysis`**）。权威交叉引用：**[`planner-executor-v1-design.md`](./planner-executor-v1-design.md)** §12、§22、§24、§25、§26、§27；**[`diagnosis-answer-plan.md`](./diagnosis-answer-plan.md)**；**[`business-diagnosis-harness-plan.md`](./business-diagnosis-harness-plan.md)**。  
-> **C-41 阶段总收口（仅文档）**：**C-30～C-40** 完整路线、最终验收 **`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`**、curl 观测快照、当前限制、设计原则与 **C-42～C-46** 建议路线见 **[`planner-executor-composite-c30-c40-summary.md`](./planner-executor-composite-c30-c40-summary.md)**。  
-> **C-43**：**GROUP 多门店规格** — 权威 **[`business-diagnosis-composite-group-design.md`](./business-diagnosis-composite-group-design.md)**（§1～§8、**§10 C-49**）。**C-48**：**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_GROUP_CORE`** — **已**实装 Harness（**`AiPlannerExecutorBusinessDiagnosisCompositeGroupGraphCase`**），与 **C-35** 同 **六步**；**`scopeType=GROUP`**、**`visibleStores`（AAA `id=1`、汀兰餐厅 `id=3`）** 由各 **C-44～C-47** GraphCase 物化复用；下文 **§2.6**。**C-49**：**`BusinessDiagnosisCompositeAnswerPlanBuilder#BUILDER_VERSION=C-49`**；curl 快照与限制见 **GROUP 文档 §10** / 下文 §2.6「C-49」。**C-52**：**生产入口 Composite Gate（仅文档）** — **[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**。
+> **现网**：六步 **`PlannerExecutionPlan`**（**`CompositeBusinessDiagnosisStepIds`**）+ **`PlannerExecutor`** + 四域 RealBridge + **`BusinessDiagnosisCompositeAnswerPlanBuilder`**（C-49）+ **`BusinessDiagnosisCompositeReadonlyComposer`**（C-51）已落地。  
+> **生产**：**`BusinessDiagnosisCompositeProductionGate`** + **`BusinessDiagnosisCompositeExecutionService`**（**`HARNESS_ONLY` / `SHADOW`**，默认 **`shadow.enabled=false`**）；**不替换**生产 **`finalAnswerText`**（见 execution 设计文档）。  
+> **Harness 主验收**：**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_ALL_REAL_CORE`**（C-35 STORE）、**`…_GROUP_CORE`**（C-48）、**`…_STOCK_DEGRADED_CORE`**（C-42）；**`PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_CORE`**（C-31 全 MOCK）已移除。  
+> **局部待做**：**`step_recommendation`** 仍为 mock；**PRIMARY** 替换终稿、**C-66** dashboard 见路线图。  
+> **交叉引用**：**[`planner-executor-v1-design.md`](./planner-executor-v1-design.md)** §27、**[`business-diagnosis-composite-group-design.md`](./business-diagnosis-composite-group-design.md)**、**[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**、**[`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md)**。
 
 ---
 
@@ -142,23 +138,17 @@
 - **curl 典型 SUCCESS**：**`overallStatus=SUCCESS`**；四域 **`usedTools`** = **`revenue_query` / `purchase_overview` / `stock_reduce_query` / `dish_profit_analysis`**；**`visibleStoreRootDepartmentIds=[1,3]`**（或等价提取）；**`dataCoverage`** 四域 **`success=true` `realToolInvoked=true`**；**`summaryText`** GROUP 口径。
 - **限制**：营收 **`totalRevenue`** 集团口径待确认；采购明细少不编排行；菜品 **`AGGREGATED_DISH_PORTFOLIO_FALLBACK`** 保守；建议 **mock**；未接 Master / 前台 / LLM — 详见 **[`business-diagnosis-composite-group-design.md`](./business-diagnosis-composite-group-design.md) §10**。
 
-### C-50（Composite Composer — 只读 `BusinessDiagnosisCompositeAnswerPlan`，仅文档）
+### C-50 / C-51（Composite Readonly Composer — 已实装）
 
-- **目标**：最终回答 **Composer** **只消费** Builder 产出的 **`BusinessDiagnosisCompositeAnswerPlan`**（**`summaryText`、`riskLevel`、`dataCoverage`、`diagnosisSignals`、`keyFindings`、`suggestedNextQuestions`、`type`、`scopeLabel`、`timeLabel`**；**`debug.mappingNotes`** **仅供调试**；**禁止** **重读** **`toolResults`** / **原始 Tool payload**、**禁止** **绕过** AnswerPlan **自编诊断**。
-- **STORE / GROUP 口径、降级、禁止话术、后续 C-51 Java skeleton**：**[`business-diagnosis-composer-readonly-design.md`](./business-diagnosis-composer-readonly-design.md)**。
-- **本轮**：**不写 Java**、**不接** Master / 前台、**不**调 LLM。
+- **`BusinessDiagnosisCompositeReadonlyComposer`** 只读 **`BusinessDiagnosisCompositeAnswerPlan`**；**不调 LLM**、**不重读 `toolResults`**。契约：**[`business-diagnosis-composer-readonly-design.md`](./business-diagnosis-composer-readonly-design.md)**。
 
-### C-52（生产入口 Composite Gate — 仅文档）
+### C-52（生产入口 Composite Gate — 已实装）
 
-- **目标**：规定**真实聊天主链路**何时可进入本 Composite **PlannerExecutor**；**本轮不接**代码。
-- **权威**：[**`business-diagnosis-production-gate-design.md`**](./business-diagnosis-production-gate-design.md)（Gate 位置、允许/禁止意图、STORE/GROUP、前置字段、fallback、降级与 SSE 建议、**C-53** checklist）。
-- **约束**：Gate **禁止**用户原文 **`contains`/`regex`**；**只读** **`AiResolvedQueryContext`** 等结构化字段。
+- **`BusinessDiagnosisCompositeProductionGate`** 在 **`AiRunService#startRun`** 写入 **`businessDiagnosisCompositeGateResult`**；**只读**结构化 intent/path/scope。**权威**：[**`business-diagnosis-production-gate-design.md`**](./business-diagnosis-production-gate-design.md)。
 
-### C-57（Gate `allowed=true` 后生产执行编排 — **仅设计**）
+### C-57～C-63（生产执行编排 — 已实装）
 
-- **目标**：**不**经由 Harness **`AiPlannerExecutorBusinessDiagnosisComposite*GraphCase`** 直连 **`/api/ai/runs`**；引入 **`BusinessDiagnosisCompositePlanFactory`** + **`BusinessDiagnosisCompositeExecutionService`**（**`executionMode`**：**`HARNESS_ONLY` / `SHADOW` / `PRIMARY`**，及 **`OFF`**），从 **`AiRunState` / `AiResolvedQueryContext` / GateResult** 物化 **`PlannerExecutionPlan`** 并调用既有 **`PlannerExecutor`** + AnswerPlan Builder + Readonly Composer；**四域 Tool 与 legacy 双跑** 风险与分期策略见 **`business-diagnosis-production-composite-execution-design.md` §9**。
-- **权威**：[**`business-diagnosis-production-composite-execution-design.md`**](./business-diagnosis-production-composite-execution-design.md)。**前置 Gate**：**[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)** **§C-57** 指针。
-- **约束**：不改 SQL / 四域 Tool / Adapter / Resolver / Composer 产出逻辑 — **本节与 C-58+ 接线阶段一致**。
+- **`BusinessDiagnosisCompositePlanFactory`** + **`BusinessDiagnosisCompositeExecutionService`**；**`HARNESS_ONLY`**（Harness）与 **`SHADOW`**（普通 Run，**`ShadowPolicy`**）已接线。**权威**：[**`business-diagnosis-production-composite-execution-design.md`**](./business-diagnosis-production-composite-execution-design.md)。
 
 ## 3. 步骤一览（至少 6 步）
 
@@ -281,9 +271,9 @@
 | [`planner-executor-v1-design.md`](./planner-executor-v1-design.md) | PlannerExecutor、失败策略、§12 四条 Hydrated |
 | [`next-business-capability-roadmap.md`](./next-business-capability-roadmap.md) | **D-1**：下一阶段 **业务能力** **P0～P3**、框架「够用即止」边界、推荐主链路与 **D-2** 任务入口 |
 | [`diagnosis-answer-plan.md`](./diagnosis-answer-plan.md) | DiagnosisPlan 字段、AnswerPlan 优先 |
-| [`business-diagnosis-harness-plan.md`](./business-diagnosis-harness-plan.md) | 历史编排视角；**事实源** 以 AnswerPlan 为准 |
+| [`diagnosis-answer-plan.md`](./diagnosis-answer-plan.md) | DiagnosisPlan 聚合；**事实源** 以各域 AnswerPlan 为准 |
 | [`business-diagnosis-answer-plan-design.md`](./business-diagnosis-answer-plan-design.md) | **C-36**： **`BusinessDiagnosisCompositeAnswerPlan`** 字段、四域 summary、**`diagnosisSignals`、`dataCoverage`**、降级与 **C-37** 映射路线；**C-50**：§8.12 |
 | [`business-diagnosis-composer-readonly-design.md`](./business-diagnosis-composer-readonly-design.md) | **C-50**：Composite Composer **只读 AnswerPlan** |
 | [`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md) | **C-57**：Gate **`allowed`** 后 **PlanFactory / ExecutionService / executionMode**（**仅设计**） |
 
-**文档版本**：**C-30** 设计 + **C-31** Harness **MOCK 骨架** + **C-31.1** trace 口径 + **C-32**～**C-35** 渐进 Hydrated（已注册 **`AiHarnessBuiltinCases`**）；C-35 四数据域 Composite 真实 + 诊断/建议 mock；**C-36** Composite **`BusinessDiagnosisCompositeAnswerPlan`**（见 **上表**）；**C-50** Composite Composer **只读 AnswerPlan**（**[`business-diagnosis-composer-readonly-design.md`](./business-diagnosis-composer-readonly-design.md)**，仅文档）。**C-52** Gate（**[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**）。**C-57** 生产 **`PlanFactory` / `ExecutionService` / `executionMode`**（**[`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md)**，仅文档）。
+**文档版本**：Composite 六步计划 + Harness C-35/C-48/C-42 + **`BusinessDiagnosisCompositeAnswerPlan`** + Readonly Composer + Production Gate + **`HARNESS_ONLY`/`SHADOW`** 执行编排均已实装；建议步 mock、PRIMARY 与 C-66 dashboard 为局部待做。

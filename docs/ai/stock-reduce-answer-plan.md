@@ -1,10 +1,10 @@
 # 出库 / 核销链路：StockReduceAnswerPlan 与 Harness 契约
 
-> **前提**：金额、分型（type1～type4）、Top 商品等**不重新发明口径**——以现有 **`StockReduceQueryTool`**、`GbDepartmentGoodsStockReduceService` / Mapper、**`docs/LEGACY_STOCK_REDUCE_ASSETS.md`**、**`GbConstants.StockReduceType`** 及 **`ai-skill-cost.md`** 为准；**交付阶段不改 SQL、不重写 Tool**（后续仅缺陷修复时例外，须单独评审）。  
+> **前提**：金额、分型（type1～type4）、Top 商品等**不重新发明口径**——以现有 **`StockReduceQueryTool`**、`GbDepartmentGoodsStockReduceService` / Mapper、**`GbConstants.StockReduceType`** 为准；**交付阶段不改 SQL、不重写 Tool**（后续仅缺陷修复时例外，须单独评审）。  
 > **目标**：把 **`stock_reduce_query_path`**（`STOCK_REDUCE_QUERY`）从「Tool JSON + Composer / 旧 summary 即兴拼答」收敛为 **`StockReduceAnswerPlan` → Composer 优先宣读计划**，与 **`PurchaseAnswerPlan`** / **`DishProfitAnswerPlan`** 同一工程范式；**Debug / Replay** 可核对计划与上下文。  
 > **阶段状态（2026-05-12）**：**前台验收已通过**；本链路 **阶段冻结**——**后续只做 bugfix / 小补丁**，**不做** 路由、计划构建或 Composer 层级的架构级大改（除非产品重新立项）。
 
-全局分层说明见：`docs/ai/harness-composer-architecture.md`。采购对照见：`docs/ai/purchase-answer-plan.md`。旧版资产索引见：`docs/LEGACY_STOCK_REDUCE_ASSETS.md`。
+全局分层说明见：`docs/ai/harness-composer-architecture.md`。采购对照见：`docs/ai/purchase-answer-plan.md`。
 
 ---
 
@@ -31,7 +31,7 @@
 
 **后续约定**：出库 / 核销 **AnswerPlan + Composer** 收口交付完成后，**仅 bugfix**；扩需求走新立项。
 
-**Renderer 清理（非 classic 经营概览）**：`StockReduceDeterministicRenderer` 与 `DeterministicAnswerRenderer.renderStockReduceToolFallback` 已移除；无计划兜底改为 `StubAnswerComposerNode.composeStockReduceNoPlanFallback`。索引见 `docs/legacy-reference/stock-reduce-deterministic-renderer-removed.md`。
+**Renderer 清理（非 classic 经营概览）**：`StockReduceDeterministicRenderer` 与 `DeterministicAnswerRenderer.renderStockReduceToolFallback` 已移除；无计划兜底改为 `StubAnswerComposerNode.composeStockReduceNoPlanFallback`。索引见 `docs/AI_MAINLINE_INDEX.md`。
 
 ---
 
@@ -49,7 +49,7 @@
 
 **合计口径**：用户问「出库多少钱」「核销多少钱」时，**全口径合计**通常为 **type1 + type2 + type3 + type4**；若用户只问某一类，AnswerPlan 的 **`reduceType`** / **`planType`** 必须收窄到对应 type，**不得**把废弃说成损耗或反之。
 
-**「出品」与「生产耗用」**：库表侧 **没有** 与 type1 并列的独立「出品」类型。旧版库房表述里「核销侧出品」与 **type1 金额**同源（见 `LEGACY_STOCK_REDUCE_ASSETS.md` §1.2）。若产品上「生产耗用」与「出品」需两行数字，须**另定**业务拆分规则；本版 AnswerPlan 可先以 **同一 type1 事实行** 配不同 **`scopeLabel` / `summary` 标签**区分表述，**禁止** Composer 侧凭空拆出第二套金额。
+**「出品」与「生产耗用」**：库表侧 **没有** 与 type1 并列的独立「出品」类型。旧版库房表述里「核销侧出品」与 **type1 金额**同源。若产品上「生产耗用」与「出品」需两行数字，须**另定**业务拆分规则；本版 AnswerPlan 可先以 **同一 type1 事实行** 配不同 **`scopeLabel` / `summary` 标签**区分表述，**禁止** Composer 侧凭空拆出第二套金额。
 
 ### 1.2 当前 Harness 锚点（已实现，文档阶段不改动）
 

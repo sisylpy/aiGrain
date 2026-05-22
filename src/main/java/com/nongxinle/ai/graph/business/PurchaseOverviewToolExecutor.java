@@ -6,6 +6,7 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionArgs;
 import com.nongxinle.ai.graph.business.scope.BusinessScopeResolutionSupport;
 import com.nongxinle.ai.mapping.AiRoleMapper;
 import com.nongxinle.ai.scope.AiQueryScope;
@@ -109,7 +110,7 @@ public class PurchaseOverviewToolExecutor {
                 m.put(AiBusinessToolIds.ARG_PURCHASE_NARRATIVE_MODE, nar);
             }
         }
-        PurchaseOverviewGoodsDrilldownArgs.putIntoToolArgsIfApplicable(m, purCtx);
+        PurchaseSemanticExecutionArgs.applyToToolArgs(m, purCtx);
         return m;
     }
 

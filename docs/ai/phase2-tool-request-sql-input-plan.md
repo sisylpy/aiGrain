@@ -1,7 +1,7 @@
 # 阶段 2：Tool Request / SQL 入参层 — 现状链路与实施方案
 
 > **状态**：规划文档（2026-05-19）；**不改代码**，仅梳理现状与验收边界。  
-> **上游**：阶段 1 已收口（[`phase1-semantic-mainline-acceptance-summary.md`](./phase1-semantic-mainline-acceptance-summary.md)）。  
+> **上游**：阶段 1 已收口；主链见 [`semantic-allowed-output-contract-design.md`](./semantic-allowed-output-contract-design.md)。  
 > **相关**：[`BusinessToolExecutionRequestResolver`](../src/main/java/com/nongxinle/ai/graph/business/toolrequest/BusinessToolExecutionRequestResolver.java)、[`AiBusinessToolIds`](../src/main/java/com/nongxinle/ai/tool/business/AiBusinessToolIds.java)、[`AiHarnessReplayDryRunStage`](../src/main/java/com/nongxinle/ai/harness/replay/AiHarnessReplayDryRunStage.java)、Planner Adapter 设计（purchase / revenue / stock-reduce planner-adapter-design）。
 
 ---
@@ -47,7 +47,7 @@
 - `timeWindow` / `effectiveTimeWindowSource`  
 - `orgScope` + `dataScope`  
 
-`metric.rankingType`、`metric.stockReduceType` 仅作 **compat / debug**（见 [`d1x-rankingtype-and-duplicate-responsibility-inventory.md`](./d1x-rankingtype-and-duplicate-responsibility-inventory.md)）。
+`metric.rankingType`、`metric.stockReduceType` 仅作 **debug/deprecated**（见 [`semantic-allowed-output-contract-design.md`](./semantic-allowed-output-contract-design.md)、[`semantic-contract-strict-mode-plan.md`](./semantic-contract-strict-mode-plan.md)）。
 
 ---
 
@@ -141,7 +141,7 @@ Harness case 如 `PLANNER_EXECUTOR_*_ADAPTER_REAL_BRIDGE_HYDRATED_CORE` 已跑�
 | **purchaseSourceType** | DTO `purchaseSourceType`；args `ARG_PURCHASE_SOURCE_FOCUS` | **`queryIntent.purchaseSourceType`**（Resolver 自 semanticSlots.sourceFacet / metric 校准） |
 | **structuredIntentDetailWire** | DTO `structuredIntentDetail`；args `ARG_PURCHASE_NARRATIVE_MODE` | **`queryIntent.structuredIntentDetail`**（canonical 自 **`semanticSlots.structuredIntentDetailWire`**）；经营诊断 path 可覆盖为 `purchase_overview_summary` |
 | **集团聚合** | `ARG_GROUP_PURCHASE_AGGREGATION` | `AiRunState.groupPurchaseOverview`（`BusinessDataPlannerNode#applyPurchaseOverviewQuestionBranch` 按角色 + 可见门店数设置） |
-| **下钻（D-13）** | `focusSupplierId`、`focusDisGoodsId`、`focusGoodsName` 等 | `PurchaseOverviewGoodsDrilldownArgs.putIntoToolArgsIfApplicable(resolvedQueryContext)` |
+| **锚 execution（D-13）** | `focusSupplierId`、`focusDisGoodsId`、`focusGoodsName` 等 | `PurchaseSemanticExecutionArgs.putIntoToolArgsIfApplicable(resolvedQueryContext)` |
 
 ---
 
@@ -180,7 +180,7 @@ Harness case 如 `PLANNER_EXECUTOR_*_ADAPTER_REAL_BRIDGE_HYDRATED_CORE` 已跑�
 
 各 Tool 入参走 **§3.2（revenue）/ §3.4（purchase、stock_reduce、dish_profit）** 及 `BusinessToolExecutionNode#toolArgs`；**不**再列 `business_overview_query` 参数表。
 
-**Historical removed（classic + D-CLEAN-BOV-TOOL-DELETE）**：曾独立 Tool **`business_overview_query`** / **`BusinessOverviewQueryTool`**；典型已删链 **`business_overview_query` → `dish_sales_query` → `purchase_query` → `gross_margin_calculator`**（见 [classic-business-overview-removed.md](../legacy-reference/classic-business-overview-removed.md)）。阶段 2 **禁止** 把其 args 当作当前契约。
+**Historical removed（classic + D-CLEAN-BOV-TOOL-DELETE）**：曾独立 Tool **`business_overview_query`** / **`BusinessOverviewQueryTool`**；典型已删链 **`business_overview_query` → `dish_sales_query` → `purchase_query` → `gross_margin_calculator`**（见 `docs/AI_MAINLINE_INDEX.md`）。阶段 2 **禁止** 把其 args 当作当前契约。
 
 | toolId | 状态 | 说明 |
 |--------|------|------|
@@ -287,7 +287,7 @@ Planner Executor mock 路径（`PLANNER_EXECUTOR_*`）走独立分支，**不是
 
 | caseId | 阶段 2 焦点 |
 |--------|-------------|
-| **`PURCHASE_SUPPLIER_RANKING_DRILLDOWN_GOODS_UNIT_PRICE_3`** | R1：`purchaseNarrativeMode=supplier_amount_ranking`，`purchaseSourceFocus=SUPPLIER_PURCHASE`；R3：下钻 args 含 `focusSupplierId` / goods focus |
+| **`PURCHASE_SUPPLIER_RANKING_ANCHOR_EXECUTION_GOODS_UNIT_PRICE_3`** | R1：`purchaseNarrativeMode=supplier_amount_ranking`，`purchaseSourceFocus=SUPPLIER_PURCHASE`；R3：下钻 args 含 `focusSupplierId` / goods focus |
 | **`PURCHASE_GOODS_RANKING_SOURCE_BREAKDOWN_2`** | `purchaseNarrativeMode=purchase_source_goods_query`，source focus 随 round 变化 |
 | **`STOCK_REDUCE_SEMANTIC_1C` 抽 R05/R11** | `stockReduceNarrativeMode` = wire canonical（如 `goods_outbound_ranking`）；`stockReduceType` 仅 debug 可选 |
 

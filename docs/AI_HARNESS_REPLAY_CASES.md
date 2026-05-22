@@ -26,9 +26,11 @@
 以下两类均为 **核心回归**：**(A)** **`replayMode` 省略或 Resolver-only** —— **v2 + Resolver + Harness 摘要**；**(B)** **`replayMode=GRAPH_RUN`**（或对特定 `caseId` 服务端默认 Graph）—— **同步业务图 + Tool + Master + Summarizer**。  
 **Diagnosis v1**、**BusinessOverview 四域 MultiAgent**，以及 **四条单域 Agent** 的 **`GRAPH_RUN` 核心用例**（`REVENUE_AGENT_GRAPH_CORE` / `PURCHASE_AGENT_GRAPH_CORE` / `STOCK_REDUCE_AGENT_GRAPH_CORE` / `DISH_PROFIT_AGENT_GRAPH_CORE`）已纳入 **(B)**，与 **V2_SEMANTIC_MAINLINE_CORE_10**（**(A)**）并行作为阶段收口必跑项。
 
-变更 **QuerySemanticParser（v2）**、**Resolver**、**FollowUp**、**AnswerPlan wire**、**MasterBusinessAgent**、**BusinessToolExecutionNode**、**Graph 节点** 等相关代码时，应按改动范围 **至少** 跑通表中对应 Case（见下节 **「必须跑本 Case 前的改动范围」** 与各 Case 详解）。
+变更 **QuerySemanticParser（v2）**、**Resolver**、**FollowUp Rewrite**、**AnswerPlan wire**、**MasterBusinessAgent**、**BusinessToolExecutionNode**、**Graph 节点** 等相关代码时，应按改动范围 **至少** 跑通表中对应 Case（见下节 **「必须跑本 Case 前的改动范围」** 与各 Case 详解）。
 
-**语义主链（D-CLEAN-V1 + D-1X-D3）**：生产 **V2-only**（`semantic.query_parser.v2`）；主断言 **`semanticSlots` / `structuredIntentDetailWire` / `effectivePathCode`**。**Historical removed**：`query_semantic_parser.v1`、`AiQuerySemanticV2*Normalizer`、`AiQuerySemanticTimeLexicon`、Java 关键词 `fromUserMessage` 主路由。`metric.rankingType` 仅 compat/debug（**D-1X-D3-RANKINGTYPE-FINAL** 已收口主 wire / planType）。
+**语义主链（P4-G）**：生产 **V2-only**（`semantic.query_parser.v2`）。主断言 **`semanticSlots`**（含 `queryObject` / `operation` / `metric` / `sourceFacet` / `detailWanted` / `anchorPolicy` / `structuredIntentDetailWire`）、**`semanticContractValidation.matchedContractId`**、**`executionIntentType`** / **`executionDetailWanted`** / **`focusEntity*`** / **`resultAnchors`**。FollowUp **Rewrite**（`LlmFollowUpQueryRewriter`）保留；**无**旧 execution arg/payload 主链。`metric.rankingType` 仅 Parser **debug** 字段，**不作** wire / execution 路由。
+
+**前台 Run Debug / Replay 面板（P4-G3）**：GET Run 与 SSE `answer_delta` 的 **`resolvedQueryContextSummary`** 与 replay 每轮同源。UI 分组、已删字段清单、推荐读取路径见 **`docs/api/frontend-api-contract.md` §7.12～§7.13**。**勿**再展示 Drilldown / FollowUp Detail / `rankingType` 主 wire 分组。
 
 ### Replay 断言契约（Current — D-CLEAN-DOCS-REPLAY-CONTRACT-FINAL）
 
@@ -38,7 +40,10 @@
 |-------------|------|
 | **`effectiveIntentCode`** | 收养后 intent |
 | **`effectivePathCode`** | 收养后 path |
-| **`semanticSlots`**（含 **`structuredIntentDetailWire`**） | V2 槽位主依据 |
+| **`semanticSlots`**（含 **`structuredIntentDetailWire`**、`queryObject` / `operation` / `metric` / `sourceFacet` / `detailWanted` / `anchorPolicy`） | V2 槽位主依据 |
+| **`semanticContractValidation.matchedContractId`** | Step 2 合同命中 |
+| **`executionIntentType` / `executionDetailWanted` / `focusEntity*`** | 采购等 anchor execution 观测 |
+| **`resultAnchors`** | 上轮结果实体锚（GOODS# / SUPPLIER# 等） |
 | **`structuredIntentDetail`** / Harness **`rawStructuredIntentDetail`** | canonical wire（摘要来自 slots / `currentTurnStructuredIntentDetailWire`，**非** rankingType） |
 | **`selectedTools` / `usedTools`** | Tool 规划结果 |
 | **AnswerPlan 探针**（如 `harnessReplay*AnswerPlanType`） | 消费层 planType |
@@ -48,16 +53,18 @@
 
 | 字段 | 说明 |
 |------|------|
-| **`metric.rankingType`** | LLM 可输出；Harness 可记录；**不得**单独断言其等于 canonical wire 而忽略 slots |
+| **`metric.rankingType`** | LLM 可输出；Harness 可记录；**deprecated/debug**；**不得**单独断言其等于 canonical wire 而忽略 slots；**前台勿作主调试字段** |
 | **`stockReduceType`**（metric facet） | Tool 过滤 / debug；非 wire 权威 |
 
-**历史 JSON**：`out/` 下 replay 抓包为 **Historical raw capture**，字段集合可能含已删 Tool id 或旧 rankingType 主断言口径；**以本文档 + 内置 case expected + `docs/ai/d1x-rankingtype-and-duplicate-responsibility-inventory.md` 现网契约为准**。
+**已删 wire（Replay / Debug 勿再断言或展示）**：`diagnosisDrilldownMatrixRowId`、`purchaseGoodsSupplierDrilldown` / `purchaseGoodsDrilldownTarget*` / `purchaseSupplierDrilldown*`、`followUpDetailWanted` / `followUpAction` / `followUpTargetEntity*` / `followUpSourcePlanType` / `followUpRegistryQueryMode`、`DrilldownMatrix` —— 替代字段见 **`docs/api/frontend-api-contract.md` §7.12**。
+
+**历史 JSON**：`out/` 下 replay 抓包为旧抓包，字段集合可能含已删 Tool id 或旧 wire 主断言；**以本文档 + 内置 case expected + `docs/ai/semantic-allowed-output-contract-design.md` / `docs/ai/semantic-contract-strict-mode-plan.md` 现网契约为准**。
 
 | `caseId` | 说明 |
 |---------|------|
 | **`BUSINESS_SEMANTIC_1B_RESOLVED_CONTEXT`** | **经营类 1B（13 轮 · 默认 `RESOLVED_CONTEXT_ONLY`）**：语义矩阵 R01–R10（R08–R10 为 2+2+2 轮）；内置预期仅校验 **intent / path / wire（含 R06 `*AnyOf`）/ 时间窗与 v2 `timeAction` / 多店 scope 探针** 等，不比 Tool / `AnswerPlan` 行集 / Composer。须传入与 `AiHarnessBuiltinCases#messagesBusinessSemantic1bResolvedContext()` 一致的 **`messages`**；矩阵见 **`docs/ai/business-phase1b-semantic-harness-matrix.md`**。 |
 | **`STOCK_REDUCE_SEMANTIC_1C_RESOLVED_CONTEXT`** | **出库 / 核销 1C（18 轮 · 默认 `RESOLVED_CONTEXT_ONLY`）**：矩阵 R01–R15（R11–R13 各 2 轮）；仅断言 **effective intent/path、canonical wire、`stockReduceType`（debug）、`timeSource`/`timeAction`、scope/多店、多轮继承**；R14/R15 为 **`BUSINESS_DIAGNOSIS`**，**不得**期望 **`STOCK_REDUCE_QUERY` / `stock_reduce_query_path`**；R15 wire **AnyOf**（`purchase_slow_moving_risk` \| `purchase_stock_reduce_mismatch`）。可比 **`AiHarnessBuiltinCases#messagesStockReduceSemantic1cResolvedContext()`**；矩阵 **`docs/ai/stock-reduce-phase1c-semantic-harness-matrix.md`**。 |
-| **`V2_SEMANTIC_MAINLINE_CORE_10`** | **核心回归必跑**：固化已通过验收的真实问句顺序；**不跑完整 Graph / Tool**，仅验证 **v2 解析 + Resolver + FollowUp + Harness 摘要** 与关键 AnswerPlan / **`structuredIntentDetail`** 探针。**当前仍必须通过**。修改 **`QuerySemanticParser`**、Resolver、FollowUp、TimeWindow、OrgScope、**`MasterBusinessAgent`**、**`BusinessToolExecutionNode`**、**AnswerPlan wire** 后，应 **优先** 跑通本 Case 再合。**语义覆盖**：十条轮次交织 **四条单领域 Agent**（营收 / 采购 / 出库核销 / 菜品毛利）的 **语义入口**及经营概览问法等；**不等价** Master 全链路调度断言 —— **真实 Master 编排与时序仍须 `POST /api/ai/runs` 验证**。 |
+| **`V2_SEMANTIC_MAINLINE_CORE_10`** | **核心回归必跑**：固化已通过验收的真实问句顺序；**不跑完整 Graph / Tool**，仅验证 **v2 解析 + Resolver + FollowUp Rewrite + Harness 摘要** 与关键 AnswerPlan / **`structuredIntentDetail`** 探针。**当前仍必须通过**。修改 **`QuerySemanticParser`**、Resolver、FollowUp Rewrite、TimeWindow、OrgScope、**`MasterBusinessAgent`**、**`BusinessToolExecutionNode`**、**AnswerPlan wire** 后，应 **优先** 跑通本 Case 再合。**语义覆盖**：十条轮次交织 **四条单领域 Agent**（营收 / 采购 / 出库核销 / 菜品毛利）的 **语义入口**及经营概览问法等；**不等价** Master 全链路调度断言 —— **真实 Master 编排与时序仍须 `POST /api/ai/runs` 验证**。 |
 | **`DISH_PROFIT_RANKING_TO_NAMED_DISH_FOLLOWUP_2`** | **专项（2 轮）**：上一轮「上个月哪个菜毛利率最低？」须落 **`dish_profit_ranking_low_margin`** / 探针 **`DISH_LOWEST_MARGIN`**；追问「核桃芽菜西芹毛利怎么样？」须在**无本句时间词**时 **`effectiveTimeWindowSource=INHERITED_PREVIOUS`**，且 **`structuredIntentDetailWire=dish_gross_margin_query`**、**`querySemanticV2MetricAction=OVERRIDE`**、**`dishProfitMetricType=GROSS_MARGIN`**、**`harnessReplayDishProfitAnswerPlanType=DISH_PROFIT_RATE`** —— **不得**再继承上轮排行口径（与 V2 Case 前两轮等价，便于 CI 中单跑）。 |
 | **`BUSINESS_DIAGNOSIS_V1_CORE_3`** | **DiagnosisAgent v1（3 轮 · `GRAPH_RUN` 默认）**：固化「集团本月问诊 → AAA 单店成本偏高 → 双店并排原因」。断言 **`effectiveIntentCode=BUSINESS_DIAGNOSIS`**、**`business_diagnosis_path`**、**`orchestrationTaskMode=MULTI_AGENT`**、四域 **`consumedAnswerPlans`**、`answerPreview` 含「经营诊断」、单店轮 **`businessDiagnosisPlan.dataCompleteness.revenue=OK`** 等（**不比** Composer 正文长文）。详解 **Case Diagnosis v1**。 |
 | **`BUSINESS_OVERVIEW_MULTI_AGENT_CORE_3`** | **BusinessOverview 四域 MultiAgent（3 轮，`GRAPH_RUN` 默认）**：固化「这个月经营怎么样 → 那上个月 → 双店对比」真实问法；断言 **`effectiveIntentCode=BUSINESS_OVERVIEW`**、**`orchestrationTaskMode=MULTI_AGENT`**、**`businessOverviewSuccessfulDomains`** ⊇ revenue/purchase/stockReduce/dishProfit、四类 **`consumedAnswerPlans`**、**`missingAnswerPlans=[]`**、**`answerPreview`** 经营概览话术且不含旧 AiBusinessOverviewResult fallback / 误诊「经营诊断·证据型」、第 3 轮 **`multiStoreScopeApplied`** + **`queryStoreIds` ⊇ {1,3}** + **`scopeLabel`** 含占位店名。详见 **Case BusinessOverview MultiAgent**。 |
@@ -74,7 +81,7 @@
 
 1. **QuerySemanticParser**（含 v2 prompt / 解析与采纳策略）  
 2. **Resolver**（`AiResolvedQueryContextResolver` 等）  
-3. **FollowUp**（追问合并、结构化合并）  
+3. **FollowUp Rewrite**（`LlmFollowUpQueryRewriter` / 多轮问句补全）  
 4. **TimeWindow**（Resolver 时间窗 + `BusinessTimeWindowNode` 镜像）
 5. **OrgScope**（多轮组织范围、`AiMultiTurnOrgScopePolicy`）  
 6. **AnswerPlan wire**（与 Harness 摘要中 `harnessReplay*` / `structuredIntentDetail` 探针对齐的路径）  

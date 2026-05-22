@@ -20,11 +20,11 @@
 | 层级 | 权威 |
 |------|------|
 | **主语义** | 顶层 **`semanticSlots`**（含 **`structuredIntentDetailWire`**、`queryObject` / `operation` / `metric` / `sourceFacet` / `anchorPolicy` / `detailWanted`）→ Lexicon canonical → `queryIntent.structuredIntentDetail` |
-| **compat / debug only** | **`metric.rankingType`**、部分 **`metric.stockReduceType`** / **`metric.purchaseSourceType`**：仅观测或合法兜底补 wire，**不得**作为 AnswerPlan / Composer 主判断依据（见 [`docs/ai/d1x-rankingtype-and-duplicate-responsibility-inventory.md`](../../../../docs/ai/d1x-rankingtype-and-duplicate-responsibility-inventory.md) 现网契约） |
+| **compat / debug only** | **`metric.rankingType`**、部分 **`metric.stockReduceType`** / **`metric.purchaseSourceType`**：**deprecated 观测字段**；**不得**参与服务端 wire 推断、path 路由或 AnswerPlan 主判断（见 [`docs/ai/semantic-allowed-output-contract-design.md`](../../../../docs/ai/semantic-allowed-output-contract-design.md)、[`docs/ai/semantic-contract-strict-mode-plan.md`](../../../../docs/ai/semantic-contract-strict-mode-plan.md)） |
 
 ### Prompt 不得发明未登记 wire
 
-- **`query_semantic_parser.v2.md`** 与 LLM 输出中的 **`structuredIntentDetailWire` / `structuredIntentDetail`** 必须使用 **`AiQuerySemanticLexicon`** 中已有常量或本文档 / 各域 **`*-drilldown-matrix-contract.md`** 已列出的 canonical wire。
+- **`query_semantic_parser.v2.md`** 与 LLM 输出中的 **`structuredIntentDetailWire` / `structuredIntentDetail`** 必须使用 **`AiQuerySemanticLexicon`** 中已有常量或本文档 / 各域 **`domain capability matrix / answer-plan docs`** 已列出的 canonical wire。
 - **禁止**输出 Java Merge / Matrix / AnswerPlan **未登记** 的蛇形 wire；若产品需要新口径，先走下方登记清单，**再**改 Prompt 专节。
 
 ### 新 wire 进入生产前同步清单（7 步）
@@ -35,8 +35,8 @@
 |---|------|------|
 | 1 | **`AiQuerySemanticLexicon.java`** | 增加 `STRUCTURED_*` 常量；必要时补 canonical 别名映射 |
 | 2 | **`semantic-output-schema.md`** | 域内白名单 / 枚举表增补（本文） |
-| 3 | **对应 `docs/ai/*-drilldown-matrix-contract.md`** | 矩阵行：首轮 / 追问、`knownGap` 标注 |
-| 4 | **对应 `*DrilldownMatrix.java`** | 可解析、可挂 AnswerPlan；`MATRIX_WIRE_MISSING` 行为明确 |
+| 3 | **对应 `docs/ai/domain capability matrix / answer-plan docs`** | 矩阵行：首轮 / 追问、`knownGap` 标注 |
+| 4 | **对应 `*SemanticCapabilityMatrix.java`** | 可解析、可挂 AnswerPlan；`MATRIX_WIRE_MISSING` 行为明确 |
 | 5 | **对应 `*AnswerPlan` / `*AnswerPlanBuilder`** | `planType` 与 wire 映射 |
 | 6 | **Composer / `*DeterministicRenderer` / `StubAnswerComposerNode`** | 有 Plan 须有**专用宣读分支**；禁止仅 generic fallback |
 | 7 | **Harness** | 新增或更新 replay case；若暂不实现须写 **`knownGap`** 与文档 **Planned/Gap**，**不得**让 Prompt 当作已支持能力输出 |
@@ -48,9 +48,9 @@
 
 ### 相关索引（勿新建独立治理文件）
 
-- 八域总表：[`docs/ai/phase1-semantic-mainline-acceptance-summary.md`](../../../../docs/ai/phase1-semantic-mainline-acceptance-summary.md) §4  
+- 主链与契约索引：[`docs/ai/semantic-allowed-output-contract-design.md`](../../../../docs/ai/semantic-allowed-output-contract-design.md)  
 - Plan-first / fallback：[`docs/ai/harness-composer-architecture.md`](../../../../docs/ai/harness-composer-architecture.md) §2.7  
-- Matrix P1 交叉引用：[`docs/ai/matrix-p1-stage-summary.md`](../../../../docs/ai/matrix-p1-stage-summary.md)
+- Strict 模式：[`docs/ai/semantic-contract-strict-mode-plan.md`](../../../../docs/ai/semantic-contract-strict-mode-plan.md)
 
 ---
 
@@ -120,11 +120,11 @@
 | 键 | 说明 |
 |----|------|
 | `primaryMetric` | 如 revenue, purchase, business_status, profit_margin |
-| `rankingType` | 蛇形 wire，与 **`AiQuerySemanticLexicon`** STRUCTURED_* 对齐（兼容字段） |
+| `rankingType` | **deprecated / debug**：蛇形 wire 字面量；与 Lexicon STRUCTURED_* **可对齐作观测**；**服务端主链不读此字段推断 wire** |
 | `purchaseSourceType` | ALL, SELF_PURCHASE, SUPPLIER_PURCHASE 等 |
 | `stockReduceType` | 出库子类型 |
 
-**`rankingType` 与 `semanticSlots.structuredIntentDetailWire`：** 采购等域在 slots 完整时以 **wire + slots** 为准；详见 v2 采购专节。
+**`rankingType` 与 `semanticSlots.structuredIntentDetailWire`：** 主语义 **必须**由 **`semanticSlots`**（含 wire + queryObject / operation / metric / sourceFacet / anchorPolicy / detailWanted）表达；`rankingType` 仅 LLM/Harness **debug**，服务端 **不**以其补 wire。详见 v2 采购专节。
 
 ---
 
@@ -152,7 +152,7 @@
 
 **采购槽位完整性：** 须给出 queryObject / operation / metric / sourceFacet / anchorPolicy；追问还须 detailWanted + wire。**禁止**仅用 `metric.rankingType` 代替 slots。
 
-**菜品毛利槽位完整性（Phase 1 矩阵）：** 排行 / 单菜 / DISH 锚原料构成须输出完整 **`semanticSlots`** + **`structuredIntentDetailWire`**；**`metric.rankingType` 仅 compat**，服务端不以之写 wire。缺 wire → **`MATRIX_WIRE_MISSING`**，strict harness 失败。
+**菜品毛利槽位完整性（Phase 1 矩阵）：** 排行 / 单菜 / DISH 锚原料构成须输出完整 **`semanticSlots`** + **`structuredIntentDetailWire`**；**`metric.rankingType` 仅 debug**，服务端 **不以之写 wire**。缺 wire → **`MATRIX_WIRE_MISSING`**，strict harness 失败。
 
 **双域采购↔出库风险 vs 采购商品明细（勿混 wire）：**
 

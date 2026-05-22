@@ -2,7 +2,7 @@
 
 > **读者**：接手餐饮 AI 多智能体与菜品毛利 Harness 的工程师。  
 > **目的**：说明「用工程化框架约束 AI」的分层模型——何为硬约束、何处可交给模型；**AnswerPlan** 与 **Composer** 的职责边界；如何复用旧单板能力而**不**继续堆 `if/else`。  
-> **范围**：架构与文档契约；**不**在本文件内重写菜品成本算法或采购/出库业务细节（参见 `dish-profit-legacy-review.md`、`ai-skill-dish-cost-diagnosis.md`）。
+> **范围**：架构与文档契约；**不**在本文件内重写菜品成本算法或采购/出库业务细节（参见 `dish-profit-answer-plan.md`、`purchase-answer-plan.md`、`stock-reduce-answer-plan.md`）。
 
 ---
 
@@ -72,7 +72,7 @@
 - 输出：**可序列化的事实**（金额、份数、行列表、`buildInsight` 衍生结构等）。
 - **不**承担：长篇解释、修辞、「建议」的完整撰写（可由 AnswerPlan 指定是否引入建议类段落，但数字仍须来自 Tool）。
 
-菜品毛利权威数字来自 **`GbDepFoodBusinessInsightService#buildInsight`** 及既有成本服务，**不重写算法**（见 `docs/ai/dish-profit-legacy-review.md`）。
+菜品毛利权威数字来自 **`GbDepFoodBusinessInsightService#buildInsight`** 及既有成本服务，**不重写算法**（见 `docs/ai/dish-profit-answer-plan.md`）。
 
 ### 2.5 AnswerPlan（本轮「怎么答」的稳定类型）
 
@@ -107,11 +107,11 @@
 - **不得**编造 Tool 未返回的数字或排行。
 - **不得**把 type2 叫「损耗」、把 type3 叫「废弃」；退货 type4 为单独口径（与出库链路文档一致）。
 - **不得**读取已删 Tool 的 `toolResults`（**Historical removed**：`purchase_query`、`stock_query`、`dish_sales_query`、`gross_margin_calculator`、`business_overview_query`）；现网 Tool 为 `purchase_overview`、`warehouse_stock_overview`、`stock_reduce_query`、`dish_profit_analysis`、`revenue_query`。
-- **不得**用 `metric.rankingType` 覆盖 AnswerPlan 或 `queryIntent.structuredIntentDetail` 已定的业务口径（**D-CLEAN-RENDERER-FALLBACK-FINAL** + **D-1X-D3-RANKINGTYPE-FINAL**）；`rankingType` 仅 compat/debug 日志与 LLM JSON 观测字段。
+- **不得**用 `metric.rankingType` 覆盖 AnswerPlan 或 `queryIntent.structuredIntentDetail` 已定的业务口径（**D-CLEAN-RENDERER-FALLBACK-FINAL** + **D-1X-D3-RANKINGTYPE-FINAL**）；`rankingType` 仅 **debug/deprecated** 观测字段。
 
 **确定性 Renderer**（`DeterministicAnswerRenderer` 及各域仍保留的 `*DeterministicRenderer`，如营收/毛利/采购/诊断）与 Composer 同边界：只读 **AnswerPlan** + **现网 Tool payload** + **`qi.structuredIntentDetail` canonical wire**。**已移除、禁止恢复**：`StockReduceDeterministicRenderer`、`WarehouseDeterministicRenderer`、`PurchaseDeterministicRenderer`、`AnswerComposerPayloadFactory` 及 `render*ToolFallback` 类 raw-tool 拼装。出库/库房无 Plan 时由各域 `compose*NoPlanFallback` / Plan 宣读表达。
 
-**Matrix P1 本地 Replay**（`scripts/harness/replay-*-matrix-p1.sh`）：footer 统一输出 `caseId` / `overallPass` / `failureCount`（`replay-harness-common.sh`）。契约见各域 `docs/ai/*-drilldown-matrix-contract.md`；**knownGap 为能力边界而非假成功**。
+**Matrix P1 本地 Replay**（`scripts/harness/replay-*-matrix-p1.sh`）：footer 统一输出 `caseId` / `overallPass` / `failureCount`（`replay-harness-common.sh`）。契约见各域 `docs/ai/domain capability matrix / answer-plan docs`；**knownGap 为能力边界而非假成功**。
 
 菜品毛利 Composer 现有系统提示：`DISH_PROFIT_COMPOSER_SYSTEM`（`StubAnswerComposerNode`）。后续若引入 AnswerPlan，应在提示中明确「仅展开 AnswerPlan 指定焦点与 Tool 中对应字段」。
 
@@ -123,7 +123,7 @@
 
 - Composer / `*DeterministicRenderer` **只能表达 AnswerPlan** 内已算字段：`focusRows`、`limitations`、`knownGap` 宣读段等。
 - **禁止**在有 Plan 时，再从 **`toolResults`**、**`AiDishProfitOverviewResult.summary`**、overview 列表或 **LLM 二次生成** 中**另选事实**、重排行、心算比率。
-- **禁止**用 compat 字段（如 **`metric.rankingType`**）覆盖 Plan 已定的业务口径。
+- **禁止**用 **debug/deprecated** 字段（如 **`metric.rankingType`**）覆盖 Plan 已定的业务口径。
 
 #### AnswerPlanType 与 Renderer 分支
 
@@ -141,12 +141,12 @@
 #### 专项治理提醒（菜品毛利）
 
 - **`AGGREGATED_DISH_PORTFOLIO_FALLBACK`**、**`BUSINESS_DIAGNOSIS_DISH_OVERVIEW`** 等 planType：若 **无** `DishProfitDeterministicRenderer` 专用分支，会落入 **generic** 路径（例如「拖累毛利最明显的是…」），与「组合平均 / 概览」产品意图不符。
-- 后续改动须：**新 wire + 新 planType + 专用 Renderer**，或禁止 `maybeAttachPortfolioAggregatePlan` 类逻辑抢权；见 [`dish-profit-domain-capability-matrix.md`](./dish-profit-domain-capability-matrix.md)、[`phase1-semantic-mainline-acceptance-summary.md`](./phase1-semantic-mainline-acceptance-summary.md) §4。
+- 后续改动须：**新 wire + 新 planType + 专用 Renderer**，或禁止 `maybeAttachPortfolioAggregatePlan` 类逻辑抢权；见 [`dish-profit-domain-capability-matrix.md`](./dish-profit-domain-capability-matrix.md)、[`semantic-allowed-output-contract-design.md`](./semantic-allowed-output-contract-design.md)。
 
 #### 交叉引用
 
 - Wire 登记七步：[`semantic-output-schema.md`](../../src/main/resources/ai-prompts/semantic/semantic-output-schema.md)「契约治理」节  
-- 八域闭环总表：[`phase1-semantic-mainline-acceptance-summary.md`](./phase1-semantic-mainline-acceptance-summary.md) §4
+- 主链与契约索引：[`semantic-allowed-output-contract-design.md`](./semantic-allowed-output-contract-design.md)
 
 ---
 
@@ -183,7 +183,7 @@
 |----------|------|
 | 直接调用服务 | `GbDepFoodBusinessInsightService#buildInsight`、`GbDishCostAnalysisService` 报表与分摊逻辑 |
 | Mapper / SQL | `GbDepartmentGoodsStockReduceMapper.xml` 等；不改口径前提下复用 |
-| 字段与文档 | `ai-skill-dish-cost-diagnosis.md`、`docs/gb-dish-cost-analysis-frontend.md`、`dish-profit-legacy-review.md` |
+| 字段与文档 | `docs/gb-dish-cost-analysis-frontend.md`、`dish-profit-answer-plan.md` |
 | Graph 接表 | `DishProfitAnalysisTool` 已接 `buildInsight`；DTO 如 `AiDishProfitOverviewResult` / `AiDishProfitDishBrief` |
 
 **不接**：把旧聊天里的硬编码月份、混合 `queryDepartmentIds` 展示、无限 `if` 问法分支原样搬进新图。
@@ -207,9 +207,9 @@
 | Tool 执行与参数 | `BusinessToolExecutionNode.java`、`DishProfitAnalysisTool.java`、`StockReduceQueryTool.java` |
 | Composer | `StubAnswerComposerNode.java` |
 | Harness Debug | `AiHarnessResolvedContextSummarizer.java` |
-| 菜品毛利 legacy | `docs/ai/dish-profit-legacy-review.md`、`GbDepFoodBusinessInsightServiceImpl`、`GbDishCostAnalysisServiceImpl` |
+| 菜品毛利实现 | `docs/ai/dish-profit-answer-plan.md`、`GbDepFoodBusinessInsightServiceImpl`、`GbDishCostAnalysisServiceImpl` |
 | Agent 节点（迁移中） | `DishProfitAgentNode.java` |
-| Skill 约束 | `src/main/resources/ai-skill-dish-cost-diagnosis.md` |
+| Composer 约束 | `src/main/resources/ai-prompts/composer/dish_profit.v1.md` |
 | AnswerPlan 专项 | **`docs/ai/dish-profit-answer-plan.md`**、**`docs/ai/purchase-answer-plan.md`**、**`docs/ai/stock-reduce-answer-plan.md`**（出库 / 核销 **`stock_reduce_query_path`**）、**`docs/ai/revenue-answer-plan.md`**（日营业额 / 营收 **`revenue_overview_path`**，核心 Harness 已落地）、**`docs/ai/diagnosis-answer-plan.md`**（**DiagnosisPlan**，阶段一文档定稿） |
 | Master / 子 Agent 编排（设计与运行时） | **`docs/ai/master-business-agent-design.md`**（**四条专线已接入 Master**，见 **「当前已接入的 DomainAgent」**；Replay **`V2_SEMANTIC_MAINLINE_CORE_10`** 见 **`docs/AI_HARNESS_REPLAY_CASES.md`**） |
 
@@ -223,4 +223,4 @@
 
 ---
 
-*版本：与仓库当前 Harness 代码与 `dish-profit-legacy-review.md` 对齐；大改解析或 Composer 时请同步更新本节。*
+*版本：与仓库当前 Harness 代码与 `dish-profit-answer-plan.md` 对齐；大改解析或 Composer 时请同步更新本节。*

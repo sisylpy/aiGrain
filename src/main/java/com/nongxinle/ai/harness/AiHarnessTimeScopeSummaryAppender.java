@@ -10,17 +10,17 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.BusinessDiagnosisDrilldownMatrixRow;
-import com.nongxinle.ai.harness.followup.BusinessOverviewDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.BusinessOverviewDrilldownMatrixRow;
-import com.nongxinle.ai.harness.followup.DishProfitDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrixRow;
-import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.RevenueDrilldownMatrixRow;
-import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrix;
-import com.nongxinle.ai.harness.followup.StockReduceDrilldownMatrixRow;
+import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.matrix.BusinessOverviewSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.BusinessOverviewSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import org.springframework.util.StringUtils;
 
@@ -230,15 +230,15 @@ final class AiHarnessTimeScopeSummaryAppender {
 
         if (AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(effectivePath)) {
             out.put("stockReduceStructuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(canonStructuredWire));
-            StockReduceDrilldownMatrixRow matrixRow =
-                    StockReduceDrilldownMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem);
+            StockReduceSemanticCapabilityMatrixRow matrixRow =
+                    StockReduceSemanticCapabilityMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem);
             out.put("stockReduceMatrixRowId", matrixRow == null ? null : matrixRow.getRowId());
             out.put(
                     "stockReduceMatrixWireMissing",
-                    StockReduceDrilldownMatrix.detectMatrixWireMissing(sem, effectivePath, canonStructuredWire)
-                            ? StockReduceDrilldownMatrix.MATRIX_WIRE_MISSING
+                    StockReduceSemanticCapabilityMatrix.detectMatrixWireMissing(sem, effectivePath, canonStructuredWire)
+                            ? StockReduceSemanticCapabilityMatrix.MATRIX_WIRE_MISSING
                             : null);
-            String matrixGap = StockReduceDrilldownMatrix.knownGapForResolvedRow(matrixRow);
+            String matrixGap = StockReduceSemanticCapabilityMatrix.knownGapForResolvedRow(matrixRow);
             out.put("stockReduceKnownGap", AiHarnessSummaryUtils.blankToNull(matrixGap));
             if (matrixRow != null) {
                 out.put("stockReduceReduceType", AiHarnessSummaryUtils.blankToNull(matrixRow.getReduceTypeLabel()));
@@ -254,16 +254,16 @@ final class AiHarnessTimeScopeSummaryAppender {
 
         if (AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(effectivePath)) {
             out.put("revenueStructuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(canonStructuredWire));
-            RevenueDrilldownMatrixRow revenueRow =
-                    RevenueDrilldownMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem);
+            RevenueSemanticCapabilityMatrixRow revenueRow =
+                    RevenueSemanticCapabilityMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem);
             out.put("revenueMatrixRowId", revenueRow == null ? null : revenueRow.getRowId());
             out.put(
                     "revenueMatrixWireMissing",
-                    RevenueDrilldownMatrix.detectMatrixWireMissing(sem, effectivePath, canonStructuredWire)
-                            ? RevenueDrilldownMatrix.MATRIX_WIRE_MISSING
+                    RevenueSemanticCapabilityMatrix.detectMatrixWireMissing(sem, effectivePath, canonStructuredWire)
+                            ? RevenueSemanticCapabilityMatrix.MATRIX_WIRE_MISSING
                             : null);
             out.put("revenueKnownGap", AiHarnessSummaryUtils.blankToNull(
-                    RevenueDrilldownMatrix.knownGapForResolvedRow(revenueRow)));
+                    RevenueSemanticCapabilityMatrix.knownGapForResolvedRow(revenueRow)));
         } else {
             out.put("revenueStructuredIntentDetailWire", null);
             out.put("revenueMatrixRowId", null);
@@ -273,20 +273,20 @@ final class AiHarnessTimeScopeSummaryAppender {
 
         if (AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(effectivePath)) {
             out.put("warehouseStructuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(canonStructuredWire));
-            com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrixRow warehouseRow =
-                    com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.resolveMatrixRow(
+            com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow warehouseRow =
+                    com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.resolveMatrixRow(
                             effectivePath, canonStructuredWire, sem, ctx);
             out.put("warehouseMatrixRowId", warehouseRow == null ? null : warehouseRow.getRowId());
             out.put(
                     "warehouseMatrixWireMissing",
-                    com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.detectMatrixWireMissing(
+                    com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.detectMatrixWireMissing(
                                     sem, effectivePath, canonStructuredWire)
-                            ? com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.MATRIX_WIRE_MISSING
+                            ? com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.MATRIX_WIRE_MISSING
                             : null);
             out.put(
                     "warehouseKnownGap",
                     AiHarnessSummaryUtils.blankToNull(
-                            com.nongxinle.ai.harness.followup.WarehouseDrilldownMatrix.knownGapForResolvedRow(
+                            com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.knownGapForResolvedRow(
                                     warehouseRow)));
         } else {
             out.put("warehouseStructuredIntentDetailWire", null);
@@ -310,9 +310,9 @@ final class AiHarnessTimeScopeSummaryAppender {
         if (AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(effectivePath)) {
             out.put(
                     "dishProfitMatrixWireMissing",
-                    DishProfitDrilldownMatrix.detectMatrixWireMissing(
+                    DishProfitSemanticCapabilityMatrix.detectMatrixWireMissing(
                                     ctx.getQuerySemanticParse(), effectivePath, canonStructuredWire)
-                            ? DishProfitDrilldownMatrix.MATRIX_WIRE_MISSING
+                            ? DishProfitSemanticCapabilityMatrix.MATRIX_WIRE_MISSING
                             : null);
         } else {
             out.put("dishProfitMatrixWireMissing", null);
@@ -320,17 +320,17 @@ final class AiHarnessTimeScopeSummaryAppender {
 
         if (AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(effectivePath)) {
             out.put("dishSalesStructuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(canonStructuredWire));
-            DishSalesDrilldownMatrixRow dishSalesRow =
-                    DishSalesDrilldownMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem, ctx);
+            DishSalesSemanticCapabilityMatrixRow dishSalesRow =
+                    DishSalesSemanticCapabilityMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem, ctx);
             out.put("dishSalesMatrixRowId", dishSalesRow == null ? null : dishSalesRow.getRowId());
             out.put(
                     "dishSalesMatrixWireMissing",
-                    DishSalesDrilldownMatrix.detectMatrixWireMissing(sem, effectivePath, canonStructuredWire)
-                            ? DishSalesDrilldownMatrix.MATRIX_WIRE_MISSING
+                    DishSalesSemanticCapabilityMatrix.detectMatrixWireMissing(sem, effectivePath, canonStructuredWire)
+                            ? DishSalesSemanticCapabilityMatrix.MATRIX_WIRE_MISSING
                             : null);
             out.put(
                     "dishSalesKnownGap",
-                    AiHarnessSummaryUtils.blankToNull(DishSalesDrilldownMatrix.knownGapForResolvedRow(dishSalesRow)));
+                    AiHarnessSummaryUtils.blankToNull(DishSalesSemanticCapabilityMatrix.knownGapForResolvedRow(dishSalesRow)));
         } else {
             out.put("dishSalesStructuredIntentDetailWire", null);
             out.put("dishSalesMatrixRowId", null);
@@ -339,21 +339,21 @@ final class AiHarnessTimeScopeSummaryAppender {
         }
 
         if (AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(effectivePath)) {
-            BusinessOverviewDrilldownMatrixRow overviewRow =
-                    BusinessOverviewDrilldownMatrix.resolveMatrixRow(effectivePath, canonStructuredWire);
+            BusinessOverviewSemanticCapabilityMatrixRow overviewRow =
+                    BusinessOverviewSemanticCapabilityMatrix.resolveMatrixRow(effectivePath, canonStructuredWire);
             out.put("businessOverviewMatrixRowId", overviewRow == null ? null : overviewRow.getRowId());
             out.put(
                     "businessOverviewMatrixMatched",
-                    overviewRow != null && !BusinessOverviewDrilldownMatrix.isMatrixWireMissing(canonStructuredWire));
+                    overviewRow != null && !BusinessOverviewSemanticCapabilityMatrix.isMatrixWireMissing(canonStructuredWire));
             out.put(
                     "businessOverviewMatrixWireMissing",
-                    BusinessOverviewDrilldownMatrix.isMatrixWireMissing(canonStructuredWire)
-                            ? BusinessOverviewDrilldownMatrix.MATRIX_WIRE_MISSING
+                    BusinessOverviewSemanticCapabilityMatrix.isMatrixWireMissing(canonStructuredWire)
+                            ? BusinessOverviewSemanticCapabilityMatrix.MATRIX_WIRE_MISSING
                             : null);
             out.put("plannerToolsSource", "business_overview_matrix");
             out.put(
                     "matrixPlannerTools",
-                    new ArrayList<>(BusinessOverviewDrilldownMatrix.defaultFourDomainPlannerTools()));
+                    new ArrayList<>(BusinessOverviewSemanticCapabilityMatrix.defaultFourDomainPlannerTools()));
         } else {
             out.put("businessOverviewMatrixRowId", null);
             out.put("businessOverviewMatrixMatched", null);
@@ -361,27 +361,27 @@ final class AiHarnessTimeScopeSummaryAppender {
         }
 
         if (AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(effectivePath)) {
-            BusinessDiagnosisDrilldownMatrixRow diagnosisRow =
-                    BusinessDiagnosisDrilldownMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem);
+            BusinessDiagnosisSemanticCapabilityMatrixRow diagnosisRow =
+                    BusinessDiagnosisSemanticCapabilityMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem);
             out.put("businessDiagnosisMatrixRowId", diagnosisRow == null ? null : diagnosisRow.getRowId());
             out.put(
                     "businessDiagnosisMatrixMatched",
                     diagnosisRow != null
-                            && !BusinessDiagnosisDrilldownMatrix.isMatrixWireMissing(canonStructuredWire));
+                            && !BusinessDiagnosisSemanticCapabilityMatrix.isMatrixWireMissing(canonStructuredWire));
             out.put(
                     "businessDiagnosisMatrixWireMissing",
-                    BusinessDiagnosisDrilldownMatrix.isMatrixWireMissing(canonStructuredWire)
-                            ? BusinessDiagnosisDrilldownMatrix.MATRIX_WIRE_MISSING
+                    BusinessDiagnosisSemanticCapabilityMatrix.isMatrixWireMissing(canonStructuredWire)
+                            ? BusinessDiagnosisSemanticCapabilityMatrix.MATRIX_WIRE_MISSING
                             : null);
             out.put(
                     "plannerToolsSource",
-                    BusinessDiagnosisDrilldownMatrix.isDualDomainPurchaseStockWire(canonStructuredWire)
+                    BusinessDiagnosisSemanticCapabilityMatrix.isDualDomainPurchaseStockWire(canonStructuredWire)
                             ? "business_diagnosis_matrix_dual_domain"
                             : "business_diagnosis_matrix_four_domain");
             out.put(
                     "matrixPlannerTools",
                     new ArrayList<>(
-                            BusinessDiagnosisDrilldownMatrix.plannerToolsForWire(canonStructuredWire)));
+                            BusinessDiagnosisSemanticCapabilityMatrix.plannerToolsForWire(canonStructuredWire)));
         } else {
             out.put("businessDiagnosisMatrixRowId", null);
             out.put("businessDiagnosisMatrixMatched", null);

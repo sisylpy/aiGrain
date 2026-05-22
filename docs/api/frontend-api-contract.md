@@ -2,7 +2,7 @@
 
 > 本文档以后端实际代码为准，确认前台 API 清单中的 46 个接口的真实契约。
 > 不改业务代码，仅整理接口契约。
-> 更新日期：2026-05-21
+> 更新日期：2026-05-21（P4-G3：语义 Debug / Replay 契约同步）
 
 ---
 
@@ -679,7 +679,7 @@ Debug 字段的两种下发渠道：
 | `stockReduceMatrixRowId` | `harnessDebug` 顶层 | String |
 | `warehouseMatrixRowId` | `harnessDebug` 顶层 | String |
 | `dishSalesMatrixRowId` | `harnessDebug` 顶层 | String |
-| `diagnosisDrilldownMatrixRowId` | `diagnosisPlan.debug` 内 | String |
+| `diagnosisReasonExplanationMatrixRowId` | `diagnosisPlan.debug` 内 | String |
 
 **后台确认结论**：前台需按域分别提取。当前前台代码未提取这些字段（`AiRunDebugFields` 类型中未定义）。
 
@@ -710,14 +710,14 @@ Debug 字段的两种下发渠道：
 - 后端常量：`BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_FACET = "diagnosisFacet"`
 - 返回位置：`diagnosisPlan.debug` 内
 - 类型：String
-- 出现在 `BusinessDiagnosisDrilldownMatrix.java:169` 中
+- 代码引用：`BusinessDiagnosisSemanticCapabilityMatrix` / `DiagnosisDeterministicRenderer`
 
 #### 5. diagnosisChildDomain — 已返回
 
 - 后端常量：`BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_CHILD_DOMAIN = "diagnosisChildDomain"`
 - 返回位置：`diagnosisPlan.debug` 内
 - 类型：String（如 `"purchase"` / `"stock_reduce"` / `"dish_profit"`）
-- 用于子域归因，在 `BusinessDiagnosisDrilldownMatrix.java:189` 中设置
+- 用于子域归因，在 `BusinessDiagnosisSemanticCapabilityMatrix` 中设置
 
 #### 6. diagnosisTargetStoreName — 已返回
 
@@ -739,7 +739,7 @@ Debug 字段的两种下发渠道：
         "diagnosisFacet": "cost_overview",
         "diagnosisChildDomain": "dish_profit",
         "diagnosisTargetStoreName": "AAA门店",
-        "diagnosisDrilldownMatrixRowId": "...",
+        "diagnosisReasonExplanationMatrixRowId": "BD-C",
         "diagnosisKnownGap": "..."
       }
     }
@@ -826,6 +826,43 @@ Debug 字段的两种下发渠道：
 - 替代方案：前台可暂用 `GET /ai/knowledge/summary` + `GET /ai/knowledge/recommend` 实现搜索效果
 - 若需独立搜索端点，需后端新增
 
+### 7.12 已下线 Debug 字段（P4-G — 勿再展示）
+
+下列字段 **不再** 由 `AiHarnessResolvedContextSummarizer` 写入 `harnessDebug.resolvedQueryContextSummary` / SSE `data.resolvedQueryContextSummary`。前台 Replay / Run Debug 面板 **不得** 再按独立分组展示；若旧抓包 JSON 仍含这些键，视为 **历史数据**，忽略即可。
+
+| 已下线字段（示例） | 现网替代 |
+|-------------------|----------|
+| `diagnosisDrilldownMatrixRowId` | `diagnosisReasonExplanationMatrixRowId`（在 `diagnosisPlan.debug` 内） |
+| `purchaseGoodsSupplierDrilldown` / `purchaseGoodsDrilldownTarget*` / `purchaseSupplierDrilldown*` | `executionIntentType` / `executionDetailWanted` / `focusEntity*` / `purchaseGoodsAnchor*` payload（AnswerPlan / Tool debug） |
+| `followUpDetailWanted` / `followUpAction` / `followUpTargetEntity*` / `followUpSourcePlanType` / `followUpRegistryQueryMode` | `followUpRewriteApplied` / `completedUserQuery`（Rewrite）；`executionDetailWanted` / `anchorPolicy` / `resultAnchors`（anchor execution） |
+| `DrilldownMatrix` / `harness.followup` 相关键 | 无；使用 **§7.13** 语义 / 执行意图分组 |
+| `metric.rankingType` 作为主链调试字段 | `semanticSlots.structuredIntentDetailWire` / `structuredIntentDetail`；`querySemanticLlm.metric.rankingType` 仅 **deprecated/debug**（见 §7.13） |
+
+### 7.13 前台 Debug / Replay 推荐展示（P4-G）
+
+**数据源**（与 §7.1 一致）：
+
+- GET **`/api/ai/runs/{runId}`** → `harnessDebug.resolvedQueryContextSummary`
+- SSE **`answer_delta`** → `data.resolvedQueryContextSummary`（执行中快照，字段可能少于 GET）
+
+**展示原则**：以下均为 **debug-only**、**非稳定契约**。推荐优先读取；**若键缺失或值为 `null`，隐藏该分组/行**，勿猜、勿回退旧字段。
+
+| 前台分组 | 推荐读取字段 | 说明 |
+|---------|-------------|------|
+| **语义路由** | `semanticDomainRoute.primaryDomain`、`semanticDomainRoute.routeType`、`semanticDomainRoute.candidateDomains`、`semanticDomainRoute.needsClarification` | Step 1 域路由；**无** wire / planType |
+| **合同校验** | `semanticContractValidation.modelContractViolation`、`semanticContractValidation.violationCode`、`semanticContractValidation.matchedContractId`、`semanticContractValidation.unsupportedWire`、`semanticContractValidation.missingSlots` | observe-only 违例观测 |
+| **Strict 决策** | `semanticContractStrictDecision.enforceClarification`、`semanticContractStrictDecision.violationCode`、`semanticContractStrictDecision.strictEnabled`、`semanticContractStrictDecision.clarificationQuestion` | strict 未默认开启；`enforceClarification=true` 时重点展示 |
+| **语义槽位** | `querySemanticLlm.semanticSlots.queryObject` / `operation` / `metric` / `sourceFacet` / `detailWanted` / `anchorPolicy` / `structuredIntentDetailWire` / `answerPlanType`；或采购域 `currentSemanticFrame.*` 同源字段 | **主链 wire 依据**；勿用 `metric.rankingType` 推断 |
+| **追问改写** | `followUpRewriteApplied`、`completedUserQuery`、`rewriteInheritedAnchorName` | `LlmFollowUpQueryRewriter`；**不是**旧 FollowUp execution 分组 |
+| **执行意图** | `executionIntentType`、`executionDetailWanted`、`focusEntityType`、`focusEntityId`、`focusEntityName`、`matchedContractId`（顶层或 `semanticContractValidation.matchedContractId`） | 采购等 anchor execution |
+| **锚点** | `anchorPolicy`、`previousTurnSummary.resultAnchorsCount`、`resultAnchorsCount`；AnswerPlan / `purchaseAnswerPlan.resultAnchors`（GET 较全） | **不再** 使用 Drilldown / FollowUp 独立面板 |
+| **AnswerPlan** | `planSource`、各域 `*AnswerPlanType` / `*AnswerPlanPresent` | 消费层 planType |
+| **Deprecated 观测** | `querySemanticLlm.metric.rankingType` | 若存在可折叠展示；须标注 **不参与服务端主链判断**；**勿**作为主调试字段 |
+
+**勿再使用的 UI 分组**：「Drilldown」「FollowUp Detail」「rankingType 主 wire」—— 均已下线。
+
+**Replay API**：`POST /api/ai/harness/replay` 每轮 `resolvedQueryContextSummary` 与 GET Run 同源字段；断言契约见 **`docs/AI_HARNESS_REPLAY_CASES.md`** §「Replay 断言契约」。
+
 ---
 
 ## 八、汇总
@@ -839,18 +876,28 @@ Debug 字段的两种下发渠道：
 | 路径不一致 | 4 | #38-#41(/reports vs /gbreport) |
 | 端点未实现 | 1 | #46(/knowledge/search) |
 
-### 8.2 Run Debug 字段确认
+### 8.2 Run Debug 字段确认（语义 / 执行 — P4-G）
 
-| 字段 | 状态 | 位置 |
-|------|------|------|
-| matrixRowId（5 个域变体） | ✅ 已返回 | `harnessDebug` 顶层 |
-| knownGap（5 个域变体） | ✅ 已返回 | `harnessDebug` 顶层 |
-| diagnosisQuestionType | ✅ 已返回 | `diagnosisPlan.debug` 内 |
-| diagnosisFacet | ✅ 已返回 | `diagnosisPlan.debug` 内 |
-| diagnosisChildDomain | ✅ 已返回 | `diagnosisPlan.debug` 内 |
-| diagnosisTargetStoreName | ✅ 已返回 | `diagnosisPlan.debug` 内 |
-| diagnosisDrilldownMatrixRowId | ✅ 已返回 | `diagnosisPlan.debug` 内 |
-| diagnosisKnownGap | ✅ 已返回 | `diagnosisPlan.debug` 内 |
+| 字段 | 状态 | 位置 | 前台建议 |
+|------|------|------|---------|
+| matrixRowId（5 个域变体） | ✅ 已返回 | `harnessDebug` 顶层 | 按域展示；空则隐藏 |
+| knownGap（5 个域变体） | ✅ 已返回 | `harnessDebug` 顶层 | 按域展示；空则隐藏 |
+| diagnosisQuestionType | ✅ 已返回 | `diagnosisPlan.debug` 内 | 从 `diagnosisPlan.debug` 提取 |
+| diagnosisFacet | ✅ 已返回 | `diagnosisPlan.debug` 内 | 同上 |
+| diagnosisChildDomain | ✅ 已返回 | `diagnosisPlan.debug` 内 | 同上 |
+| diagnosisTargetStoreName | ✅ 已返回 | `diagnosisPlan.debug` 内 | 同上 |
+| diagnosisReasonExplanationMatrixRowId | ✅ 已返回 | `diagnosisPlan.debug` 内 | 替代已删 `diagnosisDrilldownMatrixRowId` |
+| `semanticDomainRoute.primaryDomain` / `routeType` | ✅ 已返回 | `resolvedQueryContextSummary` | §7.13「语义路由」 |
+| `semanticContractValidation.modelContractViolation` / `violationCode` / `matchedContractId` | ✅ 已返回 | `resolvedQueryContextSummary` | §7.13「合同校验」 |
+| `semanticContractStrictDecision.enforceClarification` / `violationCode` | ✅ 已返回 | `resolvedQueryContextSummary` | §7.13「Strict 决策」 |
+| `querySemanticLlm.semanticSlots.*` | ✅ 已返回 | `resolvedQueryContextSummary` | §7.13「语义槽位」 |
+| `executionIntentType` / `executionDetailWanted` | ✅ 已返回 | `resolvedQueryContextSummary` | §7.13「执行意图」 |
+| `focusEntityType` / `focusEntityId` / `focusEntityName` | ✅ 已返回 | `resolvedQueryContextSummary` | §7.13「执行意图」 |
+| `anchorPolicy` / `resultAnchorsCount` | ✅ 已返回 | `resolvedQueryContextSummary` / AnswerPlan | §7.13「锚点」 |
+| `planSource` / `*AnswerPlanType` | ✅ 已返回 | `harnessDebug` 顶层 | §7.13「AnswerPlan」 |
+| `querySemanticLlm.metric.rankingType` | ⚠️ deprecated/debug | `resolvedQueryContextSummary` | 不参与主链；勿作主字段 |
+| diagnosisKnownGap | ✅ 已返回 | `diagnosisPlan.debug` 内 | 诊断 knownGap |
+| **已删** `followUpDetailWanted` / `purchaseGoodsSupplierDrilldown` / `diagnosisDrilldownMatrixRowId` 等 | ❌ 不再返回 | — | 见 §7.12 |
 
 ### 8.3 Stable 字段（前台业务长期依赖）
 
@@ -863,7 +910,8 @@ Debug 字段的两种下发渠道：
 - 所有 query 口径字段（`queryScopeKind`, `queryStoreIds`, `queryRealDepartmentIds` 等）
 - `diagnosisPlan` 及其子字段
 - `planSource`, `consumedAnswerPlans`, `missingAnswerPlans`
-- 所有 semantic 系列字段
+- 语义 / 合同 / 执行字段（`semanticDomainRoute`, `semanticContractValidation`, `semanticContractStrictDecision`, `querySemanticLlm`, `executionIntentType` 等 — 见 **§7.13**）
+- **`querySemanticLlm.metric.rankingType`**：deprecated/debug，**不得**作为 wire / execution 主展示字段
 
 ### 8.5 前台需要但后端暂缺
 

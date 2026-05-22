@@ -2,7 +2,7 @@
 
 > **状态**：阶段二骨架已落地（`DiagnosisPlanBuilder` + `StubOutcomeReviewNode`）；**现网 `business_diagnosis_path` 主链**见下文 **§0b**。  
 > **读者**：接手餐饮 AI 多智能体 Harness 的工程师。  
-> **关联**：`docs/ai/harness-composer-architecture.md`、`docs/ai/business-overview-diagnosis-domain-capability-matrix.md`、`docs/legacy-reference/business-diagnosis-plan-removed.md`。
+> **关联**：`docs/ai/harness-composer-architecture.md`、`docs/ai/business-overview-diagnosis-domain-capability-matrix.md`、`docs/AI_MAINLINE_INDEX.md`。
 
 ---
 
@@ -129,11 +129,11 @@ PlannerExecutor GraphCase（`AiPlannerExecutorBusinessDiagnosisComposite*`）仅
 | `actionSuggestions` | `array<object>` | 建议动作（见 §5.4） |
 | `debug` | `object` | **可复盘**调试块（见 §6） |
 
-可选扩展（与 `business-diagnosis-harness-plan.md` 历史稿兼容时可用）：`dataCompleteness`（各域 `OK` / `PARTIAL` / `MISSING` / `FAILED`）、`usedSourcePlans`。新建链路 **优先** 把等价信息收进 `debug`，避免 Composer 依赖过多顶层键。
+可选扩展：`dataCompleteness`（各域 `OK` / `PARTIAL` / `MISSING` / `FAILED`）、`usedSourcePlans`。新建链路 **优先** 把等价信息收进 `debug`，避免 Composer 依赖过多顶层键。
 
 ### 3.1 与历史 `BusinessDiagnosisPlan` 的关系（Historical removed）
 
-**P2（2026-05-20）**：`BusinessDiagnosisPlan` / `BusinessDiagnosisPlanBuilder` / `BusinessDiagnosisPlanNode` 已从 `src/main` 删除；现网统一为 **`DiagnosisPlan`** + **`DiagnosisPlanBuilder`** + **`BusinessDiagnosisAgentV1.enrich`**。详见 [business-diagnosis-plan-removed.md](../legacy-reference/business-diagnosis-plan-removed.md)。
+**P2（2026-05-20）**：`BusinessDiagnosisPlan` / `BusinessDiagnosisPlanBuilder` / `BusinessDiagnosisPlanNode` 已从 `src/main` 删除；现网统一为 **`DiagnosisPlan`** + **`DiagnosisPlanBuilder`** + **`BusinessDiagnosisAgentV1.enrich`**。详见 `docs/AI_MAINLINE_INDEX.md`。
 
 **P3 Harness 键（2026-05-20）**：Replay / `GET …/runs` 摘要以 **`diagnosisPlan` / `diagnosisPlanExists` / `diagnosisPlanType`** 为准；**`businessDiagnosisPlanExists`**、**`harnessReplayBusinessDiagnosisPlanType`** 等为 **deprecated compat**（与 `diagnosisPlan*` 同义镜像），不代表旧 DTO。
 
@@ -266,18 +266,7 @@ PlannerExecutor GraphCase（`AiPlannerExecutorBusinessDiagnosisComposite*`）仅
 
 ---
 
-## 9. 与 `business-diagnosis-harness-plan.md` 的关系
-
-| 文档 | 内容重心 |
-|------|----------|
-| **本文 `diagnosis-answer-plan.md`** | **AnswerPlan 优先** 的数据平面：DiagnosisPlan 字段、证据行、Debug、Composer 边界、阶段一范围 |
-| **`business-diagnosis-harness-plan.md`** | 历史 **Tool 编排**、intent/path 讨论、`BusinessDiagnosisPlan` 初稿 JSON；**事实来源** 应迁移理解为 **子域 AnswerPlan**，而非重复解析 Tool |
-
-两文档冲突时，以 **Harness 总原则**（Tool 查数 → AnswerPlan 选事实 → 上层只聚合）为准，**本文优先定义阶段一数据契约**。
-
----
-
-## 10. 后续路线（阶段二～四）
+## 9. 后续路线（阶段二～四）
 
 | 阶段 | 内容 |
 |------|------|

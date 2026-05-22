@@ -22,6 +22,7 @@ import com.nongxinle.ai.composer.renderer.DiagnosisDeterministicRenderer;
 import com.nongxinle.ai.composer.renderer.DeterministicAnswerRenderer;
 import com.nongxinle.ai.composer.summary.BusinessOverviewDeterministicSummaryBuilder;
 import com.nongxinle.ai.security.AiAnswerBoundary;
+import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
 import com.nongxinle.ai.util.AiNumericPlainText;
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
@@ -204,7 +205,7 @@ public class StubAnswerComposerNode implements AgentNode {
         }
         if (shouldUseStoreCompareIntentHeader(state)) {
             intentP = DiagnosisDeterministicRenderer.storeCompareIntentConvergencePrefix(state.getDiagnosisPlan());
-        } else if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonsDrilldownTurn(state)) {
+        } else if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonExplanationTurn(state)) {
             intentP =
                     AiAnswerBoundary.costIntentConvergencePrefix(
                             rewriteStorePriorityRankingCostIntentNote(state.getCostIntentConvergenceNote(), state));
@@ -239,7 +240,7 @@ public class StubAnswerComposerNode implements AgentNode {
             answer = head + (answer.isEmpty() ? "" : "\n" + answer);
         }
         if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)
-                || DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonsDrilldownTurn(state)) {
+                || DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonExplanationTurn(state)) {
             answer = DiagnosisDeterministicRenderer.applyStorePrioritySingleStoreScopeDisplayPatches(
                     (answer == null ? "" : answer).trim(), state);
         }
@@ -289,7 +290,7 @@ public class StubAnswerComposerNode implements AgentNode {
             return false;
         }
         if (DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)
-                || DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonsDrilldownTurn(state)) {
+                || DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonExplanationTurn(state)) {
             return false;
         }
         if (!DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS.equals(p.getPlanType())) {
@@ -1148,13 +1149,13 @@ public class StubAnswerComposerNode implements AgentNode {
         }
         String goodsName = goodsNameFromPurchasePlanRow(row);
         if (goodsName.isBlank()) {
-            goodsName = debugString(plan.getDebug(), "followUpTargetEntityName");
+            goodsName = debugString(plan.getDebug(), "focusEntityName");
         }
         if (goodsName.isBlank()) {
             goodsName = debugString(plan.getDebug(), "inheritedAnchorName");
         }
-        if (goodsName.isBlank() && rq != null && StringUtils.hasText(rq.getFollowUpTargetEntityName())) {
-            goodsName = rq.getFollowUpTargetEntityName().trim();
+        if (goodsName.isBlank() && rq != null && StringUtils.hasText(rq.getRewriteInheritedAnchorName())) {
+            goodsName = rq.getRewriteInheritedAnchorName().trim();
         }
         if (goodsName.isBlank()) {
             goodsName = "该商品";
@@ -1331,7 +1332,10 @@ public class StubAnswerComposerNode implements AgentNode {
     private static String composePurchaseSupplierGoodsDetailFromPlan(
             PurchaseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw, AiResolvedQueryContext rq) {
         Map<String, Object> dbg = plan.getDebug();
-        if (Boolean.TRUE.equals(dbg != null ? dbg.get("purchaseGoodsSupplierDrilldown") : null)) {
+        if (Boolean.TRUE.equals(
+                dbg != null
+                        ? dbg.get(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_SUPPLIER_EXECUTION_ACTIVE)
+                        : null)) {
             return composePurchaseGoodsAnchoredSupplierBreakdownFromPlan(plan, tw, rq);
         }
         String supplier = resolveSupplierDisplayNameForGoodsDetail(plan, rq);
@@ -1402,7 +1406,8 @@ public class StubAnswerComposerNode implements AgentNode {
     private static String composePurchaseGoodsAnchoredSupplierBreakdownFromPlan(
             PurchaseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw, AiResolvedQueryContext rq) {
         Map<String, Object> dbg = plan.getDebug();
-        String goodsName = debugString(dbg, "purchaseGoodsDrilldownTargetGoodsName");
+        String goodsName =
+                debugString(dbg, AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_NAME);
         if (goodsName.isBlank()) {
             goodsName = debugString(dbg, "requestedGoodsName");
         }
@@ -1488,10 +1493,10 @@ public class StubAnswerComposerNode implements AgentNode {
     }
 
     private static String resolveSupplierDisplayNameForGoodsDetail(PurchaseAnswerPlan plan, AiResolvedQueryContext rq) {
-        if (rq != null && StringUtils.hasText(rq.getFollowUpTargetEntityName())) {
-            String t = rq.getFollowUpTargetEntityType();
-            if (!StringUtils.hasText(t) || AiResultAnchor.ENTITY_TYPE_SUPPLIER.equalsIgnoreCase(t.trim())) {
-                return rq.getFollowUpTargetEntityName().trim();
+        if (plan != null && plan.getDebug() != null) {
+            String fromDebug = debugString(plan.getDebug(), "focusEntityName");
+            if (StringUtils.hasText(fromDebug)) {
+                return fromDebug.trim();
             }
         }
         if (plan != null && plan.getResultAnchors() != null) {
@@ -2149,7 +2154,7 @@ public class StubAnswerComposerNode implements AgentNode {
             return false;
         }
         if (!DiagnosisDeterministicRenderer.isBusinessDiagnosisStorePriorityTurn(state)
-                && !DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonsDrilldownTurn(state)
+                && !DiagnosisDeterministicRenderer.isBusinessDiagnosisStoreRiskReasonExplanationTurn(state)
                 && state.getDiagnosisPlan() != null
                 && DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS.equals(state.getDiagnosisPlan().getPlanType())
                 && (state.isBusinessDiagnosisPath()

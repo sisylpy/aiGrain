@@ -5,7 +5,7 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolver;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.harness.followup.DishSalesDrilldownMatrix;
+import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import org.springframework.util.StringUtils;
 
@@ -93,7 +93,7 @@ public final class AiMultiTurnOrgScopePolicy {
         if (messageDeclaresBroadGroupReset(rawMessage)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
-        if (DishSalesDrilldownMatrix.shouldSuppressStoreScopeInheritanceForTrend(
+        if (DishSalesSemanticCapabilityMatrix.shouldSuppressStoreScopeInheritanceForTrend(
                 structuredIntentDetailWire, rawMessage, semanticLlm)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }

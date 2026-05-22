@@ -17,6 +17,7 @@ public class AiPromptRegistry {
     public AiPromptRegistry() {
         Map<String, String> m = new HashMap<>();
         m.put(AiPromptIds.SEMANTIC_QUERY_PARSER_V2, "ai-prompts/semantic/query_semantic_parser.v2.md");
+        m.put(AiPromptIds.FOLLOWUP_QUERY_REWRITER_V1, "ai-prompts/semantic/followup_query_rewriter.v1.md");
 
         m.put(AiPromptIds.COMPOSER_COST_DIAGNOSIS_V1, "ai-prompts/composer/cost_diagnosis.v1.md");
         m.put(AiPromptIds.COMPOSER_REVENUE_OVERVIEW_V1, "ai-prompts/composer/revenue_overview.v1.md");
@@ -26,7 +27,6 @@ public class AiPromptRegistry {
         m.put(AiPromptIds.COMPOSER_DIAGNOSIS_V1, "ai-prompts/composer/diagnosis.v1.md");
         m.put(AiPromptIds.COMPOSER_DIAGNOSIS_STORE_PRIORITY_V1, "ai-prompts/composer/diagnosis_store_priority.v1.md");
         m.put(AiPromptIds.COMPOSER_WAREHOUSE_V1, "ai-prompts/composer/warehouse.v1.md");
-        m.put(AiPromptIds.COMPOSER_GENERIC_CHAT_V1, "ai-prompts/composer/generic_chat.v1.md");
 
         m.put("common.answer_style_rules.v1", "ai-prompts/common/answer_style_rules.v1.md");
         m.put("common.numeric_safety_rules.v1", "ai-prompts/common/numeric_safety_rules.v1.md");

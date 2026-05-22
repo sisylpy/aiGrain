@@ -23,9 +23,9 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.util.StringUtils;
 
-/**
- * 会话级上一轮 Run 的查询语义快照，供 {@link AiFollowUpResolver} 与 {@link AiResolvedQueryContextResolver} 做规则继承。
- */
+    /**
+     * 会话级上一轮 Run 的查询语义快照，供 {@link AiResolvedQueryContextResolver} 做组织/时间继承与锚点观测。
+     */
 @Data
 @Builder
 @NoArgsConstructor
@@ -55,7 +55,7 @@ public class AiConversationTurnMemory {
     /** 上一轮 Run 结束时 {@link AiResolvedQueryContext#getEffectiveScopeSource()}，便于多轮收窄诊断 */
     private String lastEffectiveScopeSource;
 
-    /** 与 {@link com.nongxinle.ai.followup.AiFollowUpIntentSnapshot#getEffectiveQuestion()} 对齐，供时间追问 splice */
+    /** 上一轮 Run 结束时的有效问句（normalizedUserInput），供 LLM 追问补全与多轮 splice */
     private String lastEffectiveQuestion;
     /** 可选：极短摘要供日志 */
     private String lastAnswerSummary;

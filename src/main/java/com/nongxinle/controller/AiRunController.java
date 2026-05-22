@@ -183,7 +183,7 @@ public class AiRunController {
     }
 
     @GetMapping(path = "/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8")
-    @Operation(summary = "SSE：Run 过程事件", description = "事件名参见 ARCHITECTURE_DECISIONS / PROJECT_AGENT_ARCHITECTURE")
+    @Operation(summary = "SSE：Run 过程事件", description = "事件名参见 docs/ARCHITECTURE_DECISIONS.md、docs/SSE_BACKEND_EVENT_CONTRACT.md、docs/API_INTEGRATION.md")
     public SseEmitter streamEvents(@PathVariable long runId) {
         AiRunSession session = runSessionRegistry.get(runId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "run not found"));

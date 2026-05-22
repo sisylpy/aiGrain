@@ -3,10 +3,13 @@ package com.nongxinle.ai.graph.business;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -128,8 +131,8 @@ class PurchaseAnswerPlanBuilderTest {
         overview.put("purchaseOrderCount", 3);
         overview.put("goodsPurchaseAmountTop", List.of(Map.of("goodsName", "别的商品", "purchaseSubtotal", "999")));
         overview.put("purchaseSupplierGoodsDetailRows", List.of(d1));
-        overview.put("purchaseGoodsSupplierDrilldown", true);
-        overview.put("purchaseGoodsDrilldownTargetGoodsName", "白醋");
+        overview.put(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_SUPPLIER_EXECUTION_ACTIVE, true);
+        overview.put(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_NAME, "白醋");
         AiResolvedQueryIntent qi =
                 AiResolvedQueryIntent.builder()
                         .structuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY)
@@ -158,8 +161,8 @@ class PurchaseAnswerPlanBuilderTest {
         overview.put("totalPurchaseAmount", 100);
         overview.put("purchaseOrderCount", 3);
         overview.put("purchaseSupplierGoodsDetailRows", List.of(d1, d2));
-        overview.put("purchaseGoodsSupplierDrilldown", true);
-        overview.put("purchaseGoodsDrilldownTargetGoodsName", "白醋");
+        overview.put(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_SUPPLIER_EXECUTION_ACTIVE, true);
+        overview.put(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_NAME, "白醋");
         AiResolvedQueryIntent qi =
                 AiResolvedQueryIntent.builder()
                         .structuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY)
@@ -179,8 +182,8 @@ class PurchaseAnswerPlanBuilderTest {
         overview.put("totalPurchaseAmount", 100);
         overview.put("purchaseOrderCount", 3);
         overview.put("purchaseSupplierGoodsDetailRows", List.of());
-        overview.put("purchaseGoodsSupplierDrilldown", true);
-        overview.put("purchaseGoodsDrilldownTargetGoodsName", "白醋");
+        overview.put(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_SUPPLIER_EXECUTION_ACTIVE, true);
+        overview.put(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_NAME, "白醋");
         overview.put("purchaseSupplierGoodsDetailNoDataReason", "NO_SUPPLIER_PURCHASE_FOR_GOODS");
         overview.put("purchaseSupplierGoodsDetailAlternativeHasData", true);
         AiResolvedQueryIntent qi =
@@ -211,7 +214,7 @@ class PurchaseAnswerPlanBuilderTest {
         assertEquals(
                 "FOCUSED_GOODS_NOT_FOUND",
                 PurchaseAnswerPlanBuilder.normalizePurchaseSupplierGoodsDetailNoDataReason(
-                        "GOODS_ID_MISSING_FOR_DRILLDOWN"));
+                        "GOODS_ID_MISSING_FOR_ANCHOR_EXECUTION"));
     }
 
     @Test
@@ -232,12 +235,13 @@ class PurchaseAnswerPlanBuilderTest {
                         .purchaseSourceType(AiQuerySemanticLexicon.SOURCE_ALL)
                         .build();
         AiResolvedQueryContext rq =
-                AiResolvedQueryContext.builder()
-                        .queryIntent(qi)
-                        .followUpTargetEntityId("54")
-                        .followUpTargetEntityName("海天5度白醋")
-                        .followUpTargetEntityType(AiResultAnchor.ENTITY_TYPE_GOODS)
-                        .build();
+                purchaseGoodsAnchorRq(
+                        qi,
+                        "SOURCE_BREAKDOWN",
+                        "purchase.goods_anchor.source_breakdown",
+                        "ALL",
+                        "54",
+                        "海天5度白醋");
         AiRunState state = AiRunState.builder().resolvedQueryContext(rq).build();
         PurchaseAnswerPlan plan = PurchaseAnswerPlanBuilder.build(state, overview, rq);
         assertEquals(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN, plan.getPlanType());
@@ -254,7 +258,7 @@ class PurchaseAnswerPlanBuilderTest {
     }
 
     @Test
-    void build_goodsSourceBreakdown_followUpIntent_withoutToolFlag_isSourceBreakdownNotOverview() {
+    void build_goodsSourceBreakdown_executionIntent_withoutToolFlag_isSourceBreakdownNotOverview() {
         Map<String, Object> overview = new LinkedHashMap<>();
         overview.put("totalPurchaseAmount", 100);
         overview.put("purchaseOrderCount", 3);
@@ -264,14 +268,13 @@ class PurchaseAnswerPlanBuilderTest {
                         .purchaseSourceType(AiQuerySemanticLexicon.SOURCE_ALL)
                         .build();
         AiResolvedQueryContext rq =
-                AiResolvedQueryContext.builder()
-                        .queryIntent(qi)
-                        .followUp(true)
-                        .followUpDetailWanted("SOURCE_BREAKDOWN")
-                        .followUpTargetEntityType(AiResultAnchor.ENTITY_TYPE_GOODS)
-                        .followUpTargetEntityName("海天5度白醋")
-                        .followUpTargetEntityId("54")
-                        .build();
+                purchaseGoodsAnchorRq(
+                        qi,
+                        "SOURCE_BREAKDOWN",
+                        "purchase.goods_anchor.source_breakdown",
+                        "ALL",
+                        "54",
+                        "海天5度白醋");
         AiRunState state = AiRunState.builder().resolvedQueryContext(rq).build();
         PurchaseAnswerPlan plan = PurchaseAnswerPlanBuilder.build(state, overview, rq);
         assertEquals(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN, plan.getPlanType());
@@ -287,11 +290,17 @@ class PurchaseAnswerPlanBuilderTest {
     @Test
     void isGoodsSourceBreakdownIntent_trueWhenGoodsFollowUpAndSourceBreakdown() {
         AiResolvedQueryContext rq =
-                AiResolvedQueryContext.builder()
-                        .followUp(true)
-                        .followUpDetailWanted("SOURCE_BREAKDOWN")
-                        .followUpTargetEntityType(AiResultAnchor.ENTITY_TYPE_GOODS)
-                        .build();
+                purchaseGoodsAnchorRq(
+                        AiResolvedQueryIntent.builder()
+                                .structuredIntentDetail(
+                                        AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY)
+                                .purchaseSourceType(AiQuerySemanticLexicon.SOURCE_ALL)
+                                .build(),
+                        "SOURCE_BREAKDOWN",
+                        "purchase.goods_anchor.source_breakdown",
+                        "ALL",
+                        "54",
+                        "海天5度白醋");
         assertTrue(
                 PurchaseAnswerPlanBuilder.isGoodsSourceBreakdownIntent(
                         rq,
@@ -318,7 +327,7 @@ class PurchaseAnswerPlanBuilderTest {
     }
 
     @Test
-    void build_goodsSupplierBreakdown_followUpIntent_withoutToolDrilldown_isSupplierGoodsDetail() {
+    void build_goodsSupplierBreakdown_executionIntent_withoutToolPayload_isSupplierGoodsDetail() {
         Map<String, Object> overview = new LinkedHashMap<>();
         overview.put("totalPurchaseAmount", 100);
         overview.put("purchaseOrderCount", 3);
@@ -328,14 +337,13 @@ class PurchaseAnswerPlanBuilderTest {
                         .purchaseSourceType(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE)
                         .build();
         AiResolvedQueryContext rq =
-                AiResolvedQueryContext.builder()
-                        .queryIntent(qi)
-                        .followUp(true)
-                        .followUpDetailWanted(AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_BREAKDOWN)
-                        .followUpTargetEntityType(AiResultAnchor.ENTITY_TYPE_GOODS)
-                        .followUpTargetEntityName("海天5度白醋")
-                        .followUpTargetEntityId("54")
-                        .build();
+                purchaseGoodsAnchorRq(
+                        qi,
+                        AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_BREAKDOWN,
+                        "purchase.goods_anchor.supplier_breakdown",
+                        "SUPPLIER_PURCHASE",
+                        "54",
+                        "海天5度白醋");
         AiRunState state = AiRunState.builder().resolvedQueryContext(rq).build();
         PurchaseAnswerPlan plan = PurchaseAnswerPlanBuilder.build(state, overview, rq);
         assertEquals(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL, plan.getPlanType());
@@ -350,20 +358,26 @@ class PurchaseAnswerPlanBuilderTest {
     }
 
     @Test
-    void isGoodsSupplierBreakdownFollowUpIntent_trueForGoodsAnchorFollowUp() {
+    void isGoodsSupplierBreakdownExecutionIntent_trueForGoodsAnchorFollowUp() {
         AiResolvedQueryContext rq =
-                AiResolvedQueryContext.builder()
-                        .followUp(true)
-                        .followUpDetailWanted(AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_BREAKDOWN)
-                        .followUpTargetEntityType(AiResultAnchor.ENTITY_TYPE_GOODS)
-                        .build();
+                purchaseGoodsAnchorRq(
+                        AiResolvedQueryIntent.builder()
+                                .structuredIntentDetail(
+                                        AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY)
+                                .purchaseSourceType(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE)
+                                .build(),
+                        AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_BREAKDOWN,
+                        "purchase.goods_anchor.supplier_breakdown",
+                        "SUPPLIER_PURCHASE",
+                        "54",
+                        "海天5度白醋");
         assertTrue(
-                PurchaseAnswerPlanBuilder.isGoodsSupplierBreakdownFollowUpIntent(
+                PurchaseAnswerPlanBuilder.isGoodsSupplierBreakdownExecutionIntent(
                         rq, AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY));
     }
 
     @Test
-    void build_goodsSupplierUnitPrice_followUpIntent_withoutToolDrilldown_isSupplierGoodsDetail() {
+    void build_goodsSupplierUnitPrice_executionIntent_withoutToolPayload_isSupplierGoodsDetail() {
         Map<String, Object> overview = new LinkedHashMap<>();
         overview.put("totalPurchaseAmount", 100);
         overview.put("purchaseOrderCount", 3);
@@ -373,14 +387,13 @@ class PurchaseAnswerPlanBuilderTest {
                         .purchaseSourceType(AiQuerySemanticLexicon.SOURCE_ALL)
                         .build();
         AiResolvedQueryContext rq =
-                AiResolvedQueryContext.builder()
-                        .queryIntent(qi)
-                        .followUp(true)
-                        .followUpDetailWanted(AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_UNIT_PRICE)
-                        .followUpTargetEntityType(AiResultAnchor.ENTITY_TYPE_GOODS)
-                        .followUpTargetEntityName("海天5度白醋")
-                        .followUpTargetEntityId("54")
-                        .build();
+                purchaseGoodsAnchorRq(
+                        qi,
+                        AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_UNIT_PRICE,
+                        "purchase.goods_anchor.supplier_unit_price",
+                        "SUPPLIER_PURCHASE",
+                        "54",
+                        "海天5度白醋");
         AiRunState state = AiRunState.builder().resolvedQueryContext(rq).build();
         PurchaseAnswerPlan plan = PurchaseAnswerPlanBuilder.build(state, overview, rq);
         assertEquals(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL, plan.getPlanType());
@@ -414,12 +427,19 @@ class PurchaseAnswerPlanBuilderTest {
                                                 .build()))
                         .build();
         AiResolvedQueryContext rq =
+                purchaseGoodsAnchorRq(
+                        qi,
+                        AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_UNIT_PRICE,
+                        "purchase.goods_anchor.supplier_unit_price",
+                        AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE,
+                        "54",
+                        "海天5度白醋");
+        rq =
                 AiResolvedQueryContext.builder()
-                        .queryIntent(qi)
+                        .queryIntent(rq.getQueryIntent())
+                        .querySemanticParse(rq.getQuerySemanticParse())
+                        .semanticContractValidation(rq.getSemanticContractValidation())
                         .previousTurn(prev)
-                        .followUp(true)
-                        .followUpDetailWanted(AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_UNIT_PRICE)
-                        .followUpTargetEntityType(AiResultAnchor.ENTITY_TYPE_GOODS)
                         .build();
         AiRunState state = AiRunState.builder().resolvedQueryContext(rq).build();
         PurchaseAnswerPlan plan = PurchaseAnswerPlanBuilder.build(state, overview, rq);
@@ -434,15 +454,21 @@ class PurchaseAnswerPlanBuilderTest {
     }
 
     @Test
-    void isGoodsSupplierUnitPriceFollowUpIntent_trueForGoodsAnchorFollowUp() {
+    void isGoodsSupplierUnitPriceExecutionIntent_trueForGoodsAnchorFollowUp() {
         AiResolvedQueryContext rq =
-                AiResolvedQueryContext.builder()
-                        .followUp(true)
-                        .followUpDetailWanted(AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_UNIT_PRICE)
-                        .followUpTargetEntityType(AiResultAnchor.ENTITY_TYPE_GOODS)
-                        .build();
+                purchaseGoodsAnchorRq(
+                        AiResolvedQueryIntent.builder()
+                                .structuredIntentDetail(
+                                        AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY)
+                                .purchaseSourceType(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE)
+                                .build(),
+                        AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_UNIT_PRICE,
+                        "purchase.goods_anchor.supplier_unit_price",
+                        "SUPPLIER_PURCHASE",
+                        "54",
+                        "海天5度白醋");
         assertTrue(
-                PurchaseAnswerPlanBuilder.isGoodsSupplierUnitPriceFollowUpIntent(
+                PurchaseAnswerPlanBuilder.isGoodsSupplierUnitPriceExecutionIntent(
                         rq, AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY));
     }
 
@@ -455,4 +481,47 @@ class PurchaseAnswerPlanBuilderTest {
         assertFalse(AiQuerySemanticLexicon.isNonOverviewStockReduceStructuredDetail(
                 AiQuerySemanticLexicon.STRUCTURED_STOCK_REDUCE_OVERVIEW_SUMMARY));
     }
+
+    private static AiResolvedQueryContext purchaseGoodsAnchorRq(
+            AiResolvedQueryIntent qi,
+            String detailWanted,
+            String matchedContractId,
+            String sourceFacet,
+            String goodsId,
+            String goodsName) {
+        AiResultAnchor anchor =
+                AiResultAnchor.builder()
+                        .entityType(AiResultAnchor.ENTITY_TYPE_GOODS)
+                        .entityId(goodsId)
+                        .entityName(goodsName)
+                        .sourcePlanType(PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING)
+                        .rank(1)
+                        .build();
+        AiQuerySemanticParseResult parse =
+                AiQuerySemanticParseResult.builder()
+                        .semanticSlots(
+                                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                                        .queryObject("GOODS")
+                                        .operation("DETAIL")
+                                        .detailWanted(detailWanted)
+                                        .sourceFacet(sourceFacet)
+                                        .anchorPolicy("USE_PREVIOUS_ANCHOR")
+                                        .structuredIntentDetailWire(
+                                                AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY)
+                                        .build())
+                        .build();
+        return AiResolvedQueryContext.builder()
+                .queryIntent(qi)
+                .querySemanticParse(parse)
+                .semanticContractValidation(
+                        SemanticContractValidationDebug.builder()
+                                .matchedContractId(matchedContractId)
+                                .build())
+                .previousTurn(
+                        AiConversationTurnMemory.builder()
+                                .lastResultAnchors(List.of(anchor))
+                                .build())
+                .build();
+    }
 }
+

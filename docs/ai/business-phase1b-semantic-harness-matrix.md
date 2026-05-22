@@ -186,7 +186,7 @@
 | 轮次 | 用户句 | 期望（第二轮） |
 |------|--------|----------------|
 | 1 | 这个月经营得怎么样？ | 同 R01 |
-| 2 | 那出库呢？ | `effectiveIntentCode`：**`STOCK_REDUCE_QUERY`**；`effectivePathCode`：**`stock_reduce_query_path`**；时间与 scope 继承原则同 R09；**wire 主断言**：**`structuredIntentDetailWire` / `structuredIntentDetail`**（常见 **`stock_reduce_overview`**）；`metric.rankingType` 仅 compat — **不断言 Tool / SQL / rows** |
+| 2 | 那出库呢？ | `effectiveIntentCode`：**`STOCK_REDUCE_QUERY`**；`effectivePathCode`：**`stock_reduce_query_path`**；时间与 scope 继承原则同 R09；**wire 主断言**：**`structuredIntentDetailWire` / `structuredIntentDetail`**（常见 **`stock_reduce_overview`**）；`metric.rankingType` 仅 **debug/deprecated** — **不断言 Tool / SQL / rows** |
 
 ---
 

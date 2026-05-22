@@ -9,6 +9,7 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Harness 入口「用户语义 LLM 解析」结果：仅限自然语言语义，不含任何需权限/组织树展开的数据库 ID。
@@ -144,7 +145,7 @@ public class AiQuerySemanticParseResult {
     private SemanticSlotsPart semanticSlots;
 
     /**
-     * D-1X-D1：{@link AiQuerySemanticSlotMerge#applyPreviousFrameInheritance} 在 inherit 前快照的本轮 LLM
+     * D-1X-D1：{@link AiQuerySemanticSlotMerge#reconcileSemanticSlotsViaCapabilityMatrices} 前快照的本轮 LLM
      * {@code semanticSlots.structuredIntentDetailWire}；null 表示本轮 JSON 未显式给出 wire（inherit 回填不算）。
      */
     private String currentTurnStructuredIntentDetailWire;
@@ -174,10 +175,18 @@ public class AiQuerySemanticParseResult {
     private String observationJsonParseError;
 
     /**
-     * Java-only：采购 GOODS 锚矩阵 canonical 原因码（见 {@link com.nongxinle.ai.harness.followup.PurchaseDrilldownMatrix}）；
+     * Java-only：采购 GOODS 锚矩阵 canonical 原因码（见 {@link com.nongxinle.ai.semantic.matrix.PurchaseSemanticCapabilityMatrix}）；
      * 非 LLM 字段，供 debug / Harness 审计。
      */
     private List<String> purchaseMatrixCanonicalReasons;
+
+    /**
+     * Phase1-G：多轮槽位继承观测（仅 debug / Harness；不参与路由）。
+     * 键示例：{@code inheritedFromPreviousSlots}、{@code inheritedEntityAnchor}、
+     * {@code ignoredPreviousAnchorReason}、{@code clearedPreviousWireReason}、
+     * {@code clearedPreviousAnswerPlanTypeReason}、{@code currentTurnWinsReason}、{@code crossDomainTurn}。
+     */
+    private Map<String, Object> multiTurnInheritanceTrace;
 
     /**
      * Harness：本轮若实际走了语义解析 LLM，则为对应 {@link com.nongxinle.ai.prompt.AiPromptRegistry} promptId；

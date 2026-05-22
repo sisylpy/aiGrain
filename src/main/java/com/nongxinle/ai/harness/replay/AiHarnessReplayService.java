@@ -142,6 +142,7 @@ public class AiHarnessReplayService {
                         toolRequestOnly);
                 summary = new LinkedHashMap<>(AiHarnessResolvedContextSummarizer.summarize(
                         ended.getResolvedQueryContext(), conversationId, ended));
+                summary.put("harnessReplayTurnMemorySource", "fromCompletedState");
             } else {
                 var uc = userContextResolver.resolve(runReq);
                 var resolved = resolvedQueryContextResolver.resolve(runId, runReq, uc, today);
@@ -151,6 +152,8 @@ public class AiHarnessReplayService {
                 AiConversationTurnMemory turn =
                         AiConversationTurnMemory.fromHarnessReplayStep(resolved, conversationId, runId);
                 conversationMemoryService.rememberCompletedTurn(req.getUserId(), conversationId, turn);
+                summary.put("harnessReplayTurnMemorySource", "fromHarnessReplayStep");
+                summary.put("harnessReplayTurnMemoryHasResultAnchors", Boolean.FALSE);
             }
 
             List<AiHarnessMismatch> failed = List.of();
@@ -238,13 +241,13 @@ public class AiHarnessReplayService {
                         || AiHarnessBuiltinCases.PURCHASE_AGENT_GRAPH_CORE.equals(req.getCaseId().trim())
                         || AiHarnessBuiltinCases.PURCHASE_TOOL_REQUEST_2A_MIN.equals(req.getCaseId().trim())
                         || AiHarnessBuiltinCases.PURCHASE_TOOL_REQUEST_2A_CORE.equals(req.getCaseId().trim())
-                        || AiHarnessBuiltinCases.PURCHASE_SUPPLIER_RANKING_DRILLDOWN_GOODS_UNIT_PRICE_3.equals(
+                        || AiHarnessBuiltinCases.PURCHASE_SUPPLIER_RANKING_ANCHOR_EXECUTION_GOODS_UNIT_PRICE_3.equals(
                                 req.getCaseId().trim())
-                        || AiHarnessBuiltinCases.PURCHASE_GOODS_RANKING_DRILLDOWN_SUPPLIER_UNIT_PRICE_2.equals(
+                        || AiHarnessBuiltinCases.PURCHASE_GOODS_RANKING_ANCHOR_EXECUTION_SUPPLIER_UNIT_PRICE_2.equals(
                                 req.getCaseId().trim())
                         || AiHarnessBuiltinCases.PURCHASE_GOODS_RANKING_SOURCE_BREAKDOWN_2.equals(
                                 req.getCaseId().trim())
-                        || AiHarnessBuiltinCases.DRILLDOWN_PURCHASE_MATRIX_P1.equals(req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.PURCHASE_ANCHOR_EXECUTION_MATRIX_P1.equals(req.getCaseId().trim())
                         || AiHarnessBuiltinCases.DISH_PROFIT_MATRIX_P1.equals(req.getCaseId().trim())
                         || AiHarnessBuiltinCases.PURCHASE_SUPPLIER_FACET_GOODS_RANKING_SOURCE_BREAKDOWN_2.equals(
                                 req.getCaseId().trim())
@@ -254,9 +257,9 @@ public class AiHarnessReplayService {
                                 req.getCaseId().trim())
                         || AiHarnessBuiltinCases.PURCHASE_SUPPLIER_ANCHOR_THEN_SOURCE_AMOUNT_SUMMARY_2.equals(
                                 req.getCaseId().trim())
-                        || AiHarnessBuiltinCases.BUSINESS_STORE_PRIORITY_DRILLDOWN_REASONS_3.equals(
+                        || AiHarnessBuiltinCases.BUSINESS_STORE_PRIORITY_REASON_EXPLANATION_3.equals(
                                 req.getCaseId().trim())
-                        || AiHarnessBuiltinCases.BUSINESS_DIAGNOSIS_DRILLDOWN_MATRIX_P1.equals(
+                        || AiHarnessBuiltinCases.BUSINESS_DIAGNOSIS_ANCHOR_EXECUTION_MATRIX_P1.equals(
                                 req.getCaseId().trim())
                         || AiHarnessBuiltinCases.STOCK_REDUCE_AGENT_GRAPH_CORE.equals(req.getCaseId().trim())
                         || AiHarnessBuiltinCases.STOCK_REDUCE_MATRIX_P1.equals(req.getCaseId().trim())
@@ -264,12 +267,17 @@ public class AiHarnessReplayService {
                         || AiHarnessBuiltinCases.WAREHOUSE_MATRIX_P1.equals(req.getCaseId().trim())
                         || AiHarnessBuiltinCases.DISH_SALES_MATRIX_P1.equals(req.getCaseId().trim())
                         || AiHarnessBuiltinCases.DISH_PROFIT_AGENT_GRAPH_CORE.equals(req.getCaseId().trim())
-                        || AiHarnessBuiltinCases.DISH_LOW_MARGIN_DRILLDOWN_INGREDIENT_COST_2.equals(
+                        || AiHarnessBuiltinCases.DISH_LOW_MARGIN_ANCHOR_EXECUTION_INGREDIENT_COST_2.equals(
                                 req.getCaseId().trim()))) {
             return AiHarnessReplayMode.GRAPH_RUN;
         }
         if (StringUtils.hasText(req.getCaseId()) && AiHarnessBuiltinCases.isPlannerExecutorMockHarnessCase(req.getCaseId())) {
             return AiHarnessReplayMode.PLANNER_EXECUTOR_MOCK;
+        }
+        if (req.isIgnoreExpectations()
+                && req.getMessages() != null
+                && req.getMessages().size() >= 2) {
+            return AiHarnessReplayMode.GRAPH_RUN;
         }
         return AiHarnessReplayMode.RESOLVER_ONLY;
     }
@@ -446,9 +454,9 @@ public class AiHarnessReplayService {
             }
             return AiHarnessBuiltinCases.expectationsPurchaseToolRequest2aCore(anchor);
         }
-        if (AiHarnessBuiltinCases.PURCHASE_SUPPLIER_RANKING_DRILLDOWN_GOODS_UNIT_PRICE_3.equals(req.getCaseId().trim())) {
+        if (AiHarnessBuiltinCases.PURCHASE_SUPPLIER_RANKING_ANCHOR_EXECUTION_GOODS_UNIT_PRICE_3.equals(req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
-            int n = AiHarnessBuiltinCases.expectationsPurchaseSupplierRankingDrilldownGoodsUnitPrice3(anchor).size();
+            int n = AiHarnessBuiltinCases.expectationsPurchaseSupplierRankingAnchorExecutionGoodsUnitPrice3(anchor).size();
             if (req.getMessages().size() < n) {
                 log.warn(
                         "[AiHarnessReplay] case={} expects {} rounds, got {}",
@@ -456,12 +464,12 @@ public class AiHarnessReplayService {
                         n,
                         req.getMessages().size());
             }
-            return AiHarnessBuiltinCases.expectationsPurchaseSupplierRankingDrilldownGoodsUnitPrice3(anchor);
+            return AiHarnessBuiltinCases.expectationsPurchaseSupplierRankingAnchorExecutionGoodsUnitPrice3(anchor);
         }
-        if (AiHarnessBuiltinCases.PURCHASE_GOODS_RANKING_DRILLDOWN_SUPPLIER_UNIT_PRICE_2.equals(
+        if (AiHarnessBuiltinCases.PURCHASE_GOODS_RANKING_ANCHOR_EXECUTION_SUPPLIER_UNIT_PRICE_2.equals(
                 req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
-            int n = AiHarnessBuiltinCases.expectationsPurchaseGoodsRankingDrilldownSupplierUnitPrice2(anchor).size();
+            int n = AiHarnessBuiltinCases.expectationsPurchaseGoodsRankingAnchorExecutionSupplierUnitPrice2(anchor).size();
             if (req.getMessages().size() < n) {
                 log.warn(
                         "[AiHarnessReplay] case={} expects {} rounds, got {}",
@@ -469,7 +477,7 @@ public class AiHarnessReplayService {
                         n,
                         req.getMessages().size());
             }
-            return AiHarnessBuiltinCases.expectationsPurchaseGoodsRankingDrilldownSupplierUnitPrice2(anchor);
+            return AiHarnessBuiltinCases.expectationsPurchaseGoodsRankingAnchorExecutionSupplierUnitPrice2(anchor);
         }
         if (AiHarnessBuiltinCases.PURCHASE_GOODS_RANKING_SOURCE_BREAKDOWN_2.equals(req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
@@ -483,9 +491,9 @@ public class AiHarnessReplayService {
             }
             return AiHarnessBuiltinCases.expectationsPurchaseGoodsRankingSourceBreakdown2(anchor);
         }
-        if (AiHarnessBuiltinCases.DRILLDOWN_PURCHASE_MATRIX_P1.equals(req.getCaseId().trim())) {
+        if (AiHarnessBuiltinCases.PURCHASE_ANCHOR_EXECUTION_MATRIX_P1.equals(req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
-            int n = AiHarnessBuiltinCases.expectationsDrilldownPurchaseMatrixP1(anchor).size();
+            int n = AiHarnessBuiltinCases.expectationsPurchaseAnchorExecutionMatrixP1(anchor).size();
             if (req.getMessages().size() < n) {
                 log.warn(
                         "[AiHarnessReplay] case={} expects {} rounds, got {}",
@@ -493,7 +501,7 @@ public class AiHarnessReplayService {
                         n,
                         req.getMessages().size());
             }
-            return AiHarnessBuiltinCases.expectationsDrilldownPurchaseMatrixP1(anchor);
+            return AiHarnessBuiltinCases.expectationsPurchaseAnchorExecutionMatrixP1(anchor);
         }
         if (AiHarnessBuiltinCases.DISH_PROFIT_MATRIX_P1.equals(req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
@@ -607,9 +615,9 @@ public class AiHarnessReplayService {
             }
             return AiHarnessBuiltinCases.expectationsPurchaseSupplierAnchorThenSourceAmountSummary2(anchor);
         }
-        if (AiHarnessBuiltinCases.BUSINESS_STORE_PRIORITY_DRILLDOWN_REASONS_3.equals(req.getCaseId().trim())) {
+        if (AiHarnessBuiltinCases.BUSINESS_STORE_PRIORITY_REASON_EXPLANATION_3.equals(req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
-            int n = AiHarnessBuiltinCases.expectationsBusinessStorePriorityDrilldownReasons3(anchor).size();
+            int n = AiHarnessBuiltinCases.expectationsBusinessStorePriorityReasonExplanation3(anchor).size();
             if (req.getMessages().size() < n) {
                 log.warn(
                         "[AiHarnessReplay] case={} expects {} rounds, got {}",
@@ -617,11 +625,11 @@ public class AiHarnessReplayService {
                         n,
                         req.getMessages().size());
             }
-            return AiHarnessBuiltinCases.expectationsBusinessStorePriorityDrilldownReasons3(anchor);
+            return AiHarnessBuiltinCases.expectationsBusinessStorePriorityReasonExplanation3(anchor);
         }
-        if (AiHarnessBuiltinCases.BUSINESS_DIAGNOSIS_DRILLDOWN_MATRIX_P1.equals(req.getCaseId().trim())) {
+        if (AiHarnessBuiltinCases.BUSINESS_DIAGNOSIS_ANCHOR_EXECUTION_MATRIX_P1.equals(req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
-            int n = AiHarnessBuiltinCases.expectationsBusinessDiagnosisDrilldownMatrixP1(anchor).size();
+            int n = AiHarnessBuiltinCases.expectationsBusinessDiagnosisSemanticCapabilityMatrixP1(anchor).size();
             if (req.getMessages().size() < n) {
                 log.warn(
                         "[AiHarnessReplay] case={} expects {} rounds, got {}",
@@ -629,7 +637,7 @@ public class AiHarnessReplayService {
                         n,
                         req.getMessages().size());
             }
-            return AiHarnessBuiltinCases.expectationsBusinessDiagnosisDrilldownMatrixP1(anchor);
+            return AiHarnessBuiltinCases.expectationsBusinessDiagnosisSemanticCapabilityMatrixP1(anchor);
         }
         if (AiHarnessBuiltinCases.STOCK_REDUCE_AGENT_GRAPH_CORE.equals(req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
@@ -655,9 +663,9 @@ public class AiHarnessReplayService {
             }
             return AiHarnessBuiltinCases.expectationsDishProfitAgentGraphCore(anchor);
         }
-        if (AiHarnessBuiltinCases.DISH_LOW_MARGIN_DRILLDOWN_INGREDIENT_COST_2.equals(req.getCaseId().trim())) {
+        if (AiHarnessBuiltinCases.DISH_LOW_MARGIN_ANCHOR_EXECUTION_INGREDIENT_COST_2.equals(req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
-            int n = AiHarnessBuiltinCases.expectationsDishLowMarginDrilldownIngredientCost2(anchor).size();
+            int n = AiHarnessBuiltinCases.expectationsDishLowMarginAnchorExecutionIngredientCost2(anchor).size();
             if (req.getMessages().size() < n) {
                 log.warn(
                         "[AiHarnessReplay] case={} expects {} rounds, got {}",
@@ -665,7 +673,7 @@ public class AiHarnessReplayService {
                         n,
                         req.getMessages().size());
             }
-            return AiHarnessBuiltinCases.expectationsDishLowMarginDrilldownIngredientCost2(anchor);
+            return AiHarnessBuiltinCases.expectationsDishLowMarginAnchorExecutionIngredientCost2(anchor);
         }
         if (AiHarnessBuiltinCases.BUSINESS_SEMANTIC_1B_RESOLVED_CONTEXT.equals(req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);

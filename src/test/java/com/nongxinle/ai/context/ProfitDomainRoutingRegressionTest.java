@@ -1,7 +1,6 @@
 package com.nongxinle.ai.context;
 
 import com.nongxinle.ai.followup.AiFollowUpHintSupport;
-import com.nongxinle.ai.followup.FollowUpPathKind;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -30,17 +29,4 @@ class ProfitDomainRoutingRegressionTest {
                 AiFollowUpHintSupport.currentMessageDeclaresDomainPath("换成菜品毛利")).isTrue();
     }
 
-    @Test
-    void topicConflict_always_false_domain_switch_owned_by_semantic_parser() {
-        Assertions.assertThat(AiFollowUpHintSupport.pathTopicConflict("AAA利润怎么样？", FollowUpPathKind.PURCHASE_OVERVIEW))
-                .isFalse();
-        Assertions.assertThat(AiFollowUpHintSupport.pathTopicConflict("毛利怎么样？", FollowUpPathKind.PURCHASE_OVERVIEW))
-                .isFalse();
-    }
-
-    @Test
-    void topicConflict_false_when_still_in_purchase_wording_with_supplier_and_profit_is_substring_noise() {
-        Assertions.assertThat(AiFollowUpHintSupport.pathTopicConflict(
-                "供货商订货利润占比多少", FollowUpPathKind.PURCHASE_OVERVIEW)).isFalse();
-    }
 }

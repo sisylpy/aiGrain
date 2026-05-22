@@ -31,19 +31,6 @@ final class DeterministicRendererSupport {
         return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail().trim());
     }
 
-    /** compat/debug only — not used to decide renderer or composer business口径. */
-    static String metricRankingTypeCompatForLog(AiRunState state) {
-        if (state == null || state.getResolvedQueryContext() == null) {
-            return null;
-        }
-        var parse = state.getResolvedQueryContext().getQuerySemanticParse();
-        if (parse == null || parse.getMetric() == null) {
-            return null;
-        }
-        String rt = parse.getMetric().getRankingType();
-        return StringUtils.hasText(rt) ? rt.trim() : null;
-    }
-
     static String nz(String s) {
         return s == null ? "" : s;
     }

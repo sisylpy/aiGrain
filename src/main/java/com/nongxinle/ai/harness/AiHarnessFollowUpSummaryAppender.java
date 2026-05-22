@@ -6,6 +6,10 @@ import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
+import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntent;
+import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntentResolver;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -15,7 +19,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Follow-up 目标实体 id 补齐（Harness 摘要层，不改业务语义）。
+ * 锚 execution / 语义帧 debug 摘要（Harness 层，不改业务语义）。
+ * P4-F：主输出 {@code executionIntentType} / {@code executionDetailWanted} / {@code anchorPolicy} / focus 实体键。
  */
 final class AiHarnessFollowUpSummaryAppender {
 
@@ -31,28 +36,34 @@ final class AiHarnessFollowUpSummaryAppender {
             out.put("followUp", false);
             out.put("followUpType", null);
         }
-        out.put("followUpAction", AiHarnessSummaryUtils.blankToNull(ctx.getFollowUpAction()));
-        out.put("followUpTargetEntityType", AiHarnessSummaryUtils.blankToNull(ctx.getFollowUpTargetEntityType()));
-        out.put("followUpTargetEntityName", AiHarnessSummaryUtils.blankToNull(ctx.getFollowUpTargetEntityName()));
-        out.put("followUpTargetEntityId", AiHarnessSummaryUtils.blankToNull(ctx.getFollowUpTargetEntityId()));
-        out.put("followUpDetailWanted", AiHarnessSummaryUtils.blankToNull(ctx.getFollowUpDetailWanted()));
-        out.put("followUpSourcePlanType", AiHarnessSummaryUtils.blankToNull(ctx.getFollowUpSourcePlanType()));
-        Map<String, Object> capDbg = ctx.getBusinessFollowUpCapabilityDebug();
-        if (capDbg != null && !capDbg.isEmpty()) {
-            out.put("matchedCapabilityId", capDbg.get("matchedCapabilityId"));
-            out.put("followUpRegistryQueryMode", capDbg.get("followUpRegistryQueryMode"));
-            out.put("framePlanType", capDbg.get("framePlanType"));
-            out.put("framePurchaseSourceType", capDbg.get("framePurchaseSourceType"));
-            out.put("slotDetailWanted", capDbg.get("slotDetailWanted"));
-            out.put("businessFollowUpCapabilityDebug", new LinkedHashMap<>(capDbg));
-        } else {
-            out.put("matchedCapabilityId", null);
-            out.put("followUpRegistryQueryMode", null);
-            out.put("framePlanType", null);
-            out.put("framePurchaseSourceType", null);
-            out.put("slotDetailWanted", null);
-            out.put("businessFollowUpCapabilityDebug", null);
+
+        AiQuerySemanticParseResult.SemanticSlotsPart slots = semanticSlots(ctx);
+        out.put("anchorPolicy", slots == null ? null : AiHarnessSummaryUtils.blankToNull(slots.getAnchorPolicy()));
+        out.put(
+                "semanticSlotsDetailWanted",
+                slots == null ? null : AiHarnessSummaryUtils.blankToNull(slots.getDetailWanted()));
+
+        PurchaseSemanticExecutionIntent exec = PurchaseSemanticExecutionIntentResolver.resolve(ctx);
+        out.put("executionIntentType", AiHarnessSummaryUtils.blankToNull(exec.getExecutionIntentType()));
+        out.put("executionDetailWanted", AiHarnessSummaryUtils.blankToNull(exec.getDetailWanted()));
+        out.put("focusEntityType", AiHarnessSummaryUtils.blankToNull(exec.getAnchorType()));
+        out.put("focusEntityName", AiHarnessSummaryUtils.blankToNull(exec.getFocusGoodsName()));
+        out.put("focusEntityId", AiHarnessSummaryUtils.blankToNull(exec.getFocusGoodsId()));
+        if (exec.getFocusSupplierId() != null) {
+            out.put("focusSupplierId", exec.getFocusSupplierId());
         }
+
+        SemanticContractValidationDebug validation = ctx.getSemanticContractValidation();
+        out.put(
+                "matchedContractId",
+                validation == null
+                        ? AiHarnessSummaryUtils.blankToNull(exec.getMatchedContractId())
+                        : AiHarnessSummaryUtils.blankToNull(validation.getMatchedContractId()));
+        out.put("contractExecutionQueryMode", resolveContractExecutionQueryMode(exec));
+        out.put("slotDetailWanted", slots == null ? null : AiHarnessSummaryUtils.blankToNull(slots.getDetailWanted()));
+        out.put("framePlanType", null);
+        out.put("framePurchaseSourceType", null);
+
         Integer prevResultAnchorsCount = null;
         AiConversationTurnMemory prev = ctx.getPreviousTurn();
         if (prev != null) {
@@ -99,33 +110,54 @@ final class AiHarnessFollowUpSummaryAppender {
         out.put("resultAnchorsCount", prevResultAnchorsCount);
     }
 
-    static void reconcileFollowUpTargetEntityIdForHarness(
+    static void reconcileFocusGoodsEntityIdForHarness(
             LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx, AiRunState state) {
         String entityType = AiHarnessSummaryUtils.blankToNull(
-                AiHarnessSummaryUtils.stringifyHarnessDbg(out.get("followUpTargetEntityType")));
-        if (entityType == null && ctx != null) {
-            entityType = AiHarnessSummaryUtils.blankToNull(ctx.getFollowUpTargetEntityType());
-        }
+                AiHarnessSummaryUtils.stringifyHarnessDbg(out.get("focusEntityType")));
         if (!AiResultAnchor.ENTITY_TYPE_GOODS.equalsIgnoreCase(entityType)) {
             return;
         }
-        if (StringUtils.hasText(AiHarnessSummaryUtils.stringifyHarnessDbg(out.get("followUpTargetEntityId")))) {
+        if (StringUtils.hasText(AiHarnessSummaryUtils.stringifyHarnessDbg(out.get("focusEntityId")))) {
             return;
         }
-        String resolved = resolveFollowUpTargetGoodsEntityIdForHarness(out, ctx, state);
+        String resolved = resolveFocusGoodsEntityIdForHarness(out, ctx, state);
         if (StringUtils.hasText(resolved)) {
-            out.put("followUpTargetEntityId", resolved);
+            out.put("focusEntityId", resolved);
         }
     }
 
-    private static String resolveFollowUpTargetGoodsEntityIdForHarness(
-            LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx, AiRunState state) {
-        if (ctx != null && StringUtils.hasText(ctx.getFollowUpTargetEntityId())) {
-            return ctx.getFollowUpTargetEntityId().trim();
+    private static AiQuerySemanticParseResult.SemanticSlotsPart semanticSlots(AiResolvedQueryContext ctx) {
+        if (ctx == null || ctx.getQuerySemanticParse() == null) {
+            return null;
         }
-        String fromDrilldown = AiHarnessSummaryUtils.harnessEntityIdString(out.get("purchaseGoodsDrilldownTargetGoodsId"));
-        if (StringUtils.hasText(fromDrilldown)) {
-            return fromDrilldown;
+        return ctx.getQuerySemanticParse().getSemanticSlots();
+    }
+
+    private static String resolveContractExecutionQueryMode(PurchaseSemanticExecutionIntent exec) {
+        if (exec == null || !StringUtils.hasText(exec.getExecutionIntentType())) {
+            return null;
+        }
+        return switch (exec.getExecutionIntentType()) {
+            case PurchaseSemanticExecutionIntent.EXEC_GOODS_SOURCE_BREAKDOWN -> "goods_source_breakdown";
+            case PurchaseSemanticExecutionIntent.EXEC_GOODS_SUPPLIER_BREAKDOWN -> "goods_supplier_breakdown";
+            case PurchaseSemanticExecutionIntent.EXEC_GOODS_SUPPLIER_UNIT_PRICE -> "goods_anchor_supplier_unit_price";
+            case PurchaseSemanticExecutionIntent.EXEC_SUPPLIER_ANCHOR_GOODS_LINES -> "supplier_anchor_goods_lines";
+            case PurchaseSemanticExecutionIntent.EXEC_CHANNEL_GOODS_DETAIL -> "supplier_channel_goods_detail";
+            default -> exec.getExecutionIntentType();
+        };
+    }
+
+    private static String resolveFocusGoodsEntityIdForHarness(
+            LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx, AiRunState state) {
+        PurchaseSemanticExecutionIntent exec = PurchaseSemanticExecutionIntentResolver.resolve(ctx);
+        String fromExec = AiHarnessSummaryUtils.blankToNull(exec.getFocusGoodsId());
+        if (StringUtils.hasText(fromExec)) {
+            return fromExec;
+        }
+        String fromExecution =
+                AiHarnessSummaryUtils.harnessEntityIdString(out.get("purchaseGoodsAnchorExecutionTargetGoodsId"));
+        if (StringUtils.hasText(fromExecution)) {
+            return fromExecution;
         }
         if (state != null && state.getPurchaseAnswerPlan() != null) {
             String fromPlan = uniqueGoodsAnchorEntityId(state.getPurchaseAnswerPlan().getResultAnchors());

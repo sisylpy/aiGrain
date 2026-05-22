@@ -4,12 +4,16 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntent;
+import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntentResolver;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.alibaba.fastjson2.JSON;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -56,11 +60,14 @@ public final class PurchaseAnswerPlanBuilder {
         try {
             PurchaseAnswerPlan plan = build(state, overview, rq);
             state.setPurchaseAnswerPlan(plan);
-            log.info("[PurchaseAnswerPlan] attached runId={} type={} focusSize={} secondarySize={}",
+            List<?> ra = plan.getResultAnchors();
+            log.info(
+                    "[PurchaseAnswerPlan] attached runId={} type={} focusSize={} secondarySize={} resultAnchorsCount={}",
                     state.getRunId(),
                     plan.getPlanType(),
                     plan.getFocusRows() == null ? 0 : plan.getFocusRows().size(),
-                    plan.getSecondaryRows() == null ? 0 : plan.getSecondaryRows().size());
+                    plan.getSecondaryRows() == null ? 0 : plan.getSecondaryRows().size(),
+                    ra == null || ra.isEmpty() ? 0 : ra.size());
         } catch (Exception ex) {
             log.warn("[PurchaseAnswerPlan] attach failed runId={}", state.getRunId(), ex);
             state.setPurchaseAnswerPlan(null);
@@ -68,16 +75,17 @@ public final class PurchaseAnswerPlanBuilder {
     }
 
     static PurchaseAnswerPlan build(AiRunState state, Map<String, Object> overview, AiResolvedQueryContext rq) {
-        String wire = "";
+        PurchaseSemanticExecutionIntent executionIntent = PurchaseSemanticExecutionIntentResolver.resolve(rq);
+        String wire = resolveStructuredWireForPlan(rq);
         String pst = AiQuerySemanticLexicon.SOURCE_ALL;
         if (rq != null && rq.getQueryIntent() != null) {
             AiResolvedQueryIntent qi = rq.getQueryIntent();
-            if (qi.getStructuredIntentDetail() != null && !qi.getStructuredIntentDetail().isBlank()) {
-                wire = qi.getStructuredIntentDetail().trim();
-            }
             if (qi.getPurchaseSourceType() != null && !qi.getPurchaseSourceType().isBlank()) {
                 pst = qi.getPurchaseSourceType().trim();
             }
+        }
+        if (executionIntent.isActive() && StringUtils.hasText(executionIntent.getSourceFacet())) {
+            pst = executionIntent.getSourceFacet().trim();
         }
 
         String planType = resolvePlanType(wire, pst);
@@ -88,25 +96,14 @@ public final class PurchaseAnswerPlanBuilder {
                 pst = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE;
             }
         }
-        if (isGoodsSupplierUnitPriceFollowUpIntent(rq, wire)) {
-            planType = PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL;
-            pst = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE;
-        } else if (isGoodsSupplierBreakdownFollowUpIntent(rq, wire)) {
-            planType = PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL;
-            pst = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE;
-        } else if (Boolean.TRUE.equals(overview.get("purchaseGoodsSupplierDrilldown"))) {
-            planType = PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL;
-            if (pst == null
-                    || pst.isBlank()
-                    || AiQuerySemanticLexicon.SOURCE_ALL.equalsIgnoreCase(pst.trim())) {
-                pst = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE;
-            }
-        } else if (isGoodsSourceBreakdownIntent(rq, wire, pst)) {
-            planType = PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN;
+        planType = applyExecutionIntentPlanType(planType, executionIntent, overview, pst);
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN.equals(planType)) {
             pst = AiQuerySemanticLexicon.SOURCE_ALL;
-        } else if (Boolean.TRUE.equals(overview.get("purchaseGoodsSourceBreakdownActive"))) {
-            planType = PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN;
-            pst = AiQuerySemanticLexicon.SOURCE_ALL;
+        } else if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL.equals(planType)
+                && (pst == null
+                        || pst.isBlank()
+                        || AiQuerySemanticLexicon.SOURCE_ALL.equalsIgnoreCase(pst.trim()))) {
+            pst = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE;
         }
         String scopeLabel = resolveScopeLabel(overview, rq);
         String timeLabel = resolveTimeLabel(state, rq);
@@ -122,6 +119,17 @@ public final class PurchaseAnswerPlanBuilder {
         LinkedHashMap<String, Object> debug = new LinkedHashMap<>();
         debug.put("structuredIntentDetailWire", wire.isEmpty() ? null : wire);
         debug.put("resolvedPlanType", planType);
+        if (executionIntent.isActive()) {
+            debug.put("purchaseExecutionIntentType", executionIntent.getExecutionIntentType());
+            debug.put("purchaseMatchedContractId", emptyToNull(executionIntent.getMatchedContractId()));
+            debug.put("purchaseExecutionDetailWanted", emptyToNull(executionIntent.getDetailWanted()));
+            debug.put("purchaseExecutionAnchorResolved", executionIntent.isAnchorResolved());
+        }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING.equals(planType)
+                || PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_COUNT_RANKING.equals(planType)) {
+            debug.put("goodsRankingFocusRowsSize", focusRows.size());
+            debug.put("goodsRankingFocusRow0GoodsName", firstGoodsNameFromRow(focusRows.isEmpty() ? null : focusRows.get(0)));
+        }
         debug.put("source", "PurchaseOverviewTool");
         if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING.equals(planType)) {
             debug.put("sortKey", "totalPurchaseAmount");
@@ -143,14 +151,14 @@ public final class PurchaseAnswerPlanBuilder {
             debug.put("sortDirection", "DESC");
         }
 
-        mergePurchaseGoodsDrilldownObservationIfPresent(overview, debug, planType);
+        mergePurchaseAnchorExecutionObservationIfPresent(overview, debug, planType);
         mergePurchaseGoodsSourceBreakdownHarnessFields(overview, debug, planType, rq);
         finalizePurchaseSupplierGoodsDetailHarnessDebug(overview, debug, planType, focusRows, secondaryRows);
         finalizePurchaseGoodsSourceBreakdownHarnessDebug(overview, debug, planType, focusRows, rq);
-        appendPurchaseSupplierGoodsDetailFollowUpDebug(planType, overview, rq, debug);
-        appendPurchaseGoodsSourceBreakdownFollowUpDebug(planType, overview, rq, debug);
-        patchGoodsSupplierUnitPriceNoDataReason(planType, rq, focusRows, secondaryRows, debug);
-        patchGoodsSupplierBreakdownNoDataReason(planType, rq, focusRows, secondaryRows, debug);
+        appendPurchaseSupplierGoodsDetailExecutionDebug(planType, overview, rq, debug);
+        appendPurchaseGoodsSourceBreakdownExecutionDebug(planType, overview, rq, debug);
+        patchGoodsSupplierUnitPriceNoDataReason(planType, executionIntent, rq, focusRows, secondaryRows, debug);
+        patchGoodsSupplierBreakdownNoDataReason(planType, executionIntent, rq, focusRows, secondaryRows, debug);
 
         List<AiResultAnchor> anchors = buildResultAnchors(planType, focusRows, overview, rq);
         if (!anchors.isEmpty()) {
@@ -159,7 +167,13 @@ public final class PurchaseAnswerPlanBuilder {
                 debug.put("resultAnchorSourcePlanType", PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN);
             } else if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL.equals(planType)) {
                 debug.put("resultAnchorSourcePlanType", PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL);
+            } else if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING.equals(planType)
+                    || PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_COUNT_RANKING.equals(planType)) {
+                debug.put("resultAnchorSourcePlanType", planType);
             }
+        } else if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING.equals(planType)
+                || PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_COUNT_RANKING.equals(planType)) {
+            debug.put("goodsRankingAnchorSkippedReason", diagnoseGoodsRankingAnchorSkip(planType, focusRows, overview));
         }
 
         return PurchaseAnswerPlan.builder()
@@ -173,6 +187,77 @@ public final class PurchaseAnswerPlanBuilder {
                 .debug(debug)
                 .resultAnchors(anchors)
                 .build();
+    }
+
+    /**
+     * queryIntent.structuredIntentDetail 为空时，回退 semanticSlots.structuredIntentDetailWire，
+     * 避免 planType 落到 OVERVIEW 导致 GOODS 排行 Top1 锚点未生成。
+     */
+    private static String resolveStructuredWireForPlan(AiResolvedQueryContext rq) {
+        if (rq != null && rq.getQueryIntent() != null) {
+            String fromQi = rq.getQueryIntent().getStructuredIntentDetail();
+            if (fromQi != null && !fromQi.isBlank()) {
+                return fromQi.trim();
+            }
+        }
+        if (rq != null && rq.getQuerySemanticParse() != null) {
+            AiQuerySemanticParseResult.SemanticSlotsPart slots = rq.getQuerySemanticParse().getSemanticSlots();
+            if (slots != null) {
+                String fromSlots = slots.getStructuredIntentDetailWire();
+                if (fromSlots != null && !fromSlots.isBlank()) {
+                    return fromSlots.trim();
+                }
+            }
+            String fromTurnWire = rq.getQuerySemanticParse().getCurrentTurnStructuredIntentDetailWire();
+            if (fromTurnWire != null && !fromTurnWire.isBlank()) {
+                return fromTurnWire.trim();
+            }
+        }
+        return "";
+    }
+
+    private static String firstGoodsNameFromRow(Map<String, Object> row) {
+        if (row == null || row.isEmpty()) {
+            return null;
+        }
+        for (String key : new String[] {"goodsName", "goodsTitle", "name"}) {
+            Object v = row.get(key);
+            if (v != null && !v.toString().isBlank()) {
+                return v.toString().trim();
+            }
+        }
+        return null;
+    }
+
+    private static String diagnoseGoodsRankingAnchorSkip(
+            String planType, List<Map<String, Object>> focusRows, Map<String, Object> overview) {
+        if (focusRows != null && !focusRows.isEmpty()) {
+            String name = firstGoodsNameFromRow(focusRows.get(0));
+            if (name == null) {
+                return "focusRow0_missing_goods_name";
+            }
+            return "unknown";
+        }
+        List<Map<String, Object>> tops =
+                PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_AMOUNT_RANKING.equals(planType)
+                        ? firstNonEmptyRowList(
+                                overview,
+                                "goodsPurchaseAmountTop",
+                                "goodsAmountTop",
+                                "purchaseGoodsAmountTop")
+                        : firstNonEmptyRowList(
+                                overview,
+                                "goodsPurchaseFrequencyTop",
+                                "goodsFrequencyTop",
+                                "goodsPurchaseCountTop",
+                                "purchaseGoodsFrequencyTop");
+        if (tops.isEmpty()) {
+            return "overview_goods_top_empty";
+        }
+        if (firstGoodsNameFromRow(tops.get(0)) == null) {
+            return "overview_top0_missing_goods_name";
+        }
+        return "focusRows_empty_overview_has_top";
     }
 
     /**
@@ -259,10 +344,37 @@ public final class PurchaseAnswerPlanBuilder {
     }
 
     /**
-     * Phase2-A：{@code purchase_source_goods_query} + GOODS 锚 + {@code SOURCE_BREAKDOWN} 追问，
-     * 须落成 {@link PurchaseAnswerPlan#TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN}，不得静默落回 OVERVIEW。
+     * P4-B：semantic contract execution intent 优先于 wire 默认 OVERVIEW；Tool 观测键仅作末位 fallback。
+     */
+    private static String applyExecutionIntentPlanType(
+            String defaultPlanType,
+            PurchaseSemanticExecutionIntent executionIntent,
+            Map<String, Object> overview,
+            String pst) {
+        if (executionIntent != null
+                && executionIntent.isActive()
+                && StringUtils.hasText(executionIntent.getAnswerPlanType())) {
+            return executionIntent.getAnswerPlanType();
+        }
+        if (Boolean.TRUE.equals(
+                overview.get(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_SUPPLIER_EXECUTION_ACTIVE))) {
+            return PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL;
+        }
+        if (Boolean.TRUE.equals(overview.get("purchaseGoodsSourceBreakdownActive"))) {
+            return PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN;
+        }
+        return defaultPlanType;
+    }
+
+    /**
+     * Harness 测试入口：委托 {@link PurchaseSemanticExecutionIntentResolver}（semantic contract + anchor 驱动）。
      */
     static boolean isGoodsSourceBreakdownIntent(AiResolvedQueryContext rq, String structuredWire, String purchaseSourceType) {
+        PurchaseSemanticExecutionIntent intent = PurchaseSemanticExecutionIntentResolver.resolve(rq);
+        if (!PurchaseSemanticExecutionIntent.EXEC_GOODS_SOURCE_BREAKDOWN.equals(
+                intent.getExecutionIntentType())) {
+            return false;
+        }
         String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(structuredWire);
         if (!AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(wire)) {
             return false;
@@ -274,75 +386,48 @@ public final class PurchaseAnswerPlanBuilder {
         if (!AiQuerySemanticLexicon.SOURCE_ALL.equalsIgnoreCase(pst)) {
             return false;
         }
-        if (rq == null || !rq.isFollowUp()) {
-            return false;
-        }
-        String wanted = rq.getFollowUpDetailWanted();
-        if (wanted == null || !"SOURCE_BREAKDOWN".equalsIgnoreCase(wanted.trim())) {
-            return false;
-        }
-        if (AiResultAnchor.ENTITY_TYPE_GOODS.equalsIgnoreCase(emptyToNull(rq.getFollowUpTargetEntityType()))) {
-            return true;
-        }
-        return resolveInheritedGoodsAnchor(rq) != null;
+        return intent.isAnchorResolved()
+                || AiResultAnchor.ENTITY_TYPE_GOODS.equalsIgnoreCase(
+                        emptyToNull(intent.getAnchorType()))
+                || resolveInheritedGoodsAnchor(rq) != null;
     }
 
-    /**
-     * GOODS 锚 + {@code SUPPLIER_BREAKDOWN} 追问：落成 {@link PurchaseAnswerPlan#TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL}，
-     * 不得落回 SOURCE_BREAKDOWN / OVERVIEW。
-     */
-    static boolean isGoodsSupplierBreakdownFollowUpIntent(AiResolvedQueryContext rq, String structuredWire) {
+    /** Historical 测试入口：委托 execution intent resolver。 */
+    static boolean isGoodsSupplierBreakdownExecutionIntent(AiResolvedQueryContext rq, String structuredWire) {
+        PurchaseSemanticExecutionIntent intent = PurchaseSemanticExecutionIntentResolver.resolve(rq);
+        if (!PurchaseSemanticExecutionIntent.EXEC_GOODS_SUPPLIER_BREAKDOWN.equals(
+                intent.getExecutionIntentType())) {
+            return false;
+        }
         String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(structuredWire);
-        if (!AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(wire)) {
-            return false;
-        }
-        if (rq == null || !rq.isFollowUp()) {
-            return false;
-        }
-        String wanted = rq.getFollowUpDetailWanted();
-        if (wanted == null
-                || !AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_BREAKDOWN.equalsIgnoreCase(wanted.trim())) {
-            return false;
-        }
-        if (AiResultAnchor.ENTITY_TYPE_GOODS.equalsIgnoreCase(emptyToNull(rq.getFollowUpTargetEntityType()))) {
-            return true;
-        }
-        return resolveInheritedGoodsAnchor(rq) != null;
+        return AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(wire);
     }
 
-    /**
-     * GOODS 锚 + {@code SUPPLIER_UNIT_PRICE} 追问：落成 {@link PurchaseAnswerPlan#TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL}，
-     * 不回退 OVERVIEW。
-     */
-    static boolean isGoodsSupplierUnitPriceFollowUpIntent(AiResolvedQueryContext rq, String structuredWire) {
+    /** Historical 测试入口：委托 execution intent resolver。 */
+    static boolean isGoodsSupplierUnitPriceExecutionIntent(AiResolvedQueryContext rq, String structuredWire) {
+        PurchaseSemanticExecutionIntent intent = PurchaseSemanticExecutionIntentResolver.resolve(rq);
+        if (!PurchaseSemanticExecutionIntent.EXEC_GOODS_SUPPLIER_UNIT_PRICE.equals(
+                intent.getExecutionIntentType())) {
+            return false;
+        }
         String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(structuredWire);
-        if (!AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(wire)) {
-            return false;
-        }
-        if (rq == null || !rq.isFollowUp()) {
-            return false;
-        }
-        String wanted = rq.getFollowUpDetailWanted();
-        if (wanted == null
-                || !AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_UNIT_PRICE.equalsIgnoreCase(wanted.trim())) {
-            return false;
-        }
-        if (AiResultAnchor.ENTITY_TYPE_GOODS.equalsIgnoreCase(emptyToNull(rq.getFollowUpTargetEntityType()))) {
-            return true;
-        }
-        return resolveInheritedGoodsAnchor(rq) != null;
+        return AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(wire);
     }
 
     private static void patchGoodsSupplierUnitPriceNoDataReason(
             String planType,
+            PurchaseSemanticExecutionIntent executionIntent,
             AiResolvedQueryContext rq,
             List<Map<String, Object>> focusRows,
             List<Map<String, Object>> secondaryRows,
             LinkedHashMap<String, Object> debug) {
-        if (!isUnifiedPurchaseGoodsDetailPlan(planType) || rq == null || debug == null) {
+        if (!isUnifiedPurchaseGoodsDetailPlan(planType) || debug == null) {
             return;
         }
-        String wanted = rq.getFollowUpDetailWanted();
+        String wanted =
+                executionIntent != null && StringUtils.hasText(executionIntent.getDetailWanted())
+                        ? executionIntent.getDetailWanted()
+                        : null;
         if (wanted == null
                 || !AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_UNIT_PRICE.equalsIgnoreCase(wanted.trim())) {
             return;
@@ -358,14 +443,18 @@ public final class PurchaseAnswerPlanBuilder {
 
     private static void patchGoodsSupplierBreakdownNoDataReason(
             String planType,
+            PurchaseSemanticExecutionIntent executionIntent,
             AiResolvedQueryContext rq,
             List<Map<String, Object>> focusRows,
             List<Map<String, Object>> secondaryRows,
             LinkedHashMap<String, Object> debug) {
-        if (!isUnifiedPurchaseGoodsDetailPlan(planType) || rq == null || debug == null) {
+        if (!isUnifiedPurchaseGoodsDetailPlan(planType) || debug == null) {
             return;
         }
-        String wanted = rq.getFollowUpDetailWanted();
+        String wanted =
+                executionIntent != null && StringUtils.hasText(executionIntent.getDetailWanted())
+                        ? executionIntent.getDetailWanted()
+                        : null;
         if (wanted == null
                 || !AiQuerySemanticLexicon.DETAIL_WANTED_SUPPLIER_BREAKDOWN.equalsIgnoreCase(wanted.trim())) {
             return;
@@ -413,7 +502,8 @@ public final class PurchaseAnswerPlanBuilder {
             }
         }
         if (goodsId == null && rq != null) {
-            goodsId = emptyToNull(rq.getFollowUpTargetEntityId());
+            PurchaseSemanticExecutionIntent intent = PurchaseSemanticExecutionIntentResolver.resolve(rq);
+            goodsId = emptyToNull(intent.getFocusGoodsId());
         }
         if (goodsId == null && rq != null) {
             AiResultAnchor inherited = resolveInheritedGoodsAnchor(rq);
@@ -428,7 +518,8 @@ public final class PurchaseAnswerPlanBuilder {
             Map<String, Object> focusRow, AiResolvedQueryContext rq) {
         String goodsName = focusRow != null ? firstNonBlankString(focusRow, "goodsName", "goodsTitle", "name") : null;
         if (goodsName == null && rq != null) {
-            goodsName = emptyToNull(rq.getFollowUpTargetEntityName());
+            PurchaseSemanticExecutionIntent intent = PurchaseSemanticExecutionIntentResolver.resolve(rq);
+            goodsName = emptyToNull(intent.getFocusGoodsName());
         }
         if (goodsName == null && rq != null) {
             AiResultAnchor inherited = resolveInheritedGoodsAnchor(rq);
@@ -488,44 +579,83 @@ public final class PurchaseAnswerPlanBuilder {
                 || PurchaseAnswerPlan.TYPE_PURCHASE_SELF_GOODS_DETAIL.equals(planType);
     }
 
-    private static void mergePurchaseGoodsDrilldownObservationIfPresent(
+    private static void mergePurchaseAnchorExecutionObservationIfPresent(
             Map<String, Object> overview, LinkedHashMap<String, Object> debug, String planType) {
         if (!isUnifiedPurchaseGoodsDetailPlan(planType) || overview == null) {
             return;
         }
-        boolean drill = Boolean.TRUE.equals(overview.get("purchaseGoodsSupplierDrilldown"));
-        if (drill) {
+        boolean goodsAnchorExecution = isGoodsAnchorSupplierExecutionActive(overview);
+        if (goodsAnchorExecution) {
             debug.put("requestedEntityType", AiResultAnchor.ENTITY_TYPE_GOODS);
             debug.put("requestedPurchaseSourceType", AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE);
-            if (overview.get("purchaseGoodsDrilldownTargetGoodsName") != null) {
-                debug.put("requestedGoodsName", overview.get("purchaseGoodsDrilldownTargetGoodsName"));
+            Object goodsName =
+                    overview.get(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_NAME);
+            if (goodsName != null) {
+                debug.put("requestedGoodsName", goodsName);
             }
-            if (overview.get("purchaseGoodsDrilldownTargetGoodsId") != null) {
-                debug.put("requestedGoodsId", overview.get("purchaseGoodsDrilldownTargetGoodsId"));
+            Object goodsId =
+                    overview.get(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_ID);
+            if (goodsId != null) {
+                debug.put("requestedGoodsId", goodsId);
             }
         }
-        String[] keys = {
-                "purchaseGoodsDrilldownTargetGoodsName",
-                "purchaseGoodsDrilldownTargetGoodsId",
-                "purchaseSupplierGoodsDetailRowsCount",
-                "purchaseSupplierGoodsDetailNoDataReason",
-                "purchaseSupplierGoodsDetailAlternativeFacet",
-                "purchaseSupplierGoodsDetailAlternativeHasData",
-                "purchaseGoodsSupplierDrilldown",
-                "purchaseSupplierGoodsDetailAlternativeEvidence",
-                "purchaseSupplierGoodsDetailQueryMethod",
-                "purchaseSupplierGoodsDetailFocusSupplierId",
-                "purchaseSupplierDrilldownTimeWindow",
-                "purchaseSupplierDrilldownPurDepIds",
-                "purchaseSupplierDrilldownSourceFocus"
+        mirrorOverviewExecutionPayloadToDebug(overview, debug);
+    }
+
+    private static void mirrorOverviewExecutionPayloadToDebug(
+            Map<String, Object> overview, LinkedHashMap<String, Object> debug) {
+        putOverviewExecutionField(
+                overview,
+                debug,
+                AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_NAME);
+        putOverviewExecutionField(
+                overview,
+                debug,
+                AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_ID);
+        putOverviewExecutionField(
+                overview,
+                debug,
+                AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_SUPPLIER_EXECUTION_ACTIVE);
+        putOverviewExecutionField(
+                overview,
+                debug,
+                AiBusinessToolIds.PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_TIME_WINDOW);
+        putOverviewExecutionField(
+                overview,
+                debug,
+                AiBusinessToolIds.PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_PUR_DEP_IDS);
+        putOverviewExecutionField(
+                overview,
+                debug,
+                AiBusinessToolIds.PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_SOURCE_FOCUS);
+        String[] passthrough = {
+            "purchaseSupplierGoodsDetailRowsCount",
+            "purchaseSupplierGoodsDetailNoDataReason",
+            "purchaseSupplierGoodsDetailAlternativeFacet",
+            "purchaseSupplierGoodsDetailAlternativeHasData",
+            "purchaseSupplierGoodsDetailAlternativeEvidence",
+            "purchaseSupplierGoodsDetailQueryMethod",
+            "purchaseSupplierGoodsDetailFocusSupplierId"
         };
-        for (String k : keys) {
+        for (String k : passthrough) {
             if (overview.containsKey(k)) {
                 debug.put(k, overview.get(k));
             }
         }
     }
 
+    private static void putOverviewExecutionField(
+            Map<String, Object> overview, LinkedHashMap<String, Object> debug, String executionKey) {
+        if (overview != null && overview.containsKey(executionKey)) {
+            debug.put(executionKey, overview.get(executionKey));
+        }
+    }
+
+    private static boolean isGoodsAnchorSupplierExecutionActive(Map<String, Object> overview) {
+        return overview != null
+                && Boolean.TRUE.equals(
+                        overview.get(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_SUPPLIER_EXECUTION_ACTIVE));
+    }
     /**
      * Harness / Replay：按 plan 内真实明细行数收口 {@code purchaseSupplierGoodsDetail*}，并把 Tool 原因码规范为稳定枚举，
      * 不修改 Tool 返回值本身（仅在 debug 镜像中规范化）。
@@ -544,7 +674,7 @@ public final class PurchaseAnswerPlanBuilder {
         int totalRows = fr + sr;
         boolean payloadPresent = overview != null
                 && (overview.containsKey("purchaseSupplierGoodsDetailRows")
-                        || Boolean.TRUE.equals(overview.get("purchaseGoodsSupplierDrilldown")));
+                        || isGoodsAnchorSupplierExecutionActive(overview));
         if (totalRows > 0) {
             debug.put("purchaseSupplierGoodsDetailRowsCount", totalRows);
             debug.put("purchaseSupplierGoodsDetailNoDataReason", null);
@@ -594,23 +724,42 @@ public final class PurchaseAnswerPlanBuilder {
         return switch (t) {
             case "NO_SUPPLIER_PURCHASE_FOR_GOODS" -> "NO_SUPPLIER_PURCHASE_FOR_FOCUSED_GOODS";
             case "GOODS_NOT_FOUND_FOR_PURCHASE_DETAIL" -> t;
-            case "GOODS_ID_MISSING_FOR_DRILLDOWN" -> "FOCUSED_GOODS_NOT_FOUND";
+            case "GOODS_ID_MISSING_FOR_DRILLDOWN", "GOODS_ID_MISSING_FOR_ANCHOR_EXECUTION" -> "FOCUSED_GOODS_NOT_FOUND";
             case "NO_SUPPLIER_PURCHASE_FOR_FOCUSED_GOODS",
                  "FOCUSED_GOODS_NOT_FOUND",
                  "NO_PURCHASE_RECORD_FOR_FOCUSED_GOODS",
                  "NO_PURCHASE_LINES_FOR_FOCUSED_SUPPLIER",
                  "NO_SUPPLIER_PURCHASE_FOR_SCOPE",
                  "SUPPLIER_ID_MISSING_FOR_DRILLDOWN",
+                 "SUPPLIER_ID_MISSING_FOR_ANCHOR_EXECUTION",
                  "TOOL_PAYLOAD_EMPTY",
                  "GOODS_SUPPLIER_UNIT_PRICE_NO_DATA" -> t;
             default -> t;
         };
     }
 
+    private static void putPurchaseExecutionHarnessDebug(
+            PurchaseSemanticExecutionIntent intent, LinkedHashMap<String, Object> debug) {
+        if (debug == null) {
+            return;
+        }
+        PurchaseSemanticExecutionIntent exec =
+                intent == null ? PurchaseSemanticExecutionIntent.none() : intent;
+        debug.put("executionIntentType", emptyToNull(exec.getExecutionIntentType()));
+        debug.put("executionDetailWanted", emptyToNull(exec.getDetailWanted()));
+        debug.put("matchedContractId", emptyToNull(exec.getMatchedContractId()));
+        debug.put("focusEntityType", emptyToNull(exec.getAnchorType()));
+        debug.put("focusEntityName", emptyToNull(exec.getFocusGoodsName()));
+        debug.put("focusEntityId", emptyToNull(exec.getFocusGoodsId()));
+        if (exec.getFocusSupplierId() != null) {
+            debug.put("focusSupplierId", exec.getFocusSupplierId());
+        }
+    }
+
     /**
-     * Harness / 复盘：第三轮供货商商品明细时，把 Resolver 锚点协议与 Tool 入参镜像摊平到 {@link PurchaseAnswerPlan#getDebug()}。
+     * Harness / 复盘：锚 execution 时，把 execution intent 与 Tool 入参镜像摊平到 {@link PurchaseAnswerPlan#getDebug()}。
      */
-    private static void appendPurchaseSupplierGoodsDetailFollowUpDebug(
+    private static void appendPurchaseSupplierGoodsDetailExecutionDebug(
             String planType,
             Map<String, Object> overview,
             AiResolvedQueryContext rq,
@@ -618,16 +767,13 @@ public final class PurchaseAnswerPlanBuilder {
         if (!isUnifiedPurchaseGoodsDetailPlan(planType) || rq == null || debug == null) {
             return;
         }
-        debug.put("followUpAction", emptyToNull(rq.getFollowUpAction()));
-        debug.put("followUpTargetEntityType", emptyToNull(rq.getFollowUpTargetEntityType()));
-        debug.put("followUpTargetEntityName", emptyToNull(rq.getFollowUpTargetEntityName()));
-        debug.put("followUpDetailWanted", emptyToNull(rq.getFollowUpDetailWanted()));
+        putPurchaseExecutionHarnessDebug(PurchaseSemanticExecutionIntentResolver.resolve(rq), debug);
         Object toolSid = overview == null ? null : overview.get("purchaseSupplierGoodsDetailFocusSupplierId");
         if (toolSid != null) {
             debug.put("toolFocusSupplierId", toolSid);
-            String ft = rq.getFollowUpTargetEntityType();
-            if (ft != null && AiResultAnchor.ENTITY_TYPE_SUPPLIER.equalsIgnoreCase(ft.trim())) {
-                debug.put("followUpTargetEntityId", toolSid);
+            PurchaseSemanticExecutionIntent intent = PurchaseSemanticExecutionIntentResolver.resolve(rq);
+            if (AiResultAnchor.ENTITY_TYPE_SUPPLIER.equalsIgnoreCase(emptyToNull(intent.getAnchorType()))) {
+                debug.put("focusEntityId", toolSid);
             }
         }
         AiConversationTurnMemory prev = rq.getPreviousTurn();
@@ -757,8 +903,8 @@ public final class PurchaseAnswerPlanBuilder {
         summary.put("supplierPurchaseLineCount", parseIntLoose(row.get("supplierPurchaseLineCount")));
     }
 
-    /** Phase2-A：GOODS 来源拆桶追问，摊平 followUp / 继承 GOODS 锚（与 Supplier 明细路径对称）。 */
-    private static void appendPurchaseGoodsSourceBreakdownFollowUpDebug(
+    /** Phase2-A：GOODS 来源拆桶锚 execution，摊平 execution intent / 继承 GOODS 锚。 */
+    private static void appendPurchaseGoodsSourceBreakdownExecutionDebug(
             String planType,
             Map<String, Object> overview,
             AiResolvedQueryContext rq,
@@ -766,19 +912,13 @@ public final class PurchaseAnswerPlanBuilder {
         if (!PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN.equals(planType) || rq == null || debug == null) {
             return;
         }
-        debug.put("followUpAction", emptyToNull(rq.getFollowUpAction()));
-        debug.put("followUpTargetEntityType", emptyToNull(rq.getFollowUpTargetEntityType()));
-        debug.put("followUpTargetEntityName", emptyToNull(rq.getFollowUpTargetEntityName()));
-        String tid = rq.getFollowUpTargetEntityId();
-        if (tid != null && !tid.isBlank()) {
-            debug.put("followUpTargetEntityId", tid.trim());
-        } else if (overview != null) {
+        putPurchaseExecutionHarnessDebug(PurchaseSemanticExecutionIntentResolver.resolve(rq), debug);
+        if (overview != null) {
             Object fid = overview.get("purchaseGoodsSourceBreakdownFocusDisGoodsId");
             if (fid != null) {
-                debug.put("followUpTargetEntityId", fid.toString());
+                debug.put("focusEntityId", fid.toString());
             }
         }
-        debug.put("followUpDetailWanted", emptyToNull(rq.getFollowUpDetailWanted()));
         AiConversationTurnMemory prev = rq.getPreviousTurn();
         if (prev != null && prev.getLastResultAnchors() != null) {
             for (AiResultAnchor a : prev.getLastResultAnchors()) {
@@ -1096,8 +1236,9 @@ public final class PurchaseAnswerPlanBuilder {
         if (rq == null) {
             return List.of();
         }
-        String goodsId = emptyToNull(rq.getFollowUpTargetEntityId());
-        String goodsName = emptyToNull(rq.getFollowUpTargetEntityName());
+        PurchaseSemanticExecutionIntent intent = PurchaseSemanticExecutionIntentResolver.resolve(rq);
+        String goodsId = emptyToNull(intent.getFocusGoodsId());
+        String goodsName = emptyToNull(intent.getFocusGoodsName());
 
         Map<String, Object> row = null;
         if (focusRows != null && !focusRows.isEmpty()) {
@@ -1107,7 +1248,7 @@ public final class PurchaseAnswerPlanBuilder {
             goodsId = firstNonBlankId(row, "disGoodsId", "goodsId", "gbDisGoodsId");
         }
         if (goodsId == null && overview != null) {
-            Object fid = overview.get("purchaseGoodsDrilldownTargetGoodsId");
+            Object fid = overview.get(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_ID);
             if (fid != null && !fid.toString().isBlank()) {
                 goodsId = fid.toString().trim();
             }
@@ -1116,7 +1257,7 @@ public final class PurchaseAnswerPlanBuilder {
             goodsName = firstNonBlankString(row, "goodsName", "goodsTitle", "name");
         }
         if (goodsName == null && overview != null) {
-            Object fn = overview.get("purchaseGoodsDrilldownTargetGoodsName");
+            Object fn = overview.get(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_NAME);
             if (fn != null && !fn.toString().isBlank()) {
                 goodsName = fn.toString().trim();
             }

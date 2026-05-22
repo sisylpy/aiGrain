@@ -152,4 +152,4 @@
 
 ## 10. 修订说明（给人看）
 
-运维或产品改口径时：**优先改本文件 + 服务端 SQL/注入文案**，再视需要变薄 `ai-skill-procurement-structure.md` 等 Skill 中的重复段落，避免三处四种说法。
+运维或产品改口径时：**优先改本文件 + 服务端 SQL/注入文案**，再同步 `docs/ai/*-answer-plan.md` 与 `ai-prompts/composer/*.v1.md`，避免多处口径不一致。

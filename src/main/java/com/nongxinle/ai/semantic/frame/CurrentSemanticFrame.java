@@ -2,7 +2,7 @@ package com.nongxinle.ai.semantic.frame;
 
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.harness.followup.PurchaseDrilldownMatrix;
+import com.nongxinle.ai.semantic.matrix.PurchaseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import lombok.Builder;
@@ -13,10 +13,12 @@ import java.util.Locale;
 
 /**
  * 本轮 LLM 输出的语义帧（采购域 Phase 1）。
- * <p>职责：只读视图 + 矩阵 canonical 入口委托；不做 capability 匹配、不做澄清决策。
+ * <p>职责：只读视图 + Matrix 合同帧补全入口委托；不做 capability 匹配、不做澄清决策。
+ * <p>{@code structuredIntentDetailWire}（wire）= 系统登记的规范能力编号（ACTIVE SemanticCapabilityContract）；
+ * LLM 不得自造；合同外 wire 在 strict 下走 clarification，不做 silent 归一。
  * <ul>
- *   <li>{@link #canonicalizePurchaseFollowUp} — 委托 {@link PurchaseDrilldownMatrix}</li>
- *   <li>{@link #buildFrame} — 枚举/wire 归一后构建帧</li>
+ *   <li>{@link #canonicalizePurchaseFollowUp} — 委托 {@link PurchaseSemanticCapabilityMatrix}（contract frame completion）</li>
+ *   <li>{@link #buildFrame} — 合同内枚举/wire 归一后构建帧</li>
  * </ul>
  */
 @Value
@@ -47,13 +49,13 @@ public class CurrentSemanticFrame {
         return buildFrame(canonicalizePurchaseFollowUp(raw, previousTurn));
     }
 
-    /** 采购追问 canonical：委托矩阵契约表；返回新 parse 副本或原引用。 */
+    /** 采购追问 contract frame completion：委托矩阵契约表；返回新 parse 副本或原引用（非 alias）。 */
     public static AiQuerySemanticParseResult canonicalizePurchaseFollowUp(
             AiQuerySemanticParseResult raw, AiConversationTurnMemory previousTurn) {
-        return PurchaseDrilldownMatrix.canonicalizePurchaseFollowUp(raw, previousTurn);
+        return PurchaseSemanticCapabilityMatrix.canonicalizePurchaseFollowUp(raw, previousTurn);
     }
 
-    /** 对已 canonical 的 parse 构建帧；operation 归一见 {@link PurchaseDrilldownMatrix#canonicalOperation}。 */
+    /** 对已 contract-complete 的 parse 构建帧；operation 归一见 {@link PurchaseSemanticCapabilityMatrix#canonicalOperation}。 */
     public static CurrentSemanticFrame buildFrame(AiQuerySemanticParseResult raw) {
         if (raw == null || raw.isParseMissing()) {
             return CurrentSemanticFrame.builder().build();
@@ -72,8 +74,12 @@ public class CurrentSemanticFrame {
                         queryObject,
                         normalizeEnumToken(ss != null ? ss.getOperation() : null),
                         wireCanon);
+        if (!StringUtils.hasText(detailWanted)
+                && AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(wireCanon)) {
+            detailWanted = PurchaseSemanticCapabilityMatrix.inferGoodsAnchorDetailWanted(raw);
+        }
         String operation =
-                PurchaseDrilldownMatrix.canonicalOperation(
+                PurchaseSemanticCapabilityMatrix.canonicalOperation(
                         ss != null ? ss.getOperation() : null,
                         detailWanted,
                         queryObject,

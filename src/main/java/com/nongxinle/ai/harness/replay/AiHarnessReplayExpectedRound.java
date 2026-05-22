@@ -358,41 +358,44 @@ public class AiHarnessReplayExpectedRound {
     /** 非空时与摘要 {@code finalAnswerTextBlank} 须一致。 */
     private Boolean finalAnswerTextBlankExpected;
 
-    // --- D-13：Follow-up Action Protocol（与 {@link com.nongxinle.ai.context.AiResolvedQueryContext} debug 对齐）---
+    // --- 锚 execution 协议（semantic contract + execution intent）---
 
-    /** 非空：摘要顶层 {@code followUpAction} 须与该值完全一致。 */
-    private String followUpActionExpected;
+    /** 非空：摘要顶层 {@code executionIntentType} 须与该值完全一致。 */
+    private String executionIntentTypeExpected;
 
-    /** 非空列表：摘要 {@code followUpAction} 须为其中任一（用于 OBJECT_DRILLDOWN / DETAIL_DRILLDOWN 等价验收）。 */
-    private List<String> followUpActionAnyOf = new ArrayList<>();
+    /** 非空列表：摘要 {@code executionIntentType} 须为其中任一。 */
+    private List<String> executionIntentTypeAnyOf = new ArrayList<>();
 
-    /** 非空：摘要 {@code followUpTargetEntityType} 须与该值完全一致。 */
-    private String followUpTargetEntityTypeExpected;
-
-    /**
-     * 若为 {@link Boolean#TRUE}：摘要 {@code followUpTargetEntityName} 须非空白（数据环境相关，不比具体名称）。
-     */
-    private Boolean followUpTargetEntityNameMustBeNonBlank;
+    /** 非空：摘要 {@code focusEntityType} 须与该值完全一致。 */
+    private String focusEntityTypeExpected;
 
     /**
-     * 若为 {@link Boolean#TRUE}：摘要 {@code followUpTargetEntityId} 须非空白（Phase2-A GOODS 拆桶等）。
+     * 若为 {@link Boolean#TRUE}：摘要 {@code focusEntityName} 须非空白（数据环境相关，不比具体名称）。
      */
-    private Boolean followUpTargetEntityIdMustBeNonBlank;
+    private Boolean focusEntityNameMustBeNonBlank;
 
-    /** 非空：摘要 {@code followUpDetailWanted} 须与该值完全一致。 */
-    private String followUpDetailWantedExpected;
+    /**
+     * 若为 {@link Boolean#TRUE}：摘要 {@code focusEntityId} 须非空白（Phase2-A GOODS 拆桶等）。
+     */
+    private Boolean focusEntityIdMustBeNonBlank;
 
-    /** 非空列表：摘要 {@code followUpDetailWanted} 须为其中任一。 */
-    private List<String> followUpDetailWantedAnyOf = new ArrayList<>();
+    /** 非空：摘要 {@code executionDetailWanted} 须与该值完全一致。 */
+    private String executionDetailWantedExpected;
 
-    /** 非空：摘要 {@code followUpSourcePlanType} 须与该值完全一致。 */
-    private String followUpSourcePlanTypeExpected;
+    /** 非空列表：摘要 {@code executionDetailWanted} 须为其中任一。 */
+    private List<String> executionDetailWantedAnyOf = new ArrayList<>();
 
-    /** 非空：摘要顶层 {@code matchedCapabilityId}（D-13 能力登记 debug 摊平）须与该值完全一致。 */
+    /** 非空：摘要 {@code anchorPolicy} 须与该值完全一致。 */
+    private String anchorPolicyExpected;
+
+    /** 非空：摘要 {@code previousTurnSummary.lastPathCode} 对应锚来源 planType（观测）。 */
+    private String anchorSourcePlanTypeExpected;
+
+    /** 非空：摘要顶层 {@code matchedCapabilityId} 须与该值完全一致。 */
     private String matchedCapabilityIdExpected;
 
-    /** 非空：摘要顶层 {@code followUpRegistryQueryMode} 须与该值完全一致。 */
-    private String followUpRegistryQueryModeExpected;
+    /** 非空：摘要顶层 {@code contractExecutionQueryMode} 须与该值完全一致。 */
+    private String contractExecutionQueryModeExpected;
 
     /** 非空：摘要顶层 {@code framePlanType} 须与该值完全一致。 */
     private String framePlanTypeExpected;
@@ -429,8 +432,8 @@ public class AiHarnessReplayExpectedRound {
     /** 非空：摘要顶层 {@code diagnosisQuestionType}（由 DiagnosisPlan debug 镜像）须与该值一致。 */
     private String diagnosisQuestionTypeExpected;
 
-    /** 非空：摘要 {@code diagnosisDrilldownMatrixRowId} 须与该值一致（BD-A…BD-K）。 */
-    private String diagnosisDrilldownMatrixRowIdExpected;
+    /** 非空：摘要 {@code diagnosisReasonExplanationMatrixRowId} 须与该值一致（BD-A…BD-K）。 */
+    private String diagnosisReasonExplanationMatrixRowIdExpected;
 
     /** 非空：摘要 {@code diagnosisFacet} 须与该值一致。 */
     private String diagnosisFacetExpected;

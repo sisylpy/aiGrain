@@ -318,11 +318,11 @@ public final class AiHarnessExpectationComparator {
                 out);
         assertHarnessReplayContextProbes(summary, exp, out);
         assertDiagnosisStoreCompareHarnessProbes(summary, exp, out);
-        assertStoreRiskReasonsDrilldownHarnessExtras(summary, exp, out);
-        assertDishProfitAnchorDrilldownHarnessExtras(summary, exp, out);
+        assertStoreRiskReasonExplanationHarnessExtras(summary, exp, out);
+        assertDishProfitAnchorExecutionHarnessExtras(summary, exp, out);
         assertPurchaseAnswerPlanAnchorHarnessExtras(summary, exp, out);
-        assertFollowUpActionProtocol(summary, exp, out);
-        assertPurchaseSupplierChannelFollowUpRegistryHarness(summary, exp, out);
+        assertAnchorExecutionProtocol(summary, exp, out);
+        assertPurchaseSupplierChannelExecutionHarness(summary, exp, out);
         assertPurchaseAnswerPlanFocusOrSecondaryRowsJson(summary, exp, out);
         assertExpectedPlannedToolArgs(summary, exp, out);
         assertToolRequestHarnessProbes(summary, exp, out);
@@ -495,59 +495,66 @@ public final class AiHarnessExpectationComparator {
         return out;
     }
 
-    /** D-13：多轮下钻 debug 契约（Resolver 写入 {@code AiResolvedQueryContext}，摘要摊平到顶层）。 */
-    private static void assertFollowUpActionProtocol(
+    /** 锚 execution 协议（semantic contract + execution intent）。 */
+    private static void assertAnchorExecutionProtocol(
             Map<String, Object> summary,
             AiHarnessReplayExpectedRound exp,
             List<AiHarnessMismatch> out) {
-        if (StringUtils.hasText(exp.getFollowUpActionExpected())) {
-            String actual = stringVal(summary.get("followUpAction"));
-            if (!eq(actual, exp.getFollowUpActionExpected())) {
-                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "followUpAction", exp.getFollowUpActionExpected(), actual));
+        assertOptionalString(summary, exp.getExecutionIntentTypeExpected(), "executionIntentType", out);
+        if (exp.getExecutionIntentTypeAnyOf() != null && !exp.getExecutionIntentTypeAnyOf().isEmpty()) {
+            String actual = stringVal(summary.get("executionIntentType"));
+            if (!exp.getExecutionIntentTypeAnyOf().contains(actual)) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "executionIntentType",
+                        exp.getExecutionIntentTypeAnyOf(),
+                        actual));
             }
         }
-        if (exp.getFollowUpActionAnyOf() != null && !exp.getFollowUpActionAnyOf().isEmpty()) {
-            String actual = stringVal(summary.get("followUpAction"));
-            if (!exp.getFollowUpActionAnyOf().contains(actual)) {
-                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "followUpAction", exp.getFollowUpActionAnyOf(), actual));
-            }
-        }
-        assertOptionalString(summary, exp.getFollowUpTargetEntityTypeExpected(), "followUpTargetEntityType", out);
-        if (Boolean.TRUE.equals(exp.getFollowUpTargetEntityNameMustBeNonBlank())) {
-            String nm = stringVal(summary.get("followUpTargetEntityName"));
+        assertOptionalString(summary, exp.getFocusEntityTypeExpected(), "focusEntityType", out);
+        if (Boolean.TRUE.equals(exp.getFocusEntityNameMustBeNonBlank())) {
+            String nm = stringVal(summary.get("focusEntityName"));
             if (!StringUtils.hasText(nm)) {
-                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "followUpTargetEntityName(nonBlank)", "(non-blank)", nm));
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "focusEntityName(nonBlank)",
+                        "(non-blank)",
+                        nm));
             }
         }
-        if (Boolean.TRUE.equals(exp.getFollowUpTargetEntityIdMustBeNonBlank())) {
-            String id = stringVal(summary.get("followUpTargetEntityId"));
+        if (Boolean.TRUE.equals(exp.getFocusEntityIdMustBeNonBlank())) {
+            String id = stringVal(summary.get("focusEntityId"));
             if (!StringUtils.hasText(id)) {
-                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "followUpTargetEntityId(nonBlank)", "(non-blank)", id));
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "focusEntityId(nonBlank)",
+                        "(non-blank)",
+                        id));
             }
         }
-        assertOptionalString(summary, exp.getFollowUpDetailWantedExpected(), "followUpDetailWanted", out);
-        if (exp.getFollowUpDetailWantedAnyOf() != null && !exp.getFollowUpDetailWantedAnyOf().isEmpty()) {
-            String actual = stringVal(summary.get("followUpDetailWanted"));
-            List<String> allowed = trimNonEmpty(exp.getFollowUpDetailWantedAnyOf());
+        assertOptionalString(summary, exp.getExecutionDetailWantedExpected(), "executionDetailWanted", out);
+        if (exp.getExecutionDetailWantedAnyOf() != null && !exp.getExecutionDetailWantedAnyOf().isEmpty()) {
+            String actual = stringVal(summary.get("executionDetailWanted"));
+            List<String> allowed = trimNonEmpty(exp.getExecutionDetailWantedAnyOf());
             if (!allowed.contains(actual)) {
                 out.add(mm(
                         AiHarnessFailureType.INTENT_MISMATCH,
-                        "followUpDetailWanted",
+                        "executionDetailWanted",
                         allowed,
                         actual));
             }
         }
-        assertOptionalString(summary, exp.getFollowUpSourcePlanTypeExpected(), "followUpSourcePlanType", out);
+        assertOptionalString(summary, exp.getAnchorPolicyExpected(), "anchorPolicy", out);
     }
 
-    /** D-13：供货商渠道 overview → 商品明细追问（能力登记 debug 摊平键 + 明细行数）。 */
-    private static void assertPurchaseSupplierChannelFollowUpRegistryHarness(
+    /** 供货商渠道 overview → 商品明细锚 execution（contract + 明细行数）。 */
+    private static void assertPurchaseSupplierChannelExecutionHarness(
             Map<String, Object> summary,
             AiHarnessReplayExpectedRound exp,
             List<AiHarnessMismatch> out) {
         assertOptionalString(summary, exp.getMatchedCapabilityIdExpected(), "matchedCapabilityId", out);
         assertOptionalString(
-                summary, exp.getFollowUpRegistryQueryModeExpected(), "followUpRegistryQueryMode", out);
+                summary, exp.getContractExecutionQueryModeExpected(), "contractExecutionQueryMode", out);
         assertOptionalString(summary, exp.getFramePlanTypeExpected(), "framePlanType", out);
         assertOptionalString(
                 summary, exp.getFramePurchaseSourceTypeExpected(), "framePurchaseSourceType", out);
@@ -615,8 +622,8 @@ public final class AiHarnessExpectationComparator {
         }
     }
 
-    /** D-13.3A：DISH anchor → 原料构成追问；摘要摊平键见 {@link AiHarnessResolvedContextSummarizer}。 */
-    private static void assertDishProfitAnchorDrilldownHarnessExtras(
+    /** D-13.3A：DISH anchor → 原料构成 execution；摘要摊平键见 {@link AiHarnessResolvedContextSummarizer}。 */
+    private static void assertDishProfitAnchorExecutionHarnessExtras(
             Map<String, Object> summary,
             AiHarnessReplayExpectedRound exp,
             List<AiHarnessMismatch> out) {
@@ -762,14 +769,22 @@ public final class AiHarnessExpectationComparator {
         }
     }
 
-    /** D-13.2：STORE anchor → 原因追问；摘要摊平键见 {@link AiHarnessReplayExpectedRound} 增量字段。 */
-    private static void assertStoreRiskReasonsDrilldownHarnessExtras(
+    /** D-13.2：STORE anchor → 原因 explanation；摘要摊平键见 {@link AiHarnessReplayExpectedRound} 增量字段。 */
+    private static void assertStoreRiskReasonExplanationHarnessExtras(
             Map<String, Object> summary,
             AiHarnessReplayExpectedRound exp,
             List<AiHarnessMismatch> out) {
         assertOptionalString(summary, exp.getDiagnosisQuestionTypeExpected(), "diagnosisQuestionType", out);
-        assertOptionalString(
-                summary, exp.getDiagnosisDrilldownMatrixRowIdExpected(), "diagnosisDrilldownMatrixRowId", out);
+        if (StringUtils.hasText(exp.getDiagnosisReasonExplanationMatrixRowIdExpected())) {
+            String actual = stringVal(summary.get("diagnosisReasonExplanationMatrixRowId"));
+            if (!eq(actual, exp.getDiagnosisReasonExplanationMatrixRowIdExpected())) {
+                out.add(mm(
+                        AiHarnessFailureType.INTENT_MISMATCH,
+                        "diagnosisReasonExplanationMatrixRowId",
+                        exp.getDiagnosisReasonExplanationMatrixRowIdExpected(),
+                        actual));
+            }
+        }
         assertOptionalString(summary, exp.getDiagnosisFacetExpected(), "diagnosisFacet", out);
         assertOptionalString(summary, exp.getDiagnosisChildDomainExpected(), "diagnosisChildDomain", out);
         assertOptionalString(summary, exp.getDiagnosisKnownGapExpected(), "diagnosisKnownGap", out);
@@ -963,6 +978,15 @@ public final class AiHarnessExpectationComparator {
         }
         String s = o.toString().trim();
         return s.isEmpty() ? null : s;
+    }
+
+    private static String summaryStringOrLegacy(
+            Map<String, Object> summary, String primaryKey, String legacyKey) {
+        String primary = stringVal(summary.get(primaryKey));
+        if (StringUtils.hasText(primary)) {
+            return primary;
+        }
+        return stringVal(summary.get(legacyKey));
     }
 
     private static String trim(String s) {

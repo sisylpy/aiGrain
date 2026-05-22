@@ -1,11 +1,12 @@
-# Business Diagnosis Composite — **C-57～C-65：生产执行、`SHADOW`、观测与灰度策略（设计 + §17 MVP 占位 + §18～§19 灰度 / 观测索引）— 本阶段已收口，C-66 暂缓，D-1 起主业务能力**
+# Business Diagnosis Composite — 生产执行、`SHADOW` 与观测
 
 > **读者**：Graph / AiRunService / PlannerExecutor 接线工程师、SRE / 产品经理（灰度策略）。  
-> **阶段**：**C-57** — **设计**：Gate **`allowed=true`** 之后的执行与灰度。**C-58** — **已实装**：Harness **`GRAPH_RUN`** + **`compositeBusinessDiagnosisExecutionMode=HARNESS_ONLY`**。**C-59** — **设计**：**`SHADOW`** 语义（**§13**）。**C-60** — **已实装**：普通 **`/api/ai/runs`** + Spring **`executionMode=SHADOW`** 旁路 Composite（**§14**）。**C-61** — **已实装**：**`compositeShadow*`** 耗时/对比观测（**§15**）。**C-62** — **仅文档**：白名单与限流策略（**§16**）。**C-63** — **已实装**：**`ShadowPolicy` / `ShadowDecision`** 最小接线（**§17**，**`ai.composite.businessDiagnosis.shadow.*`**，默认 **`shadow.enabled=false`** 不旁路 Composite）；**§17.2** — **三轮手工验收已通过**。**C-64** — **仅文档**：**`SHADOW` 灰度上线策略** — **§18** 索引 **[`business-diagnosis-shadow-rollout-plan.md`](./business-diagnosis-shadow-rollout-plan.md)**。**C-65** — **仅文档**：**灰度观测与复盘清单** — **§19** 索引 **[`business-diagnosis-shadow-observation-checklist.md`](./business-diagnosis-shadow-observation-checklist.md)**。  
-> **前置**：**C-52～C-56.2** — 权威 **[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**。  
-> **横向**：Composite 六步、AnswerPlan Builder、Readonly Composer — **[`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md)**、**[`business-diagnosis-composer-readonly-design.md`](./business-diagnosis-composer-readonly-design.md)**。  
-> **阶段收口（C-50～C-65）**：**C-58 `HARNESS_ONLY`**（Harness **`GRAPH_RUN`**）**已验证**。**C-60 / C-61** 普通 Run **`SHADOW`** **已接入**，**`compositeShadow*`** **可观测**。**C-63 `ShadowPolicy`** **已支持** 白名单、**`scopeWhitelist`**、**`maxRunsPerMinute` / `maxRunsPerHour`**、**`cooldownSeconds`**。**C-64 / C-65** **[`business-diagnosis-shadow-rollout-plan.md`](./business-diagnosis-shadow-rollout-plan.md)**（灰度策略）与 **[`business-diagnosis-shadow-observation-checklist.md`](./business-diagnosis-shadow-observation-checklist.md)**（观测清单）**文档已完备**。**当前**不接 **`PRIMARY`**，**不替换** **`finalAnswerText` / `answerPreview`**。**C-66** 集中式 **metrics / dashboard** **先不做**（与 **rollout §7** 暂缓一致）。**下一阶**：**D-1** 主业务能力 — **[`next-business-capability-roadmap.md`](./next-business-capability-roadmap.md)**、**[`PROJECT_HANDOFF_D1.md`](./PROJECT_HANDOFF_D1.md)**。  
-> **后继**：**C-66+** — **日志聚合 metrics / dashboard / 跨实例限流 / legacy `toolResults` 只读复用 / `PRIMARY`** / **异步 SHADOW** — **当前窗口不排**；待有真实灰度或产品决策再开（详见 **`business-diagnosis-shadow-rollout-plan.md` §7**）。
+> **现网**：**`BusinessDiagnosisCompositePlanFactory`** + **`BusinessDiagnosisCompositeExecutionService`** + **`PlannerExecutor`** 已落地。  
+> **模式**：**`HARNESS_ONLY`**（Harness **`GRAPH_RUN`**，C-58）；**`SHADOW`**（普通 **`POST /api/ai/runs`** 旁路，C-60）；**`ShadowPolicy`** 白名单/限流（C-63，默认 **`shadow.enabled=false`**）。**`compositeShadow*`** 观测字段（C-61）已输出。  
+> **终稿边界**：**不接 `PRIMARY`**；**不替换** **`finalAnswerText` / `answerPreview`**（**`compositeShadowFinalAnswerReplaced` 须恒 false**）。  
+> **前置 Gate**：**[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)**。  
+> **局部待做**：**C-66** 集中 metrics/dashboard/Redis 跨实例限流；**PRIMARY** 切换策略 — 见 **[`next-business-capability-roadmap.md`](./next-business-capability-roadmap.md)** §6。  
+> **灰度手册**：**[`business-diagnosis-shadow-rollout-plan.md`](./business-diagnosis-shadow-rollout-plan.md)**、**[`business-diagnosis-shadow-observation-checklist.md`](./business-diagnosis-shadow-observation-checklist.md)**。
 
 ---
 
@@ -214,7 +215,7 @@ Resolver / Planner（既有）
 - [x] **Fallback** 分层  
 - [x] **四域 Tool 双倍执行** 风险与分期策略  
 - [x] **C-58 最小实现切片**  
-- [x] **C-59 **`SHADOW`** 仅文档** — **§13**（普通 Run 旁路语义、读放大、观测键、fallback **禁止反噬** legacy）  
+- [x] **C-59 / C-60 `SHADOW` 已实装** — **§13**（普通 Run 旁路语义、读放大、观测键、fallback **禁止反噬** legacy）  
 
 ---
 
@@ -255,10 +256,9 @@ Resolver / Planner（既有）
 
 ---
 
-## 13. C-59 **`SHADOW`** 模式（**仅设计**，**本阶段不实现**）
+## 13. C-59 / C-60 **`SHADOW`** 模式（已实装）
 
-> **背景**：**C-58** 已在 Harness **`GRAPH_RUN` + `HARNESS_ONLY`** 下验收：Gate **`allowed`** 时可旁路跑 Composite，**`compositeFinalAnswerText`** 可观测，**不替换** legacy **`answerPreview`**；Harness **`overallPass`** 受旧 case expectation 误伤，**不**代表 Composite 失败（§12.2）。  
-> **C-59** 将 **同一「只观测、不换终稿」** 思想 **迁到普通 `/api/ai/runs`**，**仍不接 `PRIMARY`、不替换用户回答、不复用 legacy toolResults、不加 LLM`**。
+> **背景**：**C-58 `HARNESS_ONLY`** 已在 Harness 验收。**C-60** 已将同一「只观测、不换终稿」语义迁到普通 **`/api/ai/runs`**（**`AiRunService#maybeExecuteShadowCompositePlanner`**）。**仍不接 `PRIMARY`、不替换用户回答、不加 LLM 诊断**。
 
 ### 13.1 定义（何时跑、用户看到什么）
 
@@ -545,7 +545,7 @@ BASE_URL=http://localhost:8090/api scripts/c63-shadow-verify.sh
 
 ---
 
-## 18. **C-64：`SHADOW` 灰度上线策略（仅文档；索引）**
+## 18. **C-64：`SHADOW` 灰度上线策略（索引）**
 
 在 **C-63**（**`ShadowPolicy` 接线** + **三轮验收**）基线上，约定 **何时开放旁路、受众、限流、观测与立即关闸**。本文件 **§13.3 / §16～§17** 为 **机制与配置语义**；**运营与 SRE 放行清单** 见独立权威：
 
@@ -555,10 +555,10 @@ BASE_URL=http://localhost:8090/api scripts/c63-shadow-verify.sh
 
 ---
 
-## 19. **C-65：`SHADOW` 灰度观测与复盘清单（仅文档；索引）**
+## 19. **C-65：`SHADOW` 灰度观测与复盘清单（索引）**
 
 在 **C-64**「谁 / 限流 / 关闸总则」之上，**操作化** **每请求须记录字段**、**每日复盘表**、**扩大灰度准入** 与 **暂停判据**（**只依赖** **Gate + Resolver 物化上下文 + `composite*`**）。**权威**：
 
 - **[`business-diagnosis-shadow-observation-checklist.md`](./business-diagnosis-shadow-observation-checklist.md)**
 
-**文档版本**：**C-63 §17 已编码** + **§17.2 手工验收已收口** + **C-64 §18** + **C-65 §19** — **本阶段 Composite 生产接入安全框架已收口**；**C-66 暂缓**；**D-1** 见 **[`PROJECT_HANDOFF_D1.md`](./PROJECT_HANDOFF_D1.md)**。
+**文档版本**：**C-63 §17 已编码** + **§17.2 手工验收已收口** + **C-64 §18** + **C-65 §19** — **本阶段 Composite 生产接入安全框架已收口**；**C-66 暂缓**；**D-1** 见 **[`next-business-capability-roadmap.md`](./next-business-capability-roadmap.md)**。

@@ -4,6 +4,7 @@ import com.nongxinle.ai.agent.business.BusinessDiagnosisAgentV1;
 import com.nongxinle.ai.context.AiResolvedDataScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
+import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
@@ -86,6 +87,7 @@ final class AiHarnessAnswerPlanSummaryAppender {
         out.put("purchaseAnswerPlanDebug", null);
         out.put("purchaseAnswerPlanResultAnchorsCount", null);
         out.put("purchaseAnswerPlanResultAnchorTypes", null);
+        out.put("turnMemoryPersistResultAnchorsCount", null);
         putPurchaseSupplierGoodsDetailHarnessTopDefaults(out);
         out.put("stockReduceAnswerPlan", null);
         out.put("stockReduceAnswerPlanPresent", false);
@@ -208,6 +210,23 @@ final class AiHarnessAnswerPlanSummaryAppender {
         appendDiagnosisPlanResultAnchorHarnessFields(out, dp);
         emitDeprecatedDiagnosisPlanHarnessCompatKeys(out, state, rqExe, dp);
         out.put("planSource", resolvePlanSource(state, rqExe));
+        appendTurnMemoryPersistResultAnchorsCount(out, state);
+    }
+
+    private static void appendTurnMemoryPersistResultAnchorsCount(
+            LinkedHashMap<String, Object> out, AiRunState state) {
+        if (state == null) {
+            out.put("turnMemoryPersistResultAnchorsCount", null);
+            return;
+        }
+        AiConversationTurnMemory preview = AiConversationTurnMemory.fromCompletedState(state);
+        if (preview == null
+                || preview.getLastResultAnchors() == null
+                || preview.getLastResultAnchors().isEmpty()) {
+            out.put("turnMemoryPersistResultAnchorsCount", null);
+            return;
+        }
+        out.put("turnMemoryPersistResultAnchorsCount", preview.getLastResultAnchors().size());
     }
 
     private static void appendDishProfitAnswerPlan(LinkedHashMap<String, Object> out, AiRunState state) {
@@ -741,11 +760,11 @@ final class AiHarnessAnswerPlanSummaryAppender {
         out.put("purchaseSupplierGoodsDetailRowsCount", null);
         out.put("purchaseSupplierGoodsDetailNoDataReason", null);
         out.put("purchaseSupplierGoodsDetailAlternativeHasData", null);
-        out.put("purchaseGoodsDrilldownTargetGoodsName", null);
-        out.put("purchaseGoodsDrilldownTargetGoodsId", null);
+        out.put("purchaseGoodsAnchorExecutionTargetGoodsName", null);
+        out.put("purchaseGoodsAnchorExecutionTargetGoodsId", null);
         out.put("purchaseSupplierGoodsDetailQueryMethod", null);
         out.put("toolFocusSupplierId", null);
-        out.put("followUpTargetEntityId", null);
+        out.put("focusEntityId", null);
         out.put("inheritedAnchorType", null);
         out.put("inheritedAnchorId", null);
         out.put("inheritedAnchorName", null);
@@ -790,14 +809,15 @@ final class AiHarnessAnswerPlanSummaryAppender {
             out.put("purchaseSupplierGoodsDetailAlternativeHasData", Boolean.valueOf(Boolean.parseBoolean(alt.toString())));
         }
         out.put(
-                "purchaseGoodsDrilldownTargetGoodsName",
+                "purchaseGoodsAnchorExecutionTargetGoodsName",
                 AiHarnessSummaryUtils.blankToNull(
-                        AiHarnessSummaryUtils.stringifyHarnessDbg(dbg.get("purchaseGoodsDrilldownTargetGoodsName"))));
-        Object gid = dbg.get("purchaseGoodsDrilldownTargetGoodsId");
+                        AiHarnessSummaryUtils.stringifyHarnessDbg(
+                                dbg.get(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_NAME))));
+        Object gid = dbg.get(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_ID);
         if (gid instanceof Number n) {
-            out.put("purchaseGoodsDrilldownTargetGoodsId", n.intValue());
+            out.put("purchaseGoodsAnchorExecutionTargetGoodsId", n.intValue());
         } else {
-            out.put("purchaseGoodsDrilldownTargetGoodsId", gid);
+            out.put("purchaseGoodsAnchorExecutionTargetGoodsId", gid);
         }
         out.put("purchaseSupplierGoodsDetailQueryMethod", AiHarnessSummaryUtils.blankToNull(
                 AiHarnessSummaryUtils.stringifyHarnessDbg(dbg.get("queryMethod"))));
@@ -808,9 +828,9 @@ final class AiHarnessAnswerPlanSummaryAppender {
                             AiHarnessSummaryUtils.stringifyHarnessDbg(dbg.get("purchaseSupplierGoodsDetailQueryMethod"))));
         }
         out.put("toolFocusSupplierId", dbg.get("toolFocusSupplierId"));
-        Object followUpTargetId = dbg.get("followUpTargetEntityId");
-        if (followUpTargetId != null) {
-            out.put("followUpTargetEntityId", followUpTargetId);
+        Object focusEntityId = dbg.get("focusEntityId");
+        if (focusEntityId != null) {
+            out.put("focusEntityId", focusEntityId);
         }
         out.put("inheritedAnchorType", AiHarnessSummaryUtils.blankToNull(
                 AiHarnessSummaryUtils.stringifyHarnessDbg(dbg.get("inheritedAnchorType"))));
@@ -845,9 +865,9 @@ final class AiHarnessAnswerPlanSummaryAppender {
         out.put("purchaseGoodsSourceBreakdownNoDataReasonFlat", AiHarnessSummaryUtils.blankToNull(
                 AiHarnessSummaryUtils.stringifyHarnessDbg(dbg.get("noDataReason"))));
         out.put("goodsSourceBreakdownGoodsAnchorIdMissing", dbg.get("goodsAnchorIdMissing"));
-        Object fid = dbg.get("followUpTargetEntityId");
+        Object fid = dbg.get("focusEntityId");
         if (fid != null) {
-            out.put("followUpTargetEntityId", fid);
+            out.put("focusEntityId", fid);
         }
         out.put("inheritedAnchorType", AiHarnessSummaryUtils.blankToNull(
                 AiHarnessSummaryUtils.stringifyHarnessDbg(dbg.get("inheritedAnchorType"))));
@@ -890,9 +910,9 @@ final class AiHarnessAnswerPlanSummaryAppender {
             return;
         }
         Map<String, Object> d = dp.getDebug();
-        Object rowId = d.get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_DRILLDOWN_MATRIX_ROW_ID);
+        Object rowId = d.get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_REASON_EXPLANATION_MATRIX_ROW_ID);
         if (rowId != null && StringUtils.hasText(String.valueOf(rowId))) {
-            out.put("diagnosisDrilldownMatrixRowId", String.valueOf(rowId).trim());
+            out.put("diagnosisReasonExplanationMatrixRowId", String.valueOf(rowId).trim());
         }
         Object facet = d.get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_FACET);
         if (facet != null && StringUtils.hasText(String.valueOf(facet))) {

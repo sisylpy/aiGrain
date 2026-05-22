@@ -106,18 +106,34 @@ public final class AiBusinessToolIds {
     public static final String ARG_PURCHASE_NARRATIVE_MODE = "purchaseNarrativeMode";
 
     /**
-     * D-13.4 Phase2：商品锚下钻（仅在有上一 GOODS anchor / 名称时由 {@link com.nongxinle.ai.graph.business.PurchaseOverviewGoodsDrilldownArgs} 写入）。
+     * P4-B：商品锚 contract execution（由 {@link com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionArgs} 写入）。
      */
     public static final String ARG_PURCHASE_FOCUS_DIS_GOODS_ID = "focusDisGoodsId";
     public static final String ARG_PURCHASE_FOCUS_GOODS_NAME = "focusGoodsName";
     public static final String ARG_PURCHASE_FOCUS_ENTITY_TYPE = "focusEntityType";
-    public static final String ARG_PURCHASE_FOLLOW_UP_DETAIL_WANTED = "followUpDetailWanted";
+    /** P4-B：contract execution 明细诉求（主链读此键）。 */
+    public static final String ARG_PURCHASE_EXECUTION_DETAIL_WANTED = "executionDetailWanted";
+    /** P4-B：{@link com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntent#getExecutionIntentType()}。 */
+    public static final String ARG_PURCHASE_EXECUTION_INTENT_TYPE = "executionIntentType";
 
     /**
-     * D-13.1：供货商金额排行锚下钻「商品明细」时由 {@link com.nongxinle.ai.graph.business.PurchaseOverviewGoodsDrilldownArgs}
-     * 写入；与 {@link #ARG_PURCHASE_FOCUS_DIS_GOODS_ID} 为不同追问维度（供货商 vs 商品）。
+     * D-13.1：供货商金额排行锚 execution（由 {@link com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionArgs} 写入）；
      */
     public static final String ARG_PURCHASE_FOCUS_SUPPLIER_ID = "focusSupplierId";
+
+    /** Tool {@code purchaseOverview} payload：商品锚供货商拆分明细 execution 已激活。 */
+    public static final String PAYLOAD_PURCHASE_GOODS_ANCHOR_SUPPLIER_EXECUTION_ACTIVE =
+            "purchaseGoodsAnchorSupplierExecutionActive";
+    public static final String PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_NAME =
+            "purchaseGoodsAnchorExecutionTargetGoodsName";
+    public static final String PAYLOAD_PURCHASE_GOODS_ANCHOR_EXECUTION_TARGET_GOODS_ID =
+            "purchaseGoodsAnchorExecutionTargetGoodsId";
+    public static final String PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_TIME_WINDOW =
+            "purchaseSupplierAnchorExecutionTimeWindow";
+    public static final String PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_PUR_DEP_IDS =
+            "purchaseSupplierAnchorExecutionPurDepIds";
+    public static final String PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_SOURCE_FOCUS =
+            "purchaseSupplierAnchorExecutionSourceFocus";
 
     /** 集团出库/核销查询：多门店父部门 in 聚合（与 {@link PurchaseOverviewTool} 集团旗标对称）。 */
     public static final String ARG_GROUP_STOCK_REDUCE_AGGREGATION = "groupStockReduceAggregation";

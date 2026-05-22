@@ -1,11 +1,10 @@
-# Business Diagnosis Composite — **C-52 生产入口门禁（Gate）设计（仅文档）**
+# Business Diagnosis Composite — 生产入口 Gate
 
 > **读者**：架构 / Graph / Master 对接工程师。  
-> **阶段**：**C-52** — **仅设计**：定义**真实聊天主链路**在**何种条件下**可进入 **Business Diagnosis Composite `PlannerExecutor`**；**本轮不接** `MasterBusinessAgent`、**不改** Resolver / Tool / Java。  
-> **C-52.1**：**Gate 结构化意图映射表** — **现网** **`AiResolvedQueryIntent` / `pathCode` / `AiQuerySemanticLexicon` wire / `AiResolvedQueryContext` 编排字段** 对齐；见 **§3.3**。  
-> **前置**：**C-35** STORE Harness、**C-48** GROUP Harness、**C-51** Readonly Composer、**C-42** 出库降级语义已验收；详见 **[`business-diagnosis-composite-plan-design.md`](./business-diagnosis-composite-plan-design.md)**、**[`business-diagnosis-composer-readonly-design.md`](./business-diagnosis-composer-readonly-design.md)**。  
-> **后继**：**C-53** — Gate **Java skeleton**（**`com.nongxinle.ai.planner.BusinessDiagnosisCompositeProductionGate`**）；**不接** Master / PlannerExecutor 执行。  
-> **Composite 执行与模式**：**[`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md)** — **C-57** 三阶段、**C-58 `HARNESS_ONLY` 已实装**、**C-59 `SHADOW` 语义**（§13）、**C-60 `SHADOW` 普通 Run 已实装**（本文 **§C-59～C-60**）、**C-62 `SHADOW` 灰度白名单 + 限流（§16，设计）**、**C-63 `ShadowPolicy` / `ShadowDecision` 最小接线已实装（composite §17）** — **§17.2：三轮 curl 手工验收已通过**；**C-64** **`SHADOW` 灰度上线策略**（仅文档）— composite **§18** + **[`business-diagnosis-shadow-rollout-plan.md`](./business-diagnosis-shadow-rollout-plan.md)** + 本文 **§C-64**；**C-65** **灰度观测与复盘清单**（仅文档）— composite **§19** + **[`business-diagnosis-shadow-observation-checklist.md`](./business-diagnosis-shadow-observation-checklist.md)** + 本文 **§C-65**。
+> **现网**：**`com.nongxinle.ai.planner.BusinessDiagnosisCompositeProductionGate`** 在 **`AiRunService#startRun`** 评估并写入 **`businessDiagnosisCompositeGateResult`**（**`allowed` / `reasonCode`**）；**只读**结构化 **`AiResolvedQueryContext`** / **`AiRunState`**，**禁止**用户原文 **contains/regex**。  
+> **意图映射表（§3.3）**：与 **`AiResolvedQueryIntent`**、**`pathCode`**、**`AiQuerySemanticLexicon` wire** 对齐 — 路由 SSOT。  
+> **后继执行**：Gate **`allowed=true`** 后由 **`BusinessDiagnosisCompositeExecutionService`** 按 **`HARNESS_ONLY` / `SHADOW`** 旁路 Composite（见 **[`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md)**）。  
+> **灰度运营**：**[`business-diagnosis-shadow-rollout-plan.md`](./business-diagnosis-shadow-rollout-plan.md)**、**[`business-diagnosis-shadow-observation-checklist.md`](./business-diagnosis-shadow-observation-checklist.md)**（**`ShadowPolicy`** 已实装；**C-66** 集中 dashboard 待做）。
 
 ## 1. Harness 已具备能力（本轮基线）
 
@@ -414,7 +413,7 @@ Gate **只读**下列 **结构化输入**（概念字段名以 **`AiResolvedQuer
 
 ---
 
-## C-64 **`SHADOW` 灰度上线策略（仅文档）**
+## C-64 **`SHADOW` 灰度上线策略**
 
 **问题**：「**Gate `allowed` + ShadowPolicy 放行**」在技术上 **可**触发 **旁路 Composite**，但 **C-63 基线样例旁路 ~27s** + **§13.3** 读放大，**不设运营/SRE 清单**易造成 **无意间扩面打库或拖慢 SSE**。
 
@@ -424,7 +423,7 @@ Gate **只读**下列 **结构化输入**（概念字段名以 **`AiResolvedQuer
 
 ---
 
-## C-65 **`SHADOW` 灰度观测与复盘清单（仅文档）**
+## C-65 **`SHADOW` 灰度观测与复盘清单**
 
 **问题**：**C-64** 已约定受众与关闸总则，但若 **批次间**不按同一套 **`composite*`** 抽样与日复盘口径汇总，易出现 **误判**放量或漏看 **legacy 牵连**。
 

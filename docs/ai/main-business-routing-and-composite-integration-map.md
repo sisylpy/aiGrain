@@ -1,7 +1,8 @@
-# 主链路经营路由与 Composite Gate/Execution 集成映射（**D-2.1** + **D-2.2 交叉索引**）
+# 主链路经营路由与 Composite Gate/Execution 集成映射
 
 > **读者**：后端 / Harness 工程师。  
-> **依据**：仓库内 **现行 Java**（以阅读时为准），不修改代码。  
+> **性质**：**现网 Java 接线图**（`AiRunService` → Resolver → Gate → Graph / SHADOW 旁路 → `finalAnswerText`）。  
+> **关键类**：**`BusinessDiagnosisCompositeProductionGate`**、**`BusinessDiagnosisCompositeExecutionService`**、**`PlannerExecutor`**、**`CompositeBusinessDiagnosisStepIds`**。  
 > **相关文档**：[`business-diagnosis-production-gate-design.md`](./business-diagnosis-production-gate-design.md)，[`business-diagnosis-production-composite-execution-design.md`](./business-diagnosis-production-composite-execution-design.md)，[`business-question-routing-d2-design.md`](./business-question-routing-d2-design.md)。
 
 ---
@@ -53,7 +54,7 @@
 | **创建 Context** | `AiResolvedQueryContextResolver.resolve(...)` | 返回完整 **`AiResolvedQueryContext`**。 |
 | **创建 State** | `AiRunService#newRunStateFromResolved` | `AiRunState.builder().resolvedQueryContext(resolved)...build()`；`needClarification` ← `resolved.isNeedSemanticClarification()` 等。 |
 | **Gate 观测写入** | `AiRunService#recordCompositeProductionGateObservation` | 调用 **`BusinessDiagnosisCompositeProductionGate.evaluate(rq, state, effectiveEnabled)`**，将 **`BusinessDiagnosisCompositeGateResult`** 设为 **`state.setBusinessDiagnosisCompositeGateResult`**。 |
-| **持久 Turn 记忆（完成后）** | `AiRunService#executeRun` 成功末尾 | **`AiConversationMemoryService.rememberCompletedTurn`**、**`AiFollowUpIntentSnapshotSupport.snapshotFromCompletedState`** + **`followUpConversationMemory.remember`** —— 供 **下一轮** Resolver 加载。 |
+| **持久 Turn 记忆（完成后）** | `AiRunService#executeRun` 成功末尾 | **`AiConversationMemoryService.rememberCompletedTurn`**（`AiConversationTurnMemory`）—— 供 **下一轮** Resolver 加载。Phase1-J 已删除 write-only 的 `AiFollowUpIntentSnapshot` / `AiFollowUpConversationMemory`。 |
 
 **注意**：Gate **evaluate** 本体 **不修改** **`AiRunState`**（见 `BusinessDiagnosisCompositeProductionGate` 注释）；仅 **调用方** `AiRunService` 把 **结果对象**挂上 State。
 
@@ -70,7 +71,7 @@
 5. **`StubOutcomeReviewNode`** — 审核桩 + **`MasterBusinessAgent.refreshBusinessOverviewMultiAgentPlanIfApplicable`**、诊断/计划 Builder 等。  
 6. **`StubAnswerComposerNode`** — **终稿**：`LlmGateway` + 确定性渲染等，写入 **`AiRunState.finalAnswerText`**（及部分结构化 DTO）。
 
-（**`BusinessWorkspaceRouteNode` / `BusinessFollowUpIntentResolveNode` / `WorkspaceRouterService` / `AiWorkspaceAccessGuard`** 等类已从代码删除，见 **`docs/legacy-reference/workspace-keyword-route-and-guard.md`**；**`AiUserQueryTimeWindowResolver` / LLM 时间 JSON 解析器** 随旧单 Agent Chat 已删除；Harness 时间唯一定稿见 **`AiResolvedQueryContext` + `BusinessTimeWindowNode`**。）
+（**`BusinessWorkspaceRouteNode` / `BusinessFollowUpIntentResolveNode` / `WorkspaceRouterService` / `AiWorkspaceAccessGuard`** 等类已从代码删除；**`AiUserQueryTimeWindowResolver` / LLM 时间 JSON 解析器** 随旧单 Agent Chat 已删除；Harness 时间唯一定稿见 **`AiResolvedQueryContext` + `BusinessTimeWindowNode`**。）
 
 **`MasterBusinessAgent` 在哪里**：**不**作为独立 Graph 顶点；嵌入 **`BusinessToolExecutionNode`**（多域编排）与 **`StubOutcomeReviewNode`**（刷新计划）。**分支选择**的一手来源仍是 **Resolver 上下文 + DataPlannerNode 对 path 的解释**。
 

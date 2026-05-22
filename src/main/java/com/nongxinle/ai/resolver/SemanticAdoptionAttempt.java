@@ -6,7 +6,7 @@ import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.SemanticTimeContractCheck;
 
 /**
- * {@link AiResolvedQueryContextResolver#trySemanticAdoption} 结果：成功收养、或时间/路径失败待澄清。
+ * {@link SemanticAdoptionPipeline#tryAdopt} 结果：成功收养、或时间/路径失败待澄清。
  */
 record SemanticAdoptionAttempt(
         AiQuerySemanticParseResult semantic,

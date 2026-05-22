@@ -1,6 +1,6 @@
 # 第一阶段技术决策（Architecture Decisions）
 
-本文档记录 **餐饮集团 AI 多智能体平台** 在重构与搭建阶段的基础设施选型与边界约定，与 `src/main/resources/PROJECT_AGENT_ARCHITECTURE.md`（产品/多 Agent 架构说明）配合使用。
+本文档记录 **餐饮集团 AI 多智能体平台** 在重构与搭建阶段的基础设施选型与边界约定，与 `docs/AI_AGENT_DEVELOPMENT_GUIDE.md`、`docs/AI_MAINLINE_INDEX.md`、`docs/ai/harness-composer-architecture.md` 配合使用。
 
 **总原则**：Spring 生态默认、轻量可替换；优先 **架构清晰、链路可跑通、多智能体可观测**；不先引入过重中间件。上层 **Agent Graph / Tool / OutcomeReview / Export** 仅依赖接口，底层实现可随数据量与并发替换。
 
@@ -125,7 +125,7 @@ user_id
 - 异步任务
 - 知识库文档与 chunk
 
-### 权限组件（与 `PROJECT_AGENT_ARCHITECTURE.md` 对齐）
+### 权限组件（与 `docs/PERMISSION_MODEL.md`、`docs/AI_AGENT_DEVELOPMENT_GUIDE.md` 对齐）
 
 重点保证实现并 **在所有数据访问与下载前调用**：
 

@@ -11,9 +11,9 @@ Composer / Renderer 已收口为 AnswerPlan-first 手写维护；本脚本不再
 - WarehouseDeterministicRenderer, renderWarehouseStockFallback
 - renderPurchaseCostFallback, renderBusinessOverviewFallback, renderDishProfitFallback (overview/tool)
 - stock_query, purchase_query, dish_sales_query, gross_margin_calculator, business_overview_query
-- LLM + Tool fallback 公共入口（COMPOSER_GENERIC_CHAT_V1 / COMPOSER_WAREHOUSE_V1 等）
+- LLM + Tool fallback 公共入口（历史 composer prompt 等，已废弃）
 
-See docs/legacy-reference/stock-reduce-deterministic-renderer-removed.md
+# StockReduceDeterministicRenderer removed — see docs/AI_MAINLINE_INDEX.md
 """
 import sys
 

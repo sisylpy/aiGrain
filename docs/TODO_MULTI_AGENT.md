@@ -8,7 +8,7 @@
 
 # 多智能体平台开发 TODO
 
-> 产品/架构说明见 `src/main/resources/PROJECT_AGENT_ARCHITECTURE.md`，第一阶段技术选型见 `docs/ARCHITECTURE_DECISIONS.md`。
+> 产品/架构说明见 `docs/AI_AGENT_DEVELOPMENT_GUIDE.md`、`docs/AI_MAINLINE_INDEX.md`、`docs/ai/harness-composer-architecture.md`；第一阶段技术选型见 `docs/ARCHITECTURE_DECISIONS.md`。
 
 ---
 
@@ -95,10 +95,10 @@
 ## 三、第三阶段：Agent Graph 核心能力
 
 - [x] 完善 `AiRunState`（时间窗字符串、`dataPlanTools`、**`costInsightPath` / `purchaseCostInsightPath` / `couponCostInsightBlocked` / `costIntentConvergenceNote` / `businessOverviewPath`**、`costDiagnosisResult` / `businessOverviewAnswerPlan` / `outcomeReviewStub`；**`businessOverviewResult` 已删 P1F-F2**）
-- [x] **经营概览支线**（第一版，**classic 已删 P1A–P1E**）：见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)；现网仅 **MULTI_AGENT 四域** + Composer multi markdown。
+- [x] **经营概览支线**（第一版，**classic 已删 P1A–P1E**）：见 `docs/AI_MAINLINE_INDEX.md`；现网仅 **MULTI_AGENT 四域** + Composer multi markdown。
 - [x] **成本问句意图收敛（第一版）**：**`CostInsightIntentConvergence` + `BusinessDataPlannerNode`**（`purchaseCostInsightPath` / `couponCostInsightBlocked` / 门店问「集团成本」范围说明）；Composer 前缀；单测：**`BusinessDataPlannerCostIntentBranchTest`**、**`CostInsightIntentConvergenceTest`**、**`AiOrgScopeResolverTest`** 增补；详见 **`PERMISSION_MODEL.md` §7**。
 - [ ] **`WorkspaceRouterAgent`**：由规则升级为 LLM 结构化路由 + `resources/ai/agents/workspace-router-agent.md`
-- [x] 完善 **`BusinessGraph` 成本 + 经营主线**（成本链 **`CostDiagnosisAgentNode`** + 各 Tool；经营概览 **现网** 为 MULTI_AGENT 四域，**非** classic **`BusinessOverviewAgentNode`** — 见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)）；Composer 经 **`DeepSeekLlmGateway`** 接主模型；**`ai.agent.llm.stub=true`** 时仅确定性摘要 **无外显占位句**；**成本侧逻辑收口** 见 **§「成本分析主线收口 checklist」**。
+- [x] 完善 **`BusinessGraph` 成本 + 经营主线**（成本链 **`CostDiagnosisAgentNode`** + 各 Tool；经营概览 **现网** 为 MULTI_AGENT 四域，**非** classic **`BusinessOverviewAgentNode`** — 见 `docs/AI_MAINLINE_INDEX.md`）；Composer 经 **`DeepSeekLlmGateway`** 接主模型；**`ai.agent.llm.stub=true`** 时仅确定性摘要 **无外显占位句**；**成本侧逻辑收口** 见 **§「成本分析主线收口 checklist」**。
 - [ ] 完善 **`BusinessGraph`** 其它 Workspace 派发与 MemoryExtractor 等（按文档 §11 继续拆分）
 - [ ] 新增并跑通 **`ReportGraph`** 基础流程（结构化 `AiReport` → 预览/导出衔接点）
 - [ ] 新增并跑通 **`MarketingGraph`** 基础流程（与 Risk/Review 衔接）
@@ -164,7 +164,7 @@ POST /api/ai/runs
   → AiPermissionGuard（链路级：兜底；无上下文放行）
   → AiRunService → BusinessGraph
   → BusinessScopeIntersectNode：AiRunScopeIntersectService（请求子树 ∩ 锚点子树）
-  （历史：曾含 BusinessWorkspaceRouteNode + AiWorkspaceAccessGuard，已删，见 docs/legacy-reference/workspace-keyword-route-and-guard.md）
+  （历史：曾含 BusinessWorkspaceRouteNode + AiWorkspaceAccessGuard，已删）
   → TimeWindow → DataPlanner …
   → 【每个 Tool 执行前】AiPermissionGuard.canInvokeTool（BusinessToolExecutionNode，已实现）
 ```
@@ -185,7 +185,7 @@ POST /api/ai/runs
 - [x] **无权限**：结构化 **`permissionDenied`**（可读 `reason` / `suggestedScope` / `requiredPermission` / `subject`）
 - [x] **`docs/PERMISSION_MODEL.md`**（权限单一说明）；**`docs/API_INTEGRATION.md`** / **`docs/SSE_BACKEND_EVENT_CONTRACT.md`**
 - [x] **`mvn test`**：新增 **`AiUserContextResolverTest`**、**`AiOrgScopeResolverTest`**、**`AiPermissionGuardTest`**、**`BusinessToolExecutionPermissionTest`**、**`CostDiagnosisPermissionDeniedTest`**
-- [x] **第二波（Java + 契约）**：**`AiRunScopeIntersectService`**（请求 dept 子树 ∩ 锚点子树，`AiRunState.scopeConvergenceNote`）；**`BusinessScopeIntersectNode`**（SSE：**`ScopeIntersect`**）；**`AiWorkspaceAccessGuard`** + **`ACCESS_MARKETING_WORKSPACE`**（**`WORKSPACE_ACCESS_DENIED`**）；单测：**`AiRunScopeIntersectServiceTest`**、**`AiWorkspaceAccessGuardTest`**；**`docs/API_INTEGRATION.md`** / **`docs/SSE_BACKEND_EVENT_CONTRACT.md`** 已写明解析顺序、`permissionDenied` / **`WORKSPACE_ACCESS_DENIED`** 示例；真机 SSE 仍以本机 **`curl`** 补帧（CI 无监听端口）。**（2026-05-17**：Guard / Router / WorkspaceRoute 节点与 **`AiWorkspaceAccessGuardTest`** 已删，契约示例保留；见 **`docs/legacy-reference/workspace-keyword-route-and-guard.md`**。）
+- [x] **第二波（Java + 契约）**：**`AiRunScopeIntersectService`**（请求 dept 子树 ∩ 锚点子树，`AiRunState.scopeConvergenceNote`）；**`BusinessScopeIntersectNode`**（SSE：**`ScopeIntersect`**）；**`AiWorkspaceAccessGuard`** + **`ACCESS_MARKETING_WORKSPACE`**（**`WORKSPACE_ACCESS_DENIED`**）；单测：**`AiRunScopeIntersectServiceTest`**、**`AiWorkspaceAccessGuardTest`**；**`docs/API_INTEGRATION.md`** / **`docs/SSE_BACKEND_EVENT_CONTRACT.md`** 已写明解析顺序、`permissionDenied` / **`WORKSPACE_ACCESS_DENIED`** 示例；真机 SSE 仍以本机 **`curl`** 补帧（CI 无监听端口）。**（2026-05-17**：Guard / Router / WorkspaceRoute 节点与 **`AiWorkspaceAccessGuardTest`** 已删，契约示例保留。）
 
 ### 完成标准（本阶段）
 
@@ -268,7 +268,7 @@ POST /api/ai/runs
 
 ## 「基础运行验证」清单（当前阶段收口）
 
-以下为与 `PROJECT_AGENT_ARCHITECTURE`/ADR 对齐的**最小链路**核验项（不按此扩大 Agent 范围）：
+以下为与 `docs/AI_AGENT_DEVELOPMENT_GUIDE.md` / ADR 对齐的**最小链路**核验项（不按此扩大 Agent 范围）：
 
 - [x] `mvn test` 门禁可跑（含 Smoke、Trace、`CostDiagnosisAgentNode` **成本收口** 场景等）
 - [x] **`AiRunController` / `AiRunService` / `AiGraphRunner` / `AiSseEventPublisher` / `ToolRegistry`** 等骨架 Bean 可被 Spring 扫描装配（请以本机数据源+端口就绪后 **`mvn spring-boot:run`** 为准）
@@ -291,7 +291,7 @@ POST /api/ai/runs
 
 ## business_overview_path 接入旧版经营看板数据（验收清单）— Historical（classic 已删）
 
-> **Historical removed（P1A–P1E + D-CLEAN-BOV-TOOL-DELETE）**：第一版 classic 链（**`BusinessOverviewAgentNode`** + **`business_overview_query` → …** 六工具序）及 **`BusinessOverviewQueryTool`** **已下线/已删**。现网 **`business_overview_path`** 仅 **MULTI_AGENT 四域**（**`revenue_query` + `purchase_overview` + `stock_reduce_query` + `dish_profit_analysis`**）或 **空 plan**；详见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)。下列 checklist 保留作 2026-05 交付记录，**勿**当作当前 Graph / Tool 表。
+> **Historical removed（P1A–P1E + D-CLEAN-BOV-TOOL-DELETE）**：第一版 classic 链（**`BusinessOverviewAgentNode`** + **`business_overview_query` → …** 六工具序）及 **`BusinessOverviewQueryTool`** **已下线/已删**。现网 **`business_overview_path`** 仅 **MULTI_AGENT 四域**（**`revenue_query` + `purchase_overview` + `stock_reduce_query` + `dish_profit_analysis`**）或 **空 plan**；详见 `docs/AI_MAINLINE_INDEX.md`。下列 checklist 保留作 2026-05 交付记录，**勿**当作当前 Graph / Tool 表。
 
 目标问句：**「这个月经营怎么样」** / **「这个月生意怎么样」** / **「本月经营情况怎么样」**。**（Historical）** Tool 序列（第一版 classic）：**`business_overview_query` → `dish_sales_query` → `purchase_query` → `gross_margin_calculator`**（**不**再并行单薄 **`revenue_query`**）；**`gross_margin_calculator`** 在缺 **`revenue_query`** 时从 **`business_overview_query.data.totalRevenue`** 取营业额。
 
@@ -318,7 +318,7 @@ POST /api/ai/runs
 
 ## 集团经营概览聚合口径 — Historical removed（classic + overview Tool 已删）
 
-> **Historical removed**：本节为 classic **`business_overview_query`** / **`BusinessOverviewQueryTool`** 交付记录（**`BusinessOverviewAgentNode` 已删**；**`BusinessOverviewQueryTool` 已于 D-CLEAN-BOV-TOOL-DELETE 删除**）。**现网** **`business_overview_path`** 仅 **MULTI_AGENT 四域**；集团/单店收入侧以 **`revenue_query`**（**`RevenueQueryTool`**）为准，见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)。
+> **Historical removed**：本节为 classic **`business_overview_query`** / **`BusinessOverviewQueryTool`** 交付记录（**`BusinessOverviewAgentNode` 已删**；**`BusinessOverviewQueryTool` 已于 D-CLEAN-BOV-TOOL-DELETE 删除**）。**现网** **`business_overview_path`** 仅 **MULTI_AGENT 四域**；集团/单店收入侧以 **`revenue_query`**（**`RevenueQueryTool`**）为准，见 `docs/AI_MAINLINE_INDEX.md`。
 
 > **排查结论（2026-05-10，代码核对，Historical）**：曾由 **`business_overview_query`** 承担的广角收入 rollup 逻辑已迁至 **`revenue_query`**。**`BusinessToolExecutionNode` → `revenue_query`** 的 **`departmentFatherId`** 来自 **`AiRunState.departmentId`**（即 **`POST` 请求的 `departmentId`**，收窄仅对**非集团广角**角色由 **`AiRunScopeIntersectService`** 写回锚点）。**`GbAiDailyRevenueController#getStats`** 路径参数文档化为 **「父部门/餐厅 ID」**（与日营收 `department_id`、核销 **`father_id`** 一致）。**集团广角（现网 `revenue_query`）**：**`GROUP_MANAGER` + `ARG_GROUP_WIDE_OVERVIEW_HINT`** 时，**门店根列表** → **`GbAiDailyRevenueService#expandStoreRootsToDailyRevenueScopeIds`** → **`getGroupIncomeAggregateForDepartmentIds`**；MULTI Composer 收入段与 **`buildStoreRevenueRanking`** 对齐。**不合并**核销/画像成本，利润率等为「不适用/—」（仍待产品定稿）。
 
@@ -335,13 +335,13 @@ POST /api/ai/runs
 
 ## 旧版 AI 回答资产迁移
 
-> 资产盘点表见 **`docs/LEGACY_AI_ANSWER_ASSETS.md`**。原则：旧版满意回答 = 业务资产；新多智能体 = 编排框架；先把 **`GbAiDailyRevenueDashboardService`** / **`GbDepFoodBusinessInsightService`** / **`ai-skill-*.md`** 等价数据接回 Tool 与 Composer，再迭代 prompt。
+> 资产盘点表见 **`docs/AI_MAINLINE_INDEX.md`**。原则：旧版满意回答 = 业务资产；新多智能体 = 编排框架；经营类数据经 **`GbAiDailyRevenueDashboardService`** / **`GbDepFoodBusinessInsightService`** 等接入 Tool 与 AnswerPlan，话术以 **`ai-prompts/composer/*.v1.md`** 为准。
 
-- [x] 全局搜索旧版经营 / 成本 / 菜品分析相关代码（结论写入 `LEGACY_AI_ANSWER_ASSETS.md`）
-- [x] 新增 `docs/LEGACY_AI_ANSWER_ASSETS.md`（持续与代码同步）
+- [x] 全局搜索旧版经营 / 成本 / 菜品分析相关代码（结论写入 `AI_MAINLINE_INDEX.md`）
+- [x] 新增 `docs/AI_MAINLINE_INDEX.md`（持续与代码同步）
 - [x] 整理旧版问题 → Service / DTO / 指标 / 回答模板（首版表格与差距说明已落盘）
 - [x] **（Historical）** `business_overview_path` 接入旧版经营数据（第一版 classic：**`BusinessOverviewQueryTool`** + **`GbAiDailyRevenueDashboardService#buildStatsDashboard`** + SSE **`answer_delta.data.businessOverview`**；Graph 链已删，见 legacy doc）
-- [ ] `costInsightPath` 对齐旧版成本回答（`ai-skill-cost.md` 与注入块等价信息）
+- [ ] `costInsightPath` 对齐成本诊断 Composer（`ai-prompts/composer/cost_diagnosis.v1.md` 与 Tool 注入块等价信息）
 - [x] `dish_profit_path` 接入旧版菜品毛利分析（`GbDepFoodBusinessInsightService` / 看板口径；**`DishProfitAnalysisTool` + `DishProfitAgentNode` + Composer**）
 - [ ] DeepSeek prompt 改为基于 `toolResults` 总结，禁止空泛建议、禁止编造未提供数字（**现网**经营 MULTI_AGENT 走 `StubAnswerComposerNode` 四域 markdown；**Historical removed**：勿再写 classic **`business_overview_query` / `BusinessOverviewQueryTool` 优先引用**）
 - [x] **（Historical 真机记录）** 真机回归：「这个月经营怎么样」— **店长** ✅、**集团** ✅（classic 链，见 legacy doc）
@@ -353,7 +353,7 @@ POST /api/ai/runs
 ## dish_profit_path 菜品毛利分析
 
 - [x] 查找旧版菜品毛利 / 菜品经营分析 Service / DTO / Prompt
-- [x] 在 `docs/LEGACY_AI_ANSWER_ASSETS.md` 增加菜品毛利资产清单（§菜品毛利 / 菜品分析旧版资产）
+- [x] 在 `docs/AI_MAINLINE_INDEX.md` 增加菜品毛利资产清单（§菜品毛利 / 菜品分析旧版资产）
 - [x] 新增 **`DishProfitAnalysisTool`**（`dish_profit_analysis`，复用 `GbDepFoodBusinessInsightService#buildInsight`）
 - [x] 将「菜品毛利 / 菜品分析 / 哪些菜赚钱 / 哪些菜亏钱」等路由到 **`dish_profit_path`**（先于泛泛成本「毛利」关键词）
 - [x] 返回菜品销售额、理论成本、实际成本、毛利额、毛利率（portfolio + 分项 brief）
@@ -381,8 +381,8 @@ POST /api/ai/runs
 
 > **下一迭代（与 `DOMAIN_ORG_MODEL` / 菜品毛利对齐）**：库存 Tool / Agent 须读取 **`AiRunState.getResolvedQueryContext()`**；集团用户默认按 **`orgScope.visibleStores`** / **`visibleWarehouses`** 汇总；若底层数据挂在子部门，可技术展开取数，但最终展示与统计口径须回到**门店 / 库房**级（见本轮产品约定）。
 
-- [x] 查找旧版库存查询 / 库房库存相关 Service / DTO / Controller（结论见 **`docs/LEGACY_AI_ANSWER_ASSETS.md` §库房库存查询旧版资产**）
-- [x] 在 `docs/LEGACY_AI_ANSWER_ASSETS.md` 增加库存资产清单
+- [x] 查找旧版库存查询 / 库房库存相关 Service / DTO / Controller（结论见 **`docs/AI_MAINLINE_INDEX.md` §库房库存查询旧版资产**）
+- [x] 在 `docs/AI_MAINLINE_INDEX.md` 增加库存资产清单
 - [x] 新增 **`WarehouseStockOverviewTool`**（`warehouse_stock_overview`）
 - [x] admin=3 问「经营怎么样」时收敛到 **`warehouse_stock_overview_path`**（Planner 已接入；工具链为单一聚合 Tool）
 - [x] 返回当前库房库存商品种数、库存金额、库存重量（及批次行数）
@@ -391,8 +391,8 @@ POST /api/ai/runs
 - [x] **`answer_delta.data.warehouseOverview`** 结构化（Composer 从 Tool 信封写入 RunState）
 - [x] Composer 基于 **`warehouseOverview`** 生成库管员可读答复（LLM 上下文 + 确定性 fallback）
 - [x] **D-CLEAN-RENDERER-FALLBACK-FINAL**：库房排行 Composer/Renderer **不**再 `metric.rankingType` fallback；只读 **`structuredIntentDetail`**（见 **`docs/ai/harness-composer-architecture.md`** §2.6）
-- [x] **D-1X-D3-RANKINGTYPE-FINAL**：Merge / `DishSalesAnswerPlanBuilder` / Harness `rawStructuredIntentDetail` **不**再以 `metric.rankingType` 定主 wire（见 **`docs/ai/d1x-rankingtype-and-duplicate-responsibility-inventory.md`**）
-- [x] **D-CLEAN-DOCS-REPLAY-CONTRACT-FINAL**：文档区分 **现网契约** vs **Historical inventory**（`d1x-rankingtype*`、`d1x-v2-only-time*`、业务矩阵、`AI_HARNESS_REPLAY_CASES.md`、`out/README.md`）；**未**改 Java / test / SQL / prompt schema
+- [x] **D-1X-D3-RANKINGTYPE-FINAL**：Merge / `DishSalesAnswerPlanBuilder` / Harness `rawStructuredIntentDetail` **不**再以 `metric.rankingType` 定主 wire（见 **`docs/ai/semantic-allowed-output-contract-design.md`**、**`docs/ai/semantic-contract-strict-mode-plan.md`**）
+- [x] **D-CLEAN-DOCS-REPLAY-CONTRACT-FINAL**：文档区分 **现网契约** vs 历史 inventory（语义合同、业务矩阵、`AI_HARNESS_REPLAY_CASES.md`、`out/README.md`）；**未**改 Java / test / SQL / prompt schema
 - [x] **集团管理（`GROUP_MANAGER`）**：「库存怎么样」等开放式库存问法 → **`GROUP_WAREHOUSE_STOCK_OVERVIEW`**（`groupWarehouseStockOverview=true`，Tool 入参 **`groupWarehouseStockAggregation`** + **`resolvedDepartmentIds`**）；按分销户下门店根（`father_id=0`）逐店聚合合并；**`warehouseOverview`** 含 **`scopeType=GROUP`**、`visibleStoreCount` / `dataAvailableStoreCount` / `dataMissingStoreCount`、`coveredStores` / `dataMissingStores`；禁止反问指定门店（见 **`DOMAIN_ORG_MODEL.md` §12**）
 
 **阶段收口（2026-05-10，库存链路真机）**
@@ -454,10 +454,10 @@ POST /api/ai/runs
 
 ## 经营诊断 DiagnosisPlan（Harness 阶段一 · 设计）
 
-> **设计文档**：**`docs/ai/diagnosis-answer-plan.md`**（DiagnosisPlan 定位、`type` / `diagnosisLevel`、`focusFindings` / `evidenceRows` / `riskRows` / `actionSuggestions` / `debug`、Composer 边界、阶段一不做项、与 **`business-diagnosis-harness-plan.md`** 关系）。  
-> **原则**：**Purchase / StockReduce / DishProfit / DailyRevenue** 四域 **AnswerPlan** 为唯一事实来源；**DiagnosisPlanBuilder** 只读聚合；**Composer** 只表达；Debug / Replay 可复盘。**阶段一（2026-05-12）**：**仅文档**，不改采购 / 出库 / 毛利 / 营收主链路代码。历史 Tool 编排说明见 **`business-diagnosis-harness-plan.md`**（已标注 AnswerPlan 优先）。
+> **设计文档**：**`docs/ai/diagnosis-answer-plan.md`**（DiagnosisPlan 定位、`type` / `diagnosisLevel`、`focusFindings` / `evidenceRows` / `riskRows` / `actionSuggestions` / `debug`、Composer 边界、阶段一不做项）。  
+> **原则**：**Purchase / StockReduce / DishProfit / DailyRevenue** 四域 **AnswerPlan** 为唯一事实来源；**DiagnosisPlanBuilder** 只读聚合；**Composer** 只表达；Debug / Replay 可复盘。
 
-- [x] **阶段二（骨架）**：**`DiagnosisPlan`** DTO + **`DiagnosisPlanBuilder.attachIfApplicable`**（**`StubOutcomeReviewNode`**）+ **`AiRunState#diagnosisPlan`**；**`OVERALL_BUSINESS_DIAGNOSIS`**；Harness **`diagnosisPlan*`**；**Historical removed**：**`BusinessDiagnosisPlan`** / **`BusinessDiagnosisPlanNode`**（见 **`legacy-reference/business-diagnosis-plan-removed.md`**）；**`StubAnswerComposerNode`** + **`DiagnosisDeterministicRenderer`**；单测 **`DiagnosisPlanBuilderTest`**
+- [x] **阶段二（骨架）**：**`DiagnosisPlan`** DTO + **`DiagnosisPlanBuilder.attachIfApplicable`**（**`StubOutcomeReviewNode`**）+ **`AiRunState#diagnosisPlan`**；**`OVERALL_BUSINESS_DIAGNOSIS`**；Harness **`diagnosisPlan*`**；**Historical removed**：**`BusinessDiagnosisPlan`** / **`BusinessDiagnosisPlanNode`**（现网 **`DiagnosisPlan`** + **`DiagnosisPlanBuilder`**）；**`StubAnswerComposerNode`** + **`DiagnosisDeterministicRenderer`**；单测 **`DiagnosisPlanBuilderTest`**
 - [x] **D-AI-FILE-INVENTORY-CLEANUP-P2**：诊断链三代边界审计 — 成本链 **`CostDiagnosisAgentNode`**、经营链 **`DiagnosisPlanBuilder` + `BusinessDiagnosisAgentV1`**、Composite **SHADOW/HARNESS_ONLY** 文档与类注释收口（**未删** `BusinessDiagnosisAgentV1`；**未动** Composer/Tool/SQL）
 - [ ] **阶段二（规则）**：阈值 / `findingType` 与 Harness 对比扩展
 - [ ] **阶段二**：规则诊断（阈值 / `findingType`）与 Harness 单测
@@ -467,7 +467,7 @@ POST /api/ai/runs
 
 以下为产品 checklist（与设计对话一致）；与上一段工程状态合并阅读。
 
-- [ ] 保存上一轮 `lastIntent` / `lastPath` / `lastTopic` / `lastTimeWindow` / `lastScope`：**当前**已实现进程内快照 `effectiveQuestion` + `FollowUpPathKind`（等价 path/topic）；**未**单列持久化「结构体 lastScope / lastTimeWindow」。经营 Harness 主链时间唯一定稿于 `AiResolvedQueryContext.timeWindow`；`BusinessTimeWindowNode` 仅镜像到 `stat*`，**不再**对用户话术走 `AiUserQueryTimeWindowResolver.resolve`。
+- [ ] 保存上一轮 `lastIntent` / `lastPath` / `lastTopic` / `lastTimeWindow` / `lastScope`：**当前**由 **`AiConversationTurnMemory`** 持久化（含 `lastEffectiveQuestion`、path、time、scope 等）；**未**单列持久化「结构体 lastScope / lastTimeWindow」。经营 Harness 主链时间唯一定稿于 `AiResolvedQueryContext.timeWindow`；`BusinessTimeWindowNode` 仅镜像到 `stat*`，**不再**对用户话术走 `AiUserQueryTimeWindowResolver.resolve`。
 - [x] 识别「这个月呢 / 本月呢 / 那上个月呢 / 换成本月」等含**显式时间口语**的短句追问。
 - [x] 追问通过扩写 `normalizedUserInput` 默认继承上一轮话题，仅替换首轮问句中出现的**首个**时间用语。
 - [x] 上一轮 `DISH_PROFIT`（`dish_profit_path`）时，追问继续走 **`dish_profit_path`**（经 Planner 再走识别）。
@@ -477,27 +477,27 @@ POST /api/ai/runs
 - [ ] Composer **环比**：相对上一轮的回答对比（待定）。
 - [ ] **真机回归**：「上个月菜品利润怎么样？」→「这个月呢？」；不出现 `workspaceMode` / `dataPlanTools` / `toolResults`；`run_finished.completed`。
 
-**工程已实现（本节上方）**：`AiFollowUpIntentSnapshot` + `AiFollowUpConversationMemory`、`AiFollowUpIntentSnapshotSupport` / `AiFollowUpHintSupport`（Resolver / Run）、`AiRunService` 成功后 `remember`。**（2026-05-17**：**`BusinessFollowUpIntentResolveNode`** 已删；**2026-05-18**：**`FollowUpIntentResolveService`** 已拆为上述 support 并删除。）
+**工程已实现（本节上方）**：**`AiConversationTurnMemory`** + **`AiConversationMemoryService`**（Run 成功后 `rememberCompletedTurn`）、**`AiFollowUpHintSupport`**（Resolver）。省略追问由 **`LlmFollowUpQueryRewriter`** 补全。**Phase1-J** 已删 write-only 的 **`AiFollowUpIntentSnapshot`** / **`AiFollowUpConversationMemory`** / **`FollowUpPathKind`** 及规则型 **`FollowUpRewriter`** 链。**（2026-05-17**：**`BusinessFollowUpIntentResolveNode`** 已删；**2026-05-18**：**`FollowUpIntentResolveService`** 已拆为上述 support 并删除。）
 
 ## 变更记录
 
 | 日期 | 说明 |
 |------|------|
-| 2026-05-20 | **D-AI-FILE-INVENTORY-CLEANUP-P3**：Harness 诊断 **deprecated compat** 键收口 — **`AiHarnessResolvedContextSummarizer`** 显式镜像 **`businessDiagnosisPlan*`** / **`harnessReplayBusinessDiagnosisPlan*`** / **`storePriorityRanking*`**（与 **`diagnosisPlan*`** 同义）；Comparator / ExpectedRound / ProbeView 注释；**未**改业务主链 / Composer / SQL。**文档**：**`AI_HARNESS_REPLAY_CASES.md`** · D-10、**`D12_HARNESS_MINIMAL_GATES.md`**、**`business-diagnosis-plan-removed.md`** Harness 键表、矩阵 §12、**`diagnosis-answer-plan.md` §3.1**。 |
-| 2026-05-20 | **D-AI-FILE-INVENTORY-CLEANUP-P2**：诊断链引用审计；新增 **`business-diagnosis-plan-removed.md`**；**`diagnosis-answer-plan.md` §0b** 三条链；**`BusinessDiagnosisAgentV1`** 类注释标明现网 enrich（非 Graph 节点）；Composite 明确非 `finalAnswerText` 主链。 |
+| 2026-05-20 | **D-AI-FILE-INVENTORY-CLEANUP-P3**：Harness 诊断 **deprecated compat** 键收口 — **`AiHarnessResolvedContextSummarizer`** 显式镜像 **`businessDiagnosisPlan*`** / **`harnessReplayBusinessDiagnosisPlan*`** / **`storePriorityRanking*`**（与 **`diagnosisPlan*`** 同义）；Comparator / ExpectedRound / ProbeView 注释；**未**改业务主链 / Composer / SQL。**文档**：**`AI_HARNESS_REPLAY_CASES.md`** · D-10、**`D12_HARNESS_MINIMAL_GATES.md`**、**`diagnosis-answer-plan.md` §3.1**（旧 `BusinessDiagnosisPlan` 已删，Harness 键 **`diagnosisPlan*`** 为现网）。 |
+| 2026-05-20 | **D-AI-FILE-INVENTORY-CLEANUP-P2**：诊断链引用审计；**`diagnosis-answer-plan.md` §0b** 三条链；**`BusinessDiagnosisAgentV1`** 类注释标明现网 enrich（非 Graph 节点）；Composite 明确非 `finalAnswerText` 主链。旧 `BusinessDiagnosisPlan` 已删，现网以 semantic contract + AnswerPlan 为准。 |
 | 2026-05-13 | **阶段收口（BusinessOverview MultiAgent · DiagnosisAgent v1 · `GRAPH_RUN`）**：本节更新 **Replay 双轨**（**`V2_SEMANTIC_MAINLINE_CORE_10`** + **`BUSINESS_OVERVIEW_MULTI_AGENT_CORE_3`** / **`BUSINESS_DIAGNOSIS_V1_CORE_3`**）；勾选 **四条 DomainAgent + MultiAgent/Diagnosis/GRAPH_RUN**；**下一阶段 TODO** 收紧为 **A～D + OrchestrationDecisionService backlog**。同步 **`docs/ai/master-business-agent-design.md`**、**`docs/AI_HARNESS_REPLAY_CASES.md`**、**`docs/HARNESS_ORCHESTRATION_DECISION.md`** §**16**。 |
 | 2026-05-13 | **MasterBusinessAgent 四条单领域专线阶段收口**：Revenue / Purchase / StockReduce / DishProfit 已接入 Master + **`BusinessToolExecutionNode`**，具备 fallback、legacy skip、Summarizer Debug；负责人 **真实 Run** + Replay **`V2_SEMANTIC_MAINLINE_CORE_10`** 通过。**下一阶段**转向 **OrchestrationDecisionService / BusinessOverview 多 Agent / DiagnosisAgent / PlannerExecutor / Human-in-the-loop**（见本节正文 §「MasterBusinessAgent 单领域专线」）。同步更新 **`docs/ai/master-business-agent-design.md`**、**`docs/AI_HARNESS_REPLAY_CASES.md`**、**`docs/ai/harness-composer-architecture.md`**、**`docs/API_INTEGRATION.md`**（仅状态与交叉引用）。 |
 | 2026-05-12 | **DiagnosisPlan 阶段二骨架**：**`DiagnosisPlan`**、**`DiagnosisPlanBuilder`**、**`AiRunState`/`BusinessDiagnosisPlanNode`/`StubAnswerComposerNode`/`AiRunService`/`AiHarnessResolvedContextSummarizer`/`AiRunController`**；Replay 键 **`diagnosisPlan`** 现为 AnswerPlan 聚合计划，**`businessDiagnosisPlan`** 为旧版；单测 **`DiagnosisPlanBuilderTest`**。 |
-| 2026-05-12 | **经营诊断 DiagnosisPlan 阶段一（仅文档）**：新增 **`docs/ai/diagnosis-answer-plan.md`**（AnswerPlan 聚合契约、字段约定、Debug、Composer、冻结边界、阶段路线）；更新 **`business-diagnosis-harness-plan.md`**（AnswerPlan 优先说明 + 文档索引）、**`harness-composer-architecture.md`**（§2.5b DiagnosisPlan）、**`TODO_MULTI_AGENT.md`** 本节。**未**改业务代码。 |
+| 2026-05-12 | **经营诊断 DiagnosisPlan 阶段一（仅文档）**：新增 **`docs/ai/diagnosis-answer-plan.md`**（AnswerPlan 聚合契约、字段约定、Debug、Composer、冻结边界、阶段路线）；更新 **`harness-composer-architecture.md`**（§2.5b DiagnosisPlan）、**`TODO_MULTI_AGENT.md`** 本节。**未**改业务代码。 |
 | 2026-05-12 | **日营业额 / 营收 Harness 文档收口**：**`DailyRevenueAnswerPlan`** 核心链路已在代码落地；更新 **`revenue-answer-plan.md`**（§8～§12：冻结边界、交付状态、文件清单、已知限制）；**`TODO_MULTI_AGENT.md`** 本节勾选交付；**`API_INTEGRATION.md`** 增补 **`revenueAnswerPlan`**；**`harness-composer-architecture.md`** 状态改为已落地。**勿动**采购 / 出库 / 毛利 AnswerPlan 主线。 |
 | 2026-05-12 | **日营业额 / 营收 Harness 计划立卷**：新增 **`docs/ai/revenue-answer-plan.md`**（**`DailyRevenueAnswerPlan`**、**`revenue_overview_path`** / **`REVENUE_OVERVIEW`**、planType、Debug 字段、GET/SSE/run_finished 前台路径、验收问句、禁止项、三步实施）；**`docs/ai/harness-composer-architecture.md`**、**`TODO_MULTI_AGENT.md`** 增补 **`revenue_overview_path`** 小节。**仅文档**；业务代码未改。 |
 | 2026-05-12 | **出库 / 核销 StockReduceAnswerPlan + Composer 阶段收口**：**`StockReduceAnswerPlan`** 生成并透出；前台 Debug **`planSource=stockReduceAnswerPlan`**；**`StubAnswerComposerNode`** 出库路径 **优先 AnswerPlan**；**`STOCK_REDUCE_*`** 总览四分型 + **商品金额/次数排行** 前台验收；**type2/type3** 不混淆；**次数排行 follow-up** 继承 **`outboundTimes`**；门店收窄/恢复集团正常。**链路冻结**：后续 **仅 bugfix**。见 **`docs/ai/stock-reduce-answer-plan.md`** §0、**`TODO_MULTI_AGENT.md`** 本小节。 |
 | 2026-05-12 | **出库 / 核销 Harness 计划立卷**：新增 **`docs/ai/stock-reduce-answer-plan.md`**（**`StockReduceAnswerPlan`**、**`stock_reduce_query_path`** 三步实施、Debug 字段、验收问句与禁止项）；**`TODO_MULTI_AGENT.md`** 新增 **`stock_reduce_query_path`（StockReduceAnswerPlan）** 小节。**仅文档**；业务代码未改。 |
 | 2026-05-12 | **采购 AnswerPlan + Composer 收口**：**`PurchaseAnswerPlanBuilder`** / **`purchaseAnswerPlan`**；**`StubAnswerComposerNode`** 采购分支 **`focusRows != null`** 时优先 **`focusRows` / `secondaryRows`**，旧 summary / **`purchaseOverview`** 不再主导核心事实；**`answer_delta.data.purchaseAnswerPlan`** 契约写入 **`docs/API_INTEGRATION.md`**。**前台验收**（计划类型与门店收窄/恢复集团等）由负责人完成；**后续采购链路仅 bugfix**，不做大改；IDE Agent **不要求** 代跑前台测试。 |
-| 2026-05-11 | **公共查询语义层（v1 骨架）**：`docs/AI_QUERY_SEMANTIC_LEXICON.md`（采购词 + 供货商排行追问）；**`AiConversationTurnMemory` / `AiFollowUpResolution` / `AiConversationMemoryService` / `AiFollowUpResolver`**；**`AiResolvedQueryContext`** 扩展 `previousTurn`、`followUpResolution`、`effective*`；**`AiResolvedQueryContextResolver`** 合并追问、采购结构化补 path、按上一轮 `visibleStoreIds` 收窄集团范围；**`AiRunService`** 扩写 `normalizedUserInput`、`rememberCompletedTurn`、followUp 日志；**`FollowUpPathKind.PURCHASE_OVERVIEW`** + **`AiFollowUpHintSupport`**（早退/提示与 Resolver 对齐）；**`BusinessDataPlannerNode`** 读解析态 path；**`PurchaseOverviewTool`**：`purchaseSourceFocus`、`-1` →「自采」、自采聚焦时清空 `topSuppliers`。**后续**：核销词入库、LLM 追问、Trace 写入 `intent`。 |
+| 2026-05-11 | **公共查询语义层（v1 骨架）**：**`AiQuerySemanticLexicon.java`** + **`docs/ai/semantic-allowed-output-contract-design.md`**（采购词 + 供货商排行追问）；**`AiConversationTurnMemory` / `AiFollowUpResolution` / `AiConversationMemoryService` / `AiFollowUpResolver`**；**`AiResolvedQueryContext`** 扩展 `previousTurn`、`followUpResolution`、`effective*`；**`AiResolvedQueryContextResolver`** 合并追问、采购结构化补 path、按上一轮 `visibleStoreIds` 收窄集团范围；**`AiRunService`** 扩写 `normalizedUserInput`、`rememberCompletedTurn`、followUp 日志；**`FollowUpPathKind.PURCHASE_OVERVIEW`** + **`AiFollowUpHintSupport`**（早退/提示与 Resolver 对齐）；**`BusinessDataPlannerNode`** 读解析态 path；**`PurchaseOverviewTool`**：`purchaseSourceFocus`、`-1` →「自采」、自采聚焦时清空 `topSuppliers`。**后续**：核销词入库、LLM 追问、Trace 写入 `intent`。 |
 | 2026-05-10 | **`purchase_overview_path` 文案与契约收口**：**`PurchaseOverviewTool`** 重量带 **斤**、集团 **`storeCoverageSummary`**、供货商占位名、**`GbDistributerPurchaseGoodsMapper`** Supplier SQL；**`PurchaseOverviewToolExecutor.buildPurchaseOverviewScopeBanner`**（**`purchase_overview`** 的 scope banner，**非** 已删 **`purchase_query`** Tool）集团/采购员/店长/库管开篇；**`StubAnswerComposerNode`** 采购 Composer 与核销全 0 简写；**`docs/API_INTEGRATION.md`** 增补 **`answer_delta.data.purchaseOverview`**；**`TODO_MULTI_AGENT.md`** §purchase_overview_path 勾选。 |
 | 2026-05-10 | **库房库存链路阶段收口**：库存 Composer 按 `GROUP_MANAGER` / `STORE_MANAGER` / 库管 / 采购等注入「称谓与开篇」指令，并对 LLM 输出剥离不当「店长」起首；**`docs/API_INTEGRATION.md`** 增补 **`answer_delta.data.warehouseOverview`** 契约（字段以 `WarehouseStockOverviewTool` 为准）；**`TODO_MULTI_AGENT.md`** §warehouse_stock_overview_path 勾选真机与迁移项。 |
-| 2026-05-10 | **库房库存概览链路**：**`WarehouseStockOverviewTool`**（`warehouse_stock_overview`）聚合库存种数/金额/重量、区间内入库、核销分型及启发式预警列表；**`warehouse_stock_overview_path`** 工具链改为单一 Tool；**`BusinessToolExecutionNode`** 为 **`warehouse_stock_overview`** 注入 **`disId`**（**Historical**：曾并列 **`stock_query`**，**D-CLEAN-STOCK-QUERY-P2** 已删 **`StockQueryTool`**）；文档 **`LEGACY_AI_ANSWER_ASSETS.md`** §库房库存。 |
+| 2026-05-10 | **库房库存概览链路**：**`WarehouseStockOverviewTool`**（`warehouse_stock_overview`）聚合库存种数/金额/重量、区间内入库、核销分型及启发式预警列表；**`warehouse_stock_overview_path`** 工具链改为单一 Tool；**`BusinessToolExecutionNode`** 为 **`warehouse_stock_overview`** 注入 **`disId`**（**Historical**：曾并列 **`stock_query`**，**D-CLEAN-STOCK-QUERY-P2** 已删 **`StockQueryTool`**）；文档 **`AI_MAINLINE_INDEX.md`** §库房库存。 |
 | 2026-05-09 | 初版：整理已落地骨架与后续阶段待办 |
 | 2026-05-09 | **整仓 `mvn clean compile` 在 JDK 17 下 BUILD SUCCESS**；零节与第一阶段编译项勾选收口；第八阶段前两项勾选完成 |
 | 2026-05-09 | **基础运行验证**：`mvn test` 通过；Trace 库表 SQL + Run/Step 写库接线；SSE 信封与路由节点展示文案对齐前端示例；`/api` 前缀与端口占用记入待办 |
@@ -512,11 +512,11 @@ POST /api/ai/runs
 | 2026-05-10 | **权限：`gb_du_admin` 主数据**：**`AiRoleMapper`**；**`AiUserContextResolver`** 读 **`gb_department_user`**；**`sourceAdminRole`/扩展权限/严格 org guard**；**`GROUP_MANAGER`**（别名废弃 **`GROUP_BOSS`**）；**`docs/PERMISSION_MODEL.md`**；**`mvn test`**。 |
 | 2026-05-10 | **真机成本主线回归**（本机重启后）：同参 `POST` + SSE，**`runId=1778350824377`** — 五 Tool 全 **`success:true`**，**`answer_delta.data.costDiagnosis`** + **`run_finished.completed`**，无权限拒帧；记入 **`API_INTEGRATION.md`**「真机回归备忘」。 |
 | 2026-05-10 | **成本意图按角色收敛**：采购类 → **`purchaseCostInsightPath`**；**`COUPON_OPERATOR`** → **`couponCostInsightBlocked`**；门店「集团成本」→ **查询范围** 收窄；**`STORE_MANAGER`** + **`VIEW_PURCHASE`**；**`PERMISSION_MODEL.md`** §7；**`mvn test`**。 |
-| 2026-05-10 | **（Historical）** 门店经营问句链路：「这个月经营怎么样」等曾归入 classic **`business_overview_path`**（4 Tool）；classic Graph 已删，见 [classic-business-overview-removed.md](legacy-reference/classic-business-overview-removed.md)。 |
-| 2026-05-10 | **旧版 AI 回答资产**：新增 **`docs/LEGACY_AI_ANSWER_ASSETS.md`**（旧会话 `GbAiChatServiceImpl`、`ai-skill-*`、日营收看板 `GbAiDailyRevenueDashboardService`、菜品 `GbDepFoodBusinessInsightService` 等映射表）；本节 TODO 增补 **「旧版 AI 回答资产迁移」** checklist；实现接入与 DeepSeek 硬规则待后续迭代。 |
+| 2026-05-10 | **（Historical）** 门店经营问句链路：「这个月经营怎么样」等曾归入 classic **`business_overview_path`**（4 Tool）；classic Graph 已删，见 `docs/AI_MAINLINE_INDEX.md`。 |
+| 2026-05-10 | **旧版 AI 回答资产**：新增 **`docs/AI_MAINLINE_INDEX.md`**（旧会话 `GbAiChatServiceImpl`、`ai-skill-*`、日营收看板 `GbAiDailyRevenueDashboardService`、菜品 `GbDepFoodBusinessInsightService` 等映射表）；本节 TODO 增补 **「旧版 AI 回答资产迁移」** checklist；实现接入与 DeepSeek 硬规则待后续迭代。 |
 | 2026-05-10 | **（Historical removed）** **经营概览接旧版看板（第一版 classic）**：曾 **`BusinessOverviewQueryTool`**（**D-CLEAN-BOV-TOOL-DELETE 已删**）+ **`BusinessOverviewAgentNode`（已删）**；序列为 **`business_overview_query → …`**。 |
 | 2026-05-10 | **（Historical removed）** **集团广角经营概览（classic UX）**：曾 **`groupWideOverviewHint`** → **`business_overview_query`**；现网 MULTI 为 **`revenue_query`**。 |
 | 2026-05-10 | **（Historical）** **集团经营概览回答格式收口（classic）**：**`BusinessOverviewAgentNode`（已删）**；单测 **`GroupManagerBusinessOverviewAnswerFormatRegressionTest`** / **`BusinessOverviewAgentGroupScopeSmokeTest`**（已删）。 |
-| 2026-05-10 | **菜品毛利支线（第一版）**：**`looksLikeDishProfitInsight`** → **`dish_profit_path`**（单 Tool **`dish_profit_analysis`**）；**`DishProfitAnalysisTool`** + **`DishProfitAgentNode`**；SSE **`answer_delta.data.dishProfitOverview`**；**`AiPermissionGuard`** 菜品毛利：采购/库房/配送/优惠券等拒答话术；Composer **`DISH_PROFIT_COMPOSER_SYSTEM`**；文档 **`LEGACY_AI_ANSWER_ASSETS`** §菜品毛利、`API_INTEGRATION`、`PERMISSION_MODEL`。**真机勾选**仍以业务库为准。 |
-| 2026-05-10 | **追问继承（第一版）**：快照与 hint 后由 **`AiFollowUpIntentSnapshotSupport`** / **`AiFollowUpHintSupport`** 承担（旧 **`FollowUpIntentResolveService`** 已删除）；曾含 **`BusinessFollowUpIntentResolveNode`**（已删）；完成 Run 时在 **`AiRunService`** 写 **`AiFollowUpConversationMemory`**；**`TODO_MULTI_AGENT`** §多轮上下文追问；DDL **`intent` MEDIUMTEXT** 与 **`sql/gb_ai_agent_run_intent_extend.sql`**。 |
+| 2026-05-10 | **菜品毛利支线（第一版）**：**`looksLikeDishProfitInsight`** → **`dish_profit_path`**（单 Tool **`dish_profit_analysis`**）；**`DishProfitAnalysisTool`** + **`DishProfitAgentNode`**；SSE **`answer_delta.data.dishProfitOverview`**；**`AiPermissionGuard`** 菜品毛利：采购/库房/配送/优惠券等拒答话术；Composer **`DISH_PROFIT_COMPOSER_SYSTEM`**；文档 **`AI_MAINLINE_INDEX`** §菜品毛利、`API_INTEGRATION`、`PERMISSION_MODEL`。**真机勾选**仍以业务库为准。 |
+| 2026-05-10 | **追问继承（第一版）**：多轮由 **`AiConversationTurnMemory`** + **`AiFollowUpHintSupport`** 承担（旧 **`FollowUpIntentResolveService`** 已删除）；曾含 **`BusinessFollowUpIntentResolveNode`**（已删）。Phase1-J 已删 write-only **`AiFollowUpIntentSnapshot`** / **`AiFollowUpConversationMemory`**；**`TODO_MULTI_AGENT`** §多轮上下文追问；DDL **`intent` MEDIUMTEXT** 与 **`sql/gb_ai_agent_run_intent_extend.sql`**。 |
 
