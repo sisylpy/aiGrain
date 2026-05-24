@@ -309,7 +309,6 @@ final class AiHarnessTimeScopeSummaryAppender {
         out.put("dishName", AiHarnessSummaryUtils.blankToNull(ctx.getMentionedDishName()));
         out.put("dishProfitMetricType", AiHarnessSummaryUtils.blankToNull(ctx.getDishProfitMetricType()));
         if (AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(effectivePath)) {
-            AiQuerySemanticParseResult sem = ctx.getQuerySemanticParse();
             boolean wireMissing;
             if (!SemanticContractCompletionEngine.isContractLockedParse(sem)) {
                 wireMissing = true;

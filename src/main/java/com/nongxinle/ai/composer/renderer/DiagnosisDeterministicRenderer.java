@@ -234,11 +234,6 @@ public final class DiagnosisDeterministicRenderer {
                 dbg.get(BusinessDiagnosisAgentV1.DEBUG_DIAGNOSIS_QUESTION_TYPE))) {
             return true;
         }
-        if (state != null
-                && BusinessDiagnosisSemanticCapabilityMatrix.isStorePriorityHarnessTextFallback(state)
-                && state.getDiagnosisPlan() != null) {
-            return true;
-        }
         return false;
     }
 

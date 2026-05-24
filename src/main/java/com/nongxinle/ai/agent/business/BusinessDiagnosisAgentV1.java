@@ -257,15 +257,6 @@ public final class BusinessDiagnosisAgentV1 {
         if (matrixRow != null) {
             BusinessDiagnosisSemanticCapabilityMatrix.applyResolvedRow(
                     state, plan, matrixRow, pPurchase, pStock, pDish, pRevenue);
-        } else if (BusinessDiagnosisSemanticCapabilityMatrix.isStorePriorityHarnessTextFallback(state)) {
-            BusinessDiagnosisSemanticCapabilityMatrix.applyResolvedRow(
-                    state,
-                    plan,
-                    BusinessDiagnosisSemanticCapabilityMatrix.STORE_PRIORITY_RANKING,
-                    pPurchase,
-                    pStock,
-                    pDish,
-                    pRevenue);
         }
     }
 

@@ -11,6 +11,7 @@ import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.AiOverviewStoreIssueItem;
 import com.nongxinle.ai.dto.business.AiOverviewVisibleStoreItem;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrixRow;
