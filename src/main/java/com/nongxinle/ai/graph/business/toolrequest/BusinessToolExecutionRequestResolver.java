@@ -149,20 +149,6 @@ public class BusinessToolExecutionRequestResolver {
                     structuredIntentDetail != null && !structuredIntentDetail.isBlank()
                             ? "semanticSlots.structuredIntentDetailWire"
                             : "none");
-        } else if (rq != null && rq.getQueryIntent() != null) {
-            // LEGACY_ONLY — 非 contract-locked 时沿用 merge 后 queryIntent 快照（Harness 观测）。
-            purchaseSourceType = rq.getQueryIntent().getPurchaseSourceType();
-            structuredIntentDetail = rq.getQueryIntent().getStructuredIntentDetail();
-            dbg.put(
-                    "purchaseSourceTypeSource",
-                    purchaseSourceType != null && !purchaseSourceType.isBlank()
-                            ? "resolvedQueryContext.queryIntent.purchaseSourceType"
-                            : "none");
-            dbg.put(
-                    "structuredIntentDetailSource",
-                    structuredIntentDetail != null && !structuredIntentDetail.isBlank()
-                            ? "resolvedQueryContext.queryIntent.structuredIntentDetail"
-                            : "none");
         } else {
             dbg.put("purchaseSourceTypeSource", "none");
             dbg.put("structuredIntentDetailSource", "none");
@@ -230,14 +216,6 @@ public class BusinessToolExecutionRequestResolver {
                     "structuredIntentDetailSource",
                     structuredIntentDetail != null && !structuredIntentDetail.isBlank()
                             ? "semanticSlots.structuredIntentDetailWire"
-                            : "none");
-        } else if (rq != null && rq.getQueryIntent() != null) {
-            // LEGACY_ONLY — 非 contract-locked 时沿用 merge 后 queryIntent 快照（Harness 观测）。
-            structuredIntentDetail = rq.getQueryIntent().getStructuredIntentDetail();
-            dbg.put(
-                    "structuredIntentDetailSource",
-                    structuredIntentDetail != null && !structuredIntentDetail.isBlank()
-                            ? "resolvedQueryContext.queryIntent.structuredIntentDetail"
                             : "none");
         } else {
             dbg.put("structuredIntentDetailSource", "none_missing_queryIntent");

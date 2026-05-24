@@ -101,17 +101,6 @@ public class PurchaseOverviewToolExecutor {
                 nar = AiQuerySemanticLexicon.STRUCTURED_PURCHASE_OVERVIEW_SUMMARY;
             } else {
                 nar = ToolRequestContractExecutionParamSupport.resolveContractStructuredIntentDetailWire(purCtx);
-                if ((nar == null || nar.isBlank())
-                        && !SemanticContractCompletionEngine.isContractLockedParse(
-                                purCtx.getQuerySemanticParse())) {
-                    // LEGACY_ONLY — contract 未 locked 时沿用 queryIntent（P2-M 不猜）
-                    var qi = purCtx.getQueryIntent();
-                    if (qi != null
-                            && qi.getStructuredIntentDetail() != null
-                            && !qi.getStructuredIntentDetail().isBlank()) {
-                        nar = qi.getStructuredIntentDetail().trim();
-                    }
-                }
             }
             if (nar != null && !nar.isBlank()) {
                 m.put(AiBusinessToolIds.ARG_PURCHASE_NARRATIVE_MODE, nar);

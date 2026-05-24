@@ -167,9 +167,10 @@ public class ResolvedQueryContextScopePreparation {
                                 mergedOrg,
                                 followUp,
                                 req.semanticLlm());
-        String dishProfitMetricType =
-                AiQuerySemanticLexicon.dishProfitMetricTypeFromStructuredWire(
-                        req.queryIntent() != null ? req.queryIntent().getStructuredIntentDetail() : null);
+        String dishProfitMetricType = null;
+        // dishProfitMetricType 仅在 contract-locked ToolRequest 参数构造阶段由
+        // ToolRequestContractExecutionParamSupport.resolveDishProfitMetricType(...) 计算。
+        // ScopePreparation 不读取 raw queryIntent wire 推导业务 metricType。
 
         SemanticScopeNarrowingPolicy.StoreNarrowingSideEffects narrowingSideEffects =
                 SemanticScopeNarrowingPolicy.resolveStoreNarrowingSideEffects(

@@ -394,9 +394,7 @@ public class BusinessDataPlannerNode implements AgentNode {
         }
         qi.setPathCode(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS);
         qi.setIntentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS);
-        if (qi.getStructuredIntentDetail() == null || qi.getStructuredIntentDetail().isBlank()) {
-            qi.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_BUSINESS_DIAGNOSIS_SUMMARY);
-        }
+        // structuredIntentDetail 缺失时不补写 — 让后续 contract gate / known gap / clarification 处理
         ctx.setEffectivePathCode(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS);
         ctx.setEffectiveIntentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS);
     }
@@ -1269,16 +1267,13 @@ public class BusinessDataPlannerNode implements AgentNode {
     }
 
     /**
-     * P2-L：contract locked 主链仅读 completed semanticSlots wire；非 locked 保留 legacy queryIntent 路径。
+     * 仅 contract-locked 路径读取 completed semanticSlots wire；非 locked 返回 null。
      */
     private static String resolveDishIngredientBreakdownWire(
             AiResolvedQueryContext rCtx, AiResolvedQueryIntent rqi) {
         if (rCtx != null
                 && SemanticContractCompletionEngine.isContractLockedParse(rCtx.getQuerySemanticParse())) {
             return ToolRequestContractExecutionParamSupport.resolveContractStructuredIntentDetailWire(rCtx);
-        }
-        if (rCtx != null && rqi != null && StringUtils.hasText(rqi.getStructuredIntentDetail())) {
-            return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(rqi.getStructuredIntentDetail());
         }
         return null;
     }

@@ -22,8 +22,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Phase 1：经营诊断 Matrix — contract-locked capability registry（contractId → row 查表、wire → row 查表、wire → planType 查表）。
@@ -69,9 +67,6 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
             "BUSINESS_DIAGNOSIS_EXTENDED_NOT_IN_P2H";
 
     public static final String DEBUG_DOMAIN_ATTRIBUTION_LINES = "diagnosisDomainAttributionLines";
-
-    private static final Pattern EXPLICIT_STORE_BEFORE_WHY =
-            Pattern.compile("^([A-Za-z0-9\\u4e00-\\u9fa5]{2,24})(?:店|门店)?(?:为什么|不好)");
 
     public static final BusinessDiagnosisSemanticCapabilityMatrixRow SUMMARY =
             row("BD-A", "GROUP", "SUMMARY", AiQuerySemanticLexicon.STRUCTURED_BUSINESS_DIAGNOSIS_SUMMARY, FACET_SUMMARY, null, null);
@@ -265,46 +260,9 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         return null;
     }
 
-    // messageRowOverridesWireRow DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
-    // non-contract-locked message→row override removed; use contract entry for row resolution.
-
-    private static String normalizedUserMessage(AiRunState state) {
-        String q = state.getNormalizedUserInput();
-        if (!StringUtils.hasText(q)) {
-            q = state.getRawUserInput();
-        }
-        return q != null ? q.trim() : "";
-    }
-
-    private static String compactMessage(String normalizedUserMessage) {
-        if (!StringUtils.hasText(normalizedUserMessage)) {
-            return "";
-        }
-        return normalizedUserMessage.trim().replaceAll("\\s+", "");
-    }
-
-    // messageLooksLikeStoreRiskReasonsNamed DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
-
-    /** BD-D：仅当用户原文显式带出店名（如「AAA 为什么不好」），不读 semantic inherit 的 mentionedStore。 */
-    static String extractExplicitStoreLabelFromMessage(String normalizedUserMessage) {
-        String compact = compactMessage(normalizedUserMessage);
-        if (!StringUtils.hasText(compact)) {
-            return null;
-        }
-        Matcher m = EXPLICIT_STORE_BEFORE_WHY.matcher(compact);
-        if (!m.find()) {
-            return null;
-        }
-        String label = m.group(1);
-        if (!StringUtils.hasText(label)) {
-            return null;
-        }
-        String trimmed = label.trim();
-        if (trimmed.contains("哪个") || trimmed.contains("哪家") || trimmed.contains("哪间")) {
-            return null;
-        }
-        return trimmed;
-    }
+    // rawMessage/normalizedUserMessage/compactMessage/extractExplicitStoreLabelFromMessage DELETED
+    // — GLOBAL-SEMANTIC-P1-RESIDUAL-CLEAN-A: rawMessage store name extraction removed;
+    // resolveTargetStoreName now only reads structured sources (rewriteInheritedAnchorName / resultAnchors / AnswerPlan DTO).
 
     // hasExplicitStoreNameInUserMessage DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
 
@@ -636,16 +594,10 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
             DailyRevenueAnswerPlan pRevenue,
             PurchaseAnswerPlan pPurchase,
             StockReduceAnswerPlan pStock) {
-        if (state != null) {
-            String fromUserMessage = extractExplicitStoreLabelFromMessage(normalizedUserMessage(state));
-            if (StringUtils.hasText(fromUserMessage)) {
-                return fromUserMessage.trim();
-            }
-            if (state.getResolvedQueryContext() != null) {
-                String fn = state.getResolvedQueryContext().getRewriteInheritedAnchorName();
-                if (StringUtils.hasText(fn)) {
-                    return fn.trim();
-                }
+        if (state != null && state.getResolvedQueryContext() != null) {
+            String fn = state.getResolvedQueryContext().getRewriteInheritedAnchorName();
+            if (StringUtils.hasText(fn)) {
+                return fn.trim();
             }
         }
         return BusinessDiagnosisAgentV1.extractStoreNameForStorePriorityRanking(
