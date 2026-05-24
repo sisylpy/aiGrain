@@ -1,16 +1,13 @@
 package com.nongxinle.ai.semantic;
 
-import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import org.springframework.util.StringUtils;
 
 import java.util.*;
 
 /**
- * V2 {@code semanticSlots} 多轮 reconcile（D-1X 主链路）。
- * 仅做：当前轮 slots → Matrix wire/planType 对齐、{@code sourceFacet}→{@code metric.purchaseSourceType} reconcile、
- * 会话记忆落库对齐。不继承上一轮 wire/answerPlanType；省略追问须先经 SemanticIntake。
+ * 仅做 currentTurnStructuredIntentDetailWire 镜像、会话记忆落库对齐、follow-up anchorPolicy 默认值；
+ * 不做 Matrix wire 推断，不写 answerPlanType，不从 slots 推业务语义。
  */
 public final class AiQuerySemanticSlotMerge {
 
@@ -18,27 +15,19 @@ public final class AiQuerySemanticSlotMerge {
 
     public static final String ANCHOR_USE_PREVIOUS = "USE_PREVIOUS_ANCHOR";
     public static final String ANCHOR_IGNORE_PREVIOUS = "IGNORE_PREVIOUS_ANCHOR";
-    public static final String ANCHOR_REQUIRE_CLARIFICATION = "REQUIRE_CLARIFICATION";
 
     private AiQuerySemanticSlotMerge() {
     }
 
     /**
-     * Merge 后 reconcile 入口：仅对<strong>当前轮</strong> semanticSlots 跑 Matrix reconcile 链
-     * （wire / planType / sourceFacet 等）；不继承上一轮 wire / answerPlanType / 业务槽。
+     * 仅提取当前轮 canonical structuredIntentDetailWire 并镜像到 parse 对象；
+     * 不做 Matrix wire/planType 推断，不区分 contract-locked / non-contract-locked。
      */
     public static AiQuerySemanticParseResult reconcileSemanticSlotsViaCapabilityMatrices(
             AiQuerySemanticParseResult sem) {
         if (sem == null || sem.isParseMissing()) {
             return sem;
         }
-        if (SemanticContractCompletionEngine.isContractLockedParse(sem)) {
-            final String currentTurnWire = extractCurrentParseStructuredIntentDetailWire(sem.getSemanticSlots());
-            return attachCurrentTurnStructuredIntentDetailWire(sem, currentTurnWire);
-        }
-        // LEGACY_ONLY deleted — reconcileBusinessOverviewSemanticSlots / reconcileBusinessOverviewAnswerPlanTypeFromWire
-        //   reconcileBusinessDiagnosisSemanticSlots / reconcileBusinessDiagnosisAnswerPlanTypeFromWire
-        //   removed in BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
         final String currentTurnWire = extractCurrentParseStructuredIntentDetailWire(sem.getSemanticSlots());
         return attachCurrentTurnStructuredIntentDetailWire(sem, currentTurnWire);
     }
@@ -165,11 +154,6 @@ public final class AiQuerySemanticSlotMerge {
         return null;
     }
 
-    // reconcileBusinessOverviewSemanticSlots DELETED — BusinessOverview slots→wire cleanup P1
-    // reconcileBusinessOverviewAnswerPlanTypeFromWire DELETED — BusinessOverview wire→planType cleanup P1
-    // reconcileBusinessDiagnosisSemanticSlots DELETED — BusinessDiagnosis slots→wire cleanup P1
-    // reconcileBusinessDiagnosisAnswerPlanTypeFromWire DELETED — BusinessDiagnosis wire→planType cleanup P1
-
     private static AiQuerySemanticParseResult attachCurrentTurnStructuredIntentDetailWire(
             AiQuerySemanticParseResult sem, String currentTurnWire) {
         if (sem == null) {
@@ -200,66 +184,6 @@ public final class AiQuerySemanticSlotMerge {
     }
 
     /**
-     * 当前 {@code semanticSlots} 是否表达「商品 + RANKING + PURCHASE_AMOUNT」排行形状（供采购追问信号读取，不写 wire）。
-     */
-    public static boolean slotsIndicateGoodsPurchaseAmountRanking(AiQuerySemanticParseResult sem) {
-        return slotsIndicateGoodsPurchaseAmountRanking(sem != null ? sem.getSemanticSlots() : null);
-    }
-
-    public static boolean slotsIndicateGoodsPurchaseAmountRanking(
-            AiQuerySemanticParseResult.SemanticSlotsPart s) {
-        if (s == null) {
-            return false;
-        }
-        return "GOODS".equals(normalizeToken(s.getQueryObject()))
-                && "RANKING".equals(normalizeToken(s.getOperation()))
-                && "PURCHASE_AMOUNT".equals(normalizeToken(s.getMetric()));
-    }
-
-    /** 采购金额汇总问法（与 {@code purchase_source_amount_query} 对齐）。 */
-    public static boolean slotsIndicatePurchaseAmountSummary(AiQuerySemanticParseResult sem) {
-        return slotsIndicatePurchaseAmountSummary(sem != null ? sem.getSemanticSlots() : null);
-    }
-
-    public static boolean slotsIndicatePurchaseAmountSummary(AiQuerySemanticParseResult.SemanticSlotsPart s) {
-        if (s == null) {
-            return false;
-        }
-        return "SUMMARY".equals(normalizeToken(s.getOperation()))
-                && "PURCHASE_AMOUNT".equals(normalizeToken(s.getMetric()));
-    }
-
-    private static String pickPreferCurrent(String current, String inherited) {
-        if (!isBlankOrUnknown(current)) {
-            return normalizeToken(current);
-        }
-        return isBlankOrUnknown(inherited) ? null : normalizeToken(inherited);
-    }
-
-    private static boolean isBlankOrUnknown(String v) {
-        if (!StringUtils.hasText(v)) {
-            return true;
-        }
-        return UNKNOWN.equalsIgnoreCase(v.trim());
-    }
-
-    /**
-     * 本轮为独立单域问法（{@code IGNORE_PREVIOUS_ANCHOR} + {@code RANKING}/{@code SUMMARY}/{@code COMPARE}）时，
-     * 禁止从上一轮继承 detailWanted / anchorPolicy / answerPlanType / wire。
-     */
-    private static boolean isIndependentStandaloneSemanticQuery(
-            AiQuerySemanticParseResult.SemanticSlotsPart cur) {
-        if (cur == null) {
-            return false;
-        }
-        if (!ANCHOR_IGNORE_PREVIOUS.equals(normalizeToken(cur.getAnchorPolicy()))) {
-            return false;
-        }
-        String op = normalizeToken(cur.getOperation());
-        return "RANKING".equals(op) || "SUMMARY".equals(op) || "COMPARE".equals(op) || "OVERVIEW".equals(op);
-    }
-
-    /**
      * LLM FollowUp Rewrite 已产出完整问句时：默认首轮 anchorPolicy，避免旧下钻门禁误伤。
      */
     public static AiQuerySemanticParseResult reconcilePurchaseCompleteUtteranceDefaults(
@@ -284,22 +208,6 @@ public final class AiQuerySemanticSlotMerge {
                         .answerPlanType(s.getAnswerPlanType())
                         .build();
         return sem.toBuilder().semanticSlots(updated).build();
-    }
-
-
-
-    private static AiQuerySemanticParseResult.SemanticSlotsPart copySlotsWithAnswerPlanType(
-            AiQuerySemanticParseResult.SemanticSlotsPart s, String planType) {
-        return AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                .queryObject(s.getQueryObject())
-                .operation(s.getOperation())
-                .metric(s.getMetric())
-                .sourceFacet(s.getSourceFacet())
-                .anchorPolicy(s.getAnchorPolicy())
-                .detailWanted(s.getDetailWanted())
-                .structuredIntentDetailWire(s.getStructuredIntentDetailWire())
-                .answerPlanType(planType)
-                .build();
     }
 
     private static String normalizeToken(String s) {

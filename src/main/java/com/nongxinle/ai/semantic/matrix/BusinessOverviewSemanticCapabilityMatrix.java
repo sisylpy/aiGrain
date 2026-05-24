@@ -3,9 +3,7 @@ package com.nongxinle.ai.semantic.matrix;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
-import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
-import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import lombok.experimental.UtilityClass;
@@ -16,7 +14,10 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Phase 1-E：经营概览 slots-first 矩阵（四域 MULTI_AGENT 表面）。
+ * Phase 1-E：经营概览 contract-locked capability registry（四域 MULTI_AGENT 表面）。
+ * <p>
+ * P1 清理后移除了 non-contract-locked legacy 推断（slots→wire、metric.contains 等）。
+ * 提供 contractId → row 查表和 contract frame light normalize 能力。
  */
 @UtilityClass
 public final class BusinessOverviewSemanticCapabilityMatrix {
@@ -94,84 +95,41 @@ public final class BusinessOverviewSemanticCapabilityMatrix {
         return row == null ? null : row.getTargetOverviewPlanType();
     }
 
+    // resolveStructuredIntentDetailWire DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // adoptWireViaMatrix DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // inferMatrixWireFromSemanticSlots DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked slots→wire/row inference + metric.contains inference removed.
+
     /**
-     * business_overview_path：semanticSlots → Matrix canonical wire；无矩阵行时 {@link #MATRIX_WIRE_MISSING} 或保留原 canonical。
-     * <p>LEGACY_ONLY — contract-locked 时 abstain；主链 wire 仅来自 selectedContractId → ACTIVE entry。
+     * Contract observe：contract-locked 时走 ContractFrameLightNormalizer；非 contract-locked 时原样返回 raw。
+     * 不做 non-contract-locked legacy 补全。
      */
-    public static String resolveStructuredIntentDetailWire(
-            AiQuerySemanticParseResult sem, String pathCode, String mergedStructuredDetail) {
-        if (!AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(pathCode)) {
-            return null;
+    public static AiQuerySemanticParseResult canonicalizeBusinessOverviewContractFrame(
+            AiQuerySemanticParseResult raw) {
+        if (raw == null || raw.isParseMissing() || raw.getSemanticSlots() == null) {
+            return raw;
         }
-        if (SemanticContractCompletionEngine.isContractLockedParse(sem)) {
-            return null;
+        if (SemanticContractCompletionEngine.isContractLockedParse(raw)) {
+            return com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer.normalize(raw);
         }
-        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
-            return null;
-        }
-        if (AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
-            String slotCanon =
-                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                            sem.getSemanticSlots().getStructuredIntentDetailWire().trim());
-            return adoptWireViaMatrix(pathCode, slotCanon);
-        }
-        String fromShape = inferMatrixWireFromSemanticSlots(sem);
-        if (StringUtils.hasText(fromShape)) {
-            return adoptWireViaMatrix(pathCode, fromShape);
-        }
-        String mergedCanon =
-                StringUtils.hasText(mergedStructuredDetail)
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                                mergedStructuredDetail.trim())
-                        : null;
-        if (StringUtils.hasText(mergedCanon)
-                && AiQuerySemanticLexicon.isStructuredBusinessOverviewFourDomainOrchestrationSurface(
-                        mergedCanon)) {
-            return adoptWireViaMatrix(pathCode, mergedCanon);
-        }
-        if (StringUtils.hasText(mergedCanon)) {
-            return mergedCanon;
-        }
-        return MATRIX_WIRE_MISSING;
+        // non-contract-locked: return raw as-is; no legacy fallback
+        return raw;
     }
 
-    private static String adoptWireViaMatrix(String pathCode, String canonWire) {
-        if (!StringUtils.hasText(canonWire)) {
-            return MATRIX_WIRE_MISSING;
-        }
-        BusinessOverviewSemanticCapabilityMatrixRow row = resolveMatrixRow(pathCode, canonWire);
-        return row != null ? row.getStructuredIntentDetailWire() : canonWire;
-    }
-
-    /** LEGACY_ONLY — contract-locked 主链 abstain；仅非 locked 时由 slots 形状推断 wire。 */
-    public static String inferMatrixWireFromSemanticSlots(AiQuerySemanticParseResult sem) {
-        if (SemanticContractCompletionEngine.isContractLockedParse(sem)) {
+    /**
+     * ACTIVE contractId → Matrix 行（contract-entry 注册表，非 NL 推断）。
+     * 只允许 selectedContractId → ACTIVE matrix row；不从 slots shape / wire / rawMessage 推断。
+     */
+    public static BusinessOverviewSemanticCapabilityMatrixRow rowFromActiveContractId(String contractId) {
+        if (!StringUtils.hasText(contractId)) {
             return null;
         }
-        if (sem == null || sem.getSemanticSlots() == null) {
-            return null;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
-        String op = normalizeToken(s.getOperation());
-        String qo = normalizeToken(s.getQueryObject());
-        String metric = normalizeToken(s.getMetric());
-        boolean businessMetric =
-                metric != null
-                        && (metric.contains("BUSINESS")
-                                || "BUSINESS_STATUS".equals(metric)
-                                || "OPERATION_STATUS".equals(metric));
-        if ("COMPARE".equals(op) && ("STORE".equals(qo) || "BUSINESS".equals(qo)) && businessMetric) {
-            return STORE_STATUS_COMPARE.getStructuredIntentDetailWire();
-        }
-        if (("SUMMARY".equals(op) || "OVERVIEW".equals(op))
-                && ("BUSINESS".equals(qo) || "STORE".equals(qo) || "GROUP".equals(qo))
-                && businessMetric) {
-            return SUMMARY.getStructuredIntentDetailWire();
-        }
-        if (businessMetric && StringUtils.hasText(qo)) {
-            return SUMMARY.getStructuredIntentDetailWire();
-        }
-        return null;
+        return switch (contractId.trim()) {
+            case "business_overview.summary" -> SUMMARY;
+            case "business_overview.status" -> STATUS;
+            case "business_overview.store_status_compare" -> STORE_STATUS_COMPARE;
+            default -> null;
+        };
     }
 
     /** 四域经营概览默认 tool 表（权限裁剪前）。 */

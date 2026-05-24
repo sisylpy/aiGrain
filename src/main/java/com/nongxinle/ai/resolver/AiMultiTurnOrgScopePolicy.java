@@ -19,8 +19,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 多轮会话组织范围公共策略：本句无显式点名门店且无「全集团/所有门店」等重置用语时，
+ * 多轮会话组织范围公共策略：本句无显式点名门店时，
  * 用上一轮 {@link AiConversationTurnMemory#getLastVisibleStoreIds()} 与当前权限可见门店求交，收窄 effective org。
+ * 集团范围重置由 contract-locked scope contract / semanticSlots 决定，不读用户原文 contains 推断。
  */
 public final class AiMultiTurnOrgScopePolicy {
 
@@ -93,10 +94,6 @@ public final class AiMultiTurnOrgScopePolicy {
                 || baselineOrg.getVisibleStores() == null || baselineOrg.getVisibleStores().isEmpty()) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
-        if (!contractLocked && messageDeclaresBroadGroupReset(rawMessage)) {
-            return new OrgScopeApplyOutcome(baselineOrg, false);
-        }
-
         if (semanticDeclaresStoreFocus(semanticLlm, baselineOrg)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
@@ -220,27 +217,6 @@ public final class AiMultiTurnOrgScopePolicy {
             return false;
         }
         return true;
-    }
-
-    /**
-     * 用户显式要求回到集团/全量门店视角（如「全部门店呢」「集团呢」），
-     * 需先于其它范围策略处理。
-     * <p>
-     * <b>LEGACY_ONLY</b>：仅非 contract-locked 多轮继承链使用；contract-locked 主链由 scope contract / semanticSlots 决定，
-     * 不得再读用户原文 {@code contains} 推断范围动作。
-     *
-     * @deprecated 禁止在此新增中文关键词；contract-locked 主链已摘链。
-     */
-    @Deprecated
-    public static boolean messageDeclaresBroadGroupReset(String norm) {
-        if (!StringUtils.hasText(norm)) {
-            return false;
-        }
-        String s = norm.replace(" ", "");
-        return s.contains("全部门店") || s.contains("整个集团") || s.contains("全集团")
-                || s.contains("所有门店") || s.contains("各家门店") || s.contains("集团全部")
-                || s.contains("全部餐厅") || s.contains("集团整体")
-                || s.contains("集团呢");
     }
 
     private static String buildMultiStoreBanner(List<AiStoreScopeDTO> stores, String fallback) {

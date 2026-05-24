@@ -3,17 +3,13 @@ package com.nongxinle.ai.semantic.matrix;
 import com.nongxinle.ai.agent.business.BusinessDiagnosisAgentV1;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
-import com.nongxinle.ai.conversation.AiConversationTurnMemory;
-import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
-import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
-import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
@@ -30,11 +26,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Phase 1：经营诊断 Matrix — wire / planType / capability 注册表 + semanticSlots→canonical 对齐。
+ * Phase 1：经营诊断 Matrix — contract-locked capability registry（contractId → row 查表、wire → row 查表、wire → planType 查表）。
  * <p>
- * 省略追问（「为什么」「采购还是出库」等）由 SemanticIntake
- * 补全为完整问句后再进 v2；本类 {@link #resolveRowFromMessage} 仅匹配<strong>完整</strong>问法，
- * 不再做 D-13 synthetic adoption / utterance pin。
+ * P1 清理后移除了 non-contract-locked legacy 推断（slots→wire、metric.contains、text contains、
+ * message→row 覆盖等）。非 contract-locked 时直接返回 null（known gap / early exit），
+ * 不提供 fallback。contract-locked 路径通过 selectedContractId → ACTIVE entry 或
+ * canonical wire 查表驱动。
  */
 @UtilityClass
 public final class BusinessDiagnosisSemanticCapabilityMatrix {
@@ -156,29 +153,13 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
                 .build();
     }
 
-    /**
-     * 仅凭<strong>完整</strong>问法解析 Matrix 行（Harness P1 契约）；省略追问（「为什么」「采购还是出库」等）
-     * 由 SemanticIntake 补全后再进 v2。
-     * <p>
-     * LEGACY_ONLY — contract-locked 主链不得调用；由 selectedContractId → ACTIVE entry 驱动。
-     */
-    public static BusinessDiagnosisSemanticCapabilityMatrixRow resolveRowFromMessage(String normalizedUserMessage) {
-        String msg = compactMessage(normalizedUserMessage);
-        if (!StringUtils.hasText(msg)) {
-            return null;
-        }
-        if (messageLooksLikeStoreRiskReasonsNamed(msg)) {
-            return STORE_RISK_REASONS_NAMED;
-        }
-        if (messageLooksLikeStorePriorityRanking(msg)) {
-            return STORE_PRIORITY_RANKING;
-        }
-        if (messageLooksLikeBusinessDiagnosisSummary(msg)) {
-            return SUMMARY;
-        }
-        return null;
-    }
+    // resolveRowFromMessage DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked text-based row resolution removed; use contractId → row lookup.
 
+    /**
+     * Contract-locked only：通过 selectedContractId → ACTIVE entry 或 structured wire canonical 查表。
+     * 非 contract-locked 时直接返回 null（known gap / early exit）。
+     */
     public static BusinessDiagnosisSemanticCapabilityMatrixRow resolveRow(AiRunState state) {
         if (state == null || !state.isBusinessDiagnosisPath() || state.getResolvedQueryContext() == null) {
             return null;
@@ -191,13 +172,8 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
             }
             return resolveRowFromStructuredWireContractLocked(state);
         }
-        BusinessDiagnosisSemanticCapabilityMatrixRow fromWire = resolveRowFromStructuredWire(state);
-        String msg = normalizedUserMessage(state);
-        BusinessDiagnosisSemanticCapabilityMatrixRow fromMsg = resolveRowFromMessage(msg);
-        if (messageRowOverridesWireRow(fromWire, fromMsg)) {
-            return fromMsg;
-        }
-        return fromWire;
+        // non-contract-locked: no fallback, return null (early exit / known gap)
+        return null;
     }
 
     /** contract-locked：仅 structured wire / selectedContractId，不读用户原文。 */
@@ -248,53 +224,11 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         };
     }
 
-    private static BusinessDiagnosisSemanticCapabilityMatrixRow resolveRowFromStructuredWire(AiRunState state) {
-        AiResolvedQueryIntent qi = state.getResolvedQueryContext().getQueryIntent();
-        String wire = qi != null ? qi.getStructuredIntentDetail() : null;
-        if (!StringUtils.hasText(wire)) {
-            return null;
-        }
-        String canonical = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire);
+    // resolveRowFromStructuredWire DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked wire→row fallback removed; use resolveRowFromStructuredWireContractLocked for contract-locked.
 
-        if (AiQuerySemanticLexicon.isDiagnosisActionSuggestionStructuredDetail(canonical)) {
-            return ACTION_SUGGESTION;
-        }
-        if (AiQuerySemanticLexicon.isStoreDomainAttributionPurchaseStructuredDetail(canonical)) {
-            return STORE_DOMAIN_PURCHASE;
-        }
-        if (AiQuerySemanticLexicon.isStoreDomainAttributionStockReduceStructuredDetail(canonical)) {
-            return STORE_DOMAIN_STOCK_REDUCE;
-        }
-        if (AiQuerySemanticLexicon.isStoreDomainAttributionDishProfitStructuredDetail(canonical)) {
-            return STORE_DOMAIN_DISH_PROFIT;
-        }
-        if (AiQuerySemanticLexicon.isStorePriorityRankingStructuredDetail(canonical)) {
-            return STORE_PRIORITY_RANKING;
-        }
-        if (AiQuerySemanticLexicon.isStoreRiskReasonExplanationStructuredDetail(canonical)) {
-            BusinessDiagnosisSemanticCapabilityMatrixRow msgRow = resolveRowFromMessage(normalizedUserMessage(state));
-            if (msgRow != null) {
-                return msgRow;
-            }
-            return hasExplicitStoreNameInUserMessage(state)
-                    ? STORE_RISK_REASONS_NAMED
-                    : STORE_RISK_REASONS_INHERITED;
-        }
-        if (AiQuerySemanticLexicon.isBusinessDiagnosisSummaryStructuredDetail(canonical)) {
-            return SUMMARY;
-        }
-        return null;
-    }
-
-    /** 本句 Matrix 行是否应覆盖 resolved intent 上的 structured wire（如 SUMMARY inherit → 门店优先）。 */
-    public static boolean shouldPreferMessageRowOverWire(
-            String structuredIntentDetailWire, BusinessDiagnosisSemanticCapabilityMatrixRow msgRow) {
-        if (msgRow == null) {
-            return false;
-        }
-        BusinessDiagnosisSemanticCapabilityMatrixRow wireRow = rowFromCanonicalStructuredWire(structuredIntentDetailWire);
-        return messageRowOverridesWireRow(wireRow, msgRow);
-    }
+    // shouldPreferMessageRowOverWire DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked message→row override removed; use contract entry for row resolution.
 
     private static BusinessDiagnosisSemanticCapabilityMatrixRow rowFromCanonicalStructuredWire(String structuredIntentDetailWire) {
         if (!StringUtils.hasText(structuredIntentDetailWire)) {
@@ -331,34 +265,8 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         return null;
     }
 
-    private static boolean messageRowOverridesWireRow(
-            BusinessDiagnosisSemanticCapabilityMatrixRow wireRow, BusinessDiagnosisSemanticCapabilityMatrixRow msgRow) {
-        if (msgRow == null) {
-            return false;
-        }
-        if (wireRow == null) {
-            return true;
-        }
-        if (SUMMARY.equals(wireRow) && !SUMMARY.equals(msgRow)) {
-            return true;
-        }
-        if (STORE_PRIORITY_RANKING.equals(msgRow)) {
-            return true;
-        }
-        if (msgRow.getChildDomain() != null) {
-            return true;
-        }
-        if (ACTION_SUGGESTION.equals(msgRow)) {
-            return true;
-        }
-        if (STORE_RISK_REASONS_INHERITED.equals(msgRow) && STORE_RISK_REASONS_NAMED.equals(wireRow)) {
-            return true;
-        }
-        if (STORE_RISK_REASONS_INHERITED.equals(msgRow) || STORE_RISK_REASONS_NAMED.equals(msgRow)) {
-            return SUMMARY.equals(wireRow);
-        }
-        return false;
-    }
+    // messageRowOverridesWireRow DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked message→row override removed; use contract entry for row resolution.
 
     private static String normalizedUserMessage(AiRunState state) {
         String q = state.getNormalizedUserInput();
@@ -375,9 +283,7 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         return normalizedUserMessage.trim().replaceAll("\\s+", "");
     }
 
-    private static boolean messageLooksLikeStoreRiskReasonsNamed(String msg) {
-        return StringUtils.hasText(extractExplicitStoreLabelFromMessage(msg));
-    }
+    // messageLooksLikeStoreRiskReasonsNamed DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
 
     /** BD-D：仅当用户原文显式带出店名（如「AAA 为什么不好」），不读 semantic inherit 的 mentionedStore。 */
     static String extractExplicitStoreLabelFromMessage(String normalizedUserMessage) {
@@ -400,32 +306,15 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         return trimmed;
     }
 
-    private static boolean hasExplicitStoreNameInUserMessage(AiRunState state) {
-        return StringUtils.hasText(extractExplicitStoreLabelFromMessage(normalizedUserMessage(state)));
-    }
+    // hasExplicitStoreNameInUserMessage DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
 
-    private static String nullToEmpty(String s) {
-        return s == null ? "" : s;
-    }
+    // nullToEmpty DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
 
-    private static boolean messageLooksLikeStorePriorityRanking(String msg) {
-        return msg.contains("哪个门店问题最大")
-                || msg.contains("哪家门店问题最大")
-                || msg.contains("哪个店问题最大")
-                || msg.contains("哪家店问题最大")
-                || msg.contains("哪个店问题最多")
-                || msg.contains("哪家店问题最多")
-                || msg.contains("哪个门店问题最多")
-                || msg.contains("哪个店风险最高")
-                || msg.contains("哪家店风险最高")
-                || msg.contains("哪个门店风险最高");
-    }
+    // messageLooksLikeStorePriorityRanking DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked text contains inference removed.
 
-    private static boolean messageLooksLikeBusinessDiagnosisSummary(String msg) {
-        return msg.contains("经营诊断")
-                || msg.contains("做一下诊断")
-                || msg.contains("做经营诊断");
-    }
+    // messageLooksLikeBusinessDiagnosisSummary DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked text contains inference removed.
 
     public static BusinessDiagnosisSemanticCapabilityMatrixRow resolveMatrixRow(
             String pathCode, String wire, AiQuerySemanticParseResult sem) {
@@ -450,12 +339,13 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
             }
             return null;
         }
+        // non-contract-locked: only canonical wire lookup; no slots→row inference
         String canon =
                 StringUtils.hasText(wire)
                         ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim())
                         : null;
         if (!StringUtils.hasText(canon)) {
-            return inferRowFromSemanticSlots(sem);
+            return null;
         }
         BusinessDiagnosisSemanticCapabilityMatrixRow row = rowFromCanonicalStructuredWire(canon);
         if (row != null) {
@@ -467,110 +357,16 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         return null;
     }
 
-    /**
-     * business_diagnosis_path：semanticSlots → Matrix canonical wire。
-     * <p>LEGACY_ONLY — contract-locked 时 abstain，主链 wire 仅来自 selectedContractId → ACTIVE entry。
-     */
-    public static String resolveStructuredIntentDetailWire(
-            AiQuerySemanticParseResult sem, String pathCode, String mergedStructuredDetail) {
-        if (!AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(pathCode)) {
-            return null;
-        }
-        if (com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.isContractLockedParse(sem)) {
-            return null;
-        }
-        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
-            return null;
-        }
-        if (AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
-            String slotCanon =
-                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                            sem.getSemanticSlots().getStructuredIntentDetailWire().trim());
-            return adoptWireViaMatrix(pathCode, slotCanon, sem);
-        }
-        String fromShape = inferMatrixWireFromSemanticSlots(sem);
-        if (StringUtils.hasText(fromShape)) {
-            return adoptWireViaMatrix(pathCode, fromShape, sem);
-        }
-        String mergedCanon =
-                StringUtils.hasText(mergedStructuredDetail)
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                                mergedStructuredDetail.trim())
-                        : null;
-        if (StringUtils.hasText(mergedCanon)
-                && AiQuerySemanticLexicon.isStructuredBusinessDiagnosisDetail(mergedCanon)) {
-            return adoptWireViaMatrix(pathCode, mergedCanon, sem);
-        }
-        if (StringUtils.hasText(mergedCanon)) {
-            return mergedCanon;
-        }
-        return MATRIX_WIRE_MISSING;
-    }
+    // resolveStructuredIntentDetailWire DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked slots→wire resolution removed; contract-locked path uses selectedContractId → ACTIVE entry.
 
-    private static String adoptWireViaMatrix(
-            String pathCode, String canonWire, AiQuerySemanticParseResult sem) {
-        if (!StringUtils.hasText(canonWire)) {
-            return MATRIX_WIRE_MISSING;
-        }
-        BusinessDiagnosisSemanticCapabilityMatrixRow row = resolveMatrixRow(pathCode, canonWire, sem);
-        return row != null ? row.getStructuredIntentDetailWire() : canonWire;
-    }
+    // adoptWireViaMatrix DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
 
-    /**
-     * LEGACY_ONLY — contract-locked 时 abstain；禁止 slots→子域 wire 推导影响主链。
-     */
-    public static String inferMatrixWireFromSemanticSlots(AiQuerySemanticParseResult sem) {
-        if (com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.isContractLockedParse(sem)) {
-            return null;
-        }
-        if (sem == null || sem.getSemanticSlots() == null) {
-            return null;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
-        String op = normalizeMatrixToken(s.getOperation());
-        String qo = normalizeMatrixToken(s.getQueryObject());
-        String metric = normalizeMatrixToken(s.getMetric());
-        boolean businessMetric =
-                metric != null
-                        && (metric.contains("BUSINESS")
-                                || "BUSINESS_STATUS".equals(metric)
-                                || "OPERATION_STATUS".equals(metric));
-        if ("RANKING".equals(op)
-                && ("STORE".equals(qo) || "BUSINESS".equals(qo))
-                && businessMetric) {
-            return STORE_PRIORITY_RANKING.getStructuredIntentDetailWire();
-        }
-        if ("COMPARE".equals(op)
-                && ("STORE".equals(qo) || "BUSINESS".equals(qo))
-                && businessMetric) {
-            return STORE_COMPARE_DIAGNOSIS.getStructuredIntentDetailWire();
-        }
-        if (("SUMMARY".equals(op) || "DIAGNOSIS".equals(op) || "OVERVIEW".equals(op))
-                && businessMetric) {
-            return SUMMARY.getStructuredIntentDetailWire();
-        }
-        if ("EXPLAIN".equals(op) && "STORE".equals(qo)) {
-            if (metric != null && metric.contains("PURCHASE")) {
-                return STORE_DOMAIN_PURCHASE.getStructuredIntentDetailWire();
-            }
-            if (metric != null && (metric.contains("STOCK") || metric.contains("OUTBOUND"))) {
-                return STORE_DOMAIN_STOCK_REDUCE.getStructuredIntentDetailWire();
-            }
-            if (metric != null && (metric.contains("DISH") || metric.contains("PROFIT"))) {
-                return STORE_DOMAIN_DISH_PROFIT.getStructuredIntentDetailWire();
-            }
-        }
-        return null;
-    }
+    // inferMatrixWireFromSemanticSlots DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked slots→wire inference removed; use contractId → ACTIVE entry or canonical wire lookup.
 
-    private static BusinessDiagnosisSemanticCapabilityMatrixRow inferRowFromSemanticSlots(
-            AiQuerySemanticParseResult sem) {
-        String wire = inferMatrixWireFromSemanticSlots(sem);
-        if (!StringUtils.hasText(wire)) {
-            return null;
-        }
-        return rowFromCanonicalStructuredWire(wire);
-    }
+    // inferRowFromSemanticSlots DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked slots→row inference removed; use contractId → row lookup instead.
 
     public static String targetAnswerPlanTypeForWire(String wire) {
         BusinessDiagnosisSemanticCapabilityMatrixRow row =
@@ -621,7 +417,8 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
     }
 
     /**
-     * Contract observe：按 Matrix 槽位形状补全 wire / 四槽（不读用户原文、不做合同外 wire 别名）。
+     * Contract observe：contract-locked 时走 ContractFrameLightNormalizer；非 contract-locked 时原样返回 raw。
+     * 不做 non-contract-locked legacy 补全（删除 slots→wire 推断、metric.contains 推断等旁路）。
      */
     public static AiQuerySemanticParseResult canonicalizeBusinessDiagnosisContractFrame(
             AiQuerySemanticParseResult raw) {
@@ -631,168 +428,24 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         if (com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.isContractLockedParse(raw)) {
             return com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer.normalize(raw);
         }
-        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(raw)) {
-            return raw;
-        }
-        if (slotsInferBusinessDiagnosisSummaryShape(raw)) {
-            return mergeBusinessDiagnosisContractRow(raw, SUMMARY);
-        }
-        String inferred = inferMatrixWireFromSemanticSlots(raw);
-        if (!StringUtils.hasText(inferred)) {
-            String slotWire =
-                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                            raw.getSemanticSlots().getStructuredIntentDetailWire());
-            if (StringUtils.hasText(slotWire)) {
-                inferred = slotWire;
-            }
-        }
-        if (!StringUtils.hasText(inferred)) {
-            return raw;
-        }
-        BusinessDiagnosisSemanticCapabilityMatrixRow row =
-                resolveMatrixRow(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS, inferred, raw);
-        if (row == null || row.getKnownGapCode() != null) {
-            return raw;
-        }
-        return mergeBusinessDiagnosisContractRow(raw, row);
+        // non-contract-locked: return raw as-is; no legacy fallback
+        return raw;
     }
 
-    private static AiQuerySemanticParseResult mergeBusinessDiagnosisContractRow(
-            AiQuerySemanticParseResult raw, BusinessDiagnosisSemanticCapabilityMatrixRow row) {
-        if (raw == null || raw.getSemanticSlots() == null || row == null) {
-            return raw;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();
-        String wire = row.getStructuredIntentDetailWire();
-        String slotWire =
-                AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                        s.getStructuredIntentDetailWire());
-        String qo = row.getQueryObject();
-        String op = normalizeDiagnosisOperationForRow(row, s.getOperation());
-        String metric = diagnosisMetricForRow(row);
-        String planType = targetAnswerPlanTypeForWire(wire);
-        if (!StringUtils.hasText(planType)) {
-            planType = DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS;
-        }
-        boolean needsUpdate =
-                !wire.equals(slotWire)
-                        || !operationAcceptedForRow(row, s.getOperation())
-                        || !queryObjectAcceptedForRow(row, s.getQueryObject())
-                        || !metricAcceptedForRow(row, s.getMetric())
-                        || !planType.equals(normalizeMatrixToken(s.getAnswerPlanType()));
-        if (!needsUpdate) {
-            return raw;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart updated =
-                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                        .queryObject(qo)
-                        .operation(op)
-                        .metric(metric)
-                        .sourceFacet(s.getSourceFacet())
-                        .anchorPolicy(s.getAnchorPolicy())
-                        .detailWanted(s.getDetailWanted())
-                        .structuredIntentDetailWire(wire)
-                        .answerPlanType(planType)
-                        .build();
-        return raw.toBuilder().semanticSlots(updated).build();
-    }
+    // mergeBusinessDiagnosisContractRow DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked slots→wire/planType rewrite removed; use contract-locked ContractFrameLightNormalizer instead.
 
-    private static String normalizeDiagnosisOperationForRow(
-            BusinessDiagnosisSemanticCapabilityMatrixRow row, String rawOp) {
-        String op = normalizeMatrixToken(rawOp);
-        if (SUMMARY.equals(row) || STORE_COMPARE_DIAGNOSIS.equals(row)) {
-            if ("DIAGNOSIS".equals(op) || "OVERVIEW".equals(op) || "SUMMARY".equals(op)) {
-                return row.getOperation();
-            }
-            return row.getOperation();
-        }
-        if (PROBLEM_SUMMARY.equals(row) && "DIAGNOSIS".equals(op)) {
-            return row.getOperation();
-        }
-        if (RISK_SUMMARY.equals(row) && "ANOMALY".equals(op)) {
-            return row.getOperation();
-        }
-        return StringUtils.hasText(op) ? op : row.getOperation();
-    }
+    // normalizeDiagnosisOperationForRow DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // operationAcceptedForRow DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // queryObjectAcceptedForRow DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
 
-    private static boolean operationAcceptedForRow(
-            BusinessDiagnosisSemanticCapabilityMatrixRow row, String rawOp) {
-        String op = normalizeMatrixToken(rawOp);
-        if (!StringUtils.hasText(op)) {
-            return false;
-        }
-        if (op.equals(normalizeMatrixToken(row.getOperation()))) {
-            return true;
-        }
-        if (SUMMARY.equals(row)) {
-            return "SUMMARY".equals(op) || "OVERVIEW".equals(op);
-        }
-        if (PROBLEM_SUMMARY.equals(row)) {
-            return "DIAGNOSIS".equals(op);
-        }
-        if (RISK_SUMMARY.equals(row)) {
-            return "ANOMALY".equals(op) || "RISK".equals(op);
-        }
-        if (STORE_COMPARE_DIAGNOSIS.equals(row)) {
-            return "SUMMARY".equals(op) || "DIAGNOSIS".equals(op) || "OVERVIEW".equals(op);
-        }
-        return false;
-    }
+    // diagnosisMetricForRow DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
 
-    private static boolean queryObjectAcceptedForRow(
-            BusinessDiagnosisSemanticCapabilityMatrixRow row, String rawQo) {
-        String qo = normalizeMatrixToken(rawQo);
-        if (!StringUtils.hasText(qo)) {
-            return false;
-        }
-        String expected = normalizeMatrixToken(row.getQueryObject());
-        if (expected.equals(qo)) {
-            return true;
-        }
-        if (SUMMARY.equals(row) || PROBLEM_SUMMARY.equals(row) || RISK_SUMMARY.equals(row)) {
-            return "GROUP".equals(qo) || "STORE".equals(qo) || "BUSINESS".equals(qo);
-        }
-        if (STORE_COMPARE_DIAGNOSIS.equals(row) || STORE_PRIORITY_RANKING.equals(row)) {
-            return "STORE".equals(qo) || "BUSINESS".equals(qo);
-        }
-        return false;
-    }
+    // slotsInferBusinessDiagnosisSummaryShape DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked slot shape inference removed; use contract entry for capability lookup.
 
-    private static String diagnosisMetricForRow(BusinessDiagnosisSemanticCapabilityMatrixRow row) {
-        if (row.getChildDomain() != null) {
-            return row.getChildDomain();
-        }
-        return "BUSINESS_STATUS";
-    }
-
-    /** GROUP/STORE + SUMMARY/DIAGNOSIS/OVERVIEW + 经营状态语义 → {@link #SUMMARY} 合同形状。 */
-    private static boolean slotsInferBusinessDiagnosisSummaryShape(AiQuerySemanticParseResult raw) {
-        if (raw == null || raw.getSemanticSlots() == null) {
-            return false;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();
-        String op = normalizeMatrixToken(s.getOperation());
-        if (!"SUMMARY".equals(op) && !"DIAGNOSIS".equals(op) && !"OVERVIEW".equals(op)) {
-            return false;
-        }
-        String qo = normalizeMatrixToken(s.getQueryObject());
-        if (!"GROUP".equals(qo) && !"STORE".equals(qo) && !"BUSINESS".equals(qo)) {
-            return false;
-        }
-        return metricAcceptedForRow(SUMMARY, s.getMetric());
-    }
-
-    private static boolean metricAcceptedForRow(
-            BusinessDiagnosisSemanticCapabilityMatrixRow row, String rawMetric) {
-        String metric = normalizeMatrixToken(rawMetric);
-        if (!StringUtils.hasText(metric)) {
-            return false;
-        }
-        if (row.getChildDomain() != null) {
-            return metric.contains(row.getChildDomain()) || metric.contains("PURCHASE") || metric.contains("STOCK");
-        }
-        return metric.contains("BUSINESS") || "BUSINESS_STATUS".equals(metric) || "OPERATION_STATUS".equals(metric);
-    }
+    // metricAcceptedForRow DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // metric.contains("BUSINESS") shape inference removed; use contract entry for capability lookup.
 
     public static void applyResolvedRow(
             AiRunState state,
@@ -846,27 +499,8 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         }
     }
 
-    /**
-     * Harness 兜底：无 structured wire 时，仅当用户原文形似「哪个门店问题最大」类问法。
-     * <p>
-     * TODO(LEGACY_ONLY-CLEANUP): 当前逻辑仅用于非 contract-locked legacy 路径（Harness 无 structured wire 时的 fallback 兜底，
-     * 通过读用户原文中文关键词推断门店优先排序）。后续应通过 contract entry 明确表达「门店优先」语义，
-     * 禁止 Java 根据用户原文重新推导 wire/row。
-     */
-    public static boolean isStorePriorityHarnessTextFallback(AiRunState state) {
-        if (state == null || !state.isBusinessDiagnosisPath()) {
-            return false;
-        }
-        AiResolvedQueryIntent qi =
-                state.getResolvedQueryContext() != null
-                        ? state.getResolvedQueryContext().getQueryIntent()
-                        : null;
-        String wire = qi != null ? qi.getStructuredIntentDetail() : null;
-        if (StringUtils.hasText(wire)) {
-            return false;
-        }
-        return messageLooksLikeStorePriorityRanking(compactMessage(normalizedUserMessage(state)));
-    }
+    // isStorePriorityHarnessTextFallback DELETED — BUSINESS-DIAGNOSIS-OVERVIEW-SEMANTIC-MERGE-CLEAN-P1
+    // non-contract-locked text fallback removed; use contract entry for store priority semantics.
 
     private static void applyStorePriorityRanking(
             AiRunState state,

@@ -101,11 +101,6 @@ public final class AiQuerySemanticLlmMergeHelper {
             return merged;
         }
 
-        // LEGACY_ONLY — 以下 Matrix / slots→wire 收口不得影响 contract-locked 主链。
-        applyCanonicalStructuredIntentDetailWireFromSemanticSlots(merged, sem);
-        // applyBusinessOverviewStructuredWireFromSemanticSlots DELETED — BusinessOverview slots→wire cleanup P1
-        // applyBusinessDiagnosisStructuredWireFromSemanticSlots DELETED — BusinessDiagnosis slots→wire cleanup P1
-
         return merged;
     }
 
@@ -439,59 +434,6 @@ public final class AiQuerySemanticLlmMergeHelper {
             }
         }
         return false;
-    }
-
-    /**
-     * 本轮 {@code semanticSlots.structuredIntentDetailWire} 已 canonical 时，落到 {@code queryIntent}，
-     * 避免后续 merge 或 {@code intentAction=INHERIT_PREVIOUS} 用空 structured 或上轮形态覆盖（如双域 {@code purchase_stock_reduce_mismatch}）。
-     */
-    private static void applyCanonicalStructuredIntentDetailWireFromSemanticSlots(
-            AiResolvedQueryIntent qi, AiQuerySemanticParseResult sem) {
-        if (qi == null || sem == null || SemanticContractCompletionEngine.isContractLockedParse(sem)) {
-            return;
-        }
-        if (!AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
-            return;
-        }
-        String canon =
-                AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                        sem.getSemanticSlots().getStructuredIntentDetailWire().trim());
-        if (!StringUtils.hasText(canon)) {
-            return;
-        }
-        if (AiQuerySemanticLexicon.isStructuredBusinessOverviewFourDomainOrchestrationSurface(canon)
-                && !AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(qi.getPathCode())) {
-            return;
-        }
-        if (AiQuerySemanticLexicon.isStructuredBusinessDiagnosisDetail(canon)
-                && !AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(qi.getPathCode())) {
-            return;
-        }
-        if (AiQuerySemanticLexicon.isStructuredStockReduceDetail(canon)
-                && !AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(qi.getPathCode())) {
-            return;
-        }
-        if (AiQuerySemanticLexicon.isStructuredWarehouseStockDetail(canon)
-                && !AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(qi.getPathCode())) {
-            return;
-        }
-        if (AiQuerySemanticLexicon.isStructuredDishSalesDetail(canon)
-                && !AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(qi.getPathCode())) {
-            return;
-        }
-        if (AiQuerySemanticLexicon.isStructuredRevenueDetail(canon)
-                && !AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW.equals(qi.getPathCode())) {
-            return;
-        }
-        if (AiQuerySemanticLexicon.isNonOverviewDishProfitStructuredDetail(canon)
-                && !AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(qi.getPathCode())) {
-            return;
-        }
-        if (AiQuerySemanticLexicon.isPurchaseOverviewDomainCanonicalWire(canon)
-                && !AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(qi.getPathCode())) {
-            return;
-        }
-        qi.setStructuredIntentDetail(canon);
     }
 
     /** V2 已明确路由到 {@link AiResolvedQueryIntent#PATH_DISH_PROFIT}（省略毛利追问经 SemanticIntake 补全后由 v2 产出）。 */
