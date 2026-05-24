@@ -19,7 +19,7 @@ public final class ContractFrameLightNormalizer {
         if (raw == null || raw.isParseMissing() || raw.getSemanticSlots() == null) {
             return raw;
         }
-        if (!SemanticContractCompletionEngine.hasSelectedContractId(raw)) {
+        if (!SemanticContractCompletionEngine.isContractLockedParse(raw)) {
             return raw;
         }
         AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();

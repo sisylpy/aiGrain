@@ -2,6 +2,7 @@ package com.nongxinle.ai.planner;
 
 /**
  * C-7：第二步「建议」占位步，仍走 {@link MockPlannerStepExecutor}（仅读 {@code mock*}），不接真实 recommendation Agent。
+ * <p><strong>Mock recommendation adapter：当前仅作为 Planner 建议步骤占位，不接真实 LLM/建议 Agent。后续若接真实建议 Agent，应新增真实 Adapter 替换，不要在本类内堆业务逻辑。</strong></p>
  */
 public final class RecommendationPlannerMockAgentAdapter implements PlannerAgentAdapter {
 

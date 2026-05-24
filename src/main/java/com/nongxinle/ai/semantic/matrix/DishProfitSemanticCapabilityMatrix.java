@@ -2,11 +2,8 @@ package com.nongxinle.ai.semantic.matrix;
 
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.semantic.capability.SemanticCapabilitySlot;
-import com.nongxinle.ai.semantic.capability.SemanticContextFrame;
-import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import lombok.experimental.UtilityClass;
@@ -41,6 +38,26 @@ public final class DishProfitSemanticCapabilityMatrix {
     /** dish_profit_path 排行首轮缺 {@code semanticSlots.structuredIntentDetailWire} 时写入 plan/context debug。 */
     public static final String MATRIX_WIRE_MISSING = "MATRIX_WIRE_MISSING";
 
+    /** P2G：扩展排行 / 成本类首轮不在 contract-entry 主链。 */
+    public static final String KNOWN_GAP_EXTENDED_RANKINGS_NOT_IN_P2G =
+            "DISH_PROFIT_EXTENDED_RANKINGS_NOT_IN_P2G";
+
+    /** P2G：诊断 / 原因类首轮不在 contract-entry 主链。 */
+    public static final String KNOWN_GAP_DIAGNOSIS_DETAIL_NOT_IN_P2G =
+            "DISH_PROFIT_DIAGNOSIS_DETAIL_NOT_IN_P2G";
+
+    /** P2G：扩展单菜指标首轮不在 contract-entry 主链。 */
+    public static final String KNOWN_GAP_EXTENDED_SINGLE_METRICS_NOT_IN_P2G =
+            "DISH_PROFIT_EXTENDED_SINGLE_METRICS_NOT_IN_P2G";
+
+    /** P2G：原料构成首轮不在 contract-entry 主链。 */
+    public static final String KNOWN_GAP_INGREDIENT_BREAKDOWN_FIRST_TURN_NOT_IN_P2G =
+            "DISH_PROFIT_INGREDIENT_BREAKDOWN_FIRST_TURN_NOT_IN_P2G";
+
+    /** P2G：DISH 锚原料构成追问不在 contract-entry 主链。 */
+    public static final String KNOWN_GAP_DISH_ANCHOR_INGREDIENT_NOT_IN_P2G =
+            "DISH_PROFIT_DISH_ANCHOR_INGREDIENT_NOT_IN_P2G";
+
     private static final Set<String> DISH_ANCHOR_SOURCE_PLAN_TYPES =
             Set.of(
                     DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN,
@@ -51,6 +68,16 @@ public final class DishProfitSemanticCapabilityMatrix {
                     DishProfitAnswerPlan.TYPE_DISH_THEORETICAL_COST,
                     DishProfitAnswerPlan.TYPE_DISH_ACTUAL_OUTBOUND_COST,
                     DishProfitAnswerPlan.TYPE_DISH_PROFIT_RATE);
+
+    public static final DishProfitSemanticCapabilityMatrixRow OVERVIEW =
+            firstTurnRow(
+                    "DP-R0k",
+                    AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_OVERVIEW,
+                    DishProfitAnswerPlan.TYPE_AGGREGATED_DISH_PORTFOLIO_FALLBACK,
+                    "DISH",
+                    "OVERVIEW",
+                    "GROSS_MARGIN",
+                    false);
 
     public static final DishProfitSemanticCapabilityMatrixRow RANKING_LOW_MARGIN =
             firstTurnRow(
@@ -80,7 +107,8 @@ public final class DishProfitSemanticCapabilityMatrix {
                     "DISH",
                     "RANKING",
                     "ACTUAL_COST",
-                    true);
+                    true,
+                    KNOWN_GAP_EXTENDED_RANKINGS_NOT_IN_P2G);
 
     public static final DishProfitSemanticCapabilityMatrixRow RANKING_MAX_COST_GAP =
             firstTurnRow(
@@ -90,7 +118,8 @@ public final class DishProfitSemanticCapabilityMatrix {
                     "DISH",
                     "RANKING",
                     "COST_GAP",
-                    true);
+                    true,
+                    KNOWN_GAP_EXTENDED_RANKINGS_NOT_IN_P2G);
 
     public static final DishProfitSemanticCapabilityMatrixRow LOW_PROFIT_REASON =
             firstTurnRow(
@@ -100,7 +129,8 @@ public final class DishProfitSemanticCapabilityMatrix {
                     "DISH",
                     "DETAIL",
                     DETAIL_WANTED_PROFIT_REASON,
-                    true);
+                    true,
+                    KNOWN_GAP_DIAGNOSIS_DETAIL_NOT_IN_P2G);
 
     public static final DishProfitSemanticCapabilityMatrixRow SINGLE_THEORETICAL_COST =
             firstTurnRow(
@@ -110,7 +140,8 @@ public final class DishProfitSemanticCapabilityMatrix {
                     "DISH",
                     "DETAIL",
                     "THEORETICAL_COST",
-                    true);
+                    true,
+                    KNOWN_GAP_EXTENDED_SINGLE_METRICS_NOT_IN_P2G);
 
     public static final DishProfitSemanticCapabilityMatrixRow SINGLE_ACTUAL_OUTBOUND_COST =
             firstTurnRow(
@@ -120,7 +151,8 @@ public final class DishProfitSemanticCapabilityMatrix {
                     "DISH",
                     "DETAIL",
                     "ACTUAL_COST",
-                    true);
+                    true,
+                    KNOWN_GAP_EXTENDED_SINGLE_METRICS_NOT_IN_P2G);
 
     public static final DishProfitSemanticCapabilityMatrixRow SINGLE_GROSS_MARGIN =
             firstTurnRow(
@@ -140,7 +172,8 @@ public final class DishProfitSemanticCapabilityMatrix {
                     "DISH",
                     "DETAIL",
                     "COST_GAP",
-                    true);
+                    true,
+                    KNOWN_GAP_EXTENDED_SINGLE_METRICS_NOT_IN_P2G);
 
     public static final DishProfitSemanticCapabilityMatrixRow INGREDIENT_COST_BREAKDOWN_FIRST_TURN =
             firstTurnRow(
@@ -150,7 +183,8 @@ public final class DishProfitSemanticCapabilityMatrix {
                     "INGREDIENT",
                     "BREAKDOWN",
                     "INGREDIENT_COST",
-                    false);
+                    false,
+                    KNOWN_GAP_INGREDIENT_BREAKDOWN_FIRST_TURN_NOT_IN_P2G);
 
     public static final DishProfitSemanticCapabilityMatrixRow DISH_ANCHOR_INGREDIENT_BREAKDOWN =
             DishProfitSemanticCapabilityMatrixRow.builder()
@@ -166,6 +200,7 @@ public final class DishProfitSemanticCapabilityMatrix {
                             AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN)
                     .targetDishProfitPlanType(DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN)
                     .emitsDishResultAnchor(false)
+                    .knownGapCode(KNOWN_GAP_DISH_ANCHOR_INGREDIENT_NOT_IN_P2G)
                     .build();
 
     private static final Map<String, DishProfitSemanticCapabilityMatrixRow> FIRST_TURN_BY_WIRE = buildFirstTurnIndex();
@@ -180,6 +215,7 @@ public final class DishProfitSemanticCapabilityMatrix {
 
     public static List<DishProfitSemanticCapabilityMatrixRow> firstTurnRows() {
         return List.of(
+                OVERVIEW,
                 RANKING_LOW_MARGIN,
                 RANKING_HIGH_MARGIN,
                 RANKING_HIGH_ACTUAL_COST,
@@ -242,30 +278,8 @@ public final class DishProfitSemanticCapabilityMatrix {
         return null;
     }
 
-    public static boolean followUpSlotMatchesRow(SemanticCapabilitySlot slot, DishProfitSemanticCapabilityMatrixRow row) {
-        if (slot == null || row == null || !CAPABILITY_DISH_ANCHOR_INGREDIENT_BREAKDOWN.equals(row.getCapabilityId())) {
-            return false;
-        }
-        if (DISH_ANCHOR_INGREDIENT_BREAKDOWN == row
-                || CAPABILITY_DISH_ANCHOR_INGREDIENT_BREAKDOWN.equals(row.getCapabilityId())) {
-            return matchesDishAnchorIngredientBreakdownSlot(slot);
-        }
-        String dw = normalizeToken(slot.getSlotDetailWanted());
-        if (!matchesDetailWanted(dw, row.getDetailWanted())) {
-            return false;
-        }
-        String wire =
-                AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                        slot.getSemanticStructuredIntentDetailWire());
-        if (wire == null || !wire.equals(row.getStructuredIntentDetailWire())) {
-            return false;
-        }
-        String ap = normalizeToken(slot.getSemanticAnchorPolicy());
-        return AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS.equals(ap);
-    }
-
     /**
-     * DISH 锚原料构成追问槽形状（DP-R1）：接受 canonical/别名 wire + INGREDIENT|DISH 槽组合，不读用户原话。
+     * DISH 锚原料构成追问槽形状（DP-R1）：仅比较 canonical wire + anchorPolicy，不读用户原话或 contains 业务推断。
      */
     public static boolean matchesDishAnchorIngredientBreakdownSlot(SemanticCapabilitySlot slot) {
         if (slot == null) {
@@ -275,227 +289,15 @@ public final class DishProfitSemanticCapabilityMatrix {
         if (!AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS.equals(ap)) {
             return false;
         }
-        if (!ingredientBreakdownWireFromSlot(slot.getSemanticStructuredIntentDetailWire())) {
-            return false;
+        String rawWire = slot.getSemanticStructuredIntentDetailWire();
+        if (StringUtils.hasText(rawWire)) {
+            String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(rawWire.trim());
+            if (!AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(canon)) {
+                return false;
+            }
         }
         String dw = normalizeToken(slot.getSlotDetailWanted());
-        if (StringUtils.hasText(dw) && !matchesDetailWanted(dw, DETAIL_WANTED_INGREDIENT_COST_BREAKDOWN)) {
-            return false;
-        }
-        String qo = normalizeToken(slot.getSemanticQueryObject());
-        String op = normalizeToken(slot.getSemanticOperation());
-        if ("INGREDIENT".equals(qo) && ("BREAKDOWN".equals(op) || "DETAIL".equals(op))) {
-            return true;
-        }
-        if ("DISH".equals(qo) && ("DETAIL".equals(op) || "BREAKDOWN".equals(op))) {
-            String metric = normalizeToken(slot.getSemanticMetric());
-            return metric == null
-                    || metric.contains("INGREDIENT")
-                    || metric.contains("COST")
-                    || "INGREDIENT_COST".equals(metric);
-        }
-        return false;
-    }
-
-    public static boolean semanticSlotsIndicateDishAnchorIngredientBreakdown(AiQuerySemanticParseResult sem) {
-        if (sem == null || sem.getSemanticSlots() == null) {
-            return false;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
-        String dw = normalizeToken(s.getDetailWanted());
-        if (StringUtils.hasText(dw) && !matchesDetailWanted(dw, DETAIL_WANTED_INGREDIENT_COST_BREAKDOWN)) {
-            return false;
-        }
-        return matchesDishAnchorIngredientBreakdownSlot(
-                SemanticCapabilitySlot.builder()
-                        .followUp(true)
-                        .slotDetailWanted(
-                                StringUtils.hasText(dw) ? dw : DETAIL_WANTED_INGREDIENT_COST_BREAKDOWN)
-                        .semanticQueryObject(s.getQueryObject())
-                        .semanticOperation(s.getOperation())
-                        .semanticMetric(s.getMetric())
-                        .semanticAnchorPolicy(s.getAnchorPolicy())
-                        .semanticStructuredIntentDetailWire(s.getStructuredIntentDetailWire())
-                        .build());
-    }
-
-    /** Phase1 Registry：从 frame + sem 推导 detailWanted（仅 DISH 锚原料构成）。 */
-    public static String resolveFollowUpDetailWanted(
-            SemanticContextFrame frame,
-            AiQuerySemanticParseResult sem,
-            String canonicalStructuredIntentWire) {
-        if (frame == null || sem == null) {
-            return null;
-        }
-        if (!AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(nullToEmpty(frame.getLastPathCode()))) {
-            return null;
-        }
-        if (!isDishAnchoredExecutionFramePlanType(frame.getFramePlanType())) {
-            return null;
-        }
-        if (!uniqueDishAnchorPresent(frame.getPreviousResultAnchors())) {
-            return null;
-        }
-        if (semanticSlotsIndicateDishAnchorIngredientBreakdown(sem)) {
-            return DETAIL_WANTED_INGREDIENT_COST_BREAKDOWN;
-        }
-        if (ingredientBreakdownWireFromSlot(canonicalStructuredIntentWire)) {
-            String ap =
-                    sem.getSemanticSlots() != null
-                            ? normalizeToken(sem.getSemanticSlots().getAnchorPolicy())
-                            : null;
-            if (AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS.equals(ap)) {
-                return DETAIL_WANTED_INGREDIENT_COST_BREAKDOWN;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * DP-R1 Registry 合同（wire + detail + USE_PREVIOUS），与 {@link #resolveFollowUpDetailWanted} 第二路径对齐。
-     */
-    public static boolean matchesDishAnchorIngredientBreakdownRegistryContract(SemanticCapabilitySlot slot) {
-        if (slot == null) {
-            return false;
-        }
-        String dw = normalizeToken(slot.getSlotDetailWanted());
-        if (!matchesDetailWanted(dw, DETAIL_WANTED_INGREDIENT_COST_BREAKDOWN)) {
-            return false;
-        }
-        if (!AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS.equals(normalizeToken(slot.getSemanticAnchorPolicy()))) {
-            return false;
-        }
-        return ingredientBreakdownWireFromSlot(slot.getSemanticStructuredIntentDetailWire());
-    }
-
-    /**
-     * dish_profit_path 下 structured wire 的最终口径：点名单菜覆盖排行 wire；DISH 锚原料构成；槽位 canonical。
-     */
-    public static String resolveStructuredIntentDetailWire(
-            AiQuerySemanticParseResult sem, String pathCode, String mergedStructuredDetail) {
-        if (!AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(pathCode) || sem == null) {
-            return null;
-        }
-        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
-            return null;
-        }
-        String singleDish = resolveExplicitMentionedDishWire(sem, mergedStructuredDetail);
-        if (StringUtils.hasText(singleDish)) {
-            return singleDish;
-        }
-        if (semanticSlotsIndicateDishAnchorIngredientBreakdown(sem)) {
-            return AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN;
-        }
-        String fromSlots = structuredWireFromSemanticSlots(sem);
-        if (StringUtils.hasText(fromSlots)) {
-            return fromSlots;
-        }
-        if (StringUtils.hasText(mergedStructuredDetail)) {
-            return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(mergedStructuredDetail.trim());
-        }
-        return null;
-    }
-
-    private static String resolveExplicitMentionedDishWire(
-            AiQuerySemanticParseResult sem, String mergedStructuredDetail) {
-        if (!StringUtils.hasText(sem.getMentionedDishName())) {
-            return null;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
-        String op = normalizeToken(s != null ? s.getOperation() : null);
-        if ("RANKING".equals(op)) {
-            return null;
-        }
-        String mergedCanon =
-                StringUtils.hasText(mergedStructuredDetail)
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                                mergedStructuredDetail.trim())
-                        : null;
-        if (AiQuerySemanticLexicon.isDishProfitRankingStructuredDetail(mergedCanon) || isRankingFirstTurnRow(mergedCanon)) {
-            return SINGLE_GROSS_MARGIN.getStructuredIntentDetailWire();
-        }
-        String metric = normalizeToken(s != null ? s.getMetric() : null);
-        String qo = normalizeToken(s != null ? s.getQueryObject() : null);
-        if ("DISH".equals(qo)
-                && (metric == null
-                        || metric.contains("GROSS_MARGIN")
-                        || metric.contains("PROFIT_MARGIN")
-                        || "PROFIT_RATE".equals(metric))) {
-            DishProfitSemanticCapabilityMatrixRow matched = findFirstTurnRowFromNonRankingSlots(sem);
-            if (matched != null && !isRankingFirstTurnRow(matched.getStructuredIntentDetailWire())) {
-                return matched.getStructuredIntentDetailWire();
-            }
-            return SINGLE_GROSS_MARGIN.getStructuredIntentDetailWire();
-        }
-        return null;
-    }
-
-    private static DishProfitSemanticCapabilityMatrixRow findFirstTurnRowFromNonRankingSlots(AiQuerySemanticParseResult sem) {
-        if (sem == null || sem.getSemanticSlots() == null) {
-            return null;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
-        String wire = structuredWireFromSemanticSlots(sem);
-        if (StringUtils.hasText(wire)) {
-            DishProfitSemanticCapabilityMatrixRow byWire = findFirstTurnRowByWire(wire);
-            if (byWire != null && !isRankingFirstTurnRow(byWire.getStructuredIntentDetailWire())) {
-                return byWire;
-            }
-        }
-        String qo = normalizeToken(s.getQueryObject());
-        String op = normalizeToken(s.getOperation());
-        String metric = normalizeToken(s.getMetric());
-        for (DishProfitSemanticCapabilityMatrixRow row : firstTurnRows()) {
-            if (isRankingFirstTurnRow(row.getStructuredIntentDetailWire())) {
-                continue;
-            }
-            if (StringUtils.hasText(qo) && !qo.equals(normalizeToken(row.getQueryObject()))) {
-                continue;
-            }
-            if (StringUtils.hasText(op) && !op.equals(normalizeToken(row.getOperation()))) {
-                continue;
-            }
-            if (StringUtils.hasText(metric) && !metric.equals(normalizeToken(row.getMetric()))) {
-                continue;
-            }
-            return row;
-        }
-        return null;
-    }
-
-    private static String structuredWireFromSemanticSlots(AiQuerySemanticParseResult sem) {
-        if (sem == null || sem.getSemanticSlots() == null) {
-            return null;
-        }
-        String raw = sem.getSemanticSlots().getStructuredIntentDetailWire();
-        if (!StringUtils.hasText(raw)) {
-            return null;
-        }
-        return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(raw.trim());
-    }
-
-    private static boolean ingredientBreakdownWireFromSlot(String rawWire) {
-        if (!StringUtils.hasText(rawWire)) {
-            return true;
-        }
-        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(rawWire.trim());
-        if (AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(canon)) {
-            return true;
-        }
-        String supplemented = canonicalWireSupplement(rawWire.trim());
-        return AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(supplemented);
-    }
-
-    private static boolean isRankingFirstTurnRow(String wire) {
-        if (!StringUtils.hasText(wire)) {
-            return false;
-        }
-        DishProfitSemanticCapabilityMatrixRow row = findFirstTurnRowByWire(wire);
-        return row != null && "RANKING".equals(normalizeToken(row.getOperation()));
-    }
-
-    private static String nullToEmpty(String s) {
-        return s == null ? "" : s;
+        return !StringUtils.hasText(dw) || matchesDetailWanted(dw, DETAIL_WANTED_INGREDIENT_COST_BREAKDOWN);
     }
 
     public static boolean isDishAnchorSourcePlanType(String planType) {
@@ -531,150 +333,22 @@ public final class DishProfitSemanticCapabilityMatrix {
         return row == null ? null : row.getTargetDishProfitPlanType();
     }
 
-    /**
-     * LLM / merge 常见 dish wire 别名 → canonical first-turn wire（仅枚举合同，不读用户原话）。
-     * @deprecated Historical；P4-C 后 Lexicon 不再调用；strict 下须 LLM 直接输出 registered wire。
-     */
-    @Deprecated
-    public static String canonicalWireSupplement(String snakeWire) {
-        if (!StringUtils.hasText(snakeWire)) {
-            return null;
-        }
-        return switch (snakeWire.trim().toLowerCase(Locale.ROOT)) {
-            case "dish_cost_breakdown",
-                    "dish_cost_breakdown_query",
-                    "dish_cost_structure",
-                    "dish_ingredient_breakdown",
-                    "dish_ingredient_cost_breakdown_query",
-                    "dish_cost_composition",
-                    "dish_cost_components",
-                    "dish_ingredient_composition",
-                    "dish_ingredient_cost_composition" ->
-                    AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN;
-            case "dish_gross_profit_rate_ranking_high",
-                    "dish_profit_rate_ranking_high",
-                    "dish_margin_ranking_high",
-                    "highest_dish_margin_ranking",
-                    "dish_highest_margin_ranking" ->
-                    AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN;
-            case "dish_gross_profit_rate_ranking_low",
-                    "dish_profit_rate_ranking_low",
-                    "dish_margin_ranking_low",
-                    "lowest_dish_margin_ranking",
-                    "dish_lowest_margin_ranking" ->
-                    AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN;
-            case "dish_profit_rate_query",
-                    "dish_margin_query",
-                    "dish_gross_profit_query",
-                    "dish_gross_margin_rate_query",
-                    "dish_profit_detail",
-                    "dish_single_profit_rate",
-                    "dish_single_gross_margin_query" ->
-                    AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY;
-            default -> null;
-        };
-    }
-
-    /**
-     * 菜品毛利排行槽形状（仅 semanticSlots；不读用户原话、不用 {@code metric.rankingType} 路由）。
-     */
-    public static boolean semanticSlotsIndicateDishProfitRankingShape(AiQuerySemanticParseResult sem) {
-        if (sem == null || sem.getSemanticSlots() == null) {
-            return false;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
-        if (!"DISH".equals(normalizeToken(s.getQueryObject()))) {
-            return false;
-        }
-        if (!"RANKING".equals(normalizeToken(s.getOperation()))) {
-            return false;
-        }
-        String metric = normalizeToken(s.getMetric());
-        return metric == null
-                || metric.contains("GROSS_MARGIN")
-                || metric.contains("PROFIT_MARGIN")
-                || "PROFIT_RATE".equals(metric);
-    }
-
-    /**
-     * dish_profit_path 下首轮排行预期 wire 缺失：slots 已表达 RANKING 或 compat rankingType 指向毛利排行，
-     * 但 merge 后仍无 matrix first-turn wire。仅用于 debug / 阻断 portfolio fallback，不作 rankingType 路由。
-     */
-    public static boolean detectMatrixWireMissing(
-            AiQuerySemanticParseResult sem, String pathCode, String resolvedWire) {
-        if (!AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(pathCode)) {
-            return false;
-        }
-        if (StringUtils.hasText(resolvedWire)) {
-            DishProfitSemanticCapabilityMatrixRow resolvedRow = findFirstTurnRowByWire(resolvedWire);
-            if (resolvedRow != null) {
-                return false;
-            }
-        }
-        if (semanticSlotsIndicateDishProfitRankingShape(sem)) {
-            DishProfitSemanticCapabilityMatrixRow ranked =
-                    findFirstTurnRowByWire(
-                            AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)
-                                    ? structuredWireFromSemanticSlots(sem)
-                                    : resolvedWire);
-            return ranked == null || !"RANKING".equals(normalizeToken(ranked.getOperation()));
-        }
-        if (sem != null && sem.getMetric() != null && StringUtils.hasText(sem.getMetric().getRankingType())) {
-            String rtCanon =
-                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                            sem.getMetric().getRankingType().trim());
-            if (AiQuerySemanticLexicon.isDishProfitRankingStructuredDetail(rtCanon) || isRankingFirstTurnRow(rtCanon)) {
-                DishProfitSemanticCapabilityMatrixRow ranked =
-                        findFirstTurnRowByWire(
-                                AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)
-                                        ? structuredWireFromSemanticSlots(sem)
-                                        : resolvedWire);
-                return ranked == null || !"RANKING".equals(normalizeToken(ranked.getOperation()));
-            }
-        }
-        return false;
-    }
-
     public static String capabilityIdForDishAnchorFollowUp(String detailWanted) {
         DishProfitSemanticCapabilityMatrixRow row = findDishAnchorFollowUpRowByDetailWanted(detailWanted);
         return row == null ? null : row.getCapabilityId();
-    }
-
-    public static boolean isDishAnchoredExecutionFramePlanType(String framePlanType) {
-        return isDishAnchorSourcePlanType(framePlanType);
-    }
-
-    public static boolean uniqueDishAnchorPresent(List<AiResultAnchor> anchors) {
-        if (anchors == null || anchors.isEmpty()) {
-            return false;
-        }
-        AiResultAnchor picked = null;
-        for (AiResultAnchor a : anchors) {
-            if (a == null || !StringUtils.hasText(a.getEntityType())) {
-                continue;
-            }
-            if (!AiResultAnchor.ENTITY_TYPE_DISH.equalsIgnoreCase(a.getEntityType().trim())) {
-                continue;
-            }
-            String spt = a.getSourcePlanType() == null ? "" : a.getSourcePlanType().trim();
-            if (!isDishAnchorSourcePlanType(spt)) {
-                continue;
-            }
-            if (picked != null) {
-                return false;
-            }
-            picked = a;
-        }
-        if (picked == null) {
-            return false;
-        }
-        return StringUtils.hasText(picked.getEntityName()) || StringUtils.hasText(picked.getEntityId());
     }
 
     private static DishProfitSemanticCapabilityMatrixRow firstTurnRow(
             String rowId, String wire, String targetPlanType,
             String queryObject, String operation, String metric,
             boolean emitsAnchor) {
+        return firstTurnRow(rowId, wire, targetPlanType, queryObject, operation, metric, emitsAnchor, null);
+    }
+
+    private static DishProfitSemanticCapabilityMatrixRow firstTurnRow(
+            String rowId, String wire, String targetPlanType,
+            String queryObject, String operation, String metric,
+            boolean emitsAnchor, String knownGapCode) {
         return DishProfitSemanticCapabilityMatrixRow.builder()
                 .rowId(rowId)
                 .capabilityId(null)
@@ -687,6 +361,7 @@ public final class DishProfitSemanticCapabilityMatrix {
                 .structuredIntentDetailWire(wire)
                 .targetDishProfitPlanType(targetPlanType)
                 .emitsDishResultAnchor(emitsAnchor)
+                .knownGapCode(knownGapCode)
                 .build();
     }
 
@@ -708,89 +383,15 @@ public final class DishProfitSemanticCapabilityMatrix {
         return token.trim().toUpperCase(Locale.ROOT);
     }
 
-    /** Contract observe：按 Matrix 槽位 / wire 补全合同帧（不读用户原文）。 */
+    /** Contract observe：contract-locked 时 light normalize；non-contract-locked 原样返回。 */
     public static AiQuerySemanticParseResult canonicalizeDishProfitContractFrame(
             AiQuerySemanticParseResult raw) {
         if (raw == null || raw.isParseMissing() || raw.getSemanticSlots() == null) {
             return raw;
         }
-        if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(raw)) {
-            return raw;
+        if (com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.isContractLockedParse(raw)) {
+            return com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer.normalize(raw);
         }
-        String wire =
-                resolveStructuredIntentDetailWire(
-                        raw, AiResolvedQueryIntent.PATH_DISH_PROFIT, null);
-        if (!StringUtils.hasText(wire)) {
-            return raw;
-        }
-        DishProfitSemanticCapabilityMatrixRow row = findFirstTurnRowByWire(wire);
-        if (row == null) {
-            row = findDishAnchorFollowUpRowByWire(wire);
-        }
-        if (row == null) {
-            return raw;
-        }
-        return mergeDishProfitContractRow(raw, row);
-    }
-
-    private static DishProfitSemanticCapabilityMatrixRow findDishAnchorFollowUpRowByWire(String wire) {
-        if (!StringUtils.hasText(wire)) {
-            return null;
-        }
-        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim());
-        for (DishProfitSemanticCapabilityMatrixRow row : dishAnchorFollowUpRows()) {
-            if (canon != null && canon.equals(row.getStructuredIntentDetailWire())) {
-                return row;
-            }
-        }
-        return null;
-    }
-
-    private static AiQuerySemanticParseResult mergeDishProfitContractRow(
-            AiQuerySemanticParseResult raw, DishProfitSemanticCapabilityMatrixRow row) {
-        if (raw == null || raw.getSemanticSlots() == null || row == null) {
-            return raw;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();
-        String wire = row.getStructuredIntentDetailWire();
-        String slotWire =
-                AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                        s.getStructuredIntentDetailWire());
-        String metric = row.getMetric();
-        if (StringUtils.hasText(metric) && metric.contains("DETAIL_WANTED")) {
-            metric = normalizeToken(s.getDetailWanted());
-            if (!StringUtils.hasText(metric)) {
-                metric = row.getMetric();
-            }
-        }
-        String anchor =
-                StringUtils.hasText(row.getAnchorPolicy())
-                        ? row.getAnchorPolicy()
-                        : s.getAnchorPolicy();
-        boolean needsUpdate =
-                !wire.equals(slotWire)
-                        || !row.getQueryObject().equals(normalizeToken(s.getQueryObject()))
-                        || !row.getOperation().equals(normalizeToken(s.getOperation()))
-                        || (StringUtils.hasText(metric)
-                                && !metric.equals(normalizeToken(s.getMetric())))
-                        || !row.getTargetDishProfitPlanType().equals(normalizeToken(s.getAnswerPlanType()));
-        if (!needsUpdate) {
-            return raw;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart updated =
-                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                        .queryObject(row.getQueryObject())
-                        .operation(row.getOperation())
-                        .metric(metric)
-                        .sourceFacet(s.getSourceFacet())
-                        .anchorPolicy(anchor)
-                        .detailWanted(
-                                StringUtils.hasText(row.getDetailWanted())
-                                        ? row.getDetailWanted()
-                                        : s.getDetailWanted())
-                        .structuredIntentDetailWire(wire)
-                        .answerPlanType(row.getTargetDishProfitPlanType())
-                        .build();
-        return raw.toBuilder().semanticSlots(updated).build();
+        return raw;
     }
 }

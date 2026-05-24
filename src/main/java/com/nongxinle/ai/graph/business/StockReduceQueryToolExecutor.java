@@ -6,6 +6,7 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import com.nongxinle.ai.graph.business.scope.BusinessScopeResolutionSupport;
 import com.nongxinle.ai.mapping.AiRoleMapper;
 import com.nongxinle.ai.security.AiPermissionDenied;
@@ -59,10 +60,10 @@ public class StockReduceQueryToolExecutor {
         if (state != null && state.isBusinessDiagnosisPath()) {
             m.put(AiBusinessToolIds.ARG_STOCK_REDUCE_NARRATIVE_MODE,
                     AiQuerySemanticLexicon.STRUCTURED_STOCK_REDUCE_OVERVIEW_SUMMARY);
-        } else if (rq != null && rq.getQueryIntent() != null) {
-            String nar = rq.getQueryIntent().getStructuredIntentDetail();
-            if (nar != null && !nar.isBlank()) {
-                String normalized = nar.trim();
+        } else {
+            String narrativeWire = ToolRequestContractExecutionParamSupport.resolveContractStructuredIntentDetailWire(rq);
+            if (narrativeWire != null && !narrativeWire.isBlank()) {
+                String normalized = narrativeWire.trim();
                 if (AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_COUNT_RANKING.equals(normalized)) {
                     normalized = AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_RANKING;
                 }

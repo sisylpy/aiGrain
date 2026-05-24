@@ -7,9 +7,10 @@ import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionArgs;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import com.nongxinle.ai.graph.business.scope.BusinessScopeResolutionSupport;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.mapping.AiRoleMapper;
-import com.nongxinle.ai.scope.AiQueryScope;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.security.AiPermissionGuard;
 import com.nongxinle.ai.security.AiRoleCodes;
@@ -59,14 +60,6 @@ public class PurchaseOverviewToolExecutor {
             if (!visibleStoreRoots.isEmpty()) {
                 m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS, new ArrayList<>(visibleStoreRoots));
                 m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, visibleStoreRoots.size());
-            } else {
-                AiQueryScope sc = state.getScope();
-                if (sc != null && sc.getResolvedDepartmentIds() != null && !sc.getResolvedDepartmentIds().isEmpty()) {
-                    m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS, new ArrayList<>(sc.getResolvedDepartmentIds()));
-                }
-                if (sc != null) {
-                    m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, sc.getParentStoreCount());
-                }
             }
         } else {
             if (dept != null) {
@@ -96,15 +89,29 @@ public class PurchaseOverviewToolExecutor {
             m.put(AiBusinessToolIds.ARG_STOP_DATE, stop);
         }
         AiResolvedQueryContext purCtx = state != null ? state.getResolvedQueryContext() : null;
-        if (purCtx != null && purCtx.getQueryIntent() != null) {
-            var qi = purCtx.getQueryIntent();
-            String pst = qi.getPurchaseSourceType();
-            if (pst != null && !pst.isBlank()) {
-                m.put(AiBusinessToolIds.ARG_PURCHASE_SOURCE_FOCUS, pst);
+        if (purCtx != null) {
+            String sourceFocus = ToolRequestContractExecutionParamSupport.resolvePurchaseSourceFocus(purCtx);
+            if (sourceFocus != null
+                    && !sourceFocus.isBlank()
+                    && !AiQuerySemanticLexicon.SOURCE_ALL.equalsIgnoreCase(sourceFocus.trim())) {
+                m.put(AiBusinessToolIds.ARG_PURCHASE_SOURCE_FOCUS, sourceFocus.trim());
             }
-            String nar = qi.getStructuredIntentDetail();
+            String nar = null;
             if (state != null && state.isBusinessDiagnosisPath()) {
                 nar = AiQuerySemanticLexicon.STRUCTURED_PURCHASE_OVERVIEW_SUMMARY;
+            } else {
+                nar = ToolRequestContractExecutionParamSupport.resolveContractStructuredIntentDetailWire(purCtx);
+                if ((nar == null || nar.isBlank())
+                        && !SemanticContractCompletionEngine.isContractLockedParse(
+                                purCtx.getQuerySemanticParse())) {
+                    // LEGACY_ONLY — contract 未 locked 时沿用 queryIntent（P2-M 不猜）
+                    var qi = purCtx.getQueryIntent();
+                    if (qi != null
+                            && qi.getStructuredIntentDetail() != null
+                            && !qi.getStructuredIntentDetail().isBlank()) {
+                        nar = qi.getStructuredIntentDetail().trim();
+                    }
+                }
             }
             if (nar != null && !nar.isBlank()) {
                 m.put(AiBusinessToolIds.ARG_PURCHASE_NARRATIVE_MODE, nar);

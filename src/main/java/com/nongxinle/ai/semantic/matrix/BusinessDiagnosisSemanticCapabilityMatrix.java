@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
 /**
  * Phase 1：经营诊断 Matrix — wire / planType / capability 注册表 + semanticSlots→canonical 对齐。
  * <p>
- * 省略追问（「为什么」「采购还是出库」等）由 {@link com.nongxinle.ai.followup.rewrite.llm.LlmFollowUpQueryRewriter}
+ * 省略追问（「为什么」「采购还是出库」等）由 SemanticIntake
  * 补全为完整问句后再进 v2；本类 {@link #resolveRowFromMessage} 仅匹配<strong>完整</strong>问法，
  * 不再做 D-13 synthetic adoption / utterance pin。
  */
@@ -46,6 +46,8 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
     public static final String ANCHOR_STRATEGY_CONSUME_STORE = "CONSUME_STORE";
 
     public static final String FACET_SUMMARY = "SUMMARY";
+    public static final String FACET_PROBLEM = "PROBLEM";
+    public static final String FACET_RISK = "RISK";
     public static final String FACET_STORE_PRIORITY = "STORE_PRIORITY";
     public static final String FACET_STORE_RISK_REASONS = "STORE_RISK_REASONS";
     public static final String FACET_PURCHASE = "PURCHASE";
@@ -65,6 +67,10 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
             "DIAGNOSIS_CHILD_DOMAIN_PLAN_MISSING_DISH_PROFIT";
     public static final String KNOWN_GAP_NO_FINDING_FOR_DOMAIN = "DIAGNOSIS_NO_FINDING_FOR_CHILD_DOMAIN";
 
+    /** P2H：门店优先排行 / 门店对比等扩展诊断不在 contract-entry 主链。 */
+    public static final String KNOWN_GAP_EXTENDED_DIAGNOSIS_NOT_IN_P2H =
+            "BUSINESS_DIAGNOSIS_EXTENDED_NOT_IN_P2H";
+
     public static final String DEBUG_DOMAIN_ATTRIBUTION_LINES = "diagnosisDomainAttributionLines";
 
     private static final Pattern EXPLICIT_STORE_BEFORE_WHY =
@@ -73,8 +79,14 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
     public static final BusinessDiagnosisSemanticCapabilityMatrixRow SUMMARY =
             row("BD-A", "GROUP", "SUMMARY", AiQuerySemanticLexicon.STRUCTURED_BUSINESS_DIAGNOSIS_SUMMARY, FACET_SUMMARY, null, null);
 
+    public static final BusinessDiagnosisSemanticCapabilityMatrixRow PROBLEM_SUMMARY =
+            row("BD-I", "GROUP", "DIAGNOSIS", AiQuerySemanticLexicon.STRUCTURED_BUSINESS_DIAGNOSIS_SUMMARY, FACET_PROBLEM, null, null);
+
+    public static final BusinessDiagnosisSemanticCapabilityMatrixRow RISK_SUMMARY =
+            row("BD-J", "GROUP", "ANOMALY", AiQuerySemanticLexicon.STRUCTURED_BUSINESS_DIAGNOSIS_SUMMARY, FACET_RISK, null, null);
+
     public static final BusinessDiagnosisSemanticCapabilityMatrixRow STORE_PRIORITY_RANKING =
-            row("BD-B", "STORE", "RANKING", AiQuerySemanticLexicon.STRUCTURED_STORE_PRIORITY_RANKING, FACET_STORE_PRIORITY, BusinessDiagnosisAgentV1.DIAGNOSIS_QUESTION_STORE_PRIORITY_RANKING, null);
+            row("BD-B", "STORE", "RANKING", AiQuerySemanticLexicon.STRUCTURED_STORE_PRIORITY_RANKING, FACET_STORE_PRIORITY, BusinessDiagnosisAgentV1.DIAGNOSIS_QUESTION_STORE_PRIORITY_RANKING, KNOWN_GAP_EXTENDED_DIAGNOSIS_NOT_IN_P2H);
 
     public static final BusinessDiagnosisSemanticCapabilityMatrixRow STORE_RISK_REASONS_INHERITED =
             row("BD-C", "STORE", "EXPLAIN", AiQuerySemanticLexicon.STRUCTURED_STORE_RISK_REASON_EXPLANATION, FACET_STORE_RISK_REASONS, BusinessDiagnosisAgentV1.DIAGNOSIS_QUESTION_STORE_RISK_REASONS, null);
@@ -107,7 +119,7 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
             row("BD-K", "STORE", "ADVISE", AiQuerySemanticLexicon.STRUCTURED_DIAGNOSIS_ACTION_SUGGESTION, FACET_ACTION, "ACTION_SUGGESTION", null);
 
     public static final BusinessDiagnosisSemanticCapabilityMatrixRow STORE_COMPARE_DIAGNOSIS =
-            row("BD-H", "STORE", "COMPARE", AiQuerySemanticLexicon.STRUCTURED_BUSINESS_STORE_COMPARE_DIAGNOSIS, FACET_SUMMARY, DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS, null);
+            row("BD-H", "STORE", "COMPARE", AiQuerySemanticLexicon.STRUCTURED_BUSINESS_STORE_COMPARE_DIAGNOSIS, FACET_SUMMARY, DiagnosisPlan.TYPE_OVERALL_BUSINESS_DIAGNOSIS, KNOWN_GAP_EXTENDED_DIAGNOSIS_NOT_IN_P2H);
 
     private static BusinessDiagnosisSemanticCapabilityMatrixRow row(
             String rowId,
@@ -146,7 +158,9 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
 
     /**
      * 仅凭<strong>完整</strong>问法解析 Matrix 行（Harness P1 契约）；省略追问（「为什么」「采购还是出库」等）
-     * 由 {@link com.nongxinle.ai.followup.rewrite.llm.LlmFollowUpQueryRewriter} 补全后再进 v2。
+     * 由 SemanticIntake 补全后再进 v2。
+     * <p>
+     * LEGACY_ONLY — contract-locked 主链不得调用；由 selectedContractId → ACTIVE entry 驱动。
      */
     public static BusinessDiagnosisSemanticCapabilityMatrixRow resolveRowFromMessage(String normalizedUserMessage) {
         String msg = compactMessage(normalizedUserMessage);
@@ -169,6 +183,14 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         if (state == null || !state.isBusinessDiagnosisPath() || state.getResolvedQueryContext() == null) {
             return null;
         }
+        if (isContractLockedDiagnosisState(state)) {
+            BusinessDiagnosisSemanticCapabilityMatrixRow fromContract =
+                    rowFromActiveContractId(selectedContractId(state));
+            if (fromContract != null) {
+                return fromContract;
+            }
+            return resolveRowFromStructuredWireContractLocked(state);
+        }
         BusinessDiagnosisSemanticCapabilityMatrixRow fromWire = resolveRowFromStructuredWire(state);
         String msg = normalizedUserMessage(state);
         BusinessDiagnosisSemanticCapabilityMatrixRow fromMsg = resolveRowFromMessage(msg);
@@ -176,6 +198,54 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
             return fromMsg;
         }
         return fromWire;
+    }
+
+    /** contract-locked：仅 structured wire / selectedContractId，不读用户原文。 */
+    private static BusinessDiagnosisSemanticCapabilityMatrixRow resolveRowFromStructuredWireContractLocked(
+            AiRunState state) {
+        AiResolvedQueryIntent qi = state.getResolvedQueryContext().getQueryIntent();
+        String wire = qi != null ? qi.getStructuredIntentDetail() : null;
+        if (!StringUtils.hasText(wire)) {
+            return null;
+        }
+        String canonical = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire);
+        BusinessDiagnosisSemanticCapabilityMatrixRow row = rowFromCanonicalStructuredWire(canonical);
+        if (row != null && row.getKnownGapCode() == null) {
+            return row;
+        }
+        return null;
+    }
+
+    private static boolean isContractLockedDiagnosisState(AiRunState state) {
+        if (state == null || state.getResolvedQueryContext() == null) {
+            return false;
+        }
+        AiQuerySemanticParseResult parse = state.getResolvedQueryContext().getQuerySemanticParse();
+        return com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.isContractLockedParse(parse);
+    }
+
+    private static String selectedContractId(AiRunState state) {
+        if (state == null || state.getResolvedQueryContext() == null) {
+            return null;
+        }
+        AiQuerySemanticParseResult parse = state.getResolvedQueryContext().getQuerySemanticParse();
+        return com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.extractSelectedContractId(parse);
+    }
+
+    /** ACTIVE contractId → Matrix 行（contract-entry 注册表，非 NL 推断）。 */
+    public static BusinessDiagnosisSemanticCapabilityMatrixRow rowFromActiveContractId(String contractId) {
+        if (!StringUtils.hasText(contractId)) {
+            return null;
+        }
+        return switch (contractId.trim()) {
+            case "business_diagnosis.summary" -> SUMMARY;
+            case "business_diagnosis.problem_summary" -> PROBLEM_SUMMARY;
+            case "business_diagnosis.risk_summary" -> RISK_SUMMARY;
+            case "business_diagnosis.suggestion_summary" -> ACTION_SUGGESTION;
+            case "business_diagnosis.store_risk_reasons_inherited" -> STORE_RISK_REASONS_INHERITED;
+            case "business_diagnosis.store_risk_reasons_named" -> STORE_RISK_REASONS_NAMED;
+            default -> null;
+        };
     }
 
     private static BusinessDiagnosisSemanticCapabilityMatrixRow resolveRowFromStructuredWire(AiRunState state) {
@@ -362,6 +432,24 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         if (!AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(pathCode)) {
             return null;
         }
+        if (sem != null
+                && com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.isContractLockedParse(sem)) {
+            String contractId =
+                    com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.extractSelectedContractId(sem);
+            BusinessDiagnosisSemanticCapabilityMatrixRow fromContract = rowFromActiveContractId(contractId);
+            if (fromContract != null) {
+                return fromContract;
+            }
+            String canon =
+                    StringUtils.hasText(wire)
+                            ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim())
+                            : null;
+            if (StringUtils.hasText(canon)) {
+                BusinessDiagnosisSemanticCapabilityMatrixRow row = rowFromCanonicalStructuredWire(canon);
+                return row != null && row.getKnownGapCode() == null ? row : null;
+            }
+            return null;
+        }
         String canon =
                 StringUtils.hasText(wire)
                         ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim())
@@ -381,10 +469,14 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
 
     /**
      * business_diagnosis_path：semanticSlots → Matrix canonical wire。
+     * <p>LEGACY_ONLY — contract-locked 时 abstain，主链 wire 仅来自 selectedContractId → ACTIVE entry。
      */
     public static String resolveStructuredIntentDetailWire(
             AiQuerySemanticParseResult sem, String pathCode, String mergedStructuredDetail) {
         if (!AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(pathCode)) {
+            return null;
+        }
+        if (com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.isContractLockedParse(sem)) {
             return null;
         }
         if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
@@ -424,7 +516,13 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         return row != null ? row.getStructuredIntentDetailWire() : canonWire;
     }
 
+    /**
+     * LEGACY_ONLY — contract-locked 时 abstain；禁止 slots→子域 wire 推导影响主链。
+     */
     public static String inferMatrixWireFromSemanticSlots(AiQuerySemanticParseResult sem) {
+        if (com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.isContractLockedParse(sem)) {
+            return null;
+        }
         if (sem == null || sem.getSemanticSlots() == null) {
             return null;
         }
@@ -530,6 +628,9 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         if (raw == null || raw.isParseMissing() || raw.getSemanticSlots() == null) {
             return raw;
         }
+        if (com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.isContractLockedParse(raw)) {
+            return com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer.normalize(raw);
+        }
         if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(raw)) {
             return raw;
         }
@@ -605,6 +706,12 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
             }
             return row.getOperation();
         }
+        if (PROBLEM_SUMMARY.equals(row) && "DIAGNOSIS".equals(op)) {
+            return row.getOperation();
+        }
+        if (RISK_SUMMARY.equals(row) && "ANOMALY".equals(op)) {
+            return row.getOperation();
+        }
         return StringUtils.hasText(op) ? op : row.getOperation();
     }
 
@@ -617,7 +724,16 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         if (op.equals(normalizeMatrixToken(row.getOperation()))) {
             return true;
         }
-        if (SUMMARY.equals(row) || STORE_COMPARE_DIAGNOSIS.equals(row)) {
+        if (SUMMARY.equals(row)) {
+            return "SUMMARY".equals(op) || "OVERVIEW".equals(op);
+        }
+        if (PROBLEM_SUMMARY.equals(row)) {
+            return "DIAGNOSIS".equals(op);
+        }
+        if (RISK_SUMMARY.equals(row)) {
+            return "ANOMALY".equals(op) || "RISK".equals(op);
+        }
+        if (STORE_COMPARE_DIAGNOSIS.equals(row)) {
             return "SUMMARY".equals(op) || "DIAGNOSIS".equals(op) || "OVERVIEW".equals(op);
         }
         return false;
@@ -633,7 +749,7 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
         if (expected.equals(qo)) {
             return true;
         }
-        if (SUMMARY.equals(row)) {
+        if (SUMMARY.equals(row) || PROBLEM_SUMMARY.equals(row) || RISK_SUMMARY.equals(row)) {
             return "GROUP".equals(qo) || "STORE".equals(qo) || "BUSINESS".equals(qo);
         }
         if (STORE_COMPARE_DIAGNOSIS.equals(row) || STORE_PRIORITY_RANKING.equals(row)) {
@@ -732,6 +848,10 @@ public final class BusinessDiagnosisSemanticCapabilityMatrix {
 
     /**
      * Harness 兜底：无 structured wire 时，仅当用户原文形似「哪个门店问题最大」类问法。
+     * <p>
+     * TODO(LEGACY_ONLY-CLEANUP): 当前逻辑仅用于非 contract-locked legacy 路径（Harness 无 structured wire 时的 fallback 兜底，
+     * 通过读用户原文中文关键词推断门店优先排序）。后续应通过 contract entry 明确表达「门店优先」语义，
+     * 禁止 Java 根据用户原文重新推导 wire/row。
      */
     public static boolean isStorePriorityHarnessTextFallback(AiRunState state) {
         if (state == null || !state.isBusinessDiagnosisPath()) {

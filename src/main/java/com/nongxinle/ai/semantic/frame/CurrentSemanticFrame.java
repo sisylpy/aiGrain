@@ -74,10 +74,7 @@ public class CurrentSemanticFrame {
                         queryObject,
                         normalizeEnumToken(ss != null ? ss.getOperation() : null),
                         wireCanon);
-        if (!StringUtils.hasText(detailWanted)
-                && AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(wireCanon)) {
-            detailWanted = PurchaseSemanticCapabilityMatrix.inferGoodsAnchorDetailWanted(raw);
-        }
+
         String operation =
                 PurchaseSemanticCapabilityMatrix.canonicalOperation(
                         ss != null ? ss.getOperation() : null,

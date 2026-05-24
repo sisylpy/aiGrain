@@ -42,6 +42,8 @@ public class PurchaseSemanticExecutionIntent {
     String executionIntentType;
     /** 写入 Tool {@code executionDetailWanted} 契约键（由 {@link #getToolDetailWantedKey()} 映射）。 */
     String toolDetailWantedKey;
+    /** P2-J debug：{@code contract_entry} / {@code unresolved}；非 Matrix 推导成功标记。 */
+    String resolutionSource;
 
     public boolean isActive() {
         return StringUtils.hasText(executionIntentType) && !EXEC_NONE.equals(executionIntentType);

@@ -9,12 +9,13 @@ import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.util.StringUtils;
 
 /**
  * 经营诊断域 Step 2 小合同只读导出。
- * <p>ACTIVE：Matrix 行无 knownGapCode；KNOWN_GAP：子域归因等 Plan 依赖未稳定行。
+ * <p>ACTIVE：P2H 主流程（概览 / 问题 / 风险 / 建议 / 门店级原因）；KNOWN_GAP：子域归因、扩展排行/对比等。
  */
 public final class BusinessDiagnosisSemanticCapabilityContractExporter
         implements SemanticCapabilityContractExporter {
@@ -29,6 +30,8 @@ public final class BusinessDiagnosisSemanticCapabilityContractExporter
     private static final List<BusinessDiagnosisSemanticCapabilityMatrixRow> ALL_ROWS =
             List.of(
                     BusinessDiagnosisSemanticCapabilityMatrix.SUMMARY,
+                    BusinessDiagnosisSemanticCapabilityMatrix.PROBLEM_SUMMARY,
+                    BusinessDiagnosisSemanticCapabilityMatrix.RISK_SUMMARY,
                     BusinessDiagnosisSemanticCapabilityMatrix.STORE_PRIORITY_RANKING,
                     BusinessDiagnosisSemanticCapabilityMatrix.STORE_RISK_REASONS_INHERITED,
                     BusinessDiagnosisSemanticCapabilityMatrix.STORE_RISK_REASONS_NAMED,
@@ -100,23 +103,27 @@ public final class BusinessDiagnosisSemanticCapabilityContractExporter
             String gapMarker) {
         SemanticCapabilityContract.SemanticCapabilityContractBuilder b =
                 SemanticCapabilityContract.builder()
-                .contractId(contractIdForRow(row))
-                .domain(DOMAIN_CODE)
-                .intentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS)
-                .pathCode(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS)
-                .wire(row.getStructuredIntentDetailWire())
-                .metric(diagnosisMetric(row));
+                        .contractId(contractIdForRow(row))
+                        .domain(DOMAIN_CODE)
+                        .intentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS)
+                        .pathCode(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS)
+                        .wire(row.getStructuredIntentDetailWire())
+                        .metric(diagnosisMetric(row));
         if (BusinessDiagnosisSemanticCapabilityMatrix.SUMMARY.equals(row)) {
             b.queryObject("GROUP")
                     .queryObject("STORE")
                     .queryObject("BUSINESS")
-                    .operation("SUMMARY")
-                    .operation("DIAGNOSIS")
-                    .operation("OVERVIEW");
-        } else if (BusinessDiagnosisSemanticCapabilityMatrix.STORE_COMPARE_DIAGNOSIS.equals(row)) {
-            b.queryObject("STORE")
+                    .operations(Set.of("SUMMARY", "OVERVIEW"));
+        } else if (BusinessDiagnosisSemanticCapabilityMatrix.PROBLEM_SUMMARY.equals(row)) {
+            b.queryObject("GROUP")
                     .queryObject("BUSINESS")
-                    .operation("COMPARE");
+                    .operations(Set.of("DIAGNOSIS"));
+        } else if (BusinessDiagnosisSemanticCapabilityMatrix.RISK_SUMMARY.equals(row)) {
+            b.queryObject("GROUP")
+                    .queryObject("BUSINESS")
+                    .operations(Set.of("ANOMALY", "RISK"));
+        } else if (BusinessDiagnosisSemanticCapabilityMatrix.STORE_COMPARE_DIAGNOSIS.equals(row)) {
+            b.queryObject("STORE").queryObject("BUSINESS").operation("COMPARE");
         } else {
             b.queryObject(row.getQueryObject()).operation(row.getOperation());
         }
@@ -135,18 +142,6 @@ public final class BusinessDiagnosisSemanticCapabilityContractExporter
     private static String diagnosisMetric(BusinessDiagnosisSemanticCapabilityMatrixRow row) {
         if (row.getChildDomain() != null) {
             return row.getChildDomain();
-        }
-        if (BusinessDiagnosisSemanticCapabilityMatrix.FACET_SUMMARY.equals(row.getDiagnosisFacet())) {
-            return "BUSINESS_STATUS";
-        }
-        if (BusinessDiagnosisSemanticCapabilityMatrix.FACET_STORE_PRIORITY.equals(row.getDiagnosisFacet())) {
-            return "BUSINESS_STATUS";
-        }
-        if (BusinessDiagnosisSemanticCapabilityMatrix.FACET_STORE_RISK_REASONS.equals(row.getDiagnosisFacet())) {
-            return "BUSINESS_STATUS";
-        }
-        if (BusinessDiagnosisSemanticCapabilityMatrix.FACET_ACTION.equals(row.getDiagnosisFacet())) {
-            return "BUSINESS_STATUS";
         }
         return "BUSINESS_STATUS";
     }
@@ -192,6 +187,8 @@ public final class BusinessDiagnosisSemanticCapabilityContractExporter
     private static String contractIdForRow(BusinessDiagnosisSemanticCapabilityMatrixRow row) {
         return switch (row.getRowId()) {
             case "BD-A" -> "business_diagnosis.summary";
+            case "BD-I" -> "business_diagnosis.problem_summary";
+            case "BD-J" -> "business_diagnosis.risk_summary";
             case "BD-B" -> "business_diagnosis.store_priority_ranking";
             case "BD-C" -> "business_diagnosis.store_risk_reasons_inherited";
             case "BD-D" -> "business_diagnosis.store_risk_reasons_named";
@@ -199,7 +196,7 @@ public final class BusinessDiagnosisSemanticCapabilityContractExporter
             case "BD-F" -> "business_diagnosis.store_domain_stock_reduce";
             case "BD-G" -> "business_diagnosis.store_domain_dish_profit";
             case "BD-H" -> "business_diagnosis.store_compare";
-            case "BD-K" -> "business_diagnosis.action_followup";
+            case "BD-K" -> "business_diagnosis.suggestion_summary";
             default -> "business_diagnosis." + row.getRowId().toLowerCase();
         };
     }

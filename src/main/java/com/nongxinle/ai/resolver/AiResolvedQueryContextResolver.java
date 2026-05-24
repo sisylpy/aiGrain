@@ -12,14 +12,11 @@ import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiFollowUpResolver;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.semantic.contract.*;
-import com.nongxinle.ai.followup.rewrite.FollowUpRewriteRequest;
-import com.nongxinle.ai.followup.rewrite.FollowUpRewriteResult;
-import com.nongxinle.ai.followup.rewrite.llm.LlmFollowUpQueryRewriter;
+import com.nongxinle.ai.semantic.intake.*;
+import com.nongxinle.ai.semantic.intake.llm.LlmSemanticIntakeParser;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouter;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouterInput;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 import com.nongxinle.ai.semantic.*;
 import com.nongxinle.ai.util.AiUserMessageSanitizer;
 import lombok.RequiredArgsConstructor;
@@ -36,21 +33,7 @@ import java.util.Optional;
 
 /**
  * 统一解析入口：装配 {@link AiResolvedQueryContext}（唯一新业务上下文入口）。
- * <p>职责分区（编排保留在此，域特殊规则外移）：
- * <ul>
- *   <li>FollowUp Rewrite — {@link LlmFollowUpQueryRewriter} + rewrite debug 写入</li>
- *   <li>Semantic Router / ContractSelector / Parser — {@link SemanticDomainRouter}、{@link DomainContractSelector}、{@link AiQuerySemanticLlmParser}</li>
- *   <li>语义采纳 — {@link SemanticAdoptionPipeline#tryAdopt}</li>
- *   <li>Contract Validation / StrictDecision — {@link SemanticContractValidationPipeline#run}</li>
- *   <li>Org / DataScope 权限装配 — {@link AiResolvedOrgScopeAssembler#resolveOrgScope} / {@link AiResolvedOrgScopeAssembler#buildDataScope}</li>
- *   <li>Time / 语义门店 narrowing — {@link AiFollowUpResolver}、{@link AiMultiTurnOrgScopePolicy}、{@link SemanticScopeNarrowingPolicy}</li>
- *   <li>Harness 多店范围 — {@link SemanticHarnessScopePolicy#buildHarnessMultiStoreSnapshot}</li>
- *   <li>Orchestration 业务修正 — {@link SemanticOrchestrationDecisionReconciler#reconcile}</li>
- *   <li>Context 装配 — {@link AiResolvedQueryContextAssemblySupport#assemble}</li>
- *   <li>诊断日志 — {@link AiResolvedQueryContextDiagnostics}</li>
- *   <li>权限点名 — {@link SemanticPermissionMentionPolicy}</li>
- * </ul>
- * 用户话术不做 Java 关键词语义解析；组织树与门店收窄口径由本类集中处理。
+ * <p>主链：SemanticIntake LLM → DomainContractSelector → query_semantic_parser.v2 → Adoption → Validation。
  */
 @Slf4j
 @Component
@@ -59,7 +42,7 @@ public class AiResolvedQueryContextResolver {
 
     private final AiConversationMemoryService conversationMemoryService;
     private final AiQuerySemanticLlmParser querySemanticLlmParser;
-    private final LlmFollowUpQueryRewriter followUpQueryRewriter;
+    private final LlmSemanticIntakeParser semanticIntakeParser;
     private final SemanticContractStrictProperties semanticContractStrictProperties;
     private final AiResolvedOrgScopeAssembler orgScopeAssembler;
     private final SemanticAdoptionPipeline semanticAdoptionPipeline;
@@ -98,41 +81,37 @@ public class AiResolvedQueryContextResolver {
 
         AiResolvedOrgScope orgScope = orgScopeAssembler.resolveOrgScope(userContext, effectiveDept, request);
 
-        FollowUpRewriteRequest rewriteRequest =
-                FollowUpRewriteRequest.from(message, normalized, today, previousTurn, orgScope);
+        SemanticIntakeInput intakeInput =
+                SemanticIntakeInput.from(message, normalized, today, previousTurn, orgScope);
         int previousTurnResultAnchorsCount = countResultAnchors(previousTurn != null ? previousTurn.getLastResultAnchors() : null);
-        int rewritePromptResultAnchorsCount = countResultAnchors(rewriteRequest.getResultAnchors());
-        FollowUpRewriteResult rewriteResult = followUpQueryRewriter.rewrite(rewriteRequest);
-        boolean rewriteClarificationRequired =
-                rewriteResult != null
-                        && rewriteResult.isNeedClarification()
-                        && StringUtils.hasText(rewriteResult.getClarificationQuestion());
-        boolean followUpRewriteApplied =
-                !rewriteClarificationRequired
-                        && rewriteResult != null
-                        && rewriteResult.isCanRewrite();
-        String effectiveUserMessage =
-                followUpRewriteApplied && StringUtils.hasText(rewriteResult.getCompletedUserQuery())
-                        ? rewriteResult.getCompletedUserQuery().trim()
-                        : normalized;
+        int intakePromptResultAnchorsCount = countResultAnchors(intakeInput.getResultAnchors());
+        SemanticIntakeResult semanticIntake = semanticIntakeParser.parse(intakeInput);
+
+        boolean intakeClarificationRequired = isIntakeClarificationRequired(semanticIntake);
+        SemanticDomainRouteResult semanticDomainRoute = null;
+        if (!intakeClarificationRequired) {
+            semanticDomainRoute = SemanticIntakeRouteAdapter.toRouteResult(semanticIntake);
+            if (semanticDomainRoute == null || semanticDomainRoute.isNeedsClarification()) {
+                intakeClarificationRequired = true;
+            }
+        }
+        boolean intakeRewriteApplied =
+                !intakeClarificationRequired
+                        && semanticIntake != null
+                        && semanticIntake.getStatus() == SemanticIntakeStatus.READY
+                        && semanticIntake.getNormalizationType() == SemanticIntakeNormalizationType.REWRITE;
+        String effectiveUserMessage = resolveEffectiveUserMessage(normalized, semanticIntake);
         AiConversationTurnMemory previousTurnForParser =
-                followUpRewriteApplied
+                intakeRewriteApplied
                         ? SemanticParserInputBuilder.reducePreviousTurnForFollowUpRewrite(previousTurn)
                         : previousTurn;
 
         Map<String, Object> querySemanticV2InputPreview = null;
         AiQuerySemanticParseResult querySemanticV2Raw = null;
-        SemanticDomainRouteResult semanticDomainRoute = null;
         DomainContractSelectionResult domainContractSelection = null;
         SemanticContractValidationDebug semanticContractValidation = null;
         SemanticContractStrictDecision semanticContractStrictDecision = null;
-        if (!rewriteClarificationRequired) {
-            semanticDomainRoute =
-                    SemanticDomainRouter.INSTANCE.route(
-                            SemanticDomainRouterInput.builder()
-                                    .rewrittenUserMessage(effectiveUserMessage)
-                                    .previousTurn(previousTurnForParser)
-                                    .build());
+        if (!intakeClarificationRequired) {
             domainContractSelection = DomainContractSelector.select(semanticDomainRoute);
             try {
                 var v2In =
@@ -158,13 +137,10 @@ public class AiResolvedQueryContextResolver {
             }
         }
 
-        /* 显式时间仅来自 V2 LLM time 块 + {@link com.nongxinle.ai.semantic.SemanticTimeContractCheck}，不做 Java 侧 timeType 推算。 */
         AiResolvedTimeWindow explicitTentative = null;
 
         String semanticPrimaryVersion = "v2";
-        /** 历史兼容：写入 {@link AiResolvedQueryContext#getSemanticFallbackUsed()}，当前恒 false，不代表 V1 fallback。 */
         Boolean semanticFallbackUsed = Boolean.FALSE;
-        /** V2 拒收原因（time contract / frame validation / parse 失败）；写入 semanticFallbackReason，非 V1 fallback。 */
         String semanticFallbackReason = null;
         String semanticAdoptedFrom = null;
         List<String> semanticAdoptedFields = null;
@@ -175,100 +151,124 @@ public class AiResolvedQueryContextResolver {
         Map<String, Object> semanticV2AbstractIntentNormalizationNotes = null;
 
         SemanticAdoptionAttempt adoption = null;
-        AiQuerySemanticParseResult v2ForAdoption =
-                querySemanticV2Raw != null && !querySemanticV2Raw.isParseMissing()
-                        ? querySemanticV2Raw
-                        : null;
-        adoption =
-                semanticAdoptionPipeline.tryAdopt(
-                        new SemanticAdoptionPipeline.Request(
-                                v2ForAdoption,
-                                previousTurnForParser,
-                                effectiveUserMessage,
-                                today,
-                                explicitTentative,
-                                followUpRewriteApplied,
-                                domainContractSelection,
-                                followUpRewriteApplied && rewriteResult != null
-                                        ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
-                                                rewriteResult.getInheritedAnchorType())
-                                        : null,
-                                followUpRewriteApplied && rewriteResult != null
-                                        ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
-                                                rewriteResult.getInheritedAnchorName())
-                                        : null));
-        SemanticContractValidationPipeline.Result contractPipeline =
-                SemanticContractValidationPipeline.run(
-                        new SemanticContractValidationPipeline.Request(
-                                rewriteClarificationRequired,
-                                domainContractSelection,
-                                adoption,
-                                querySemanticV2Raw,
-                                previousTurnForParser,
-                                followUpRewriteApplied,
-                                rewriteResult,
-                                semanticDomainRoute,
-                                semanticContractStrictProperties.isEnabled()));
-        semanticContractValidation = contractPipeline.semanticContractValidation();
-        semanticContractStrictDecision = contractPipeline.semanticContractStrictDecision();
-        boolean timeContractFailed =
+        boolean timeContractFailed = false;
+        boolean frameClarificationRequired = false;
+        boolean contractStrictClarificationRequired = false;
+        com.nongxinle.ai.semantic.SemanticTimeContractCheck.Result timeContractResult = null;
+
+        if (intakeClarificationRequired) {
+            semanticFallbackReason = intakeClarificationReason(semanticIntake);
+        } else {
+            AiQuerySemanticParseResult v2ForAdoption =
+                    querySemanticV2Raw != null && !querySemanticV2Raw.isParseMissing()
+                            ? querySemanticV2Raw
+                            : null;
+            adoption =
+                    semanticAdoptionPipeline.tryAdopt(
+                            new SemanticAdoptionPipeline.Request(
+                                    v2ForAdoption,
+                                    previousTurnForParser,
+                                    effectiveUserMessage,
+                                    today,
+                                    explicitTentative,
+                                    intakeRewriteApplied,
+                                    domainContractSelection,
+                                    null,
+                                    null));
+            SemanticContractValidationPipeline.Result contractPipeline =
+                    SemanticContractValidationPipeline.run(
+                            new SemanticContractValidationPipeline.Request(
+                                    false,
+                                    domainContractSelection,
+                                    adoption,
+                                    querySemanticV2Raw,
+                                    previousTurnForParser,
+                                    intakeRewriteApplied,
+                                    semanticDomainRoute,
+                                    semanticContractStrictProperties.isEnabled()));
+            semanticContractValidation = contractPipeline.semanticContractValidation();
+            semanticContractStrictDecision = contractPipeline.semanticContractStrictDecision();
+            timeContractFailed =
+                    adoption != null
+                            && adoption.timeContract() != null
+                            && !adoption.timeContract().valid();
+            frameClarificationRequired =
+                    adoption != null && adoption.frameClarificationRequired();
+            contractStrictClarificationRequired =
+                    semanticContractStrictDecision != null
+                            && semanticContractStrictDecision.isEnforceClarification();
+            timeContractResult = adoption != null ? adoption.timeContract() : null;
+
+            if (adoption != null && StringUtils.hasText(adoption.rejectionReason())) {
+                semanticAdoptionRejectedReason = adoption.rejectionReason();
+            }
+
+            if (adoption != null && adoption.adopted()) {
+                semanticAdoptedFrom = "v2";
+                semanticAdoptedFields =
+                        AiResolvedQueryContextDebugFactory.describeAdoptedSemanticFields(
+                                adoption.semantic());
+            } else if (timeContractFailed) {
+                semanticFallbackReason =
+                        "time_contract:"
+                                + AiResolvedQueryContextDebugFactory.blankToNullSemantic(
+                                        adoption.timeContract().failureReason());
+            } else if (adoption != null && adoption.contractSelectionClarificationRequired()) {
+                semanticFallbackReason =
+                        "contract_selection:"
+                                + adoption.contractViolationCode().name();
+            } else if (frameClarificationRequired) {
+                semanticFallbackReason =
+                        "frame_validation:"
+                                + AiResolvedQueryContextDebugFactory.blankToNullSemantic(
+                                        adoption.rejectionReason());
+            } else if (contractStrictClarificationRequired) {
+                semanticFallbackReason =
+                        "model_contract_violation:"
+                                + (semanticContractStrictDecision.getViolationCode() != null
+                                        ? semanticContractStrictDecision.getViolationCode().name()
+                                        : "UNKNOWN");
+            } else if (adoption != null
+                    && StringUtils.hasText(adoption.rejectionReason())) {
+                semanticFallbackReason = adoption.rejectionReason();
+            } else {
+                semanticFallbackReason =
+                        diagnostics.explainV2NonAdoption(
+                                querySemanticV2Raw, querySemanticMinConfidence);
+            }
+
+            if (adoption != null
+                    && adoption.semantic() != null
+                    && Boolean.TRUE.equals(adoption.semantic().getPurchaseSemanticFramePrimaryMerge())) {
+                semanticFallbackUsed = Boolean.FALSE;
+            }
+        }
+
+        boolean adoptionPathUnresolved =
                 adoption != null
-                        && adoption.timeContract() != null
-                        && !adoption.timeContract().valid();
-        boolean frameClarificationRequired =
-                adoption != null && adoption.frameClarificationRequired();
-        boolean contractStrictClarificationRequired =
-                semanticContractStrictDecision != null
-                        && semanticContractStrictDecision.isEnforceClarification();
+                        && (adoption.mergedIntent() == null
+                                || !StringUtils.hasText(adoption.mergedIntent().getPathCode()))
+                        && !adoption.frameClarificationRequired()
+                        && !adoption.contractSelectionClarificationRequired();
+
         boolean clarificationRequired =
-                rewriteClarificationRequired
+                intakeClarificationRequired
                         || adoption == null
+                        || adoptionPathUnresolved
                         || timeContractFailed
                         || frameClarificationRequired
                         || contractStrictClarificationRequired;
-        com.nongxinle.ai.semantic.SemanticTimeContractCheck.Result timeContractResult =
-                adoption != null ? adoption.timeContract() : null;
-
-        if (adoption != null && adoption.adopted()) {
-            semanticAdoptedFrom = "v2";
-            semanticAdoptedFields =
-                    AiResolvedQueryContextDebugFactory.describeAdoptedSemanticFields(adoption.semantic());
-        } else if (timeContractFailed) {
-            semanticFallbackReason =
-                    "time_contract:"
-                            + AiResolvedQueryContextDebugFactory.blankToNullSemantic(
-                                    adoption.timeContract().failureReason());
-        } else if (adoption != null && adoption.contractSelectionClarificationRequired()) {
-            semanticFallbackReason =
-                    "contract_selection:"
-                            + adoption.contractViolationCode().name();
-        } else if (frameClarificationRequired) {
-            semanticFallbackReason =
-                    "frame_validation:"
-                            + AiResolvedQueryContextDebugFactory.blankToNullSemantic(adoption.rejectionReason());
-        } else if (contractStrictClarificationRequired) {
-            semanticFallbackReason =
-                    "model_contract_violation:"
-                            + (semanticContractStrictDecision.getViolationCode() != null
-                                    ? semanticContractStrictDecision.getViolationCode().name()
-                                    : "UNKNOWN");
-        } else {
-            semanticFallbackReason = rewriteClarificationRequired
-                    ? "follow_up_rewrite_clarification"
-                    : diagnostics.explainV2NonAdoption(querySemanticV2Raw, querySemanticMinConfidence);
-        }
-
-        if (adoption != null
-                && adoption.semantic() != null
-                && Boolean.TRUE.equals(adoption.semantic().getPurchaseSemanticFramePrimaryMerge())) {
-            semanticFallbackUsed = Boolean.FALSE;
-        }
 
         AiQuerySemanticParseResult semanticLlm =
-                adoption != null ? adoption.semantic() : querySemanticV2Raw;
+                intakeClarificationRequired
+                        ? null
+                        : (adoption != null ? adoption.semantic() : querySemanticV2Raw);
 
         AiResolvedQueryIntent mergedIntentStem =
-                adoption != null && !timeContractFailed
+                adoption != null
+                                && !timeContractFailed
+                                && adoption.mergedIntent() != null
+                                && StringUtils.hasText(adoption.mergedIntent().getPathCode())
                         ? adoption.mergedIntent()
                         : AiResolvedQueryIntent.builder().build();
         AiResolvedTimeWindow tentativeTimeMerged =
@@ -285,8 +285,8 @@ public class AiResolvedQueryContextResolver {
                         && semanticLlm.isUsableForMerge(querySemanticMinConfidence);
 
         String semanticClarificationQuestion =
-                rewriteClarificationRequired
-                        ? rewriteResult.getClarificationQuestion().trim()
+                intakeClarificationRequired
+                        ? resolveIntakeClarificationQuestion(semanticIntake)
                         : contractStrictClarificationRequired
                                 ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
                                         semanticContractStrictDecision.getClarificationQuestion())
@@ -309,7 +309,7 @@ public class AiResolvedQueryContextResolver {
                                 orgScope,
                                 message,
                                 semanticLlm,
-                                followUpRewriteApplied);
+                                intakeRewriteApplied);
 
         AiResolvedQueryIntent queryIntent = followUp.getMergedQueryIntent() != null
                 ? followUp.getMergedQueryIntent()
@@ -327,7 +327,6 @@ public class AiResolvedQueryContextResolver {
                     timeContractResult.toTimeWindow(tp != null ? tp.getTimeType() : null);
             effectiveTimeSource = timeContractResult.normalizedTimeSource();
         } else {
-            // 防御：不应在 Production 主链落到这里；不做 Java 时间兜底或 tentative!=null 归因。
             timeWindow = explicitTentative;
             effectiveTimeSource = "UNRESOLVED";
             diagnostics.logTimeContractMissingOnNonClarificationPath(runId, convId);
@@ -346,10 +345,10 @@ public class AiResolvedQueryContextResolver {
                         message,
                         normalized,
                         effectiveUserMessage,
-                        followUpRewriteApplied,
+                        intakeRewriteApplied,
                         previousTurn,
                         orgScope,
-                        rewriteResult,
+                        semanticIntake,
                         querySemanticV2Raw,
                         explicitTentative,
                         querySemanticMinConfidence,
@@ -369,7 +368,7 @@ public class AiResolvedQueryContextResolver {
                         semanticContractValidation,
                         semanticContractStrictDecision,
                         previousTurnResultAnchorsCount,
-                        rewritePromptResultAnchorsCount,
+                        intakePromptResultAnchorsCount,
                         adoption,
                         timeContractResult,
                         clarificationRequired,
@@ -383,18 +382,68 @@ public class AiResolvedQueryContextResolver {
                         applyStructuralLlm));
     }
 
+    private static boolean isIntakeClarificationRequired(SemanticIntakeResult intake) {
+        if (intake == null) {
+            return true;
+        }
+        if (intake.getStatus() == SemanticIntakeStatus.INVALID) {
+            return true;
+        }
+        if (intake.getStatus() == SemanticIntakeStatus.NEED_CLARIFICATION) {
+            return true;
+        }
+        if (Boolean.TRUE.equals(intake.getNeedClarification())) {
+            return true;
+        }
+        if (intake.getQuestionMode() == SemanticIntakeQuestionMode.MULTI_QUESTION) {
+            return true;
+        }
+        return intake.getStatus() != SemanticIntakeStatus.READY;
+    }
 
-    /**
-     * Run 请求体中的 {@code distributerId} 优先于用户表快照，避免集团账号挂靠部门与主体 ID 不一致时只展开一家门店。
-     */
+    private static String resolveEffectiveUserMessage(String normalized, SemanticIntakeResult intake) {
+        if (intake != null
+                && intake.getStatus() == SemanticIntakeStatus.READY
+                && StringUtils.hasText(intake.getCanonicalUserQuery())) {
+            return intake.getCanonicalUserQuery().trim();
+        }
+        if (intake != null
+                && intake.getStatus() == SemanticIntakeStatus.NEED_CLARIFICATION
+                && StringUtils.hasText(intake.getCanonicalUserQuery())) {
+            return intake.getCanonicalUserQuery().trim();
+        }
+        return normalized;
+    }
+
+    private static String resolveIntakeClarificationQuestion(SemanticIntakeResult intake) {
+        if (intake != null && StringUtils.hasText(intake.getClarificationQuestion())) {
+            return intake.getClarificationQuestion().trim();
+        }
+        if (intake != null && intake.getStatus() == SemanticIntakeStatus.INVALID) {
+            return "没能理解您的问题，能再具体说一下吗？";
+        }
+        return "能再具体说一下您想问的内容吗？";
+    }
+
+    private static String intakeClarificationReason(SemanticIntakeResult intake) {
+        if (intake == null) {
+            return "semantic_intake_null";
+        }
+        if (intake.getStatus() == SemanticIntakeStatus.INVALID) {
+            return "semantic_intake_invalid:"
+                    + AiResolvedQueryContextDebugFactory.blankToNullSemantic(intake.getParseError());
+        }
+        if (intake.getQuestionMode() == SemanticIntakeQuestionMode.MULTI_QUESTION) {
+            return "semantic_intake_multi_question";
+        }
+        return "semantic_intake_clarification:"
+                + AiResolvedQueryContextDebugFactory.blankToNullSemantic(intake.getReason());
+    }
+
     public static Long mergedDistributerId(AiRunCreateRequest request, AiUserContext ctx) {
         return AiResolvedOrgScopeAssembler.mergedDistributerId(request, ctx);
     }
 
-    /**
-     * {@link com.nongxinle.ai.graph.business.BusinessScopeIntersectNode} 收窄 Run 锚点后，同步
-     * {@link AiResolvedQueryContext#getOrgScope()} / {@link AiResolvedQueryContext#getDataScope()}。
-     */
     public void patchResolvedQueryContextAfterRunIntersect(AiRunState state) {
         orgScopeAssembler.patchResolvedQueryContextAfterRunIntersect(state);
     }
@@ -415,5 +464,4 @@ public class AiResolvedQueryContextResolver {
         }
         return n;
     }
-
 }

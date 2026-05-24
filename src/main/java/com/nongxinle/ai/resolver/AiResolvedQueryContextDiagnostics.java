@@ -7,7 +7,7 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolver;
 import com.nongxinle.ai.followup.AiFollowUpHintSupport;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
-import com.nongxinle.ai.semantic.SemanticParseFallbackPolicy;
+import com.nongxinle.ai.semantic.SemanticParseClarificationPolicy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -26,18 +26,20 @@ public class AiResolvedQueryContextDiagnostics {
         if (v2 == null) {
             return "v2_null";
         }
-        if (SemanticParseFallbackPolicy.needSemanticParseClarification(v2, querySemanticMinConfidence)) {
-            if (v2.isParseMissing()) {
-                String err = v2.getObservationJsonParseError();
-                return StringUtils.hasText(err) ? "v2_parse_missing:" + err : "v2_parse_missing";
-            }
-            if (!v2.isStructuralConfidenceOk(querySemanticMinConfidence)) {
-                return "v2_low_confidence";
-            }
-            if (Boolean.TRUE.equals(v2.getNeedClarification())) {
-                return "v2_need_clarification";
-            }
-            return "v2_unreliable";
+        if (v2.isParseMissing()) {
+            String err = v2.getObservationJsonParseError();
+            return StringUtils.hasText(err) ? "v2_parse_missing:" + err : "v2_parse_missing";
+        }
+        if (!v2.isStructuralConfidenceOk(querySemanticMinConfidence)) {
+            return "v2_low_confidence";
+        }
+        if (Boolean.TRUE.equals(v2.getNeedClarification())) {
+            return "v2_need_clarification";
+        }
+        if (Boolean.TRUE.equals(v2.getQuerySemanticV2RepairAttempted())
+                && !Boolean.TRUE.equals(v2.getQuerySemanticV2RepairSuccess())) {
+            String reason = v2.getQuerySemanticV2RepairReason();
+            return StringUtils.hasText(reason) ? "v2_repair_failed:" + reason.trim() : "v2_repair_failed";
         }
         return "v2_no_routable_path";
     }
@@ -48,7 +50,7 @@ public class AiResolvedQueryContextDiagnostics {
                 && StringUtils.hasText(semanticLlm.getClarificationQuestion())) {
             return semanticLlm.getClarificationQuestion().trim();
         }
-        return SemanticParseFallbackPolicy.clarificationQuestion();
+        return SemanticParseClarificationPolicy.clarificationQuestion();
     }
 
     public void logResolveStart(

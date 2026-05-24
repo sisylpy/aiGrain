@@ -1,6 +1,7 @@
 package com.nongxinle.ai.semantic.contract;
 
 import lombok.experimental.UtilityClass;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -26,7 +27,8 @@ public final class SemanticContractCatalog {
                     WarehouseSemanticCapabilityContractExporter.INSTANCE,
                     DishSalesSemanticCapabilityContractExporter.INSTANCE,
                     DishProfitSemanticCapabilityContractExporter.INSTANCE,
-                    BusinessDiagnosisSemanticCapabilityContractExporter.INSTANCE);
+                    BusinessDiagnosisSemanticCapabilityContractExporter.INSTANCE,
+                    BusinessOverviewSemanticCapabilityContractExporter.INSTANCE);
 
     public static List<DomainRoutingContract> listDomainRoutingContracts() {
         return DomainRoutingContractCatalog.listDomainRoutingContracts();
@@ -47,18 +49,49 @@ public final class SemanticContractCatalog {
         return exporter == null ? List.of() : exporter.exportKnownGapContracts();
     }
 
-    public static AllowedOutputContract buildDomainCapabilityContract(String domain) {
-        SemanticCapabilityContractExporter exporter = exporterFor(domain);
-        if (exporter == null) {
+    /**
+     * 按 {@code contractId} 查找 ACTIVE 能力合同；优先 {@code domainHint} 域内，再跨域只读扫描。
+     * <p>用于 contract-locked execution mapping，不做自然语言路由。
+     */
+    public static SemanticCapabilityContract findActiveCapabilityContractById(
+            String contractId, String domainHint) {
+        if (!StringUtils.hasText(contractId)) {
             return null;
         }
-        return AllowedOutputContract.builder()
-                .schemaVersion(AllowedOutputContract.SCHEMA_VERSION_V1)
-                .candidateDomain(domain)
-                .entries(exporter.exportActiveContracts())
-                .globalRule("structuredIntentDetailWire MUST equal one of entries[].wire exactly")
-                .globalRule("Do not invent snake_case wire names not listed in entries[].wire")
-                .build();
+        String id = contractId.trim();
+        if (StringUtils.hasText(domainHint)) {
+            SemanticCapabilityContract inDomain = findActiveInDomain(id, domainHint.trim());
+            if (inDomain != null) {
+                return inDomain;
+            }
+        }
+        for (SemanticCapabilityContractExporter exporter : CAPABILITY_EXPORTERS) {
+            SemanticCapabilityContract found = findActiveInExporter(id, exporter);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static SemanticCapabilityContract findActiveInDomain(String contractId, String domain) {
+        SemanticCapabilityContractExporter exporter = exporterFor(domain);
+        return exporter == null ? null : findActiveInExporter(contractId, exporter);
+    }
+
+    private static SemanticCapabilityContract findActiveInExporter(
+            String contractId, SemanticCapabilityContractExporter exporter) {
+        if (exporter == null || !StringUtils.hasText(contractId)) {
+            return null;
+        }
+        for (SemanticCapabilityContract c : exporter.exportActiveContracts()) {
+            if (c != null
+                    && contractId.equals(c.getContractId())
+                    && c.getStatus() == SemanticCapabilityContractStatus.ACTIVE) {
+                return c;
+            }
+        }
+        return null;
     }
 
     public static SemanticContractCatalogSummary summarize() {

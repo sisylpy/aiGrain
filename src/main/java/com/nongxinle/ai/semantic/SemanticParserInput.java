@@ -29,8 +29,8 @@ public class SemanticParserInput {
     /** 当前用户权限内可见门店（仅店名）。 */
     private List<SemanticParserVisibleStore> visibleStores;
 
-    /** P2 Step 1：Router 选域摘要（不含 wire）。 */
-    private SemanticParserRouteInput semanticRoute;
+    /** P2 Step 1：Intake 路由摘要（不含 wire）。 */
+    private SemanticParserIntakeRouteInput semanticRoute;
 
     /** P2 Step 2：单域 ACTIVE allowed 摘要；capability 缺失时为 null。 */
     private SemanticParserAllowedOutputContract allowedOutputContract;

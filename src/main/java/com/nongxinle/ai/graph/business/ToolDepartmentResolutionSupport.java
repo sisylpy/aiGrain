@@ -5,8 +5,6 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.security.AiRoleCodes;
-import com.nongxinle.ai.scope.AiConversationScopeMode;
-import com.nongxinle.ai.scope.AiQueryScope;
 import com.nongxinle.ai.scope.AiScopeResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -64,10 +62,6 @@ public class ToolDepartmentResolutionSupport {
                     return s0.getStoreDepartmentId();
                 }
             }
-        }
-        AiQueryScope sc = state.getScope();
-        if (sc != null && sc.getMode() == AiConversationScopeMode.STORE && sc.getDepartmentFatherId() != null) {
-            return sc.getDepartmentFatherId();
         }
         return deptFallback;
     }

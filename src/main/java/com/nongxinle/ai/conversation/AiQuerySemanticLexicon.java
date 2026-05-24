@@ -104,8 +104,6 @@ public final class AiQuerySemanticLexicon {
             AiSemanticWireConstants.STRUCTURED_DISH_THEORETICAL_COST_RANKING_LOW;
     public static final String STRUCTURED_DISH_GAP_RANKING_MAX =
             AiSemanticWireConstants.STRUCTURED_DISH_GAP_RANKING_MAX;
-    @Deprecated
-    public static final String STRUCTURED_DISH_SALES_RANKING = AiSemanticWireConstants.STRUCTURED_DISH_SALES_RANKING;
     public static final String STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH =
             AiSemanticWireConstants.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH;
     public static final String STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH =
@@ -175,8 +173,6 @@ public final class AiQuerySemanticLexicon {
 
     public static final String STRUCTURED_STORE_PRIORITY_RANKING =
             AiSemanticWireConstants.STRUCTURED_STORE_PRIORITY_RANKING;
-    @Deprecated
-    public static final String STRUCTURED_STORE_RISK_RANKING = AiSemanticWireConstants.STRUCTURED_STORE_RISK_RANKING;
 
     public static final String STRUCTURED_STORE_RISK_REASON_EXPLANATION =
             AiSemanticWireConstants.STRUCTURED_STORE_RISK_REASON_EXPLANATION;

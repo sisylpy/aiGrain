@@ -6,13 +6,13 @@ import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
-import com.nongxinle.ai.followup.rewrite.FollowUpRewriteResult;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -44,7 +44,7 @@ public class AiResolvedQueryContextAssemblySupport {
             boolean followUpRewriteApplied,
             AiConversationTurnMemory previousTurn,
             AiResolvedOrgScope orgScope,
-            FollowUpRewriteResult rewriteResult,
+            SemanticIntakeResult semanticIntake,
             AiQuerySemanticParseResult querySemanticV2Raw,
             AiResolvedTimeWindow explicitTentative,
             double querySemanticMinConfidence,
@@ -160,7 +160,7 @@ public class AiResolvedQueryContextAssemblySupport {
                                 req.querySemanticV2InputPreview(),
                                 orchestration.fields(),
                                 req.followUpRewriteApplied(),
-                                req.rewriteResult(),
+                                req.semanticIntake(),
                                 req.previousTurnResultAnchorsCount(),
                                 req.rewritePromptResultAnchorsCount(),
                                 req.semanticDomainRoute(),

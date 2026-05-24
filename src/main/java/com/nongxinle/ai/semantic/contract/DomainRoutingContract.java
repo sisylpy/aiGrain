@@ -7,7 +7,7 @@ import lombok.Value;
 import java.util.List;
 
 /**
- * Step 1 域路由简表：仅供未来 {@code SemanticDomainRouter} 粗选域。
+ * Step 1 域路由简表：域合同目录，由 {@link DomainRoutingContractCatalog} 注册。
  * <p>禁止包含 wire / answerPlanType / selectedTools / SQL / Java if 规则。
  */
 @Value

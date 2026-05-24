@@ -11,8 +11,8 @@ public final class AiPromptIds {
     /** v2：输入为结构化 JSON（含 previousTurn、visibleStores）；生产语义解析唯一 prompt。 */
     public static final String SEMANTIC_QUERY_PARSER_V2 = "semantic.query_parser.v2";
 
-    /** v1：省略追问补全为完整问句；输出 completedUserQuery 或 clarificationQuestion。 */
-    public static final String FOLLOWUP_QUERY_REWRITER_V1 = "semantic.followup_query_rewriter.v1";
+    /** v1：SemanticIntake — 话术规范化 + 一级业务域选择 + 多问题识别。 */
+    public static final String SEMANTIC_INTAKE_V1 = "semantic.intake.v1";
 
     public static final String COMPOSER_COST_DIAGNOSIS_V1 = "composer.cost_diagnosis.v1";
     public static final String COMPOSER_REVENUE_OVERVIEW_V1 = "composer.revenue_overview.v1";

@@ -1596,12 +1596,22 @@ public class MasterBusinessAgent {
         return out;
     }
 
+    /**
+     * BusinessOverview multi-agent orchestration gate：必须 contract-locked parse 才允许进入四域 MultiAgent 主链。
+     * 非 contract-locked 时不凭 path / intent / orchestrationTaskMode / decisionCandidate 放行。
+     */
     public static boolean eligibleForBusinessOverviewMultiAgentOrchestration(AiRunState state) {
         if (state == null) {
             return false;
         }
         AiResolvedQueryContext rq = state.getResolvedQueryContext();
         if (rq == null) {
+            return false;
+        }
+        // gate: must be contract-locked parse
+        AiQuerySemanticParseResult sem = rq.getQuerySemanticParse();
+        if (sem == null || sem.isParseMissing()
+                || !com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine.isContractLockedParse(sem)) {
             return false;
         }
 
@@ -1625,10 +1635,6 @@ public class MasterBusinessAgent {
             return true;
         }
 
-        AiQuerySemanticParseResult sem = rq.getQuerySemanticParse();
-        if (sem == null || sem.isParseMissing()) {
-            return false;
-        }
         AiQuerySemanticParseResult.OrchestrationDecisionCandidatePart od = sem.getOrchestrationDecisionCandidate();
         if (od == null) {
             return false;

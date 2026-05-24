@@ -9,13 +9,15 @@ import com.nongxinle.ai.context.AiSemanticStoreNarrowingDiagnostics;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
-import com.nongxinle.ai.followup.rewrite.FollowUpRewriteResult;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeNormalizationType;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeStatus;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResultDebugSerializer;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -67,7 +69,7 @@ public final class AiResolvedQueryContextBuilderSupport {
             Map<String, Object> querySemanticV2InputPreview,
             SemanticOrchestrationDecisionReconciler.OrchestrationAssemblyFields orchestration,
             boolean followUpRewriteApplied,
-            FollowUpRewriteResult rewriteResult,
+            SemanticIntakeResult semanticIntake,
             int previousTurnResultAnchorsCount,
             int rewritePromptResultAnchorsCount,
             SemanticDomainRouteResult semanticDomainRoute,
@@ -200,6 +202,15 @@ public final class AiResolvedQueryContextBuilderSupport {
                                 ? null
                                 : AiResolvedQueryContextDebugFactory.blankToNullSemantic(
                                         p.semanticLlm().getObservationJsonParseError()))
+                .querySemanticV2RepairAttempted(
+                        p.semanticLlm() == null ? null : p.semanticLlm().getQuerySemanticV2RepairAttempted())
+                .querySemanticV2RepairSuccess(
+                        p.semanticLlm() == null ? null : p.semanticLlm().getQuerySemanticV2RepairSuccess())
+                .querySemanticV2RepairReason(
+                        p.semanticLlm() == null
+                                ? null
+                                : AiResolvedQueryContextDebugFactory.blankToNullSemantic(
+                                        p.semanticLlm().getQuerySemanticV2RepairReason()))
                 .orchestrationTaskMode(orch.taskMode())
                 .orchestrationSelectedAgents(orch.selectedAgents())
                 .orchestrationSelectedTools(orch.selectedTools())
@@ -212,47 +223,23 @@ public final class AiResolvedQueryContextBuilderSupport {
                 .orchestrationReason(orch.reason())
                 .rawUserMessage(p.message())
                 .followUpRewriteApplied(p.followUpRewriteApplied())
-                .completedUserQuery(
-                        p.followUpRewriteApplied()
-                                        && p.rewriteResult() != null
-                                        && org.springframework.util.StringUtils.hasText(
-                                                p.rewriteResult().getCompletedUserQuery())
-                                ? p.rewriteResult().getCompletedUserQuery().trim()
-                                : null)
+                .completedUserQuery(resolveCompletedUserQuery(p.followUpRewriteApplied(), p.semanticIntake()))
                 .followUpRewriteReason(
-                        p.rewriteResult() != null
+                        p.semanticIntake() != null
                                 ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
-                                        p.rewriteResult().getRewriteReason())
+                                        p.semanticIntake().getReason())
                                 : null)
                 .followUpRewriteDebug(
-                        AiResolvedQueryContextDebugFactory.toFollowUpRewriteDebugMap(p.rewriteResult()))
-                .rewriteInheritedTime(p.rewriteResult() != null ? p.rewriteResult().isInheritedTime() : null)
-                .rewriteInheritedScope(p.rewriteResult() != null ? p.rewriteResult().isInheritedScope() : null)
-                .rewriteInheritedAnchorType(
-                        p.rewriteResult() != null
-                                ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
-                                        p.rewriteResult().getInheritedAnchorType())
-                                : null)
-                .rewriteInheritedAnchorName(
-                        p.rewriteResult() != null
-                                ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
-                                        p.rewriteResult().getInheritedAnchorName())
-                                : null)
-                .followUpRewriteClarificationQuestion(
-                        p.rewriteResult() != null
-                                        && p.rewriteResult().isNeedClarification()
-                                        && org.springframework.util.StringUtils.hasText(
-                                                p.rewriteResult().getClarificationQuestion())
-                                ? p.rewriteResult().getClarificationQuestion().trim()
-                                : null)
-                .rewriteUsedAnchors(
-                        p.rewriteResult() != null
-                                        && p.rewriteResult().getUsedAnchors() != null
-                                        && !p.rewriteResult().getUsedAnchors().isEmpty()
-                                ? new ArrayList<>(p.rewriteResult().getUsedAnchors())
-                                : null)
+                        p.semanticIntake() != null ? p.semanticIntake().toDebugMap() : null)
+                .rewriteInheritedTime(null)
+                .rewriteInheritedScope(null)
+                .rewriteInheritedAnchorType(null)
+                .rewriteInheritedAnchorName(null)
+                .followUpRewriteClarificationQuestion(resolveIntakeClarificationQuestion(p.semanticIntake()))
+                .rewriteUsedAnchors(null)
                 .previousTurnResultAnchorsCount(p.previousTurnResultAnchorsCount())
                 .rewritePromptResultAnchorsCount(p.rewritePromptResultAnchorsCount())
+                .semanticIntake(p.semanticIntake())
                 .semanticDomainRoute(p.semanticDomainRoute())
                 .domainContractSelection(p.domainContractSelection())
                 .semanticContractValidation(p.semanticContractValidation())
@@ -269,5 +256,31 @@ public final class AiResolvedQueryContextBuilderSupport {
                         AiResolvedQueryContextDebugFactory.observeRouteParserDomainMismatchReason(
                                 p.semanticDomainRoute(), p.querySemanticV2Raw()))
                 .build();
+    }
+
+    private static String resolveCompletedUserQuery(
+            boolean followUpRewriteApplied, SemanticIntakeResult intake) {
+        if (!followUpRewriteApplied || intake == null) {
+            return null;
+        }
+        if (intake.getNormalizationType() != SemanticIntakeNormalizationType.REWRITE) {
+            return null;
+        }
+        return org.springframework.util.StringUtils.hasText(intake.getCanonicalUserQuery())
+                ? intake.getCanonicalUserQuery().trim()
+                : null;
+    }
+
+    private static String resolveIntakeClarificationQuestion(SemanticIntakeResult intake) {
+        if (intake == null) {
+            return null;
+        }
+        if (intake.getStatus() != SemanticIntakeStatus.NEED_CLARIFICATION
+                && intake.getStatus() != SemanticIntakeStatus.INVALID) {
+            return null;
+        }
+        return org.springframework.util.StringUtils.hasText(intake.getClarificationQuestion())
+                ? intake.getClarificationQuestion().trim()
+                : null;
     }
 }

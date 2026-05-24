@@ -127,6 +127,7 @@ public class DishProfitAnalysisTool implements AiTool {
             BigDecimal totalRev = BigDecimal.ZERO;
             BigDecimal totalTheory = BigDecimal.ZERO;
             BigDecimal totalActual = BigDecimal.ZERO;
+            BigDecimal totalActual123 = BigDecimal.ZERO;
             BigDecimal qtyAll = BigDecimal.ZERO;
 
             for (Map<String, Object> raw : presented) {
@@ -137,6 +138,8 @@ public class DishProfitAnalysisTool implements AiTool {
                         GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.get("theoryCostAmount")));
                 totalActual = totalActual.add(
                         GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.get("actualCostAmount")));
+                totalActual123 = totalActual123.add(
+                        GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.get("actualCostTotalAmount123")));
                 qtyAll = qtyAll.add(GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.get("soldPortionsTotal")));
             }
 
@@ -148,6 +151,9 @@ public class DishProfitAnalysisTool implements AiTool {
             data.put("soldPortionsTotal", nzPlainQty(qtyAll));
             data.put("totalTheoreticalCost", nzPlain(totalTheory));
             data.put("totalActualCostType1", nzPlain(totalActual));
+            data.put("totalActualCostTotalAmount123", nzPlain(totalActual123));
+            BigDecimal gp123 = totalRev.subtract(totalActual123).setScale(2, RoundingMode.HALF_UP);
+            data.put("portfolioGrossProfitAmountType123", nzPlain(gp123));
             BigDecimal gp = totalRev.subtract(totalActual).setScale(2, RoundingMode.HALF_UP);
             data.put("portfolioGrossProfitAmount", nzPlain(gp));
             data.put("userQuestionHint", hint);
@@ -161,6 +167,8 @@ public class DishProfitAnalysisTool implements AiTool {
                     bisRaw == null ? null : bisRaw.get("blendedGrossMarginRateTheoryOnListPrice"));
             data.put("portfolioBlendedGrossMarginRateOnListPrice",
                     bisRaw == null ? null : bisRaw.get("blendedGrossMarginRateOnListPrice"));
+            data.put("portfolioComprehensiveGrossMarginRateOnListPrice",
+                    bisRaw == null ? null : bisRaw.get("comprehensiveGrossMarginRateOnListPrice"));
             if (portfolioBlended != null && !portfolioBlended.isEmpty()) {
                 data.put("portfolioGrossMarginRate", portfolioBlended.contains("%") ? portfolioBlended : portfolioBlended + "%");
             } else {
@@ -226,10 +234,12 @@ public class DishProfitAnalysisTool implements AiTool {
         row.put("soldPortionsTotal", str(raw.get("soldPortionsTotal")));
         row.put("theoryCostAmount", str(raw.get("theoryCostAmount")));
         row.put("actualCostAmount", str(raw.get("actualCostAmount")));
+        row.put("productionActualCostAmount", str(raw.get("actualCostAmount")));
         row.put("grossMarginRateOnListPrice", raw.get("grossMarginRateOnListPrice"));
         row.put("grossMarginRateTheoryOnListPrice", raw.get("grossMarginRateTheoryOnListPrice"));
         row.put("blendedGrossMarginRateOnListPrice", raw.get("blendedGrossMarginRateOnListPrice"));
         row.put("actualCostTotalAmount123", raw.get("actualCostTotalAmount123"));
+        row.put("totalActualCostAmount123", raw.get("actualCostTotalAmount123"));
         row.put("actualCostPerPortion123", raw.get("actualCostPerPortion123"));
         row.put("grossMarginLevel", raw.get("grossMarginLevel"));
         row.put("diffCostAmount", raw.get("diffCostAmount"));
@@ -265,14 +275,13 @@ public class DishProfitAnalysisTool implements AiTool {
                     Comparator.nullsLast(Comparator.naturalOrder()));
         } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(sw)) {
             cmp = Comparator.comparing((Map<String, Object> m) ->
-                    GbDepartmentGoodsStockReduceSupport.coerceDecimal(m.get("actualCostAmount")))
+                    com.nongxinle.ai.graph.business.DishProfitActualCostSemanticsSupport.displayActualCost(m))
                     .reversed();
         } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_GAP_RANKING_MAX.equals(sw)) {
             // 与 AnswerPlan / Harness 对齐：signed(actual - theory)，DESC = 实际高于理论最多优先
             cmp = Comparator.comparing(DishProfitAnalysisTool::theoryActualGapSignedAmount,
                     Comparator.nullsLast(Comparator.naturalOrder())).reversed();
-        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_RANKING.equals(sw)
-                || AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH.equals(sw)
+        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH.equals(sw)
                 || AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_RANKING_HIGH.equals(sw)) {
             cmp = Comparator.comparing((Map<String, Object> m) ->
                     GbDepartmentGoodsStockReduceSupport.coerceDecimal(m.get("soldPortionsTotal")))
@@ -307,11 +316,9 @@ public class DishProfitAnalysisTool implements AiTool {
         }
     }
 
-    /** 理论 vs 实际成本差额（signed）：actualCostAmount − theoryCostAmount */
+    /** 理论 vs 实际成本差额（signed）：displayActualCost − theoryCostAmount */
     private static BigDecimal theoryActualGapSignedAmount(Map<String, Object> raw) {
-        BigDecimal a = GbDepartmentGoodsStockReduceSupport.coerceDecimal(raw.get("actualCostAmount"));
-        BigDecimal t = GbDepartmentGoodsStockReduceSupport.coerceDecimal(raw.get("theoryCostAmount"));
-        return a.subtract(t);
+        return com.nongxinle.ai.graph.business.DishProfitActualCostSemanticsSupport.gapDisplayActualMinusTheory(raw);
     }
 
     private static String nzPlain(BigDecimal v) {

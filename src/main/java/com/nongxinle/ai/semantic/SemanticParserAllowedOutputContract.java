@@ -53,6 +53,9 @@ public class SemanticParserAllowedOutputContract {
         private Boolean requiresAnchor;
         private String anchorType;
         private List<String> selectedTools;
+        /** 只读 execution metadata（Catalog 导出；Parser 不得改写）。 */
+        private String intentCode;
+        private String pathCode;
         private String description;
         private List<String> examples;
     }

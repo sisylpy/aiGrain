@@ -1125,6 +1125,9 @@ public class StubAnswerComposerNode implements AgentNode {
         if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL.equals(type)) {
             return composePurchaseSupplierGoodsDetailFromPlan(plan, p, rq);
         }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_SELF_GOODS_DETAIL.equals(type)) {
+            return composePurchaseSelfGoodsDetailFromPlan(plan, p);
+        }
         if (PurchaseAnswerPlan.TYPE_PURCHASE_STORE_AMOUNT_RANKING.equals(type)) {
             return composePurchaseStoreAmountRankingFromPlan(plan, p);
         }
@@ -1359,9 +1362,45 @@ public class StubAnswerComposerNode implements AgentNode {
         }
         sb.append(subject).append("向").append(supplier).append("采购的商品如下：\n");
 
-        List<Map<String, Object>> ordered = new ArrayList<>(focus.size() + sec.size());
-        ordered.addAll(focus);
-        ordered.addAll(sec);
+        appendPurchaseGoodsDetailLinesFromPlanRows(sb, focus, sec);
+        return sb.toString().trim();
+    }
+
+    /**
+     * 自采渠道商品明细：只读 AnswerPlan focusRows / secondaryRows，不重算、不重排。
+     */
+    private static String composePurchaseSelfGoodsDetailFromPlan(
+            PurchaseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        List<Map<String, Object>> sec =
+                plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
+        if (focus == null || focus.isEmpty()) {
+            return null;
+        }
+        String subject =
+                tw.getTimeSubjectText() != null && !tw.getTimeSubjectText().isBlank()
+                        ? tw.getTimeSubjectText().trim()
+                        : "该统计区间";
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append("\n");
+        sb.append("按上文「").append(subject).append("」自采口径查询。\n\n");
+        sb.append(subject).append("自采商品明细如下：\n");
+        appendPurchaseGoodsDetailLinesFromPlanRows(sb, focus, sec);
+        return sb.toString().trim();
+    }
+
+    /** 宣读 AnswerPlan 商品明细行（goodsName / purchaseSubtotal / quantity / unitPrice），供供货商/自采明细复用。 */
+    private static void appendPurchaseGoodsDetailLinesFromPlanRows(
+            StringBuilder sb,
+            List<Map<String, Object>> focus,
+            List<Map<String, Object>> secondary) {
+        List<Map<String, Object>> ordered = new ArrayList<>();
+        if (focus != null) {
+            ordered.addAll(focus);
+        }
+        if (secondary != null) {
+            ordered.addAll(secondary);
+        }
 
         boolean anyPrice = false;
         for (Map<String, Object> r : ordered) {
@@ -1399,7 +1438,6 @@ public class StubAnswerComposerNode implements AgentNode {
         if (!anyPrice) {
             sb.append("\n当前明细中暂缺单价字段，仅展示采购金额/数量。");
         }
-        return sb.toString().trim();
     }
 
     /** D-13.4 Phase2：上一 GOODS 锚下，按供应商拆行的供货商采购明细（非供货商商品 Top）。 */

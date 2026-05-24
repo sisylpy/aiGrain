@@ -4,7 +4,7 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
@@ -76,7 +76,57 @@ public final class PurchaseAnswerPlanBuilder {
 
     static PurchaseAnswerPlan build(AiRunState state, Map<String, Object> overview, AiResolvedQueryContext rq) {
         PurchaseSemanticExecutionIntent executionIntent = PurchaseSemanticExecutionIntentResolver.resolve(rq);
+        boolean contractLocked = rq != null && rq.getQuerySemanticParse() != null
+                && SemanticContractCompletionEngine.isContractLockedParse(rq.getQuerySemanticParse());
+
+        LinkedHashMap<String, Object> debug = new LinkedHashMap<>();
+
+        if (!contractLocked) {
+            debug.put("earlyReturnReason", "non_contract_locked_parse");
+            return PurchaseAnswerPlan.builder()
+                    .planType("")
+                    .scopeLabel("")
+                    .timeLabel("")
+                    .purchaseSourceType("")
+                    .summary(Map.of())
+                    .focusRows(List.of())
+                    .secondaryRows(List.of())
+                    .debug(debug)
+                    .resultAnchors(List.of())
+                    .build();
+        }
+
         String wire = resolveStructuredWireForPlan(rq);
+        if (!StringUtils.hasText(wire)) {
+            debug.put("earlyReturnReason", "missing_contract_completed_wire");
+            return PurchaseAnswerPlan.builder()
+                    .planType("")
+                    .scopeLabel("")
+                    .timeLabel("")
+                    .purchaseSourceType("")
+                    .summary(Map.of())
+                    .focusRows(List.of())
+                    .secondaryRows(List.of())
+                    .debug(debug)
+                    .resultAnchors(List.of())
+                    .build();
+        }
+        if (!AiQuerySemanticLexicon.isPurchaseOverviewDomainCanonicalWire(wire)) {
+            debug.put("earlyReturnReason", "contract_wire_not_accepted_purchase_matrix");
+            debug.put("rejectedWire", wire);
+            return PurchaseAnswerPlan.builder()
+                    .planType("")
+                    .scopeLabel("")
+                    .timeLabel("")
+                    .purchaseSourceType("")
+                    .summary(Map.of())
+                    .focusRows(List.of())
+                    .secondaryRows(List.of())
+                    .debug(debug)
+                    .resultAnchors(List.of())
+                    .build();
+        }
+
         String pst = AiQuerySemanticLexicon.SOURCE_ALL;
         if (rq != null && rq.getQueryIntent() != null) {
             AiResolvedQueryIntent qi = rq.getQueryIntent();
@@ -116,7 +166,6 @@ public final class PurchaseAnswerPlanBuilder {
         List<Map<String, Object>> secondaryRows = new ArrayList<>();
         fillRows(planType, overview, focusRows, secondaryRows);
 
-        LinkedHashMap<String, Object> debug = new LinkedHashMap<>();
         debug.put("structuredIntentDetailWire", wire.isEmpty() ? null : wire);
         debug.put("resolvedPlanType", planType);
         if (executionIntent.isActive()) {
@@ -190,27 +239,15 @@ public final class PurchaseAnswerPlanBuilder {
     }
 
     /**
-     * queryIntent.structuredIntentDetail 为空时，回退 semanticSlots.structuredIntentDetailWire，
-     * 避免 planType 落到 OVERVIEW 导致 GOODS 排行 Top1 锚点未生成。
+     * contract-locked 仅读取 {@code queryIntent.structuredIntentDetail}（由
+     * {@code applyCompletedContractFieldsToIntent} 写入），
+     * 禁止从 raw semanticSlots / currentTurn wire 兜底。
      */
     private static String resolveStructuredWireForPlan(AiResolvedQueryContext rq) {
         if (rq != null && rq.getQueryIntent() != null) {
             String fromQi = rq.getQueryIntent().getStructuredIntentDetail();
             if (fromQi != null && !fromQi.isBlank()) {
                 return fromQi.trim();
-            }
-        }
-        if (rq != null && rq.getQuerySemanticParse() != null) {
-            AiQuerySemanticParseResult.SemanticSlotsPart slots = rq.getQuerySemanticParse().getSemanticSlots();
-            if (slots != null) {
-                String fromSlots = slots.getStructuredIntentDetailWire();
-                if (fromSlots != null && !fromSlots.isBlank()) {
-                    return fromSlots.trim();
-                }
-            }
-            String fromTurnWire = rq.getQuerySemanticParse().getCurrentTurnStructuredIntentDetailWire();
-            if (fromTurnWire != null && !fromTurnWire.isBlank()) {
-                return fromTurnWire.trim();
             }
         }
         return "";
@@ -344,7 +381,8 @@ public final class PurchaseAnswerPlanBuilder {
     }
 
     /**
-     * P4-B：semantic contract execution intent 优先于 wire 默认 OVERVIEW；Tool 观测键仅作末位 fallback。
+     * AnswerPlanType 仅来自 contract-completed wire + Matrix/Resolver 确定性映射；
+     * 禁止从 Tool payload 键值反向推断业务意图。
      */
     private static String applyExecutionIntentPlanType(
             String defaultPlanType,
@@ -355,13 +393,6 @@ public final class PurchaseAnswerPlanBuilder {
                 && executionIntent.isActive()
                 && StringUtils.hasText(executionIntent.getAnswerPlanType())) {
             return executionIntent.getAnswerPlanType();
-        }
-        if (Boolean.TRUE.equals(
-                overview.get(AiBusinessToolIds.PAYLOAD_PURCHASE_GOODS_ANCHOR_SUPPLIER_EXECUTION_ACTIVE))) {
-            return PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL;
-        }
-        if (Boolean.TRUE.equals(overview.get("purchaseGoodsSourceBreakdownActive"))) {
-            return PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN;
         }
         return defaultPlanType;
     }
@@ -817,6 +848,7 @@ public final class PurchaseAnswerPlanBuilder {
                 "queryMethod",
                 qm != null && !qm.toString().isBlank()
                         ? qm
+                        // TODO(CLEANUP): 当前 SQL method 名称含 Legacy，容易误导；实际调用链已走 semantic contract。后续应统一改名并确认前后端/debug/replay 无依赖。
                         : "queryGbPurchaseGoodsAggByLegacyPurchaseMethod");
         Object focusId = overview == null ? null : overview.get("purchaseGoodsSourceBreakdownFocusDisGoodsId");
         if (focusId == null && rq != null) {

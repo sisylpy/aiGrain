@@ -21,7 +21,7 @@ public class SemanticCapabilitySlot {
      */
     private String slotDetailWanted;
 
-    /** 与 {@link com.nongxinle.ai.semantic.frame.CurrentSemanticFrame} 对齐的镜像字段（LLM semanticSlots）；Registry 只做匹配，不写回意图。 */
+    /** 与 {@link com.nongxinle.ai.semantic.frame.CurrentSemanticFrame} 对齐的镜像字段（LLM semanticSlots）。 */
     private String semanticQueryObject;
     private String semanticOperation;
     private String semanticMetric;

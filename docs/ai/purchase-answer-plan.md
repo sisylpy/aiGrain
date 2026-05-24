@@ -23,13 +23,21 @@
 ### 1.2 目标架构（与菜品毛利对齐）
 
 ```text
-AiResolvedQueryContext（timeWindow、dataScope、queryIntent.structuredIntentDetail、purchaseSourceType、orgScope.visibleStores …）
+SemanticIntake.canonicalUserQuery + intakePrimaryDomain
+    → semantic.query_parser.v2（单域 allowedContracts 内选 selectedContractId + semanticSlots）
+    → Contract Validator / AiResolvedQueryContext
     → PurchaseOverviewTool（参数均可追溯到 Context；SQL 口径不变）
     → ToolResult（现有 purchaseOverview 载荷保留作事实层）
-    → PurchaseAnswerPlan（本轮回答任务类型 + 已排序 focusRows / secondaryRows + summary + debug）
+    → PurchaseAnswerPlan（以 selectedContractId / queryObject / operation / metric / sourceFacet / anchorPolicy 为主语义依据）
     → Composer：仅朗读 AnswerPlan + 必要边界说明；禁止重算、重排、重选供货商
-    → Debug / Replay：透出 purchaseAnswerPlan* 与上下文字段
+    → Debug / Replay：透出 semanticSlots、selectedContractId、purchaseAnswerPlan* 与上下文字段
 ```
+
+**主语义依据（目标路径）**：`semanticSlots.selectedContractId` 及同 entry 对齐的 `queryObject`、`operation`、`metric`、`sourceFacet`、`anchorPolicy`。AnswerPlan 类型与选行逻辑应**优先**由上述槽位 + Matrix entry 推导，而非由 Composer 或 fallback 即兴判断。
+
+**兼容 / 派生字段（非目标主路径）**：`queryIntent.structuredIntentDetail`（wire）、`purchaseSourceType` 可保留作 debug、迁移映射或派生输入；**不得**再作为唯一主语义来源抢权。
+
+**Fallback（历史迁移项）**：`StubAnswerComposerNode` 内采购 **if/else fallback**（`purchaseOverviewStructuredFallback`、`purchaseSupplierRankingFallback` 等）为**历史迁移**路径；**不是**目标主路径。新问法应走 Intake → v2 合同选择 → AnswerPlan → Composer；fallback 仅在没有 Plan / 旧链路兼容时保留，**不得**扩展为新业务规则入口。
 
 **Composer 不得**：重新排序商品或供货商、重新计算金额、把自采占位当真实供应商、把「供货商采购总额」与「供货商金额排行」混为一谈。
 
@@ -67,11 +75,11 @@ AiResolvedQueryContext（timeWindow、dataScope、queryIntent.structuredIntentDe
 - **供货商 Top**：`filterRealSupplierSpendTopRows` / `isRealSupplierSpendTopRow`——排除 `supplierId` null/`≤0`、名称为「自采」、名称含「供货商ID -1」「供货商ID-1」等占位展示。
 - **排行商品**：`queryGbPurchaseGoodsTopTimesMerged`、`queryGbPurchaseGoodsTopSubtotalMerged`——服务端已排序；映射为 `goodsPurchaseFrequencyTop`、`goodsPurchaseAmountTop`（当前各取 Top 5）。
 
-### 2.4 结构化叙事 wire（沿用，不另造近义名）
+### 2.4 结构化 wire 与 AnswerPlan 类型（兼容层）
 
-`AiQuerySemanticLexicon` 已有 wire → Debug 面板大写枚举映射（见 `purchaseStructuredDetailWireToDebugEnumName`）：
+`AiQuerySemanticLexicon` 已有 wire → Debug 面板大写枚举映射（见 `purchaseStructuredDetailWireToDebugEnumName`）。在 **SemanticIntake + v2 合同选择** 主链下，这些 wire **从** `selectedContractId` / `semanticSlots` **派生或兼容映射**，**不是**目标主语义入口。
 
-| wire（`structuredIntentDetail`） | 典型场景 |
+| wire（`structuredIntentDetail`，兼容/派生） | 典型场景 |
 |-----------------------------------|----------|
 | `purchase_overview_summary` | 采购总览、全口径摘要 |
 | `purchase_source_summary` | 来源拆分 + 商品 Top 等「窄答」 |
@@ -79,17 +87,17 @@ AiResolvedQueryContext（timeWindow、dataScope、queryIntent.structuredIntentDe
 | `purchase_source_goods_query` | 主要问商品频次/金额排行 |
 | `supplier_amount_ranking` | 供货商金额排行 |
 
-**第一版 `PurchaseAnswerPlan.type`（建议）** 与上表及业务任务对齐如下——若 Java 侧已有 Debug 枚举名，优先与其一致：
+**第一版 `PurchaseAnswerPlan.type`（建议）** — 优先由 **`semanticSlots.selectedContractId`** 及 `queryObject` / `operation` / `metric` / `sourceFacet` 映射；下表 wire / `purchaseSourceType` 列为**兼容对照**：
 
-| PurchaseAnswerPlan.type | 对应 structured 主线（wire） | 说明 |
-|-------------------------|-------------------------------|------|
-| `PURCHASE_OVERVIEW` | `purchase_overview_summary`（`purchaseSourceType` 常为 ALL） | 默认「采购多少钱」、集团合并总览 |
-| `PURCHASE_SELF_OVERVIEW` | `purchase_source_*` + `SELF_PURCHASE` | 自采金额/笔数 |
-| `PURCHASE_SUPPLIER_OVERVIEW` | `purchase_source_*` + `SUPPLIER_PURCHASE` | 供货商订货/供货商采购总额（非排行） |
-| `PURCHASE_GOODS_AMOUNT_RANKING` | `purchase_source_goods_query`（金额主导） | 哪个商品采购金额最高 |
-| `PURCHASE_GOODS_COUNT_RANKING` | `purchase_source_goods_query`（次数主导） | 哪个商品采购次数最多 |
-| `PURCHASE_SUPPLIER_AMOUNT_RANKING` | `supplier_amount_ranking` | 哪个供货商采购金额最高 / 排名 |
-| `PURCHASE_STORE_COMPARISON` | `purchase_overview_summary` + 集团 `coveredStores` | 各门店采购对比（依赖 Tool 已算的门店拆分） |
+| PurchaseAnswerPlan.type | 主语义（目标） | 兼容 wire / purchaseSourceType |
+|-------------------------|----------------|--------------------------------|
+| `PURCHASE_OVERVIEW` | contract entry：总览类 | `purchase_overview_summary` / `ALL` |
+| `PURCHASE_SELF_OVERVIEW` | entry + `sourceFacet` 自采 | `purchase_source_*` + `SELF_PURCHASE` |
+| `PURCHASE_SUPPLIER_OVERVIEW` | entry + 供货商口径 | `purchase_source_*` + `SUPPLIER_PURCHASE` |
+| `PURCHASE_GOODS_AMOUNT_RANKING` | entry：商品金额排行 | `purchase_source_goods_query` |
+| `PURCHASE_GOODS_COUNT_RANKING` | entry：商品次数排行 | `purchase_source_goods_query` |
+| `PURCHASE_SUPPLIER_AMOUNT_RANKING` | entry：供货商金额排行 | `supplier_amount_ranking` |
+| `PURCHASE_STORE_COMPARISON` | entry：门店对比 | `purchase_overview_summary` + 集团 `coveredStores` |
 
 ---
 
@@ -139,10 +147,11 @@ AiResolvedQueryContext（timeWindow、dataScope、queryIntent.structuredIntentDe
 
 ## 4. 接入 `AiResolvedQueryContext`（Tool 参数来源）
 
-下列字段为采购 Tool / AnswerPlan 的**唯一推荐主数据源**（与 `AiResolvedDataScope` 设计一致）：
+下列字段为采购 Tool / AnswerPlan 的**推荐数据源**（与 `AiResolvedDataScope` 设计一致）。**目标主链**优先读 **`semanticSlots`**（含 `selectedContractId`、`queryObject`、`operation`、`metric`、`sourceFacet`、`anchorPolicy`）；`structuredIntentDetail` / `purchaseSourceType` 为**兼容或派生**字段。
 
 | 字段 | 用途 |
 |------|------|
+| **`semanticSlots`**（**目标主语义**） | `selectedContractId`、`queryObject`、`operation`、`metric`、`sourceFacet`、`anchorPolicy` → AnswerPlan 类型与 Tool 叙事模式 |
 | `timeWindow`（及 ISO 起止） | 查询时间窗 |
 | `dataScope.queryScopeKind` | 本轮主范围类型：`STORE` / `DEPARTMENT` / `DISTRIBUTER` |
 | `dataScope.queryStoreIds` | 按**门店**查询时的门店 **root id** 列表 |
@@ -151,8 +160,8 @@ AiResolvedQueryContext（timeWindow、dataScope、queryIntent.structuredIntentDe
 | `dataScope.expandedSqlDepartmentIds` | 仅供 SQL `department_id IN (...)`，**不得**当作对用户展示的门店列表 |
 | `orgScope.visibleStores`（→ Tool `ARG_VISIBLE_STORES`） | **展示用门店**、集团合并锚点（与 `PurchaseOverviewTool` 注释一致） |
 | 点名门店（多轮追问） | `mentionedStore`（`AiHarnessResolvedContextSummarizer#resolveMentionedStore`，与 Harness Replay 期望对齐） |
-| `queryIntent.purchaseSourceType` | `SELF_PURCHASE` / `SUPPLIER_PURCHASE` / `ALL`（或空≈ALL） |
-| `queryIntent.structuredIntentDetail` | wire → 映射 AnswerPlan 类型与 Composer 模板 |
+| `queryIntent.purchaseSourceType` | **兼容/派生**：`SELF_PURCHASE` / `SUPPLIER_PURCHASE` / `ALL` |
+| `queryIntent.structuredIntentDetail` | **兼容/派生**：wire → 旧 AnswerPlan 映射；新链路应由 contract entry 推导 |
 
 **禁止**：再把 **`queryDepartmentIds`** 当作对外主字段；**禁止**把 **`expandedSqlDepartmentIds`** 直接展示为「门店列表」。展示门店必须以 **`visibleStores` / `queryStoreIds`**（及 banner）为准。
 
@@ -246,13 +255,14 @@ AiResolvedQueryContext（timeWindow、dataScope、queryIntent.structuredIntentDe
 
 ## 6. Composer 规则（有 `purchaseAnswerPlan` 时）
 
-1. **只读** `purchaseAnswerPlan` + 允许的边界文案（如无数据提示）；旧 **if/else fallback** 仅在 **`purchaseAnswerPlan` 缺失**时使用。  
-2. **不**重新计算采购金额、笔数、占比。  
-3. **不**重新排序商品或供货商。  
-4. **不**挑选「另一个」供应商或商品作为主答。  
-5. **不**把自采占位、`supplierId=-1`、占位名称当作真实供货商。  
-6. **`focusRows` 为空**且类型为供货商排行时：使用 §3.4 标准提示，**禁止**编造供货商。  
-7. 对用户：**勿**念 `type=5`、`gb_DPG_*`、内部枚举代号；可用「供货商采购/自采」等口语。
+1. **只读** `purchaseAnswerPlan` + 允许的边界文案（如无数据提示）。  
+2. **历史 fallback**（`purchaseOverviewStructuredFallback`、`purchaseSupplierRankingFallback` 等）为**迁移项**：仅在 **`purchaseAnswerPlan` 缺失**时使用；**不是**目标主路径，**不得**为新问法扩展 fallback 分支。  
+3. **不**重新计算采购金额、笔数、占比。  
+4. **不**重新排序商品或供货商。  
+5. **不**挑选「另一个」供应商或商品作为主答。  
+6. **不**把自采占位、`supplierId=-1`、占位名称当作真实供货商。  
+7. **`focusRows` 为空**且类型为供货商排行时：使用 §3.4 标准提示，**禁止**编造供货商。  
+8. 对用户：**勿**念 `type=5`、`gb_DPG_*`、内部枚举代号；可用「供货商采购/自采」等口语。
 
 ---
 
@@ -262,8 +272,10 @@ AiResolvedQueryContext（timeWindow、dataScope、queryIntent.structuredIntentDe
 
 | 分类 | 字段 |
 |------|------|
+| SemanticIntake | `canonicalUserQuery`、`intakeStatus`、`questionMode`、`intakePrimaryDomain` |
+| v2 合同 | `selectedContractId`、`semanticSlots`、`matchedContractId`、`contractValidation` |
 | AnswerPlan | `purchaseAnswerPlanPresent`、`purchaseAnswerPlan.type`、`purchaseAnswerPlan.summary`、`purchaseAnswerPlan.focusRows`、`purchaseAnswerPlan.secondaryRows`、`purchaseAnswerPlan.debug` |
-| 意图 | `purchaseSourceType`、`structuredIntentDetail`（wire + 调试用大写名）、`effectiveIntentCode` / `effectivePathCode` |
+| 意图（兼容） | `purchaseSourceType`、`structuredIntentDetail`（wire + 调试用大写名）、`effectiveIntentCode` / `effectivePathCode` |
 | 范围 | `queryScopeKind`、`queryStoreIds`、`queryRealDepartmentIds`、`queryDistributerId`、`expandedSqlDepartmentIds`、`visibleStores`（或等价摘要）、`mentionedStore`（若有） |
 | 工具 | `usedToolId`（如 `PURCHASE_OVERVIEW`） |
 
@@ -304,7 +316,7 @@ AiResolvedQueryContext（timeWindow、dataScope、queryIntent.structuredIntentDe
 ## 9. 迁移步骤（建议小步 PR）
 
 1. **DTO**：新增 `PurchaseAnswerPlan`（或与现有 `DishProfitAnswerPlan` 并列的 record），字段与 §5 对齐。  
-2. **构建层**：在 `PurchaseOverviewTool` 执行完成之后（或紧邻的 Node）根据 `structuredIntentDetail`、`purchaseSourceType`、Tool 结果构建 `PurchaseAnswerPlan`（排序只做一次）。  
+2. **构建层**：在 `PurchaseOverviewTool` 执行完成之后（或紧邻的 Node）根据 **`semanticSlots.selectedContractId`** 及槽位、Tool 结果构建 `PurchaseAnswerPlan`（排序只做一次）；`structuredIntentDetail` / `purchaseSourceType` 仅作兼容映射。  
 3. **RunState**：`AiRunState` 增加 `purchaseAnswerPlan`；SSE / `answer_delta` 透出。  
 4. **Composer**：`StubAnswerComposerNode` 优先读 `purchaseAnswerPlan`；收紧 `PURCHASE_COMPOSER_SYSTEM` 指令，与 `DISH_PROFIT` 一样声明「禁止重排」。  
 5. **Harness**：`AiHarnessResolvedContextSummarizer`、`AiHarnessExpectationComparator`（若有）扩展 §7 字段。  

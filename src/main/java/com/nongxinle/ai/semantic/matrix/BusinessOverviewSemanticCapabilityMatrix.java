@@ -6,6 +6,7 @@ import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
 import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import lombok.experimental.UtilityClass;
 import org.springframework.util.StringUtils;
@@ -62,6 +63,11 @@ public final class BusinessOverviewSemanticCapabilityMatrix {
                 .build();
     }
 
+    /** 四域经营概览 Matrix 首轮稳定行（合同导出与 legacy reconcile 共用）。 */
+    public static List<BusinessOverviewSemanticCapabilityMatrixRow> firstTurnRows() {
+        return List.of(SUMMARY, STATUS, STORE_STATUS_COMPARE);
+    }
+
     public static BusinessOverviewSemanticCapabilityMatrixRow resolveMatrixRow(String pathCode, String wire) {
         if (!AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(pathCode) || !StringUtils.hasText(wire)) {
             return null;
@@ -90,10 +96,14 @@ public final class BusinessOverviewSemanticCapabilityMatrix {
 
     /**
      * business_overview_path：semanticSlots → Matrix canonical wire；无矩阵行时 {@link #MATRIX_WIRE_MISSING} 或保留原 canonical。
+     * <p>LEGACY_ONLY — contract-locked 时 abstain；主链 wire 仅来自 selectedContractId → ACTIVE entry。
      */
     public static String resolveStructuredIntentDetailWire(
             AiQuerySemanticParseResult sem, String pathCode, String mergedStructuredDetail) {
         if (!AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(pathCode)) {
+            return null;
+        }
+        if (SemanticContractCompletionEngine.isContractLockedParse(sem)) {
             return null;
         }
         if (AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem)) {
@@ -133,7 +143,11 @@ public final class BusinessOverviewSemanticCapabilityMatrix {
         return row != null ? row.getStructuredIntentDetailWire() : canonWire;
     }
 
+    /** LEGACY_ONLY — contract-locked 主链 abstain；仅非 locked 时由 slots 形状推断 wire。 */
     public static String inferMatrixWireFromSemanticSlots(AiQuerySemanticParseResult sem) {
+        if (SemanticContractCompletionEngine.isContractLockedParse(sem)) {
+            return null;
+        }
         if (sem == null || sem.getSemanticSlots() == null) {
             return null;
         }

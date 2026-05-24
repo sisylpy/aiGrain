@@ -146,7 +146,9 @@ public final class DomainRoutingContractCatalog {
                     .crossDomainHint("dish_profit")
                     .crossDomainHint("business_diagnosis")
                     .routeExample("销量最高的菜品")
-                    .routeExample("这道菜的销售额")
+                    .routeExample("这个月菜品销量怎么样")
+                    .routeExample("哪个菜卖得最好")
+                    .routeExample("哪个菜销售额最高")
                     .status(DomainRoutingContractStatus.ACTIVE)
                     .build();
 
@@ -170,7 +172,29 @@ public final class DomainRoutingContractCatalog {
                     .crossDomainHint("dish_sales")
                     .crossDomainHint("business_diagnosis")
                     .routeExample("毛利最高的菜品")
+                    .routeExample("这个月菜品毛利怎么样")
+                    .routeExample("哪个菜毛利率最低")
+                    .routeExample("哪个菜毛利最高")
                     .routeExample("这道菜毛利率多少")
+                    .status(DomainRoutingContractStatus.ACTIVE)
+                    .build();
+
+    public static final DomainRoutingContract BUSINESS_OVERVIEW =
+            DomainRoutingContract.builder()
+                    .domainCode("BUSINESS_OVERVIEW")
+                    .domainName("经营概览")
+                    .businessObject("经营情况")
+                    .businessObject("经营概况")
+                    .businessObject("整体经营")
+                    .businessObject("综合表现")
+                    .supportedTaskType("OVERVIEW")
+                    .supportedTaskType("SUMMARY")
+                    .anchorType("STORE")
+                    .crossDomainHint("business_diagnosis")
+                    .crossDomainHint("revenue")
+                    .crossDomainHint("purchase")
+                    .routeExample("这个月经营情况怎么样")
+                    .routeExample("整体经营概况")
                     .status(DomainRoutingContractStatus.ACTIVE)
                     .build();
 
@@ -195,6 +219,11 @@ public final class DomainRoutingContractCatalog {
                     .crossDomainHint("dish_sales")
                     .routeExample("门店经营有什么问题")
                     .routeExample("综合诊断一下本月经营")
+                    .routeExample("这个月经营有什么异常")
+                    .routeExample("这个月经营哪里有问题")
+                    .routeExample("这个月为什么经营不好")
+                    .routeExample("这个月有哪些风险")
+                    .routeExample("这个月给我一些经营建议")
                     .status(DomainRoutingContractStatus.ACTIVE)
                     .build();
 
@@ -206,6 +235,7 @@ public final class DomainRoutingContractCatalog {
                     WAREHOUSE,
                     DISH_SALES,
                     DISH_PROFIT,
+                    BUSINESS_OVERVIEW,
                     BUSINESS_DIAGNOSIS);
 
     public static List<DomainRoutingContract> listDomainRoutingContracts() {

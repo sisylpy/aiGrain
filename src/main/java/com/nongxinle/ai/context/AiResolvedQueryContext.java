@@ -6,7 +6,8 @@ import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -70,7 +71,13 @@ public class AiResolvedQueryContext {
      * 菜品毛利：用户话术中点名的菜名（或多轮继承）；仅用于收窄 Tool/答复，非 SQL 部门列表。
      */
     private String mentionedDishName;
-    /** Harness/Debug：由 structuredIntentDetail（wire）推导的指标类别，见 {@link com.nongxinle.ai.conversation.AiQuerySemanticLexicon#dishProfitMetricTypeFromStructuredWire}。 */
+    /**
+     * 生产字段：菜品毛利 Tool/Request 层使用的毛利指标类型。
+     * <p>
+     * TODO(CLEANUP): 当前字段来源仍可能由 structuredIntentDetail →
+     * dishProfitMetricTypeFromStructuredWire() Java 推导得到。后续应改为 selectedContractId →
+     * contract entry metadata 派生，禁止 Java 根据旧 wire 继续推导业务指标类型。
+     */
     private String dishProfitMetricType;
 
     /**
@@ -162,6 +169,10 @@ public class AiResolvedQueryContext {
     private String querySemanticV2RawText;
     /** v2 观测：{@code parseMissing} 时的原因码（如 empty_llm_response、json_extract_or_syntax_failed）。 */
     private String querySemanticV2ParseError;
+    /** v2 协议纠错重试观测（仅 debug / Harness）。 */
+    private Boolean querySemanticV2RepairAttempted;
+    private Boolean querySemanticV2RepairSuccess;
+    private String querySemanticV2RepairReason;
 
     /** 自 v2 orchestrationDecisionCandidate 解析的扁平字段（仅观测/编排门禁；不重读用户原文）。 */
     private String orchestrationTaskMode;
@@ -216,4 +227,8 @@ public class AiResolvedQueryContext {
     private Boolean routeParserDomainMismatch;
     /** mismatch 原因摘要（观测）。 */
     private String routeParserDomainMismatchReason;
+
+    // ── SemanticIntake LLM（主链 Step 1） ──
+
+    private SemanticIntakeResult semanticIntake;
 }

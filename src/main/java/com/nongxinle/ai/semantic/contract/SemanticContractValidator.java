@@ -3,10 +3,9 @@ package com.nongxinle.ai.semantic.contract;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.SemanticParserAllowedOutputContract;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -61,6 +60,8 @@ public final class SemanticContractValidator {
                     frame, selection, selectedDomain, allowedWires, allowedContractCount, selectedContractId.trim());
         }
 
+        // TODO(LEGACY_ONLY-CLEANUP): allowedContracts 为空时（legacy 路径）仍走 wire 匹配主链；
+        // REVENUE/STOCK_REDUCE/WAREHOUSE 应全面切到 selectedContractId + contract entry 主导。
         String wire = extractWire(frame);
 
         if (StringUtils.hasText(selectedContractId)) {
@@ -172,6 +173,17 @@ public final class SemanticContractValidator {
                     .allowedContractCount(allowedContractCount)
                     .build();
         }
+        if (hasAllowedContracts(selection) && !allowedContractsContain(selection, selectedContractId)) {
+            return SemanticContractValidationDebug.builder()
+                    .modelContractViolation(true)
+                    .unsupportedWire(selectedContractId)
+                    .violationCode(SemanticContractViolationCode.UNSUPPORTED_CONTRACT)
+                    .violationReason("selectedContractId_not_in_allowed_contracts")
+                    .selectedDomain(selectedDomain)
+                    .allowedWires(allowedWires.isEmpty() ? null : allowedWires)
+                    .allowedContractCount(allowedContractCount)
+                    .build();
+        }
         if (matched.isRequiresAnchor() && !frame.hasAnchorEvidence(matched.getAnchorType())) {
             return SemanticContractValidationDebug.builder()
                     .modelContractViolation(true)
@@ -183,8 +195,11 @@ public final class SemanticContractValidator {
                     .matchedContractId(matched.getContractId())
                     .build();
         }
-        SemanticCapabilityContractMatcher.SlotSnapshot slotView = frame.slotSnapshot();
-        List<String> missing = missingSlotsAgainstContract(matched, slotView);
+        com.nongxinle.ai.semantic.frame.CurrentSemanticFrame contractFrame =
+                com.nongxinle.ai.semantic.frame.CurrentSemanticFrame.buildFrame(frame.getParse());
+        List<String> missing =
+                com.nongxinle.ai.semantic.frame.ContractEntrySemanticFrameValidationSupport
+                        .slotMismatchesAgainstContract(contractFrame, frame.getParse(), matched);
         if (!missing.isEmpty()) {
             return SemanticContractValidationDebug.builder()
                     .modelContractViolation(true)
@@ -207,33 +222,31 @@ public final class SemanticContractValidator {
                 .build();
     }
 
-    private static List<String> missingSlotsAgainstContract(
-            SemanticCapabilityContract contract, SemanticCapabilityContractMatcher.SlotSnapshot slots) {
-        ArrayList<String> missing = new ArrayList<>();
-        if (contract.getQueryObjects() != null
-                && !contract.getQueryObjects().isEmpty()
-                && !StringUtils.hasText(slots.queryObject())) {
-            missing.add("queryObject");
+    private static boolean hasAllowedContracts(DomainContractSelectionResult selection) {
+        if (selection == null || selection.getParserAllowedOutputContract() == null) {
+            return false;
         }
-        if (contract.getOperations() != null
-                && !contract.getOperations().isEmpty()
-                && !StringUtils.hasText(slots.operation())) {
-            missing.add("operation");
+        List<SemanticParserAllowedOutputContract.AllowedContractEntry> entries =
+                selection.getParserAllowedOutputContract().getAllowedContracts();
+        return entries != null && !entries.isEmpty();
+    }
+
+    private static boolean allowedContractsContain(
+            DomainContractSelectionResult selection, String contractId) {
+        if (selection == null || selection.getParserAllowedOutputContract() == null) {
+            return false;
         }
-        if (contract.getMetrics() != null
-                && !contract.getMetrics().isEmpty()
-                && !StringUtils.hasText(slots.metric())) {
-            missing.add("metric");
+        List<SemanticParserAllowedOutputContract.AllowedContractEntry> entries =
+                selection.getParserAllowedOutputContract().getAllowedContracts();
+        if (entries == null || entries.isEmpty()) {
+            return false;
         }
-        if (StringUtils.hasText(contract.getSourceFacet())
-                && !StringUtils.hasText(slots.sourceFacet())) {
-            missing.add("sourceFacet");
+        for (SemanticParserAllowedOutputContract.AllowedContractEntry entry : entries) {
+            if (entry != null && contractId.equals(entry.getContractId())) {
+                return true;
+            }
         }
-        if (StringUtils.hasText(contract.getDetailWanted())
-                && !StringUtils.hasText(slots.detailWanted())) {
-            missing.add("detailWanted");
-        }
-        return missing;
+        return false;
     }
 
     private static String extractWire(EffectiveSemanticContractFrame frame) {

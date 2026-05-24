@@ -123,6 +123,11 @@ public final class AiQuerySemanticParseResultDebugSerializer {
         m.put("mentionedStoreNames", emptyToNullCopy(r.effectiveMentionedStoreNames()));
         m.put("purchaseSemanticFramePrimaryMerge", r.getPurchaseSemanticFramePrimaryMerge());
         m.put("promptRegistryId", blankToNull(r.getPromptRegistryId()));
+        if (Boolean.TRUE.equals(r.getQuerySemanticV2RepairAttempted())) {
+            m.put("querySemanticV2RepairAttempted", true);
+            m.put("querySemanticV2RepairSuccess", Boolean.TRUE.equals(r.getQuerySemanticV2RepairSuccess()));
+            m.put("querySemanticV2RepairReason", blankToNull(r.getQuerySemanticV2RepairReason()));
+        }
         return m;
     }
 

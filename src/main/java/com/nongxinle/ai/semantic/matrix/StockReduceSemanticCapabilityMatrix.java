@@ -3,9 +3,8 @@ package com.nongxinle.ai.semantic.matrix;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
-import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
-import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import lombok.experimental.UtilityClass;
 import org.springframework.util.StringUtils;
 
@@ -237,112 +236,6 @@ public final class StockReduceSemanticCapabilityMatrix {
         return row == null ? null : row.getKnownGapCode();
     }
 
-    /**
-     * stock_reduce_query_path 下：slots/merge 已表达排行或子口径，但 canonical wire 无法映射到矩阵行。
-     */
-    /**
-     * stock_reduce_query_path 下 structured wire 最终口径：semanticSlots + Matrix 形状优先；
-     * Lexicon 仅做别名归一；无矩阵行时保留 canonical wire，不静默回落为 overview。
-     */
-    public static String resolveStructuredIntentDetailWire(
-            AiQuerySemanticParseResult sem, String pathCode, String mergedStructuredDetail) {
-        if (!AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY.equals(pathCode)) {
-            return null;
-        }
-        if (AiQuerySemanticSlotMerge.hasCanonicalStructuredIntentWireFromSlots(sem)) {
-            String slotCanon =
-                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                            sem.getSemanticSlots().getStructuredIntentDetailWire().trim());
-            return adoptWireViaMatrix(pathCode, slotCanon, sem);
-        }
-        String fromShape = inferMatrixWireFromSemanticSlots(sem);
-        if (StringUtils.hasText(fromShape)) {
-            return adoptWireViaMatrix(pathCode, fromShape, sem);
-        }
-        String fromFacet = inferWireFromStockReduceTypeFacet(sem);
-        if (StringUtils.hasText(fromFacet)) {
-            return adoptWireViaMatrix(pathCode, fromFacet, sem);
-        }
-        String mergedCanon =
-                StringUtils.hasText(mergedStructuredDetail)
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                                mergedStructuredDetail.trim())
-                        : null;
-        if (StringUtils.hasText(mergedCanon)
-                && AiQuerySemanticLexicon.isStructuredStockReduceDetail(mergedCanon)) {
-            return adoptWireViaMatrix(pathCode, mergedCanon, sem);
-        }
-        return null;
-    }
-
-    private static String adoptWireViaMatrix(
-            String pathCode, String canonWire, AiQuerySemanticParseResult sem) {
-        if (!StringUtils.hasText(canonWire)) {
-            return null;
-        }
-        StockReduceSemanticCapabilityMatrixRow row = resolveMatrixRow(pathCode, canonWire, sem);
-        return row != null ? row.getStructuredIntentDetailWire() : canonWire;
-    }
-
-    /**
-     * 仅依据 semanticSlots 形状推断 wire（不读用户原话、不用 metric.rankingType）。
-     */
-    public static String inferMatrixWireFromSemanticSlots(AiQuerySemanticParseResult sem) {
-        if (sem == null || sem.getSemanticSlots() == null) {
-            return null;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = sem.getSemanticSlots();
-        String op = normalizeMatrixToken(s.getOperation());
-        String qo = normalizeMatrixToken(s.getQueryObject());
-        String metric = normalizeMatrixToken(s.getMetric());
-        if ("RANKING".equals(op)) {
-            if ("GOODS".equals(qo)) {
-                if (hasWasteTypeFacet(sem)) {
-                    return AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_RANKING;
-                }
-                if (metric != null && metric.contains("COUNT")) {
-                    return AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_COUNT_RANKING;
-                }
-                return AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_RANKING;
-            }
-            if ("STORE".equals(qo) || "BUSINESS".equals(qo)) {
-                return AiQuerySemanticLexicon.STRUCTURED_STORE_OUTBOUND_AMOUNT_RANKING;
-            }
-        }
-        if ("COMPARE".equals(op) && ("STORE".equals(qo) || "BUSINESS".equals(qo))) {
-            return AiQuerySemanticLexicon.STRUCTURED_STORE_OUTBOUND_AMOUNT_RANKING;
-        }
-        if ("SUMMARY".equals(op) || "OVERVIEW".equals(op)) {
-            String facetWire = inferWireFromStockReduceTypeFacet(sem);
-            if (StringUtils.hasText(facetWire)) {
-                return facetWire;
-            }
-            return AiQuerySemanticLexicon.STRUCTURED_STOCK_REDUCE_OVERVIEW_SUMMARY;
-        }
-        return null;
-    }
-
-    private static String inferWireFromStockReduceTypeFacet(AiQuerySemanticParseResult sem) {
-        if (sem == null) {
-            return null;
-        }
-        String raw = null;
-        if (sem.getMetric() != null && StringUtils.hasText(sem.getMetric().getStockReduceType())) {
-            raw = sem.getMetric().getStockReduceType().trim();
-        }
-        if (!StringUtils.hasText(raw) && sem.getSemanticSlots() != null) {
-            raw = sem.getSemanticSlots().getMetric();
-        }
-        if (!StringUtils.hasText(raw)) {
-            return null;
-        }
-        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(raw);
-        if (StringUtils.hasText(canon) && AiQuerySemanticLexicon.isStructuredStockReduceDetail(canon)) {
-            return canon;
-        }
-        return null;
-    }
-
     private static String normalizeMatrixToken(String raw) {
         if (!StringUtils.hasText(raw)) {
             return null;
@@ -403,41 +296,21 @@ public final class StockReduceSemanticCapabilityMatrix {
         return null;
     }
 
+    /**
+     * 商品废弃排行检测：不依赖 metric.stockReduceType / metric.contains，仅校验 canonical wire 身份。
+     * 废弃 facet 判断由 contract-locked entry 语义兜底。
+     */
     public static boolean semanticSlotsIndicateGoodsWasteRanking(
             AiQuerySemanticParseResult sem, String resolvedWire) {
-        String wire = resolvedWire;
-        if (!StringUtils.hasText(wire) && sem != null && sem.getSemanticSlots() != null) {
-            wire =
-                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                            sem.getSemanticSlots().getStructuredIntentDetailWire());
-        }
-        if (!AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_RANKING.equals(
-                AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire))) {
+        if (!StringUtils.hasText(resolvedWire)) {
             return false;
         }
-        return hasWasteTypeFacet(sem);
-    }
-
-    public static boolean hasWasteTypeFacet(AiQuerySemanticParseResult sem) {
-        if (sem == null) {
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(resolvedWire.trim());
+        if (!AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_RANKING.equals(canon)) {
             return false;
         }
-        if (sem.getMetric() != null && StringUtils.hasText(sem.getMetric().getStockReduceType())) {
-            String raw = sem.getMetric().getStockReduceType().trim().toUpperCase(Locale.ROOT);
-            if ("TYPE2".equals(raw) || "WASTE".equals(raw)) {
-                return true;
-            }
-            String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(raw);
-            if (AiQuerySemanticLexicon.STRUCTURED_WASTE.equals(canon)) {
-                return true;
-            }
-        }
-        if (sem.getSemanticSlots() != null && StringUtils.hasText(sem.getSemanticSlots().getMetric())) {
-            String m = sem.getSemanticSlots().getMetric().trim().toUpperCase(Locale.ROOT);
-            if (m.contains("WASTE") || "TYPE2".equals(m)) {
-                return true;
-            }
-        }
+        // Without metric.stockReduceType / metric.contains, waste-intent cannot be independently 
+        // determined from slots. Contract-locked entry semantic is the authoritative source.
         return false;
     }
 
@@ -489,111 +362,18 @@ public final class StockReduceSemanticCapabilityMatrix {
     }
 
     /**
-     * Contract observe：按 Matrix 槽位形状补全 wire / 四槽（不读用户原文、不做合同外 wire 别名）。
+     * Contract frame canonicalizer：
+     * contract-locked → {@link com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer#normalize}；
+     * non-contract-locked → 原样返回 raw（不通过 slots/inferMatrixWire/slotsInferXxxShape 补全）。
      */
     public static AiQuerySemanticParseResult canonicalizeStockReduceContractFrame(
             AiQuerySemanticParseResult raw) {
         if (raw == null || raw.isParseMissing() || raw.getSemanticSlots() == null) {
             return raw;
         }
-        if (slotsInferStockReduceOverviewShape(raw)) {
-            return mergeStockReduceContractRow(raw, OVERVIEW);
+        if (SemanticContractCompletionEngine.isContractLockedParse(raw)) {
+            return com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer.normalize(raw);
         }
-        if (slotsInferGoodsOutboundAmountRankingShape(raw)) {
-            return mergeStockReduceContractRow(raw, GOODS_AMOUNT_RANKING);
-        }
-        if (slotsInferStoreOutboundAmountRankingShape(raw)) {
-            return mergeStockReduceContractRow(raw, STORE_AMOUNT_RANKING);
-        }
-        String inferred = inferMatrixWireFromSemanticSlots(raw);
-        if (!StringUtils.hasText(inferred)) {
-            return raw;
-        }
-        StockReduceSemanticCapabilityMatrixRow row = findFirstTurnRowByWire(inferred);
-        if (row == null || row.getKnownGapCode() != null) {
-            return raw;
-        }
-        return mergeStockReduceContractRow(raw, row);
-    }
-
-    private static AiQuerySemanticParseResult mergeStockReduceContractRow(
-            AiQuerySemanticParseResult raw, StockReduceSemanticCapabilityMatrixRow row) {
-        if (raw == null || raw.getSemanticSlots() == null || row == null) {
-            return raw;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();
-        String wire = row.getStructuredIntentDetailWire();
-        String slotWire =
-                AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                        s.getStructuredIntentDetailWire());
-        String qo = row.getQueryObject();
-        String op = row.getOperation();
-        String metric = row.getMetric();
-        String plan = row.getTargetStockReducePlanType();
-        boolean needsUpdate =
-                !wire.equals(slotWire)
-                        || !qo.equals(normalizeMatrixToken(s.getQueryObject()))
-                        || !op.equals(normalizeMatrixToken(s.getOperation()))
-                        || !metric.equals(normalizeMatrixToken(s.getMetric()))
-                        || !plan.equals(normalizeMatrixToken(s.getAnswerPlanType()));
-        if (!needsUpdate) {
-            return raw;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart updated =
-                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                        .queryObject(qo)
-                        .operation(op)
-                        .metric(metric)
-                        .sourceFacet(s.getSourceFacet())
-                        .anchorPolicy(s.getAnchorPolicy())
-                        .detailWanted(s.getDetailWanted())
-                        .structuredIntentDetailWire(wire)
-                        .answerPlanType(plan)
-                        .build();
-        return raw.toBuilder().semanticSlots(updated).build();
-    }
-
-    /** ALL/STORE + SUMMARY/OVERVIEW + 出库金额语义 → {@link #OVERVIEW}（非门店排行 wire）。 */
-    private static boolean slotsInferStockReduceOverviewShape(AiQuerySemanticParseResult raw) {
-        if (raw == null || raw.getSemanticSlots() == null) {
-            return false;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();
-        String op = normalizeMatrixToken(s.getOperation());
-        if (!"SUMMARY".equals(op) && !"OVERVIEW".equals(op)) {
-            return false;
-        }
-        String qo = normalizeMatrixToken(s.getQueryObject());
-        if ("GOODS".equals(qo)) {
-            return false;
-        }
-        String metric = normalizeMatrixToken(s.getMetric());
-        return metric == null || metric.contains("OUTBOUND") || metric.contains("REDUCE");
-    }
-
-    private static boolean slotsInferGoodsOutboundAmountRankingShape(AiQuerySemanticParseResult raw) {
-        if (raw == null || raw.getSemanticSlots() == null) {
-            return false;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();
-        return "GOODS".equals(normalizeMatrixToken(s.getQueryObject()))
-                && "RANKING".equals(normalizeMatrixToken(s.getOperation()))
-                && outboundAmountMetric(s.getMetric());
-    }
-
-    private static boolean slotsInferStoreOutboundAmountRankingShape(AiQuerySemanticParseResult raw) {
-        if (raw == null || raw.getSemanticSlots() == null) {
-            return false;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();
-        String qo = normalizeMatrixToken(s.getQueryObject());
-        return ("STORE".equals(qo) || "BUSINESS".equals(qo))
-                && "RANKING".equals(normalizeMatrixToken(s.getOperation()))
-                && outboundAmountMetric(s.getMetric());
-    }
-
-    private static boolean outboundAmountMetric(String raw) {
-        String metric = normalizeMatrixToken(raw);
-        return metric == null || metric.contains("OUTBOUND") || metric.contains("AMOUNT");
+        return raw;
     }
 }

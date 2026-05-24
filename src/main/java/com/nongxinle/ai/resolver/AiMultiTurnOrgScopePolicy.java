@@ -5,8 +5,8 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolver;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -78,11 +78,14 @@ public final class AiMultiTurnOrgScopePolicy {
         if (baselineOrg == null || previousTurn == null) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
+        boolean contractLocked =
+                semanticLlm != null && SemanticContractCompletionEngine.isContractLockedParse(semanticLlm);
         if (AiQuerySemanticLexicon.isStorePriorityRankingStructuredDetail(structuredIntentDetailWire)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
-        if (shouldSkipStoreNarrowingForUnlistedNamedDishProfitReason(
-                baselineOrg, previousTurn, rawMessage, dishProfitReasonDishHint, structuredIntentDetailWire)) {
+        if (!contractLocked
+                && shouldSkipStoreNarrowingForUnlistedNamedDishProfitReason(
+                        baselineOrg, previousTurn, rawMessage, dishProfitReasonDishHint, structuredIntentDetailWire)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
         List<Integer> prevIds = previousTurn.getLastVisibleStoreIds();
@@ -90,13 +93,10 @@ public final class AiMultiTurnOrgScopePolicy {
                 || baselineOrg.getVisibleStores() == null || baselineOrg.getVisibleStores().isEmpty()) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
-        if (messageDeclaresBroadGroupReset(rawMessage)) {
+        if (!contractLocked && messageDeclaresBroadGroupReset(rawMessage)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
-        if (DishSalesSemanticCapabilityMatrix.shouldSuppressStoreScopeInheritanceForTrend(
-                structuredIntentDetailWire, rawMessage, semanticLlm)) {
-            return new OrgScopeApplyOutcome(baselineOrg, false);
-        }
+
         if (semanticDeclaresStoreFocus(semanticLlm, baselineOrg)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
@@ -226,11 +226,10 @@ public final class AiMultiTurnOrgScopePolicy {
      * 用户显式要求回到集团/全量门店视角（如「全部门店呢」「集团呢」），
      * 需先于其它范围策略处理。
      * <p>
-     * <b>历史过渡逻辑</b>：仍对清洗后用户原文做 Java {@code contains} 匹配固定中文短语，
-     * 命中时会阻断 {@link #applyInheritedEffectiveOrgScope} 对上一轮 visibleStoreIds 的继承。
-     * 后续应迁移至 LLM {@code scopeAction} / structured scope contract，而非在此扩展关键词。
+     * <b>LEGACY_ONLY</b>：仅非 contract-locked 多轮继承链使用；contract-locked 主链由 scope contract / semanticSlots 决定，
+     * 不得再读用户原文 {@code contains} 推断范围动作。
      *
-     * @deprecated 禁止在此新增中文关键词；待 scope 契约迁移后移除。
+     * @deprecated 禁止在此新增中文关键词；contract-locked 主链已摘链。
      */
     @Deprecated
     public static boolean messageDeclaresBroadGroupReset(String norm) {
@@ -324,6 +323,10 @@ public final class AiMultiTurnOrgScopePolicy {
         return !dishNameMatchesHarnessRoster(roster, dishHint);
     }
 
+    /**
+     * LEGACY_ONLY：仅非 contract-locked 的「未上榜菜名 + 毛利原因」多轮收窄豁免；contract-locked 主链已摘链。
+     * TODO(LEGACY_ONLY-CLEANUP): 后续应改为 resultAnchors / entityId / 标准化实体匹配。
+     */
     private static boolean dishNameMatchesHarnessRoster(String rosterCsv, String dishHint) {
         String hint = dishHint.replace(" ", "").trim();
         if (hint.isEmpty()) {

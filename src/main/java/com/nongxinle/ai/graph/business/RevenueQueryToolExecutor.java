@@ -3,7 +3,6 @@ package com.nongxinle.ai.graph.business;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.graph.business.scope.BusinessScopeResolutionSupport;
 import com.nongxinle.ai.mapping.AiRoleMapper;
-import com.nongxinle.ai.scope.AiQueryScope;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.security.AiPermissionGuard;
 import com.nongxinle.ai.tool.ToolRegistry;
@@ -49,7 +48,6 @@ public class RevenueQueryToolExecutor {
                             > 1;
             if (BusinessToolExecutionNode.shouldRouteGroupWideBusinessOverview(state) || multiVisible) {
                 m.put(AiBusinessToolIds.ARG_GROUP_WIDE_OVERVIEW_HINT, Boolean.TRUE);
-                AiQueryScope revenueScope = state.getScope();
                 var revenueCtx = state.getAiUserContext();
                 List<Integer> revenueResolved =
                         BusinessScopeResolutionSupport.extractVisibleStoreRootDepartmentIds(
@@ -57,13 +55,6 @@ public class RevenueQueryToolExecutor {
                 if (!revenueResolved.isEmpty()) {
                     m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS, new ArrayList<>(revenueResolved));
                     m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, revenueResolved.size());
-                } else if (revenueScope != null) {
-                    if (revenueScope.getResolvedDepartmentIds() != null
-                            && !revenueScope.getResolvedDepartmentIds().isEmpty()) {
-                        m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS,
-                                new ArrayList<>(revenueScope.getResolvedDepartmentIds()));
-                    }
-                    m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, revenueScope.getParentStoreCount());
                 }
                 if (revenueCtx != null) {
                     String roleTag = revenueCtx.getRoleCode();

@@ -9,10 +9,8 @@ import com.nongxinle.ai.graph.business.toolrequest.PurchaseToolRequestContext;
 import com.nongxinle.ai.harness.HarnessPlannedToolArgsCapture;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
-import com.nongxinle.ai.scope.AiConversationScopeMode;
 import com.nongxinle.ai.mapping.AiRoleMapper;
 import com.nongxinle.ai.security.AiRoleCodes;
-import com.nongxinle.ai.scope.AiQueryScope;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.security.AiPermissionGuard;
 import com.nongxinle.utils.GbConstants;
@@ -522,18 +520,7 @@ public class BusinessToolExecutionNode implements AgentNode {
                 if (dis != null) {
                     m.put(AiBusinessToolIds.ARG_DIS_ID, dis);
                 }
-                AiQueryScope sc = state.getScope();
-                List<Integer> visibleStoreRoots = extractVisibleStoreDepartmentIds(state.getResolvedQueryContext());
-                if (!visibleStoreRoots.isEmpty()) {
-                    m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS, new ArrayList<>(visibleStoreRoots));
-                    m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, visibleStoreRoots.size());
-                } else if (sc != null) {
-                    if (sc.getResolvedDepartmentIds() != null && !sc.getResolvedDepartmentIds().isEmpty()) {
-                        m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS,
-                                new java.util.ArrayList<>(sc.getResolvedDepartmentIds()));
-                    }
-                    m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, sc.getParentStoreCount());
-                }
+                applyGroupWideToolScopeArgs(m, state, "WAREHOUSE_STOCK_OVERVIEW");
                 var ctx = state.getAiUserContext();
                 if (ctx != null) {
                     String roleTag = ctx.getRoleCode();
@@ -564,21 +551,8 @@ public class BusinessToolExecutionNode implements AgentNode {
                 boolean multiVisible = extractVisibleStoreDepartmentIds(state.getResolvedQueryContext()).size() > 1;
                 if (shouldRouteGroupWideBusinessOverview(state) || multiVisible) {
                     m.put(AiBusinessToolIds.ARG_GROUP_WIDE_OVERVIEW_HINT, Boolean.TRUE);
-                    AiQueryScope revenueScope = state.getScope();
                     var revenueCtx = state.getAiUserContext();
-                    List<Integer> revenueResolved =
-                            extractVisibleStoreDepartmentIds(state.getResolvedQueryContext());
-                    if (!revenueResolved.isEmpty()) {
-                        m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS, new ArrayList<>(revenueResolved));
-                        m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, revenueResolved.size());
-                    } else if (revenueScope != null) {
-                        if (revenueScope.getResolvedDepartmentIds() != null
-                                && !revenueScope.getResolvedDepartmentIds().isEmpty()) {
-                            m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS,
-                                    new ArrayList<>(revenueScope.getResolvedDepartmentIds()));
-                        }
-                        m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, revenueScope.getParentStoreCount());
-                    }
+                    applyGroupWideToolScopeArgs(m, state, toolId);
                     if (revenueCtx != null) {
                         String roleTag = revenueCtx.getRoleCode();
                         if ((roleTag == null || roleTag.isBlank()) && revenueCtx.getSourceAdminRole() != null) {
@@ -869,6 +843,25 @@ public class BusinessToolExecutionNode implements AgentNode {
         return sb.toString();
     }
 
+    private static void applyGroupWideToolScopeArgs(Map<String, Object> m, AiRunState state, String toolId) {
+        if (m == null || state == null) {
+            return;
+        }
+        BusinessScopeResolutionSupport.GroupWideToolScope scope =
+                BusinessScopeResolutionSupport.resolveGroupWideToolScope(state.getResolvedQueryContext());
+        if (!scope.resolvedDepartmentIds().isEmpty()) {
+            m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS, new ArrayList<>(scope.resolvedDepartmentIds()));
+            m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, scope.parentStoreCount());
+            return;
+        }
+        log.warn(
+                "[BusinessToolExecutionNode] GROUP tool scope missing from ResolvedQueryContext; "
+                        + "legacy AiQueryScope not applied. runId={} toolId={} scopeSource={}",
+                state.getRunId(),
+                toolId,
+                scope.scopeSource());
+    }
+
     /**
      * 集团经营概览：与 {@link AiResolvedQueryContext#getOrgScope()}{@code #visibleStores} 对齐。
      * 实现见 {@link BusinessScopeResolutionSupport#extractVisibleStoreRootDepartmentIds}。
@@ -878,25 +871,9 @@ public class BusinessToolExecutionNode implements AgentNode {
     }
 
     /**
-     * 菜品毛利/销量等工具：与 Harness {@code effectiveSqlDepartmentIds} 同源（{@link com.nongxinle.ai.context.AiResolvedDataScope#getEffectiveSqlDepartmentIds()}）；
-     * 优先于会话 {@link AiQueryScope#getResolvedDepartmentIds()}，避免追问收窄门店后 allow 列表仍携带旧集团/别店 ID，
-     * 与本轮 {@code depFatherId} 求交为空。
+     * 菜品毛利/销量等工具：与 Harness {@code effectiveSqlDepartmentIds} 同源（{@link com.nongxinle.ai.context.AiResolvedDataScope#getEffectiveSqlDepartmentIds()}）。
      */
     static List<Integer> extractSqlQueryDepartmentIdsForTools(AiResolvedQueryContext ctx) {
-        if (ctx == null || ctx.getDataScope() == null) {
-            return List.of();
-        }
-        List<Long> raw = ctx.getDataScope().getEffectiveSqlDepartmentIds();
-        if (raw == null || raw.isEmpty()) {
-            return List.of();
-        }
-        List<Integer> out = new ArrayList<>(raw.size());
-        for (Long id : raw) {
-            if (id == null || id <= 0 || id > Integer.MAX_VALUE) {
-                continue;
-            }
-            out.add(id.intValue());
-        }
-        return out;
+        return BusinessScopeResolutionSupport.extractEffectiveSqlDepartmentIdsForTools(ctx);
     }
 }

@@ -29,4 +29,7 @@ public class DishProfitSemanticCapabilityMatrixRow {
 
     /** 本轮 AnswerPlan 是否在服务端沉淀 DISH {@code resultAnchors}。 */
     boolean emitsDishResultAnchor;
+
+    /** 非 null 时仅导出为 KNOWN_GAP contract，不参与 ACTIVE contract-entry 主链。 */
+    String knownGapCode;
 }

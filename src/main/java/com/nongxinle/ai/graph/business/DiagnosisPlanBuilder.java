@@ -3,6 +3,7 @@ package com.nongxinle.ai.graph.business;
 import com.nongxinle.ai.agent.business.BusinessDiagnosisAgentV1;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
+import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
@@ -11,9 +12,12 @@ import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.security.AiAnswerBoundary;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.alibaba.fastjson2.JSON;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -293,35 +297,49 @@ public final class DiagnosisPlanBuilder {
     }
 
     /**
-     * 是否应为本轮挂载/保留 DiagnosisPlan。{@code business_diagnosis_path} 上恒为 true；经营概览依赖 structuredIntentDetail，
-     * 采购/库存收敛依赖编排意图映射——禁止再用用户原文 contains。
+     * 是否应为本轮挂载/保留 DiagnosisPlan。必须 contract-locked parse + completed canonical wire 在 BusinessDiagnosis/BusinessOverview
+     * 矩阵内才放行。非 contract-locked 时直接 return false（不允许仅凭 path / old intent 挂载）。
      */
     public static boolean shouldAttachDiagnosisPlan(AiRunState state) {
         if (state == null) {
             return false;
         }
-        if (state.isBusinessDiagnosisPath()) {
-            return true;
-        }
-        if (state.isDishProfitPath() || state.isRevenueOverviewPath() || state.isStockReduceQueryPath()) {
+        // gate: must be contract-locked parse
+        AiQuerySemanticParseResult sem =
+                state.getResolvedQueryContext() != null
+                        ? state.getResolvedQueryContext().getQuerySemanticParse()
+                        : null;
+        if (!SemanticContractCompletionEngine.isContractLockedParse(sem)) {
             return false;
         }
-        if (state.isBusinessOverviewPath()) {
-            return structuredBusinessOverviewDiagnosisSurface(state);
-        }
-        if (state.isPurchaseCostInsightPath() && isBusinessToPurchaseOverviewConvergence(state)) {
-            return true;
-        }
-        return state.isWarehouseStockOverviewPath() && isBusinessToWarehouseStockConvergence(state);
-    }
-
-    private static boolean structuredBusinessOverviewDiagnosisSurface(AiRunState state) {
-        AiResolvedQueryContext rq = state.getResolvedQueryContext();
-        if (rq == null || rq.getQueryIntent() == null) {
+        // must have completed canonical wire
+        AiResolvedQueryIntent qi =
+                state.getResolvedQueryContext() != null
+                        ? state.getResolvedQueryContext().getQueryIntent()
+                        : null;
+        String wire = qi != null ? qi.getStructuredIntentDetail() : null;
+        if (!StringUtils.hasText(wire)) {
             return false;
         }
-        String raw = rq.getQueryIntent().getStructuredIntentDetail();
-        return AiQuerySemanticLexicon.isStructuredBusinessOverviewFourDomainOrchestrationSurface(raw);
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim());
+        if (!StringUtils.hasText(canon)) {
+            return false;
+        }
+        // wire must belong to accepted BusinessDiagnosis / BusinessOverview canonical wires
+        if (AiQuerySemanticLexicon.isBusinessDiagnosisSummaryStructuredDetail(canon)
+                || AiQuerySemanticLexicon.isStorePriorityRankingStructuredDetail(canon)
+                || AiQuerySemanticLexicon.isStoreRiskReasonExplanationStructuredDetail(canon)
+                || AiQuerySemanticLexicon.isStoreDomainAttributionPurchaseStructuredDetail(canon)
+                || AiQuerySemanticLexicon.isStoreDomainAttributionStockReduceStructuredDetail(canon)
+                || AiQuerySemanticLexicon.isStoreDomainAttributionDishProfitStructuredDetail(canon)
+                || AiQuerySemanticLexicon.isDiagnosisActionSuggestionStructuredDetail(canon)
+                || AiQuerySemanticLexicon.STRUCTURED_BUSINESS_STORE_COMPARE_DIAGNOSIS.equals(canon)) {
+            return true;
+        }
+        if (AiQuerySemanticLexicon.isStructuredBusinessOverviewFourDomainOrchestrationSurface(canon)) {
+            return true;
+        }
+        return false;
     }
 
     /**

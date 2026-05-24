@@ -97,8 +97,13 @@ public final class DishSalesSemanticCapabilityContractExporter implements Semant
                         .intentCode(AiResolvedQueryIntent.DISH_SALES_QUERY)
                         .pathCode(AiResolvedQueryIntent.PATH_DISH_SALES_QUERY)
                         .wire(row.getStructuredIntentDetailWire())
-                        .queryObject(row.getQueryObject())
-                        .operation(row.getOperation());
+                        .queryObject(row.getQueryObject());
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_OVERVIEW.equals(
+                row.getStructuredIntentDetailWire())) {
+            builder.operations(Set.of("OVERVIEW", "SUMMARY")).operation(null);
+        } else {
+            builder.operation(row.getOperation());
+        }
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH.equals(
                 row.getStructuredIntentDetailWire())) {
             builder.metric("SALES_AMOUNT").metric("LIST_PRICE_REVENUE");
@@ -119,6 +124,7 @@ public final class DishSalesSemanticCapabilityContractExporter implements Semant
 
     private static String contractIdForRow(DishSalesSemanticCapabilityMatrixRow row) {
         return switch (row.getRowId()) {
+            case "DS-G" -> "dish_sales.overview";
             case "DS-A" -> "dish_sales.count_ranking_high";
             case "DS-B" -> "dish_sales.amount_ranking_high";
             case "DS-C" -> "dish_sales.count_ranking_low";

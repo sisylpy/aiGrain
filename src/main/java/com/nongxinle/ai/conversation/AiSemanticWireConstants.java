@@ -64,9 +64,6 @@ public final class AiSemanticWireConstants {
     public static final String STRUCTURED_DISH_THEORETICAL_COST_RANKING_HIGH = "dish_theoretical_cost_ranking_high";
     public static final String STRUCTURED_DISH_THEORETICAL_COST_RANKING_LOW = "dish_theoretical_cost_ranking_low";
     public static final String STRUCTURED_DISH_GAP_RANKING_MAX = "dish_gap_ranking_max";
-    /** @deprecated 历史字面量；不在 REGISTERED 集合；须用 {@link #STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH}。 */
-    @Deprecated
-    public static final String STRUCTURED_DISH_SALES_RANKING = "dish_sales_ranking";
     public static final String STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH = "dish_sales_count_ranking_high";
     public static final String STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH = "dish_sales_amount_ranking_high";
     public static final String STRUCTURED_DISH_SALES_COUNT_RANKING_LOW = "dish_sales_count_ranking_low";
@@ -106,9 +103,6 @@ public final class AiSemanticWireConstants {
     public static final String STRUCTURED_BUSINESS_STORE_STATUS_COMPARE = "business_store_status_compare";
 
     public static final String STRUCTURED_STORE_PRIORITY_RANKING = "store_priority_ranking";
-    /** @deprecated 历史别名；不在 REGISTERED 集合。 */
-    @Deprecated
-    public static final String STRUCTURED_STORE_RISK_RANKING = "store_risk_ranking";
 
     /** D-13.2：承接 STORE 锚点的门店风险原因解释（BD-C / BD-D）。 */
     public static final String STRUCTURED_STORE_RISK_REASON_EXPLANATION = "store_risk_reason_explanation";

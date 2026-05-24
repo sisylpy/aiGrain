@@ -2,15 +2,15 @@ package com.nongxinle.ai.graph.business;
 
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
-import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrixRow;
-import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
 import org.slf4j.Logger;
@@ -76,16 +76,21 @@ public final class DishSalesAnswerPlanBuilder {
             return;
         }
 
-        var qi = rq.getQueryIntent();
-        DishSalesWireResolution wres = resolveDishSalesWire(rq, qi);
+        DishSalesWireResolution wres = resolveDishSalesWire(rq);
         debug.put("rawStructuredIntentDetail", wres.rawStructuredIntentDetail());
         debug.put("resolvedDishSalesWire", wres.resolvedCanonicalWire());
+        if (wres.wireRejectedReason() != null) {
+            debug.put("wireRejectedReason", wres.wireRejectedReason());
+        }
 
         String wire = wres.resolvedCanonicalWire();
         if (!StringUtils.hasText(wire)) {
-            debug.put("earlyReturnReason", "no_wire_from_structured_intent");
+            String er = wres.wireRejectedReason() != null ? wres.wireRejectedReason() : "no_wire_resolved";
+            debug.put("earlyReturnReason", er);
             log.warn(
-                    "[DishSalesAnswerPlan] early exit: no dish-sales wire from structuredIntentDetail / semanticSlots. runId={}",
+                    "[DishSalesAnswerPlan] early exit: no dish-sales wire (contract locked={} reject={}). runId={}",
+                    SemanticContractCompletionEngine.isContractLockedParse(semantic(rq)),
+                    wres.wireRejectedReason(),
                     state.getRunId());
             attachEarlyExitPlan(
                     state,
@@ -257,6 +262,11 @@ public final class DishSalesAnswerPlanBuilder {
         }
     }
 
+    /**
+     * TODO：后续单菜匹配应优先精确匹配 dishName == mentionedDishName；
+     * 模糊 contains 匹配多条时应标 ambiguous 或澄清；
+     * 不要用这个 contains 反推语义。
+     */
     private static List<Map<String, Object>> buildSingleDishRows(
             List<Map<String, Object>> dishRows, String dishFocus, LinkedHashMap<String, Object> debug) {
         debug.put("mentionedDishName", dishFocus);
@@ -438,22 +448,6 @@ public final class DishSalesAnswerPlanBuilder {
             dbg.put("dishSalesMatrixWireMissing", DishSalesSemanticCapabilityMatrix.MATRIX_WIRE_MISSING);
         }
         dbg.put("dishSalesAnswerPlanType", planType);
-        String prevWire = prevStructuredWire(rq);
-        if (StringUtils.hasText(prevWire) && StringUtils.hasText(canonWire)) {
-            String leak = DishSalesSemanticCapabilityMatrix.detectPriorRankingWireLeak(prevWire, canonWire);
-            if (leak != null) {
-                dbg.put("dishSalesPriorWireLeak", leak);
-            }
-        }
-    }
-
-    private static String prevStructuredWire(AiResolvedQueryContext rq) {
-        AiConversationTurnMemory prev = rq != null ? rq.getPreviousTurn() : null;
-        if (prev == null || !StringUtils.hasText(prev.getLastStructuredIntentDetail())) {
-            return null;
-        }
-        return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                prev.getLastStructuredIntentDetail().trim());
     }
 
     private static AiQuerySemanticParseResult semantic(AiResolvedQueryContext rq) {
@@ -583,46 +577,31 @@ public final class DishSalesAnswerPlanBuilder {
         return s.trim();
     }
 
-    private record DishSalesWireResolution(String rawStructuredIntentDetail, String resolvedCanonicalWire) {}
+    private record DishSalesWireResolution(String rawStructuredIntentDetail, String resolvedCanonicalWire,
+                                            String wireRejectedReason) {}
 
-    private static DishSalesWireResolution resolveDishSalesWire(AiResolvedQueryContext rq, AiResolvedQueryIntent qi) {
-        String raw = structuredIntentDetailOrSlotsWireRaw(qi, rq);
-        String norm = rq != null ? rq.getNormalizedQuestion() : null;
-        String merged = qi != null ? qi.getStructuredIntentDetail() : null;
-        String wire =
-                DishSalesSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
-                        semantic(rq),
-                        AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
-                        merged,
-                        norm,
-                        rq != null ? rq.getPreviousTurn() : null);
-        if (!StringUtils.hasText(wire)) {
-            if (StringUtils.hasText(raw)) {
-                wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(raw);
-            }
+    /**
+     * 只接受 contract-locked 后 contract-completed 的 canonical wire。
+     * 不再读取 raw LLM structuredIntentDetail / currentTurnStructuredIntentDetailWire / raw semanticSlots wire。
+     * 非 contract-locked 或 contract 未产出 wire 一律拒绝（raw=null, wire=null）。
+     */
+    private static DishSalesWireResolution resolveDishSalesWire(AiResolvedQueryContext rq) {
+        AiQuerySemanticParseResult sem = semantic(rq);
+        if (!SemanticContractCompletionEngine.isContractLockedParse(sem)) {
+            return new DishSalesWireResolution(null, null, "non_contract_locked_parse");
         }
+        // 仅从 contract-completed slots 取 wire（applyContractToParse 已写入 canonical wire）
+        String raw = sem.getSemanticSlots() != null
+                ? blankToNull(sem.getSemanticSlots().getStructuredIntentDetailWire())
+                : null;
+        if (!StringUtils.hasText(raw)) {
+            return new DishSalesWireResolution(null, null, "missing_contract_completed_wire");
+        }
+        String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(raw);
         if (!acceptedDishSalesWire(wire)) {
-            wire = null;
+            return new DishSalesWireResolution(raw, null, "contract_wire_not_accepted_dish_sales_matrix");
         }
-        return new DishSalesWireResolution(raw, wire);
-    }
-
-    private static String structuredIntentDetailOrSlotsWireRaw(AiResolvedQueryIntent qi, AiResolvedQueryContext rq) {
-        if (qi != null && StringUtils.hasText(qi.getStructuredIntentDetail())) {
-            return qi.getStructuredIntentDetail().trim();
-        }
-        if (rq == null || rq.getQuerySemanticParse() == null) {
-            return null;
-        }
-        AiQuerySemanticParseResult sem = rq.getQuerySemanticParse();
-        if (StringUtils.hasText(sem.getCurrentTurnStructuredIntentDetailWire())) {
-            return sem.getCurrentTurnStructuredIntentDetailWire().trim();
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
-        if (ss != null && StringUtils.hasText(ss.getStructuredIntentDetailWire())) {
-            return ss.getStructuredIntentDetailWire().trim();
-        }
-        return null;
+        return new DishSalesWireResolution(raw, wire, null);
     }
 
     private static boolean acceptedDishSalesWire(String wire) {

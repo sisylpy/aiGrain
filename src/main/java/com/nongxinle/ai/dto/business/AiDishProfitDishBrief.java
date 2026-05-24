@@ -29,10 +29,16 @@ public class AiDishProfitDishBrief {
     /** 理论成本（区间汇总，元）。 */
     private String theoreticalCost;
 
-    /** 实际成本（type1，区间汇总，元）。 */
+    /** 实际成本（对外展示：优先 type1+2+3，否则 type1 生产出库）。 */
     private String actualCost;
 
-    /** type1 口径毛利额估算：标价收入 − 实际成本。 */
+    /** type1 生产出库成本（legacy {@code actualCostAmount}，元）。 */
+    private String productionActualCost;
+
+    /** 完整实际成本 type1+2+3（{@code actualCostTotalAmount123}，元）。 */
+    private String totalActualCost123;
+
+    /** 标价收入 − 对外展示实际成本。 */
     private String grossProfitAmount;
 
     /** {@code grossMarginRateOnListPrice} 旧版格式化字符串或「暂无」。 */

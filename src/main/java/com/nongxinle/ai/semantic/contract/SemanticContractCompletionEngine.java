@@ -21,6 +21,11 @@ import java.util.Set;
  */
 public final class SemanticContractCompletionEngine {
 
+    /** completion trace：{@code selectedContractId} 已命中 ACTIVE Catalog 且槽位校验通过。 */
+    public static final String TRACE_CONTRACT_ENTRY_VALIDATED = "contractEntryValidated";
+    /** completion trace：无 ACTIVE contract entry 时走 legacy-only 收养路径（非 Catalog 域或 selection skipped）。 */
+    public static final String TRACE_LEGACY_NO_CATALOG_PATH = "legacyNoCatalogPath";
+
     private SemanticContractCompletionEngine() {}
 
     @Value
@@ -79,9 +84,17 @@ public final class SemanticContractCompletionEngine {
                     "missing_selectedContractId",
                     Map.of("selectedDomain", domain));
         }
+        selectedContractId = selectedContractId.trim();
 
-        SemanticCapabilityContract contract =
-                findActiveContract(domain, selectedContractId.trim());
+        if (!allowedContractsContain(entries, selectedContractId)) {
+            return violation(
+                    raw,
+                    SemanticContractViolationCode.UNSUPPORTED_CONTRACT,
+                    "selectedContractId_not_in_allowed_contracts",
+                    Map.of("selectedContractId", selectedContractId, "selectedDomain", domain));
+        }
+
+        SemanticCapabilityContract contract = findActiveContract(domain, selectedContractId);
         if (contract == null) {
             return violation(
                     raw,
@@ -120,8 +133,29 @@ public final class SemanticContractCompletionEngine {
                     Map.of("selectedContractId", contract.getContractId()));
         }
 
+        com.nongxinle.ai.semantic.frame.CurrentSemanticFrame rawFrame =
+                com.nongxinle.ai.semantic.frame.CurrentSemanticFrame.buildFrame(
+                        com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer.normalize(
+                                raw));
+        // 先校验 LLM 已输出槽位是否与 contract entry 冲突；缺失字段由 applyContractToParse 补齐。
+        List<String> slotMismatches =
+                com.nongxinle.ai.semantic.frame.ContractEntrySemanticFrameValidationSupport
+                        .slotMismatchesAgainstContract(rawFrame, raw, contract);
+        if (!slotMismatches.isEmpty()) {
+            return violation(
+                    raw,
+                    SemanticContractViolationCode.UNSUPPORTED_CONTRACT,
+                    "selectedContractId_slot_mismatch:" + String.join(",", slotMismatches),
+                    Map.of(
+                            "selectedContractId",
+                            contract.getContractId(),
+                            "missingSlots",
+                            slotMismatches));
+        }
+
         AiQuerySemanticParseResult completed = applyContractToParse(raw, contract);
         Map<String, Object> trace = new LinkedHashMap<>();
+        trace.put(TRACE_CONTRACT_ENTRY_VALIDATED, true);
         trace.put("selectedContractId", contract.getContractId());
         trace.put("wire", contract.getWire());
         trace.put("domain", domain);
@@ -137,6 +171,35 @@ public final class SemanticContractCompletionEngine {
         return StringUtils.hasText(extractSelectedContractId(parse));
     }
 
+    /**
+     * ACTIVE contract entry 已通过 {@link #complete} 校验并补齐 execution metadata。
+     * 不得用 {@link #hasSelectedContractId} 替代本方法。
+     */
+    public static boolean isContractEntryValidated(AiQuerySemanticParseResult parse) {
+        if (parse == null) {
+            return false;
+        }
+        Map<String, Object> trace = parse.getContractCompletionTrace();
+        return trace != null && Boolean.TRUE.equals(trace.get(TRACE_CONTRACT_ENTRY_VALIDATED));
+    }
+
+    /**
+     * P2C contract-locked：{@code contractEntryValidated=true} 的 parse（非 {@code selectedContractId} 非空）。
+     * 主链不得再调用 Matrix {@code resolveStructuredIntentDetailWire} / slots→wire 推导覆盖 wire 或 execution path。
+     */
+    public static boolean isContractLockedParse(AiQuerySemanticParseResult parse) {
+        return isContractEntryValidated(parse);
+    }
+
+    /** {@link #complete} passThrough（无 ACTIVE Catalog）后的 legacy-only 收养路径。 */
+    public static boolean isLegacyNoCatalogParse(AiQuerySemanticParseResult parse) {
+        if (parse == null) {
+            return false;
+        }
+        Map<String, Object> trace = parse.getContractCompletionTrace();
+        return trace != null && Boolean.TRUE.equals(trace.get(TRACE_LEGACY_NO_CATALOG_PATH));
+    }
+
     public static String extractSelectedContractId(AiQuerySemanticParseResult parse) {
         if (parse == null || parse.getSemanticSlots() == null) {
             return null;
@@ -145,21 +208,7 @@ public final class SemanticContractCompletionEngine {
     }
 
     private static SemanticCapabilityContract findActiveContract(String domain, String contractId) {
-        if (!StringUtils.hasText(contractId)) {
-            return null;
-        }
-        List<SemanticCapabilityContract> active =
-                StringUtils.hasText(domain)
-                        ? SemanticContractCatalog.listActiveCapabilityContracts(domain)
-                        : List.of();
-        for (SemanticCapabilityContract c : active) {
-            if (c != null
-                    && contractId.equals(c.getContractId())
-                    && c.getStatus() == SemanticCapabilityContractStatus.ACTIVE) {
-                return c;
-            }
-        }
-        return null;
+        return SemanticContractCatalog.findActiveCapabilityContractById(contractId, domain);
     }
 
     private static AiQuerySemanticParseResult applyContractToParse(
@@ -167,25 +216,23 @@ public final class SemanticContractCompletionEngine {
         AiQuerySemanticParseResult.SemanticSlotsPart prev =
                 raw.getSemanticSlots() != null ? raw.getSemanticSlots() : new AiQuerySemanticParseResult.SemanticSlotsPart();
 
-        String queryObject = firstOfSet(contract.getQueryObjects(), prev.getQueryObject());
-        String operation = firstOfSet(contract.getOperations(), prev.getOperation());
-        String metric = firstOfSet(contract.getMetrics(), prev.getMetric());
+        String queryObject = coalesceSlot(prev.getQueryObject(), contract.getQueryObjects());
+        String operation = coalesceSlot(prev.getOperation(), contract.getOperations());
+        String metric = coalesceSlot(prev.getMetric(), contract.getMetrics());
         String sourceFacet =
-                StringUtils.hasText(contract.getSourceFacet())
-                        ? contract.getSourceFacet().trim()
-                        : blank(prev.getSourceFacet());
+                coalesceSlot(prev.getSourceFacet(), contract.getSourceFacet());
         String detailWanted =
-                StringUtils.hasText(contract.getDetailWanted())
-                        ? contract.getDetailWanted().trim()
-                        : blank(prev.getDetailWanted());
+                coalesceSlot(prev.getDetailWanted(), contract.getDetailWanted());
         String wire =
-                StringUtils.hasText(contract.getWire())
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(contract.getWire().trim())
-                        : blank(prev.getStructuredIntentDetailWire());
+                StringUtils.hasText(prev.getStructuredIntentDetailWire())
+                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                prev.getStructuredIntentDetailWire().trim())
+                        : StringUtils.hasText(contract.getWire())
+                                ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                                        contract.getWire().trim())
+                                : blank(prev.getStructuredIntentDetailWire());
         String answerPlanType =
-                StringUtils.hasText(contract.getAnswerPlanType())
-                        ? contract.getAnswerPlanType().trim()
-                        : blank(prev.getAnswerPlanType());
+                coalesceSlot(prev.getAnswerPlanType(), contract.getAnswerPlanType());
 
         AiQuerySemanticParseResult.SemanticSlotsPart slots =
                 AiQuerySemanticParseResult.SemanticSlotsPart.builder()
@@ -204,8 +251,10 @@ public final class SemanticContractCompletionEngine {
                 mergeSelectedTools(raw.getOrchestrationDecisionCandidate(), contract.getSelectedTools());
 
         Map<String, Object> trace = new LinkedHashMap<>();
+        trace.put(TRACE_CONTRACT_ENTRY_VALIDATED, true);
         trace.put("rawSelectedContractId", contract.getContractId());
         trace.put("completedWire", wire);
+        trace.putAll(ContractExecutionMappingSupport.executionTraceFields(contract));
 
         return raw.toBuilder()
                 .semanticSlots(slots)
@@ -239,11 +288,49 @@ public final class SemanticContractCompletionEngine {
     }
 
     private static Result passThrough(AiQuerySemanticParseResult raw, String reason) {
+        Map<String, Object> trace = new LinkedHashMap<>();
+        trace.put("skipped", reason);
+        trace.put(TRACE_CONTRACT_ENTRY_VALIDATED, false);
+        if ("no_allowed_contracts".equals(reason)) {
+            trace.put(TRACE_LEGACY_NO_CATALOG_PATH, true);
+        }
+        AiQuerySemanticParseResult completed = preparePassThroughParse(raw, trace);
         return Result.builder()
                 .rawParse(raw)
-                .completedParse(raw)
+                .completedParse(completed)
                 .violation(false)
-                .completionTrace(Map.of("skipped", reason))
+                .completionTrace(trace)
+                .build();
+    }
+
+    /**
+     * 无 ACTIVE Catalog 时不得保留 LLM {@code selectedContractId}，避免假 contract-locked 绕开 Matrix 校验。
+     */
+    private static AiQuerySemanticParseResult preparePassThroughParse(
+            AiQuerySemanticParseResult raw, Map<String, Object> trace) {
+        if (raw == null) {
+            return null;
+        }
+        if (!hasSelectedContractId(raw) || raw.getSemanticSlots() == null) {
+            return raw.toBuilder().contractCompletionTrace(new LinkedHashMap<>(trace)).build();
+        }
+        trace.put("ignoredSelectedContractId", extractSelectedContractId(raw));
+        trace.put("ignoredSelectedContractIdReason", "no_active_catalog_entry");
+        AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();
+        AiQuerySemanticParseResult.SemanticSlotsPart cleared =
+                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                        .queryObject(s.getQueryObject())
+                        .operation(s.getOperation())
+                        .metric(s.getMetric())
+                        .sourceFacet(s.getSourceFacet())
+                        .anchorPolicy(s.getAnchorPolicy())
+                        .detailWanted(s.getDetailWanted())
+                        .structuredIntentDetailWire(s.getStructuredIntentDetailWire())
+                        .answerPlanType(s.getAnswerPlanType())
+                        .build();
+        return raw.toBuilder()
+                .semanticSlots(cleared)
+                .contractCompletionTrace(new LinkedHashMap<>(trace))
                 .build();
     }
 
@@ -258,6 +345,7 @@ public final class SemanticContractCompletionEngine {
         }
         trace.put("violationReason", reason);
         trace.put("violationCode", code != null ? code.name() : null);
+        trace.put(TRACE_CONTRACT_ENTRY_VALIDATED, false);
         AiQuerySemanticParseResult flagged =
                 raw.toBuilder()
                         .needClarification(true)
@@ -274,11 +362,34 @@ public final class SemanticContractCompletionEngine {
                 .build();
     }
 
-    private static String firstOfSet(Set<String> set, String fallback) {
-        if (set != null && !set.isEmpty()) {
-            return set.iterator().next();
+    private static String coalesceSlot(String llmValue, Set<String> contractValues) {
+        if (StringUtils.hasText(llmValue)) {
+            return normalizeToken(llmValue);
         }
-        return blank(fallback);
+        if (contractValues != null && !contractValues.isEmpty()) {
+            return normalizeToken(contractValues.iterator().next());
+        }
+        return null;
+    }
+
+    private static String coalesceSlot(String llmValue, String contractValue) {
+        if (StringUtils.hasText(llmValue)) {
+            return normalizeToken(llmValue);
+        }
+        return blank(contractValue);
+    }
+
+    private static boolean allowedContractsContain(
+            List<SemanticParserAllowedOutputContract.AllowedContractEntry> entries, String contractId) {
+        if (entries == null || entries.isEmpty() || !StringUtils.hasText(contractId)) {
+            return false;
+        }
+        for (SemanticParserAllowedOutputContract.AllowedContractEntry entry : entries) {
+            if (entry != null && contractId.equals(entry.getContractId())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String normalizeToken(String raw) {

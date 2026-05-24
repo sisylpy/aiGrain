@@ -13,9 +13,12 @@ import com.nongxinle.ai.semantic.contract.SemanticContractCatalog;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictBlockerCatalog;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
-import com.nongxinle.ai.semantic.frame.CurrentSemanticFrame;
-import com.nongxinle.ai.semantic.frame.CurrentSemanticFrameValidator;
+import com.nongxinle.ai.resolver.AiResolvedQueryContextDebugFactory;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeSubQuestion;
+import com.nongxinle.ai.semantic.frame.CurrentSemanticFrameValidatorRegistry;
+import com.nongxinle.ai.semantic.frame.CurrentSemanticFrameValidatorRegistry.HarnessSemanticFrameValidation;
 import com.nongxinle.ai.semantic.frame.SemanticFrameValidationResult;
 import org.springframework.util.StringUtils;
 
@@ -36,7 +39,7 @@ final class AiHarnessSemanticSummaryAppender {
     static void appendSemanticFields(LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx) {
         AiQuerySemanticParseResult qsp = ctx.getQuerySemanticParse();
         out.put("querySemanticLlm", summarizeQuerySemanticParse(qsp));
-        appendPurchaseSemanticFrameHarnessDebug(out, ctx);
+        appendSemanticFrameHarnessDebug(out, ctx);
         out.put("needSemanticClarification", ctx.isNeedSemanticClarification());
         out.put("semanticClarificationQuestion", AiHarnessSummaryUtils.blankToNull(ctx.getSemanticClarificationQuestion()));
         if (qsp != null && !qsp.isParseMissing()) {
@@ -55,6 +58,13 @@ final class AiHarnessSemanticSummaryAppender {
         out.put(
                 "semanticAdoptedFields",
                 adoptedFields == null || adoptedFields.isEmpty() ? null : new ArrayList<>(adoptedFields));
+        List<String> deprecatedDebugFields =
+                AiResolvedQueryContextDebugFactory.describeDeprecatedDebugSemanticFields(qsp);
+        out.put(
+                "semanticDeprecatedDebugFields",
+                deprecatedDebugFields == null || deprecatedDebugFields.isEmpty()
+                        ? null
+                        : new ArrayList<>(deprecatedDebugFields));
         List<String> rejectedFields = ctx.getSemanticAdoptionRejectedFields();
         out.put(
                 "semanticAdoptionRejectedFields",
@@ -101,10 +111,65 @@ final class AiHarnessSemanticSummaryAppender {
         out.put("querySemanticV2MentionedDishName", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2MentionedDishName()));
         out.put("querySemanticV2RawText", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2RawText()));
         out.put("querySemanticV2ParseError", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2ParseError()));
+        if (Boolean.TRUE.equals(ctx.getQuerySemanticV2RepairAttempted())) {
+            out.put("querySemanticV2RepairAttempted", true);
+            out.put("querySemanticV2RepairSuccess", Boolean.TRUE.equals(ctx.getQuerySemanticV2RepairSuccess()));
+            out.put(
+                    "querySemanticV2RepairReason",
+                    AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2RepairReason()));
+        }
         appendMultiTurnInheritanceDebug(out, ctx);
         appendScopeMergeDebugFields(out, ctx);
+        appendSemanticIntakeDebug(out, ctx);
         appendSemanticDomainRoutingDebug(out, ctx);
         appendSemanticContractCatalogDebug(out);
+    }
+
+    private static void appendSemanticIntakeDebug(LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx) {
+        SemanticIntakeResult intake = ctx != null ? ctx.getSemanticIntake() : null;
+        if (intake == null) {
+            out.put("intakeStatus", null);
+            out.put("questionMode", null);
+            out.put("normalizationType", null);
+            out.put("canonicalUserQuery", null);
+            out.put("intakeIsFollowUp", null);
+            out.put("intakeUsedPreviousContext", null);
+            out.put("intakePrimaryDomain", null);
+            out.put("intakeCandidateDomains", null);
+            out.put("intakeRouteType", null);
+            out.put("intakeConfidence", null);
+            out.put("intakeNeedClarification", null);
+            out.put("intakeClarificationQuestion", null);
+            out.put("intakeReason", null);
+            out.put("intakeSubQuestionsCount", null);
+            return;
+        }
+        out.put("intakeStatus", intake.getStatus() != null ? intake.getStatus().name() : null);
+        out.put(
+                "questionMode",
+                intake.getQuestionMode() != null ? intake.getQuestionMode().name() : null);
+        out.put(
+                "normalizationType",
+                intake.getNormalizationType() != null ? intake.getNormalizationType().name() : null);
+        out.put("canonicalUserQuery", AiHarnessSummaryUtils.blankToNull(intake.getCanonicalUserQuery()));
+        out.put("intakeIsFollowUp", intake.getIsFollowUp());
+        out.put("intakeUsedPreviousContext", intake.getUsedPreviousContext());
+        out.put("intakePrimaryDomain", AiHarnessSummaryUtils.blankToNull(intake.getPrimaryDomain()));
+        List<String> intakeCandidates = intake.getCandidateDomains();
+        out.put(
+                "intakeCandidateDomains",
+                intakeCandidates == null || intakeCandidates.isEmpty()
+                        ? null
+                        : new ArrayList<>(intakeCandidates));
+        out.put("intakeRouteType", AiHarnessSummaryUtils.blankToNull(intake.getRouteType()));
+        out.put("intakeConfidence", intake.getConfidence());
+        out.put("intakeNeedClarification", intake.getNeedClarification());
+        out.put(
+                "intakeClarificationQuestion",
+                AiHarnessSummaryUtils.blankToNull(intake.getClarificationQuestion()));
+        out.put("intakeReason", AiHarnessSummaryUtils.blankToNull(intake.getReason()));
+        List<SemanticIntakeSubQuestion> subs = intake.getSubQuestions();
+        out.put("intakeSubQuestionsCount", subs == null ? null : subs.size());
     }
 
     /** P2：Router + ContractSelector + 合同观测（主链已接入；Validator 暂不强拦截）。 */
@@ -224,6 +289,12 @@ final class AiHarnessSemanticSummaryAppender {
         m.put(
                 "activeStrictBlockers",
                 blockers == null || blockers.isEmpty() ? null : new ArrayList<>(blockers));
+        List<String> deprecatedBlockers = decision.getDeprecatedStrictBlockers();
+        m.put(
+                "deprecatedStrictBlockers",
+                deprecatedBlockers == null || deprecatedBlockers.isEmpty()
+                        ? null
+                        : new ArrayList<>(deprecatedBlockers));
         return m;
     }
 
@@ -280,30 +351,17 @@ final class AiHarnessSemanticSummaryAppender {
         }
     }
 
-    private static void appendPurchaseSemanticFrameHarnessDebug(
+    private static void appendSemanticFrameHarnessDebug(
             LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx) {
-        AiQuerySemanticParseResult qsp = ctx != null ? ctx.getQuerySemanticParse() : null;
-        if (qsp == null || qsp.isParseMissing()) {
+        HarnessSemanticFrameValidation harness = CurrentSemanticFrameValidatorRegistry.validateForHarness(ctx);
+        if (harness == null) {
             out.put("currentSemanticFrame", null);
             out.put("semanticFrameValidation", null);
             return;
         }
-        boolean purchaseDebug =
-                AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(ctx.getEffectivePathCode())
-                        || AiQuerySemanticLlmMergeHelper.shouldUsePurchaseSemanticFrameAdoption(qsp);
-        if (!purchaseDebug) {
-            out.put("currentSemanticFrame", null);
-            out.put("semanticFrameValidation", null);
-            return;
-        }
-        CurrentSemanticFrame frame = CurrentSemanticFrame.fromParseResult(qsp);
-        SemanticFrameValidationResult val =
-                CurrentSemanticFrameValidator.validate(
-                        frame,
-                        qsp,
-                        ctx.getPreviousTurn(),
-                        ctx.getNormalizedQuestion(),
-                        Boolean.TRUE.equals(ctx.getFollowUpRewriteApplied()));
+        var frame = harness.frame();
+        SemanticFrameValidationResult val = harness.result();
+        AiQuerySemanticParseResult qsp = ctx.getQuerySemanticParse();
         LinkedHashMap<String, Object> frameMap = new LinkedHashMap<>();
         frameMap.put("queryObject", AiHarnessSummaryUtils.blankToNull(frame.getQueryObject()));
         frameMap.put("operation", AiHarnessSummaryUtils.blankToNull(frame.getOperation()));
@@ -318,6 +376,7 @@ final class AiHarnessSemanticSummaryAppender {
             frameMap.put("answerPlanType", null);
         }
         LinkedHashMap<String, Object> valMap = new LinkedHashMap<>();
+        valMap.put("validationDomain", AiHarnessSummaryUtils.blankToNull(harness.validationDomain()));
         valMap.put("ok", val.ok());
         List<String> vc = val.violationCodes();
         valMap.put("violationCodes", vc == null || vc.isEmpty() ? null : new ArrayList<>(vc));
@@ -328,7 +387,9 @@ final class AiHarnessSemanticSummaryAppender {
         valMap.put("semanticClarificationQuestion", AiHarnessSummaryUtils.blankToNull(val.semanticClarificationQuestion()));
         out.put("currentSemanticFrame", frameMap);
         out.put("semanticFrameValidation", valMap);
-        appendPurchaseContractExportDebug(out);
+        if ("PURCHASE".equals(harness.validationDomain())) {
+            appendPurchaseContractExportDebug(out);
+        }
     }
 
     /** P1-B：Purchase 小合同计数（兼容字段）；详见 {@code semanticContractCatalog}。 */
@@ -392,6 +453,7 @@ final class AiHarnessSemanticSummaryAppender {
             LinkedHashMap<String, Object> met = new LinkedHashMap<>();
             met.put("primaryMetric", AiHarnessSummaryUtils.blankToNull(r.getMetric().getPrimaryMetric()));
             met.put("rankingType", AiHarnessSummaryUtils.blankToNull(r.getMetric().getRankingType()));
+            met.put("rankingTypeDebugOnly", Boolean.TRUE);
             met.put("purchaseSourceType", AiHarnessSummaryUtils.blankToNull(r.getMetric().getPurchaseSourceType()));
             met.put("stockReduceType", AiHarnessSummaryUtils.blankToNull(r.getMetric().getStockReduceType()));
             m.put("metric", met);

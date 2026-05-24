@@ -22,6 +22,7 @@ import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -308,12 +309,17 @@ final class AiHarnessTimeScopeSummaryAppender {
         out.put("dishName", AiHarnessSummaryUtils.blankToNull(ctx.getMentionedDishName()));
         out.put("dishProfitMetricType", AiHarnessSummaryUtils.blankToNull(ctx.getDishProfitMetricType()));
         if (AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(effectivePath)) {
-            out.put(
-                    "dishProfitMatrixWireMissing",
-                    DishProfitSemanticCapabilityMatrix.detectMatrixWireMissing(
-                                    ctx.getQuerySemanticParse(), effectivePath, canonStructuredWire)
-                            ? DishProfitSemanticCapabilityMatrix.MATRIX_WIRE_MISSING
-                            : null);
+            AiQuerySemanticParseResult sem = ctx.getQuerySemanticParse();
+            boolean wireMissing;
+            if (!SemanticContractCompletionEngine.isContractLockedParse(sem)) {
+                wireMissing = true;
+            } else if (!StringUtils.hasText(canonStructuredWire)) {
+                wireMissing = true;
+            } else {
+                wireMissing = DishProfitSemanticCapabilityMatrix.findFirstTurnRowByWire(canonStructuredWire) == null;
+            }
+            out.put("dishProfitMatrixWireMissing",
+                    wireMissing ? DishProfitSemanticCapabilityMatrix.MATRIX_WIRE_MISSING : null);
         } else {
             out.put("dishProfitMatrixWireMissing", null);
         }

@@ -28,13 +28,4 @@ public interface SemanticCapabilityContractExporter {
     }
 
     SemanticCapabilityContractExportSummary exportSummary();
-
-    default AllowedOutputContract buildAllowedContract(List<String> candidateDomains) {
-        return AllowedOutputContract.builder()
-                .candidateDomains(candidateDomains != null ? candidateDomains : List.of(domain()))
-                .entries(exportActiveContracts())
-                .globalRule("structuredIntentDetailWire MUST equal one of entries[].wire exactly")
-                .globalRule("Do not invent snake_case wire names not listed in entries[].wire")
-                .build();
-    }
 }

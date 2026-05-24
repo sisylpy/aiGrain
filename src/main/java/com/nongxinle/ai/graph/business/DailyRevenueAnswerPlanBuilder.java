@@ -9,6 +9,7 @@ import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import org.springframework.util.StringUtils;
 import com.alibaba.fastjson2.JSON;
@@ -40,6 +41,36 @@ public final class DailyRevenueAnswerPlanBuilder {
             return;
         }
         if (!state.isRevenueOverviewPath() && !state.isBusinessDiagnosisPath() && !state.isBusinessOverviewPath()) {
+            return;
+        }
+
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        AiQuerySemanticParseResult sem = rq != null ? rq.getQuerySemanticParse() : null;
+
+        // Contract-locked gate: 非 contract-locked 直接 early exit
+        if (sem == null || !SemanticContractCompletionEngine.isContractLockedParse(sem)) {
+            LinkedHashMap<String, Object> diag = new LinkedHashMap<>();
+            diag.put("attachAttempted", true);
+            diag.put("earlyReturnReason", "non_contract_locked_parse");
+            diag.put("expectedToolKey", AiBusinessToolIds.REVENUE_QUERY);
+            attachFailure(state, diag, "non_contract_locked_parse",
+                    "Revenue AnswerPlan requires contract-locked parse");
+            return;
+        }
+
+        // Contract-locked: verify completed wire exists and is Revenue canonical
+        String contractWire = sem.getSemanticSlots() != null
+                ? sem.getSemanticSlots().getStructuredIntentDetailWire() : null;
+        String canonWire = StringUtils.hasText(contractWire)
+                ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(contractWire.trim()) : null;
+        if (!StringUtils.hasText(canonWire) || !AiQuerySemanticLexicon.isStructuredRevenueDetail(canonWire)) {
+            LinkedHashMap<String, Object> diag = new LinkedHashMap<>();
+            diag.put("attachAttempted", true);
+            diag.put("earlyReturnReason", "missing_contract_completed_wire");
+            diag.put("expectedToolKey", AiBusinessToolIds.REVENUE_QUERY);
+            diag.put("rawContractWire", contractWire);
+            attachFailure(state, diag, "missing_contract_completed_wire",
+                    "No valid Revenue contract-completed wire in semantic slots");
             return;
         }
 
@@ -95,17 +126,16 @@ public final class DailyRevenueAnswerPlanBuilder {
         boolean statsEmpty = rawStats == null || rawStats.isEmpty();
         baseDiag.put("foundRevenueOverview", !statsEmpty || inner.get("totalRevenue") != null);
 
-        AiResolvedQueryContext rq = state.getResolvedQueryContext();
         String wire = resolveWire(rq);
         String prevWire = prevStructuredWire(rq);
         String inheritedPlanType = prevInheritedPlanType(rq);
         baseDiag.put("previousPlanType", inheritedPlanType);
         baseDiag.put("structuredIntentDetailWire", wire.isEmpty() ? null : wire);
 
-        String norm = rq != null ? rq.getNormalizedQuestion() : null;
+        String norm = rq.getNormalizedQuestion();
         String planType =
                 resolvePlanType(
-                        wire, inheritedPlanType, rq != null ? rq.getQuerySemanticParse() : null, norm);
+                        wire, inheritedPlanType, sem, norm);
         baseDiag.put("resolvedPlanType", planType);
         baseDiag.put("inheritedPlanType",
                 inheritedPlanType != null && inheritedPlanType.equals(planType) ? planType : null);
@@ -502,28 +532,33 @@ public final class DailyRevenueAnswerPlanBuilder {
             dbg.put("revenueMatrixWireMissing", RevenueSemanticCapabilityMatrix.MATRIX_WIRE_MISSING);
         }
         dbg.put("revenueAnswerPlanType", planType);
-        String prevWire = prevStructuredWire(rq);
-        if (StringUtils.hasText(prevWire) && StringUtils.hasText(canonWire)) {
-            String leak = RevenueSemanticCapabilityMatrix.detectPriorCompareOrRankingWireLeak(prevWire, canonWire);
-            if (leak != null) {
-                dbg.put("revenuePriorWireLeak", leak);
-            }
-        }
     }
 
+    /**
+     * Contract-locked 主链：wire 仅来自 contract-completed semanticSlots，不做 slots→wire 推导。
+     * 非 contract-locked 时调用方已 early exit，此处不做额外 guard。
+     */
     private static String resolveWire(AiResolvedQueryContext rq) {
-        if (rq == null || rq.getQueryIntent() == null) {
+        if (rq == null || rq.getQuerySemanticParse() == null) {
             return "";
         }
-        String merged = rq.getQueryIntent().getStructuredIntentDetail();
-        String norm = rq.getNormalizedQuestion();
-        String resolved =
-                RevenueSemanticCapabilityMatrix.resolveStructuredIntentDetailWire(
-                        rq.getQuerySemanticParse(), safePath(rq), merged, norm);
-        if (StringUtils.hasText(resolved)) {
-            return resolved.trim();
+        AiQuerySemanticParseResult sem = rq.getQuerySemanticParse();
+        if (!SemanticContractCompletionEngine.isContractLockedParse(sem)) {
+            return "";
         }
-        return merged == null ? "" : merged.trim();
+        AiQuerySemanticParseResult.SemanticSlotsPart ss = sem.getSemanticSlots();
+        if (ss == null) {
+            return "";
+        }
+        String wire = ss.getStructuredIntentDetailWire();
+        if (!StringUtils.hasText(wire)) {
+            return "";
+        }
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim());
+        if (StringUtils.hasText(canon) && AiQuerySemanticLexicon.isStructuredRevenueDetail(canon)) {
+            return canon;
+        }
+        return "";
     }
 
     private static String prevStructuredWire(AiResolvedQueryContext rq) {

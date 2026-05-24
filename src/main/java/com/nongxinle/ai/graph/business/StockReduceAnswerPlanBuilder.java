@@ -8,6 +8,7 @@ import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
 import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.StockReduceSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.alibaba.fastjson2.JSON;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +51,47 @@ public final class StockReduceAnswerPlanBuilder {
         baseDiag.put("toolResultKeys",
                 state.getToolResults() == null ? null : state.getToolResults().keySet());
 
+        // === CONTRACT-LOCKED GATE (P1) ===
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        AiQuerySemanticParseResult sem = rq != null ? rq.getQuerySemanticParse() : null;
+        boolean contractLocked = SemanticContractCompletionEngine.isContractLockedParse(sem);
+        baseDiag.put("contractLockedParse", contractLocked);
+        if (!contractLocked) {
+            baseDiag.put("earlyReturnReason", "non_contract_locked_parse");
+            baseDiag.put("failureReason", "non_contract_locked_parse");
+            baseDiag.put("failureDetail",
+                    "StockReduce AnswerPlan requires contract-locked parse; "
+                            + "non-contract-locked must early exit / clarification / known gap");
+            log.info("[StockReduceAnswerPlan] earlyExit runId={} reason=non_contract_locked_parse", state.getRunId());
+            writeEmptyEarlyExitPlan(state, baseDiag);
+            return;
+        }
+        // contract-locked but no completed wire → early exit
+        String completedWire = resolveWire(rq);
+        baseDiag.put("completedWire", completedWire.isEmpty() ? null : completedWire);
+        if (completedWire.isEmpty()) {
+            baseDiag.put("earlyReturnReason", "missing_contract_completed_wire");
+            baseDiag.put("failureReason", "missing_contract_completed_wire");
+            baseDiag.put("failureDetail",
+                    "contract-locked but no completed StructuredIntentDetail wire in queryIntent");
+            log.info("[StockReduceAnswerPlan] earlyExit runId={} reason=missing_contract_completed_wire",
+                    state.getRunId());
+            writeEmptyEarlyExitPlan(state, baseDiag);
+            return;
+        }
+        // wire not in StockReduce accepted canonical wire set → early exit
+        String canon = completedWire.isEmpty() ? null
+                : AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(completedWire.trim());
+        if (canon == null || !AiQuerySemanticLexicon.isStructuredStockReduceDetail(canon)) {
+            baseDiag.put("earlyReturnReason", "contract_wire_not_accepted_stock_reduce_matrix");
+            baseDiag.put("failureReason", "contract_wire_not_accepted_stock_reduce_matrix");
+            baseDiag.put("failureDetail", "contract wire not accepted by StockReduce matrix: " + completedWire);
+            baseDiag.put("rejectedWire", completedWire);
+            log.info("[StockReduceAnswerPlan] earlyExit runId={} reason=contract_wire_not_accepted", state.getRunId());
+            writeEmptyEarlyExitPlan(state, baseDiag);
+            return;
+        }
+
         Object env = state.getToolResults() == null ? null
                 : state.getToolResults().get(AiBusinessToolIds.STOCK_REDUCE_QUERY);
         baseDiag.put("hasStockReduceToolResult", env != null);
@@ -82,7 +124,6 @@ public final class StockReduceAnswerPlanBuilder {
             return;
         }
 
-        AiResolvedQueryContext rq = state.getResolvedQueryContext();
         try {
             StockReduceAnswerPlan plan = build(state, inner, rq, baseDiag);
             state.setStockReduceAnswerPlan(plan);
@@ -97,6 +138,20 @@ public final class StockReduceAnswerPlanBuilder {
             baseDiag.put("exception", ex.getClass().getName());
             attachFailure(state, baseDiag, "build_exception", ex.getMessage());
         }
+    }
+
+    private static void writeEmptyEarlyExitPlan(AiRunState state, Map<String, Object> diag) {
+        StockReduceAnswerPlan plan = StockReduceAnswerPlan.builder()
+                .planType("UNKNOWN")
+                .reduceType(StockReduceAnswerPlan.REDUCE_TYPE_ALL)
+                .scopeLabel("")
+                .timeLabel("")
+                .summary(new LinkedHashMap<>())
+                .focusRows(new ArrayList<>())
+                .secondaryRows(new ArrayList<>())
+                .debug(new LinkedHashMap<>(diag))
+                .build();
+        state.setStockReduceAnswerPlan(plan);
     }
 
     private static void attachFailure(AiRunState state, Map<String, Object> diag, String reasonCode, String detail) {

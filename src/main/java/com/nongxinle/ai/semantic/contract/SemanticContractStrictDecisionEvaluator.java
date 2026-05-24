@@ -1,7 +1,7 @@
 package com.nongxinle.ai.semantic.contract;
 
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteType;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteType;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -20,7 +20,8 @@ public final class SemanticContractStrictDecisionEvaluator {
             DomainContractSelectionResult selection,
             EffectiveSemanticContractFrame frame,
             boolean strictEnabled) {
-        List<String> blockers = SemanticContractStrictBlockerCatalog.activeBlockerIds();
+        List<String> activeBlockers = SemanticContractStrictBlockerCatalog.activeBlockerIds();
+        List<String> deprecatedBlockers = SemanticContractStrictBlockerCatalog.deprecatedBlockerIds();
 
         if (route == null) {
             return buildViolation(
@@ -34,7 +35,8 @@ public final class SemanticContractStrictDecisionEvaluator {
                     List.of(),
                     0,
                     null,
-                    blockers);
+                    activeBlockers,
+                    deprecatedBlockers);
         }
 
         SemanticDomainRouteType routeType = route.getRouteType();
@@ -57,7 +59,8 @@ public final class SemanticContractStrictDecisionEvaluator {
                     List.of(),
                     0,
                     null,
-                    blockers);
+                    activeBlockers,
+                    deprecatedBlockers);
         }
 
         if (routeType == SemanticDomainRouteType.AMBIGUOUS
@@ -75,7 +78,8 @@ public final class SemanticContractStrictDecisionEvaluator {
                     List.of(),
                     0,
                     null,
-                    blockers);
+                    activeBlockers,
+                    deprecatedBlockers);
         }
 
         if (selection == null || selection.isCapabilityContractMissing()) {
@@ -95,7 +99,8 @@ public final class SemanticContractStrictDecisionEvaluator {
                     List.of(),
                     selection != null ? selection.getSelectedActiveContractCount() : 0,
                     null,
-                    blockers);
+                    activeBlockers,
+                    deprecatedBlockers);
         }
 
         SemanticContractValidationDebug validation =
@@ -114,7 +119,8 @@ public final class SemanticContractStrictDecisionEvaluator {
                             validation != null ? validation.getAllowedContractCount() : 0)
                     .matchedContractId(
                             validation != null ? validation.getMatchedContractId() : null)
-                    .activeStrictBlockers(blockers)
+                    .activeStrictBlockers(activeBlockers)
+                    .deprecatedStrictBlockers(deprecatedBlockers)
                     .build();
         }
 
@@ -129,7 +135,8 @@ public final class SemanticContractStrictDecisionEvaluator {
                 validation.getAllowedWires() != null ? validation.getAllowedWires() : List.of(),
                 validation.getAllowedContractCount(),
                 validation.getMatchedContractId(),
-                blockers);
+                activeBlockers,
+                deprecatedBlockers);
     }
 
     private static SemanticContractStrictDecision buildViolation(
@@ -143,7 +150,8 @@ public final class SemanticContractStrictDecisionEvaluator {
             List<String> allowedWires,
             int allowedContractCount,
             String matchedContractId,
-            List<String> blockers) {
+            List<String> activeBlockers,
+            List<String> deprecatedBlockers) {
         String question =
                 SemanticContractClarificationQuestionFactory.buildQuestion(
                         SemanticContractClarificationQuestionFactory.SemanticContractClarificationRequest
@@ -168,7 +176,8 @@ public final class SemanticContractStrictDecisionEvaluator {
                 .allowedContractCount(allowedContractCount)
                 .matchedContractId(matchedContractId)
                 .clarificationQuestion(question)
-                .activeStrictBlockers(blockers)
+                .activeStrictBlockers(activeBlockers)
+                .deprecatedStrictBlockers(deprecatedBlockers)
                 .build();
     }
 

@@ -4,8 +4,9 @@ import com.nongxinle.ai.context.AiResolvedDataScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import com.nongxinle.ai.mapping.AiRoleMapper;
-import com.nongxinle.ai.scope.AiQueryScope;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.security.AiPermissionGuard;
 import com.nongxinle.ai.tool.ToolRegistry;
@@ -72,8 +73,6 @@ public class DishProfitQueryToolExecutor {
             m.put(AiBusinessToolIds.ARG_STOP_DATE, stop);
         }
 
-        AiQueryScope scopeSnapshot = state != null ? state.getScope() : null;
-
         boolean dishProfitGroup =
                 BusinessToolExecutionNode.shouldRouteGroupWideDishInsight(state);
         List<Integer> visibleStoreRoots =
@@ -90,30 +89,25 @@ public class DishProfitQueryToolExecutor {
                     BusinessToolExecutionNode.extractSqlQueryDepartmentIdsForTools(state.getResolvedQueryContext());
             if (!fromResolvedCtx.isEmpty()) {
                 m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS, new ArrayList<>(fromResolvedCtx));
-            } else if (scopeSnapshot != null
-                    && scopeSnapshot.getResolvedDepartmentIds() != null
-                    && !scopeSnapshot.getResolvedDepartmentIds().isEmpty()) {
-                log.warn(
-                        "[DishProfitQueryToolExecutor] AiResolvedDataScope 无有效 SQL 部门 IN，回退 AiQueryScope.resolvedDepartmentIds（可能滞后）。runId={}",
-                        state != null ? state.getRunId() : null);
-                m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS,
-                        new ArrayList<>(scopeSnapshot.getResolvedDepartmentIds()));
             }
         }
 
         String raw = state != null ? state.getNormalizedUserInput() : null;
-        if (raw != null && !raw.isBlank()) {
+        AiResolvedQueryContext rqCtx = state != null ? state.getResolvedQueryContext() : null;
+        boolean contractLocked =
+                rqCtx != null
+                        && SemanticContractCompletionEngine.isContractLockedParse(rqCtx.getQuerySemanticParse());
+        if (!contractLocked && raw != null && !raw.isBlank()) {
+            // DEBUG_ONLY — 不参与 SQL/业务路由，仅 Tool 回显观测
             m.put(AiBusinessToolIds.ARG_USER_QUESTION_HINT, raw.trim());
         }
-        AiResolvedQueryContext rqCtx = state != null ? state.getResolvedQueryContext() : null;
-        if (rqCtx != null) {
-            var qix = rqCtx.getQueryIntent();
-            if (qix != null && qix.getStructuredIntentDetail() != null && !qix.getStructuredIntentDetail().isBlank()) {
-                m.put(AiBusinessToolIds.ARG_DISH_PROFIT_STRUCTURED_DETAIL, qix.getStructuredIntentDetail().trim());
-            }
-            if (rqCtx.getMentionedDishName() != null && !rqCtx.getMentionedDishName().isBlank()) {
-                m.put(AiBusinessToolIds.ARG_DISH_NAME_FOCUS_HINT, rqCtx.getMentionedDishName().trim());
-            }
+        String structuredWire = ToolRequestContractExecutionParamSupport.resolveDishProfitStructuredDetailWire(rqCtx);
+        if (structuredWire != null && !structuredWire.isBlank()) {
+            m.put(AiBusinessToolIds.ARG_DISH_PROFIT_STRUCTURED_DETAIL, structuredWire.trim());
+        }
+        String dishFocus = ToolRequestContractExecutionParamSupport.resolveDishNameFocusHint(rqCtx);
+        if (dishFocus != null && !dishFocus.isBlank()) {
+            m.put(AiBusinessToolIds.ARG_DISH_NAME_FOCUS_HINT, dishFocus.trim());
         }
         AiUserContext ctxSnap = state != null ? state.getAiUserContext() : null;
         if (ctxSnap != null) {
@@ -131,8 +125,6 @@ public class DishProfitQueryToolExecutor {
             Integer derivedPc = deriveParentStoreCountForDishTool(rqCtx);
             if (derivedPc != null && derivedPc > 0) {
                 m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, derivedPc);
-            } else if (scopeSnapshot != null && scopeSnapshot.getParentStoreCount() > 0) {
-                m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, scopeSnapshot.getParentStoreCount());
             }
         }
 

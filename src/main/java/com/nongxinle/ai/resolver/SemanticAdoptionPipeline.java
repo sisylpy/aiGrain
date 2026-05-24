@@ -6,13 +6,13 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
-import com.nongxinle.ai.semantic.SemanticParseFallbackPolicy;
+import com.nongxinle.ai.semantic.SemanticParseClarificationPolicy;
 import com.nongxinle.ai.semantic.SemanticTimeContractCheck;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.contract.SemanticContractClarificationQuestionFactory;
 import com.nongxinle.ai.semantic.frame.CurrentSemanticFrame;
-import com.nongxinle.ai.semantic.frame.CurrentSemanticFrameValidator;
+import com.nongxinle.ai.semantic.frame.PurchaseCurrentSemanticFrameValidator;
 import com.nongxinle.ai.semantic.frame.SemanticFrameValidationResult;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -70,7 +70,7 @@ public class SemanticAdoptionPipeline {
             DomainContractSelectionResult contractSelection,
             String rewriteInheritedAnchorType,
             String rewriteInheritedAnchorName) {
-        if (sem == null || SemanticParseFallbackPolicy.needSemanticParseClarification(sem, querySemanticMinConfidence)) {
+        if (sem == null || SemanticParseClarificationPolicy.needSemanticParseClarification(sem, querySemanticMinConfidence)) {
             return null;
         }
 
@@ -104,7 +104,7 @@ public class SemanticAdoptionPipeline {
             }
             sem = sem.toBuilder().needClarification(true).clarificationQuestion(question).build();
             return new SemanticAdoptionAttempt(
-                    sem,
+                    preserveV2RepairTrace(rawForDebug, sem),
                     null,
                     null,
                     null,
@@ -119,31 +119,39 @@ public class SemanticAdoptionPipeline {
                             ? new LinkedHashMap<>(sem.getContractCompletionTrace())
                             : new LinkedHashMap<>();
             trace.put("contractCompletionApplied", true);
+            sem = preserveV2RepairTrace(rawForDebug, sem.toBuilder().contractCompletionTrace(trace).build());
+        } else {
+            sem = preserveV2RepairTrace(rawForDebug, sem);
+        }
+        if (SemanticContractCompletionEngine.isLegacyNoCatalogParse(sem)) {
+            Map<String, Object> trace =
+                    sem.getContractCompletionTrace() != null
+                            ? new LinkedHashMap<>(sem.getContractCompletionTrace())
+                            : new LinkedHashMap<>();
+            trace.put("adoptionPath", "legacy_no_catalog");
             sem = sem.toBuilder().contractCompletionTrace(trace).build();
         }
 
-        boolean contractLocked = SemanticContractCompletionEngine.hasSelectedContractId(sem);
+        boolean contractLocked = SemanticContractCompletionEngine.isContractLockedParse(sem);
         boolean purchaseFrameAdoption =
                 !contractLocked
                         && !AiQuerySemanticLlmMergeHelper.currentTurnMapsToExplicitNonPurchasePath(sem)
                         && AiQuerySemanticLlmMergeHelper.shouldUsePurchaseSemanticFrameAdoption(sem)
                         && !AiQuerySemanticLlmMergeHelper.hasExplicitStockReduceRouteSignal(sem);
+        boolean basicDomainContractEntryAdoption =
+                BasicDomainContractEntryAdoptionSupport.shouldRunBasicDomainContractEntryAdoption(
+                        sem, contractSelection, contractLocked, purchaseFrameAdoption);
         if (purchaseFrameAdoption) {
-            sem = AiQuerySemanticSlotMerge.reconcilePurchaseSourceFacetDefaults(sem);
-            sem = AiQuerySemanticSlotMerge.reconcileMetricWithSourceFacet(sem);
-            sem = AiQuerySemanticSlotMerge.reconcilePurchaseGoodsRankingSemanticSlots(sem);
-            sem = AiQuerySemanticSlotMerge.reconcilePurchaseStructuredWireFromSemanticSlots(sem);
             sem =
                     AiQuerySemanticSlotMerge.reconcilePurchaseCompleteUtteranceDefaults(
                             sem, followUpRewriteApplied);
-            sem = AiQuerySemanticSlotMerge.reconcileAnswerPlanTypeFromWire(sem);
             sem =
                     CurrentSemanticFrame.canonicalizePurchaseFollowUp(
                             sem, followUpRewriteApplied ? null : previousTurn);
             CurrentSemanticFrame frame = CurrentSemanticFrame.buildFrame(sem);
             SemanticFrameValidationResult frameVal =
-                    CurrentSemanticFrameValidator.validate(
-                            frame, sem, previousTurn, normalized, followUpRewriteApplied);
+                    PurchaseCurrentSemanticFrameValidator.validate(
+                            frame, sem, previousTurn, normalized, followUpRewriteApplied, contractSelection);
             if (frameVal.needSemanticClarification()) {
                 sem.setNeedClarification(true);
                 String frameQuestion = frameVal.semanticClarificationQuestion();
@@ -156,10 +164,32 @@ public class SemanticAdoptionPipeline {
                                 ? String.join(",", frameCodes)
                                 : "frame_validation";
                 return new SemanticAdoptionAttempt(
-                        sem, null, null, null, frameRejectReason, frameQuestion);
+                        preserveV2RepairTrace(rawForDebug, sem), null, null, null, frameRejectReason, frameQuestion);
             }
             sem = AiQuerySemanticSlotMerge.reconcileSemanticSlotsViaCapabilityMatrices(sem);
             sem.setPurchaseSemanticFramePrimaryMerge(true);
+        } else if (basicDomainContractEntryAdoption) {
+            SemanticFrameValidationResult frameVal =
+                    BasicDomainContractEntryAdoptionSupport.validateBasicDomainContractEntry(
+                            sem,
+                            previousTurn,
+                            normalized,
+                            followUpRewriteApplied,
+                            contractSelection);
+            if (frameVal.needSemanticClarification()) {
+                sem.setNeedClarification(true);
+                String frameQuestion = frameVal.semanticClarificationQuestion();
+                if (StringUtils.hasText(frameQuestion)) {
+                    sem.setClarificationQuestion(frameQuestion);
+                }
+                List<String> frameCodes = frameVal.violationCodes();
+                String frameRejectReason =
+                        frameCodes != null && !frameCodes.isEmpty()
+                                ? String.join(",", frameCodes)
+                                : "basic_domain_contract_entry_validation";
+                return new SemanticAdoptionAttempt(
+                        preserveV2RepairTrace(rawForDebug, sem), null, null, null, frameRejectReason, frameQuestion);
+            }
         } else if (!contractLocked) {
             sem = AiQuerySemanticSlotMerge.reconcileSemanticSlotsViaCapabilityMatrices(sem);
         }
@@ -168,7 +198,13 @@ public class SemanticAdoptionPipeline {
                 AiQuerySemanticLlmMergeHelper.mergeIntent(
                         baseline, sem, querySemanticMinConfidence, normalized, previousTurn);
         if (!StringUtils.hasText(merged.getPathCode())) {
-            return null;
+            return new SemanticAdoptionAttempt(
+                    preserveV2RepairTrace(rawForDebug, sem),
+                    null,
+                    null,
+                    null,
+                    "v2_no_routable_path",
+                    null);
         }
         AiQuerySemanticParseResult.SemanticSlotsPart alignedSlots =
                 AiQuerySemanticSlotMerge.alignSemanticSlotsForTurnMemoryPersistence(
@@ -190,6 +226,22 @@ public class SemanticAdoptionPipeline {
                         sem, previousTurn, today);
         SemanticTimeContractCheck.Result timeContract =
                 SemanticTimeContractCheck.check(sem, previousTurn, today);
-        return new SemanticAdoptionAttempt(sem, merged, tentative, timeContract, null, null);
+        return new SemanticAdoptionAttempt(
+                preserveV2RepairTrace(rawForDebug, sem), merged, tentative, timeContract, null, null);
+    }
+
+    private static AiQuerySemanticParseResult preserveV2RepairTrace(
+            AiQuerySemanticParseResult anchor, AiQuerySemanticParseResult sem) {
+        if (anchor == null || sem == null || !Boolean.TRUE.equals(anchor.getQuerySemanticV2RepairAttempted())) {
+            return sem;
+        }
+        if (Boolean.TRUE.equals(sem.getQuerySemanticV2RepairAttempted())) {
+            return sem;
+        }
+        return sem.toBuilder()
+                .querySemanticV2RepairAttempted(anchor.getQuerySemanticV2RepairAttempted())
+                .querySemanticV2RepairSuccess(anchor.getQuerySemanticV2RepairSuccess())
+                .querySemanticV2RepairReason(anchor.getQuerySemanticV2RepairReason())
+                .build();
     }
 }

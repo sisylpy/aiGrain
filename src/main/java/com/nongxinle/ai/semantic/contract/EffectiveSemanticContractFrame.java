@@ -17,6 +17,8 @@ import java.util.Locale;
  * 经 {@link DomainContractFrameCanonicalizerRegistry} 做 domain canonicalize，再供
  * {@link SemanticContractValidator} / {@link SemanticContractStrictDecisionEvaluator} 使用。
  * <p>P4-J2：contract selection only from {@code selectedContractId}；canonicalizer 仅轻量规范化。
+ * TODO(LEGACY_ONLY-CLEANUP): 无 selectedContractId 时（legacy 路径）REVENUE/STOCK_REDUCE/WAREHOUSE 仍可能
+ * 经 Matrix canonicalize 改写槽位；contract entry 主链应仅 light-normalize。
  * 命名中的 Frame 仅表示「合同校验槽位视图」，不替代 graph/composer 侧 business context frame。
  */
 @Value

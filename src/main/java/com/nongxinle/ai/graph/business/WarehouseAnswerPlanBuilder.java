@@ -10,6 +10,7 @@ import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
@@ -44,11 +45,39 @@ public final class WarehouseAnswerPlanBuilder {
             return;
         }
 
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        AiQuerySemanticParseResult sem = semantic(rq);
+
+        // contract-locked gate: non-contract-locked must early exit — no wire consumption, no plan.
+        if (sem == null || !SemanticContractCompletionEngine.isContractLockedParse(sem)) {
+            log.info("[WarehouseAnswerPlan] skipped runId={} reason=non_contract_locked_parse",
+                    state.getRunId());
+            return;
+        }
+
+        String contractWire = resolveWire(rq);
+        if (!StringUtils.hasText(contractWire)) {
+            log.info("[WarehouseAnswerPlan] skipped runId={} reason=missing_contract_completed_wire",
+                    state.getRunId());
+            return;
+        }
+
+        WarehouseSemanticCapabilityMatrixRow matrixRow =
+                WarehouseSemanticCapabilityMatrix.resolveMatrixRow(
+                        AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK, contractWire, sem, rq);
+        if (matrixRow == null) {
+            log.info("[WarehouseAnswerPlan] skipped runId={} reason=contract_wire_not_accepted_warehouse_matrix rejectedWire={}",
+                    state.getRunId(), contractWire);
+            return;
+        }
+
         LinkedHashMap<String, Object> baseDiag = new LinkedHashMap<>();
         baseDiag.put("attachAttempted", true);
         baseDiag.put("expectedToolKey", AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
         baseDiag.put("source", "WarehouseStockOverviewTool");
         baseDiag.put("sourceToolKey", AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
+        baseDiag.put("contractLocked", true);
+        baseDiag.put("contractWire", contractWire);
 
         Object env = state.getToolResults() == null ? null
                 : state.getToolResults().get(AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
@@ -71,7 +100,6 @@ public final class WarehouseAnswerPlanBuilder {
             return;
         }
 
-        AiResolvedQueryContext rq = state.getResolvedQueryContext();
         try {
             WarehouseAnswerPlan plan = build(state, wo, rq, baseDiag);
             state.setWarehouseAnswerPlan(plan);

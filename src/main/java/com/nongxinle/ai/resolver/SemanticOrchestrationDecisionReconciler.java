@@ -6,7 +6,7 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
-import com.nongxinle.ai.semantic.SemanticParseFallbackPolicy;
+import com.nongxinle.ai.semantic.SemanticParseClarificationPolicy;
 import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.BusinessOverviewSemanticCapabilityMatrix;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
@@ -173,7 +173,7 @@ public final class SemanticOrchestrationDecisionReconciler {
                     StringUtils.hasText(orchestrationClarificationQuestionField)
                             ? orchestrationClarificationQuestionField
                             : (!StringUtils.hasText(semanticClarificationQuestion)
-                                    ? SemanticParseFallbackPolicy.clarificationQuestion()
+                                    ? SemanticParseClarificationPolicy.clarificationQuestion()
                                     : semanticClarificationQuestion);
             return new ClarificationState(true, q);
         }

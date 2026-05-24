@@ -1,7 +1,6 @@
 package com.nongxinle.ai.resolver;
 
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
-import com.nongxinle.ai.followup.rewrite.FollowUpRewriteResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.EffectiveSemanticContractFrame;
@@ -10,7 +9,7 @@ import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecisionEvaluator;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidator;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 
 /**
  * Contract validation 组装：EffectiveSemanticContractFrame → Validator.observe → StrictDecision。
@@ -27,7 +26,6 @@ public final class SemanticContractValidationPipeline {
             AiQuerySemanticParseResult querySemanticV2Raw,
             AiConversationTurnMemory previousTurnForParser,
             boolean followUpRewriteApplied,
-            FollowUpRewriteResult rewriteResult,
             SemanticDomainRouteResult semanticDomainRoute,
             boolean strictEnabled) {}
 
@@ -55,14 +53,8 @@ public final class SemanticContractValidationPipeline {
                         parseForContractValidation,
                         request.domainContractSelection().getSelectedDomain(),
                         request.previousTurnForParser(),
-                        request.followUpRewriteApplied() && request.rewriteResult() != null
-                                ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
-                                        request.rewriteResult().getInheritedAnchorType())
-                                : null,
-                        request.followUpRewriteApplied() && request.rewriteResult() != null
-                                ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
-                                        request.rewriteResult().getInheritedAnchorName())
-                                : null);
+                        null,
+                        null);
         SemanticContractValidationDebug validation =
                 SemanticContractValidator.observe(
                         effectiveContractFrame, request.domainContractSelection());
@@ -114,6 +106,10 @@ public final class SemanticContractValidationPipeline {
                             .activeStrictBlockers(
                                     strictDecision != null && strictDecision.getActiveStrictBlockers() != null
                                             ? strictDecision.getActiveStrictBlockers()
+                                            : java.util.List.of())
+                            .deprecatedStrictBlockers(
+                                    strictDecision != null && strictDecision.getDeprecatedStrictBlockers() != null
+                                            ? strictDecision.getDeprecatedStrictBlockers()
                                             : java.util.List.of())
                             .build();
         }

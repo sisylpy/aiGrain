@@ -1,0 +1,48 @@
+---
+description: Java 不得猜业务语义 — Harness / Semantic / Matrix / AnswerPlan / Tool Request / Composer 强约束
+alwaysApply: true
+---
+
+# Java 不得猜业务语义
+
+> 完整说明见 `docs/ai/harness-java-boundary-rules.md`。
+>
+> 本规则适用于所有 **Harness / Semantic / Matrix / AnswerPlan / Tool Request / Composer** 相关修改。
+
+## 总原则
+
+- **LLM + contract** 决定 `selectedContractId` / `wire` / `semanticSlots`。
+- **Java 只能做**：合同校验、权限校验、范围校验、Tool 入参构造、确定性查表、AnswerPlan 举证、Composer 输入准备、缺失字段时澄清。
+- **Java 不得猜业务语义**。
+
+## 硬禁止项（无例外）
+
+- ❌ `contains` / `indexOf` / `matches` 推 `intent` / `path` / `wire`
+- ❌ alias / 同义词兜底归一
+- ❌ `semanticSlots` → `wire` 二次推导
+- ❌ raw LLM `structuredIntentDetail` / raw slots wire 进入 AnswerPlan
+- ❌ `metric.rankingType` 抢主链
+- ❌ 保留 no-op / deprecated / legacy 壳误导后续开发
+- ❌ 新功能替代旧功能后旧逻辑残留或主链旁路
+- ❌ 为了让单个 case 通过而恢复旧 fallback
+
+## 宁可 early exit
+
+- 非 `contract-locked` 不允许进入业务执行。
+- 宁可 `early exit` / `known gap` / `clarification`，也不恢复 Java 猜语义。
+- `earlyReturnReason` 必须精确反映真实原因，不允许统一兜底。
+
+## 审计关键词
+
+以下关键词出现时必须确认：它是在做**确定性校验**还是在**猜业务语义**。
+
+`infer` `fallback` `legacy` `deprecated` `resolveStructuredIntentDetailWire` `inferMatrixWire` `reconcileSemanticSlots` `applyXXXFromSlots` `contains` `rawMessage` `normalizedUserMessage` `extractXXXFromQuestion` `metric.rankingType` `alias` `no-op`
+
+如果是猜语义 → 优先删除 / 摘主链 / 标 `LEGACY_ONLY`（不可用于主链）。
+
+## 合法能力清单
+
+- contract-completed `wire` → Matrix Row 查表 → `planType` / `metricType`
+- Tool 结果中选择事实、排序、聚合
+- 矩阵 `wire → row` 纯查表（不读 `rawMessage`）
+- scope legacy helper（门店范围继承抑制等非语义判断）

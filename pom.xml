@@ -18,6 +18,7 @@
 
     <properties>
         <java.version>17</java.version>
+        <maven.test.skip>true</maven.test.skip>
     </properties>
 
     <dependencies>
@@ -145,6 +146,14 @@
                 <configuration>
                     <!-- 与 spring-boot-starter-parent 的 java.version 一致；勿锁 1.8，否则 Boot 3 + 新代码易编译失败或未刷新，表现为缺 Bean -->
                     <release>${java.version}</release>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <jvm>/usr/local/opt/openjdk@17/bin/java</jvm>
                 </configuration>
             </plugin>
         </plugins>

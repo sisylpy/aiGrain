@@ -32,6 +32,10 @@ public final class CostInsightIntentConvergence {
 
     /**
      * 门店/部门账号在问句中显式提到「集团」且仍属成本意图时，答复需提示已收窄到本店（数据范围由 org scope 保证）。
+     * <p>
+     * TODO(CLEANUP): 当前逻辑仅用于展示 disclaimer，但仍属于 Java 文本关键词判断。
+     * 后续应改为由 SemanticIntake / semanticSlots / scopeAction 明确表达集团口径，
+     * 禁止通过中文 contains 推断用户范围或业务语义。
      */
     public static boolean asksGroupWideCostWording(String normalizedQuestion) {
         if (normalizedQuestion == null || normalizedQuestion.isBlank()) {

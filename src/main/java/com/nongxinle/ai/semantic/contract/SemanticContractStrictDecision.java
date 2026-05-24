@@ -36,7 +36,15 @@ public class SemanticContractStrictDecision {
     String matchedContractId;
     /** {@link SemanticContractClarificationQuestionFactory} 生成；observe 模式亦写入便于预览。 */
     String clarificationQuestion;
-    /** 仍阻塞全域 strict 的旧 fallback 登记 id（只读 Catalog；P4 删除）。 */
+    /**
+     * 仍阻塞 strict enforce 的 blocker 登记 id（Catalog {@code STATUS_ACTIVE} only）。
+     * contract entry 校验通过时应为空。
+     */
     @Singular("activeStrictBlocker")
     List<String> activeStrictBlockers;
+    /**
+     * 已降级为 debug-only / known-debt 的 blocker 登记 id；Harness replay 观测用，不 enforce。
+     */
+    @Singular("deprecatedStrictBlocker")
+    List<String> deprecatedStrictBlockers;
 }

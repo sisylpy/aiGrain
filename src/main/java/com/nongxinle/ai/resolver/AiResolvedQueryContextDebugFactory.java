@@ -1,17 +1,13 @@
 package com.nongxinle.ai.resolver;
 
-import com.nongxinle.ai.followup.rewrite.FollowUpRewriteDebug;
-import com.nongxinle.ai.followup.rewrite.FollowUpRewriteResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteType;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteType;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 /**
  * {@link AiResolvedQueryContext} builder 用 debug 字段组装（字段名与 map 结构不变）。
@@ -62,36 +58,22 @@ public final class AiResolvedQueryContextDebugFactory {
         if (r.getRequestedScope() != null) {
             keys.add("requestedScope");
         }
-        if (r.getMetric() != null && StringUtils.hasText(r.getMetric().getRankingType())) {
-            keys.add("metric.rankingType");
-        }
         if (r.getSemanticSlots() != null) {
             keys.add("semanticSlots");
         }
         return keys.isEmpty() ? null : keys;
     }
 
-    public static Map<String, Object> toFollowUpRewriteDebugMap(FollowUpRewriteResult rewriteResult) {
-        if (rewriteResult == null || rewriteResult.getDebug() == null) {
+    /** debug-only / deprecated 观测字段；不计入主链 adopted semantic。 */
+    public static List<String> describeDeprecatedDebugSemanticFields(AiQuerySemanticParseResult r) {
+        if (r == null) {
             return null;
         }
-        FollowUpRewriteDebug d = rewriteResult.getDebug();
-        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
-        m.put("detector", blankToNullSemantic(d.getDetector()));
-        m.put("promptId", blankToNullSemantic(d.getPromptId()));
-        if (d.getConfidence() != null) {
-            m.put("confidence", d.getConfidence());
+        List<String> keys = new ArrayList<>();
+        if (r.getMetric() != null && StringUtils.hasText(r.getMetric().getRankingType())) {
+            keys.add("metric.rankingType");
         }
-        if (StringUtils.hasText(d.getLlmRawText())) {
-            m.put("llmRawText", d.getLlmRawText().trim());
-        }
-        if (StringUtils.hasText(rewriteResult.getClarificationQuestion())) {
-            m.put("clarificationQuestion", rewriteResult.getClarificationQuestion().trim());
-        }
-        if (d.getExtras() != null && !d.getExtras().isEmpty()) {
-            m.put("extras", new LinkedHashMap<>(d.getExtras()));
-        }
-        return m;
+        return keys.isEmpty() ? null : keys;
     }
 
     public static Boolean observeRouteParserDomainMismatch(

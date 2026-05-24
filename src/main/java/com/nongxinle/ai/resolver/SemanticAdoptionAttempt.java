@@ -48,7 +48,7 @@ record SemanticAdoptionAttempt(
         return semantic != null && mergedIntent != null && timeContract != null && timeContract.valid();
     }
 
-    /** {@link com.nongxinle.ai.semantic.frame.CurrentSemanticFrameValidator} 等业务 frame 校验失败时的具体澄清句。 */
+    /** {@link com.nongxinle.ai.semantic.frame.PurchaseCurrentSemanticFrameValidator} 等业务 frame 校验失败时的具体澄清句。 */
     boolean frameClarificationRequired() {
         return semanticClarificationQuestion != null && !semanticClarificationQuestion.isBlank();
     }

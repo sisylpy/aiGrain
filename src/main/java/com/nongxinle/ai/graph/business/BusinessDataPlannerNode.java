@@ -14,6 +14,8 @@ import com.nongxinle.ai.security.AiAnswerBoundary;
 import com.nongxinle.ai.security.AiPermissionGuard;
 import com.nongxinle.ai.security.AiPermissions;
 import com.nongxinle.ai.security.AiRoleCodes;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.BusinessOverviewSemanticCapabilityMatrix;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
@@ -58,12 +60,11 @@ public class BusinessDataPlannerNode implements AgentNode {
         var rCtx = state.getResolvedQueryContext();
         var rqi = rCtx != null ? rCtx.getQueryIntent() : null;
         boolean semanticClarifies = rCtx != null && rCtx.isNeedSemanticClarification();
+        // Phase 2：调度主轴仅 effectivePathCode；禁止回退 queryIntent.pathCode 形成双源 truth。
         String effPath =
                 !semanticClarifies && rCtx != null && StringUtils.hasText(rCtx.getEffectivePathCode())
                         ? rCtx.getEffectivePathCode().trim()
-                        : (!semanticClarifies && rqi != null && StringUtils.hasText(rqi.getPathCode())
-                                ? rqi.getPathCode().trim()
-                                : null);
+                        : null;
 
         // 主路由以 LLM 解析为准：若已有有效 path，不因历史非 BUSINESS_CHAT workspace 截断经营 Tool 规划。
         boolean inBusinessChat = state.getWorkspaceMode() == AiWorkspaceMode.BUSINESS_CHAT
@@ -204,13 +205,11 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setRevenueAnswerPlan(null);
             state.setDishProfitPath(true);
             plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_DISH_PROFIT_TOOLS);
-            if (rCtx != null && rqi != null && StringUtils.hasText(rqi.getStructuredIntentDetail())) {
-                String ingWire =
-                        AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(rqi.getStructuredIntentDetail());
-                if (AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(ingWire)
-                        && !plan.contains(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN)) {
-                    plan.add(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN);
-                }
+            String ingWire = resolveDishIngredientBreakdownWire(rCtx, rqi);
+            if (StringUtils.hasText(ingWire)
+                    && AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(ingWire)
+                    && !plan.contains(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN)) {
+                plan.add(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN);
             }
             state.setDataPlanTools(plan);
         } else if (stockReduceStandaloneIntent) {
@@ -262,6 +261,15 @@ public class BusinessDataPlannerNode implements AgentNode {
             plan = state.getDataPlanTools();
         }
 
+        String plannerToolsSource = null;
+        if (plan != null && !plan.isEmpty()) {
+            DataPlannerContractToolsSupport.ResolveResult contractTools =
+                    DataPlannerContractToolsSupport.resolveDataPlanTools(rCtx, effPath, plan);
+            plan = contractTools.tools();
+            state.setDataPlanTools(new ArrayList<>(plan));
+            plannerToolsSource = contractTools.plannerToolsSource();
+        }
+
         boolean overview = state.isBusinessOverviewPath();
 
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -280,7 +288,9 @@ public class BusinessDataPlannerNode implements AgentNode {
         payload.put("revenueOverviewPath", state.isRevenueOverviewPath());
         payload.put("tools", plan == null ? List.of() : plan);
         payload.put("finalPlannerTools", plan == null ? List.of() : new ArrayList<>(plan));
-        if (state.isBusinessDiagnosisPath()) {
+        if (StringUtils.hasText(plannerToolsSource)) {
+            payload.put("plannerToolsSource", plannerToolsSource);
+        } else if (state.isBusinessDiagnosisPath()) {
             payload.put("plannerToolsSource", resolveBusinessDiagnosisPlannerToolsSource(rCtx));
         } else if (overview
                 && (isBusinessOverviewMultiAgentMainline(rCtx)
@@ -1254,6 +1264,21 @@ public class BusinessDataPlannerNode implements AgentNode {
         List<AiStoreScopeDTO> vs = orgScope.getVisibleStores();
         if (vs.size() == 1 && vs.get(0) != null && vs.get(0).getStoreName() != null) {
             return vs.get(0).getStoreName().trim();
+        }
+        return null;
+    }
+
+    /**
+     * P2-L：contract locked 主链仅读 completed semanticSlots wire；非 locked 保留 legacy queryIntent 路径。
+     */
+    private static String resolveDishIngredientBreakdownWire(
+            AiResolvedQueryContext rCtx, AiResolvedQueryIntent rqi) {
+        if (rCtx != null
+                && SemanticContractCompletionEngine.isContractLockedParse(rCtx.getQuerySemanticParse())) {
+            return ToolRequestContractExecutionParamSupport.resolveContractStructuredIntentDetailWire(rCtx);
+        }
+        if (rCtx != null && rqi != null && StringUtils.hasText(rqi.getStructuredIntentDetail())) {
+            return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(rqi.getStructuredIntentDetail());
         }
         return null;
     }

@@ -7,6 +7,8 @@ import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.graph.business.ToolDepartmentResolutionSupport;
 import com.nongxinle.ai.graph.business.scope.BusinessScopeResolutionSupport;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -132,7 +134,23 @@ public class BusinessToolExecutionRequestResolver {
 
         String purchaseSourceType = null;
         String structuredIntentDetail = null;
-        if (rq != null && rq.getQueryIntent() != null) {
+        boolean contractLocked = isContractLocked(rq);
+        if (contractLocked) {
+            purchaseSourceType = ToolRequestContractExecutionParamSupport.resolvePurchaseSourceFocus(rq);
+            structuredIntentDetail =
+                    ToolRequestContractExecutionParamSupport.resolveContractStructuredIntentDetailWire(rq);
+            dbg.put(
+                    "purchaseSourceTypeSource",
+                    purchaseSourceType != null && !purchaseSourceType.isBlank()
+                            ? "semanticSlots.sourceFacet"
+                            : "none");
+            dbg.put(
+                    "structuredIntentDetailSource",
+                    structuredIntentDetail != null && !structuredIntentDetail.isBlank()
+                            ? "semanticSlots.structuredIntentDetailWire"
+                            : "none");
+        } else if (rq != null && rq.getQueryIntent() != null) {
+            // LEGACY_ONLY — 非 contract-locked 时沿用 merge 后 queryIntent 快照（Harness 观测）。
             purchaseSourceType = rq.getQueryIntent().getPurchaseSourceType();
             structuredIntentDetail = rq.getQueryIntent().getStructuredIntentDetail();
             dbg.put(
@@ -145,6 +163,9 @@ public class BusinessToolExecutionRequestResolver {
                     structuredIntentDetail != null && !structuredIntentDetail.isBlank()
                             ? "resolvedQueryContext.queryIntent.structuredIntentDetail"
                             : "none");
+        } else {
+            dbg.put("purchaseSourceTypeSource", "none");
+            dbg.put("structuredIntentDetailSource", "none");
         }
 
         dbg.put("orgScopeType", orgScopeType);
@@ -201,7 +222,17 @@ public class BusinessToolExecutionRequestResolver {
         dbg.put("timeWindowSource", classifyTimeWindowSource(rq, state));
 
         String structuredIntentDetail = null;
-        if (rq != null && rq.getQueryIntent() != null) {
+        boolean contractLocked = isContractLocked(rq);
+        if (contractLocked) {
+            structuredIntentDetail =
+                    ToolRequestContractExecutionParamSupport.resolveContractStructuredIntentDetailWire(rq);
+            dbg.put(
+                    "structuredIntentDetailSource",
+                    structuredIntentDetail != null && !structuredIntentDetail.isBlank()
+                            ? "semanticSlots.structuredIntentDetailWire"
+                            : "none");
+        } else if (rq != null && rq.getQueryIntent() != null) {
+            // LEGACY_ONLY — 非 contract-locked 时沿用 merge 后 queryIntent 快照（Harness 观测）。
             structuredIntentDetail = rq.getQueryIntent().getStructuredIntentDetail();
             dbg.put(
                     "structuredIntentDetailSource",
@@ -347,29 +378,52 @@ public class BusinessToolExecutionRequestResolver {
         String structuredIntentDetail = null;
         String mentionedDishName = null;
         String dishProfitMetricType = null;
+        boolean contractLocked = isContractLocked(rq);
         if (rq != null) {
-            if (rq.getQueryIntent() != null) {
-                structuredIntentDetail = rq.getQueryIntent().getStructuredIntentDetail();
+            if (contractLocked) {
+                structuredIntentDetail =
+                        ToolRequestContractExecutionParamSupport.resolveDishProfitStructuredDetailWire(rq);
+                mentionedDishName = ToolRequestContractExecutionParamSupport.resolveDishNameFocusHint(rq);
+                dishProfitMetricType = ToolRequestContractExecutionParamSupport.resolveDishProfitMetricType(rq);
                 dbg.put(
                         "structuredIntentDetailSource",
                         structuredIntentDetail != null && !structuredIntentDetail.isBlank()
-                                ? "resolvedQueryContext.queryIntent.structuredIntentDetail"
+                                ? "semanticSlots.structuredIntentDetailWire"
+                                : "none");
+                dbg.put(
+                        "mentionedDishNameSource",
+                        mentionedDishName != null && !mentionedDishName.isBlank()
+                                ? "completedParse_or_structuredAnchors"
+                                : "none");
+                dbg.put(
+                        "dishProfitMetricTypeSource",
+                        dishProfitMetricType != null && !dishProfitMetricType.isBlank()
+                                ? "semanticSlots.structuredIntentDetailWire"
                                 : "none");
             } else {
-                dbg.put("structuredIntentDetailSource", "none_missing_queryIntent");
+                if (rq.getQueryIntent() != null) {
+                    structuredIntentDetail = rq.getQueryIntent().getStructuredIntentDetail();
+                    dbg.put(
+                            "structuredIntentDetailSource",
+                            structuredIntentDetail != null && !structuredIntentDetail.isBlank()
+                                    ? "resolvedQueryContext.queryIntent.structuredIntentDetail"
+                                    : "none");
+                } else {
+                    dbg.put("structuredIntentDetailSource", "none_missing_queryIntent");
+                }
+                mentionedDishName = rq.getMentionedDishName();
+                dbg.put(
+                        "mentionedDishNameSource",
+                        mentionedDishName != null && !mentionedDishName.isBlank()
+                                ? "resolvedQueryContext.mentionedDishName"
+                                : "none");
+                dishProfitMetricType = rq.getDishProfitMetricType();
+                dbg.put(
+                        "dishProfitMetricTypeSource",
+                        dishProfitMetricType != null && !dishProfitMetricType.isBlank()
+                                ? "resolvedQueryContext.dishProfitMetricType"
+                                : "none");
             }
-            mentionedDishName = rq.getMentionedDishName();
-            dbg.put(
-                    "mentionedDishNameSource",
-                    mentionedDishName != null && !mentionedDishName.isBlank()
-                            ? "resolvedQueryContext.mentionedDishName"
-                            : "none");
-            dishProfitMetricType = rq.getDishProfitMetricType();
-            dbg.put(
-                    "dishProfitMetricTypeSource",
-                    dishProfitMetricType != null && !dishProfitMetricType.isBlank()
-                            ? "resolvedQueryContext.dishProfitMetricType"
-                            : "none");
         }
 
         Long deptRaw = state != null ? state.getDepartmentId() : null;
@@ -484,5 +538,9 @@ public class BusinessToolExecutionRequestResolver {
             return "resolvedQueryContext.timeWindow.incomplete_dates";
         }
         return "aiRunState.statStartDate.statEndDate";
+    }
+
+    private static boolean isContractLocked(AiResolvedQueryContext rq) {
+        return rq != null && SemanticContractCompletionEngine.isContractLockedParse(rq.getQuerySemanticParse());
     }
 }

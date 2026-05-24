@@ -285,13 +285,6 @@ public final class AiPlannerExecutorMockGraphCase {
         root.put("harnessPlannerOverallStatus", enumName(tr.getOverallStatus()));
         root.put("harnessPlannerDegradedSteps", copyStrList(tr.getDegradedSteps()));
     }
-
-    @Deprecated
-    public static Map<String, Object> toHarnessSummary(
-            PlannerExecutorResult result, String replayMessage, long runId, long conversationId) {
-        return toHarnessSummary(result, replayMessage, runId, conversationId, CASE_ID);
-    }
-
     private static Map<String, Object> traceToMap(PlannerExecutorTrace trace) {
         LinkedHashMap<String, Object> m = new LinkedHashMap<>();
         m.put("appliedFailureStrategy", enumName(trace.getAppliedFailureStrategy()));

@@ -17,7 +17,7 @@ public class AiPromptRegistry {
     public AiPromptRegistry() {
         Map<String, String> m = new HashMap<>();
         m.put(AiPromptIds.SEMANTIC_QUERY_PARSER_V2, "ai-prompts/semantic/query_semantic_parser.v2.md");
-        m.put(AiPromptIds.FOLLOWUP_QUERY_REWRITER_V1, "ai-prompts/semantic/followup_query_rewriter.v1.md");
+        m.put(AiPromptIds.SEMANTIC_INTAKE_V1, "ai-prompts/semantic/semantic_intake.v1.md");
 
         m.put(AiPromptIds.COMPOSER_COST_DIAGNOSIS_V1, "ai-prompts/composer/cost_diagnosis.v1.md");
         m.put(AiPromptIds.COMPOSER_REVENUE_OVERVIEW_V1, "ai-prompts/composer/revenue_overview.v1.md");

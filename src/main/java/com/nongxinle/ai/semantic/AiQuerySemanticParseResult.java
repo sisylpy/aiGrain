@@ -198,6 +198,11 @@ public class AiQuerySemanticParseResult {
      */
     private Map<String, Object> contractCompletionTrace;
 
+    /** v2 协议纠错重试观测（debug / Harness；repair 成功后的 parse 与主链 {@link #querySemanticParse} 同源）。 */
+    private Boolean querySemanticV2RepairAttempted;
+    private Boolean querySemanticV2RepairSuccess;
+    private String querySemanticV2RepairReason;
+
     /**
      * Harness：本轮若实际走了语义解析 LLM，则为对应 {@link com.nongxinle.ai.prompt.AiPromptRegistry} promptId；
      * 开关关闭或未调用时为 null。

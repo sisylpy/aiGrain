@@ -5,7 +5,7 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
@@ -148,7 +148,7 @@ public final class SemanticParserInputBuilder {
         root.put("visibleStores", vis);
         if (input.getSemanticRoute() != null) {
             LinkedHashMap<String, Object> route = new LinkedHashMap<>();
-            SemanticParserRouteInput sr = input.getSemanticRoute();
+            SemanticParserIntakeRouteInput sr = input.getSemanticRoute();
             route.put("primaryDomain", sr.getPrimaryDomain());
             route.put("candidateDomains", sr.getCandidateDomains());
             route.put("routeType", sr.getRouteType());
@@ -206,8 +206,8 @@ public final class SemanticParserInputBuilder {
         return m;
     }
 
-    private static SemanticParserRouteInput mapSemanticRoute(SemanticDomainRouteResult route) {
-        return SemanticParserRouteInput.builder()
+    private static SemanticParserIntakeRouteInput mapSemanticRoute(SemanticDomainRouteResult route) {
+        return SemanticParserIntakeRouteInput.builder()
                 .primaryDomain(route.getPrimaryDomain())
                 .candidateDomains(route.getCandidateDomains())
                 .routeType(route.getRouteType() != null ? route.getRouteType().name() : null)

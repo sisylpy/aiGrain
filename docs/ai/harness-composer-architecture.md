@@ -18,8 +18,10 @@
 
 | 维度 | 说明 |
 |------|------|
-| 用户问了什么 | `originalQuestion` / `normalizedQuestion`、多轮追问合并结果 |
-| intent / path | `AiResolvedQueryContext.effectiveIntentCode` / `effectivePathCode` |
+| 用户问了什么 | `originalQuestion` / `normalizedQuestion`；SemanticIntake 产出 **`canonicalUserQuery`** |
+| SemanticIntake | **`intakeStatus`**、`questionMode`、`intakePrimaryDomain`、`intakeRouteType`、`intakeNeedClarification` 等 |
+| v2 合同选择 | **`selectedContractId`**、**`semanticSlots`**、**`matchedContractId`**、**`contractValidation`** |
+| intent / path | `AiResolvedQueryContext.effectiveIntentCode` / `effectivePathCode`（由合同帧校验后装配） |
 | 时间 | `AiResolvedTimeWindow`（来源：`effectiveTimeWindowSource`） |
 | 范围 | `AiResolvedDataScope`：**门店 / 部门 / 经销主体** 与 SQL 展开分离 |
 | Tool 参数 | 必须可由 `ResolvedQueryContext` 推导、落盘可追溯 |
@@ -27,7 +29,35 @@
 | 回答计划 | **AnswerPlan**：本轮要完成的少数稳定业务任务类型 |
 | 自然语言 | **Composer**：只根据 AnswerPlan + Tool 数据组织话术 |
 
-代码入口参考：`AiRunService`、`AiResolvedQueryContextResolver`、`MasterBusinessAgent`、`BusinessToolExecutionNode`、`StubAnswerComposerNode`、`AiHarnessResolvedContextSummarizer`。Master 与子 Agent 契约见 **`docs/ai/master-business-agent-design.md`**（**「当前已接入的 DomainAgent」**）。
+代码入口参考：`AiRunService`、`AiResolvedQueryContextResolver`、`LlmSemanticIntakeParser`、`DomainContractSelector`、`MasterBusinessAgent`、`BusinessToolExecutionNode`、`StubAnswerComposerNode`、`AiHarnessResolvedContextSummarizer`。Master 与子 Agent 契约见 **`docs/ai/master-business-agent-design.md`**（**「当前已接入的 DomainAgent」**）。
+
+---
+
+## 1b. SemanticIntake 语义主链（Step 1 → Step 2）
+
+**目标主链**（不再以 FollowUpRewrite / Java `SemanticDomainRouter` 为主路径）：
+
+```text
+SemanticIntake LLM（semantic.intake.v1）
+    → DomainContractSelector（Java：按 intakePrimaryDomain 注入单域 allowedOutputContract）
+    → semantic.query_parser.v2（单域合同选择 LLM：selectedContractId + semanticSlots）
+    → Contract Validator / SemanticContractValidationPipeline
+    → AiResolvedQueryContext
+    → Tool
+    → AnswerPlan
+    → Composer
+```
+
+**硬约束**
+
+- **Java 不猜业务语义**：不用关键词、`contains`、`if/else`、alias 表或 fallback 规则**修正** `primaryDomain` / `selectedContractId` / 槽位含义。
+- **Step 1** 只做：完整句放行、追问补全、一级业务方向、多问题识别 → `canonicalUserQuery` + `intakePrimaryDomain`。
+- **Step 2** 只做：在已给定单域 `allowedContracts` 内选合同并填槽；**不**补全话术、**不**重选一级域、**不**规划 Tool。
+- 无法唯一理解 → **clarification**；**禁止**静默改域、改合同或编造 wire。
+
+Prompt 正文：`semantic_intake.v1.md`、`query_semantic_parser.v2.md`（经 `AiPromptService` 取 `# Prompt 正文` 之后内容）。
+
+**Contract-entry validation P2 收口说明**：**`docs/ai/contract-entry-validation-p2-summary.md`**
 
 ---
 
@@ -106,8 +136,7 @@
 - **不得**自行计算毛利率、成本差额、利用率等；**必须**使用 Tool / `buildInsight` / `buildReport` 已给出的字段或已格式化的可读串。
 - **不得**编造 Tool 未返回的数字或排行。
 - **不得**把 type2 叫「损耗」、把 type3 叫「废弃」；退货 type4 为单独口径（与出库链路文档一致）。
-- **不得**读取已删 Tool 的 `toolResults`（**Historical removed**：`purchase_query`、`stock_query`、`dish_sales_query`、`gross_margin_calculator`、`business_overview_query`）；现网 Tool 为 `purchase_overview`、`warehouse_stock_overview`、`stock_reduce_query`、`dish_profit_analysis`、`revenue_query`。
-- **不得**用 `metric.rankingType` 覆盖 AnswerPlan 或 `queryIntent.structuredIntentDetail` 已定的业务口径（**D-CLEAN-RENDERER-FALLBACK-FINAL** + **D-1X-D3-RANKINGTYPE-FINAL**）；`rankingType` 仅 **debug/deprecated** 观测字段。
+- **不得**用 `metric.rankingType` 覆盖 AnswerPlan 或 `semanticSlots` / `selectedContractId` 已定的业务口径；`rankingType` 仅 **debug/deprecated** 观测字段。
 
 **确定性 Renderer**（`DeterministicAnswerRenderer` 及各域仍保留的 `*DeterministicRenderer`，如营收/毛利/采购/诊断）与 Composer 同边界：只读 **AnswerPlan** + **现网 Tool payload** + **`qi.structuredIntentDetail` canonical wire**。**已移除、禁止恢复**：`StockReduceDeterministicRenderer`、`WarehouseDeterministicRenderer`、`PurchaseDeterministicRenderer`、`AnswerComposerPayloadFactory` 及 `render*ToolFallback` 类 raw-tool 拼装。出库/库房无 Plan 时由各域 `compose*NoPlanFallback` / Plan 宣读表达。
 
@@ -156,8 +185,9 @@
 
 | 类别 | 示例 |
 |------|------|
+| 语义主链 | SemanticIntake → 单域 allowedContracts → v2 合同选择 → Contract Validator；**禁止** Java 关键词改域/改合同 |
 | 范围与时间 | `queryScopeKind` + 门店/部门/主体字段与 `expandedSqlDepartmentIds`；`timeWindow` 起止与继承规则 |
-| 路由 | `intent` / `path` 与权限、Tool 选择 |
+| 路由 | `intent` / `path` 与权限、Tool 选择（由 validated contract 帧推导，非 Prompt 即兴规划） |
 | Tool 入参完整性 | 缺参则失败或降级，且日志可追踪 |
 | 金额与毛利率 | 一切财务比率、汇总：**以服务端字段为准** |
 | 出库分型措辞 | type1～type4 中文标签统一 |
@@ -167,11 +197,11 @@
 
 | 类别 | 示例 |
 |------|------|
-| 自然语言理解 | 将多样问法**建议**映射到 `structuredIntentDetail` / AnswerPlan（最终可由规则校验或二次模型） |
+| 自然语言理解 | LLM 在 Intake / v2 Prompt 约束下产出 `canonicalUserQuery`、`semanticSlots`；Java **仅** schema/enum/contract 校验 |
 | 语气与结构 | 在 AnswerPlan 与 Tool 数据锁定后，组织段落、过渡句、「详细见卡片」类提示 |
 | 空数据时的解释 | 在 Tool 已返回「无行/不完整」前提下，生成**不编造数字**的说明 |
 
-**错误模式**：为每个同义词写 `message.contains("...")`。**正确模式**：归一到 `structuredIntentDetail` 或 AnswerPlan 类型 + 统一排序/选行逻辑。
+**错误模式**：为每个同义词写 `message.contains("...")` 或在 Java 里用 alias/fallback **修正** domain 或 contract。**正确模式**：Intake 选粗域 → v2 在 allowed 合同内选 `selectedContractId` → Validator 帧校验 → AnswerPlan 类型 + 统一排序/选行逻辑。
 
 ---
 
@@ -192,10 +222,10 @@
 
 ## 5. 如何避免继续堆 if/else
 
-1. **归一**：用户话 → `structuredIntentDetail`（wire）→ **AnswerPlan 类型**（少量枚举）。  
+1. **归一**：用户话 → SemanticIntake **`canonicalUserQuery` + primaryDomain** → v2 **`selectedContractId` + semanticSlots** → **AnswerPlan 类型**（少量枚举）。  
 2. **选行**：排行/原因类在 Java 或统一的小型「选数策略」中完成（对 `dishRows` 排序、`mentionedDishName` 过滤），输出**窄化后的结构化 payload**。  
 3. **生成**：Composer 只读 payload + AnswerPlan，**禁止**再按字符串判断「最低毛利」类问法。  
-4. **迁移**：`DishProfitAgentNode` 中 `isLowMarginRankingQuestion()` 等**仅作迁移参考**，新需求优先加 **AnswerPlan + structuredIntentDetail**，而非新方法。
+4. **迁移**：`DishProfitAgentNode` 中 `isLowMarginRankingQuestion()` 等**仅作迁移参考**；**不恢复** FollowUpRewrite / Java SemanticDomainRouter 主链。新需求优先加 **contract entry + AnswerPlan**，而非新方法或 Composer fallback。
 
 ---
 
@@ -204,6 +234,7 @@
 | 主题 | 路径 |
 |------|------|
 | 解析上下文 | `AiResolvedQueryContext.java`、`AiResolvedDataScope.java`、`AiResolvedQueryContextResolver.java` |
+| SemanticIntake / v2 | `LlmSemanticIntakeParser.java`、`DomainContractSelector`（及 contract 校验管线）、`semantic_intake.v1.md`、`query_semantic_parser.v2.md` |
 | Tool 执行与参数 | `BusinessToolExecutionNode.java`、`DishProfitAnalysisTool.java`、`StockReduceQueryTool.java` |
 | Composer | `StubAnswerComposerNode.java` |
 | Harness Debug | `AiHarnessResolvedContextSummarizer.java` |

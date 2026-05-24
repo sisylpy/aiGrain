@@ -51,6 +51,9 @@ public final class BusinessOverviewDeterministicSummaryBuilder {
         if (DailyRevenueAnswerPlan.TYPE_REVENUE_ORDER_COUNT_OVERVIEW.equals(type)) {
             return composeRevenueOrderCountFromPlan(plan, p);
         }
+        if (DailyRevenueAnswerPlan.TYPE_REVENUE_CUSTOMER_COUNT_OVERVIEW.equals(type)) {
+            return composeRevenueCustomerCountFromPlan(plan, p);
+        }
         if (DailyRevenueAnswerPlan.TYPE_REVENUE_AVERAGE_ORDER_VALUE.equals(type)) {
             return composeRevenueAovFromPlan(plan, p);
         }
@@ -243,6 +246,53 @@ public final class BusinessOverviewDeterministicSummaryBuilder {
         sb.append(tw.getBracketTimeRangeLine()).append('\n');
         sb.append(revenuePlanLead(plan, tw)).append("，订单数合计 ").append(cnt).append(" 单。");
         return sb.toString();
+    }
+
+    private static String composeRevenueCustomerCountFromPlan(DailyRevenueAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        if (focus == null || focus.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> row0 = focus.get(0);
+        Object cntObj = row0.get("customerCount");
+        if (cntObj == null) {
+            return null;
+        }
+        String cnt = plainNumericHint(cntObj);
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append('\n');
+        sb.append(revenuePlanLead(plan, tw)).append("，客人数合计 ").append(cnt).append(" 人。");
+        appendRevenueCustomerCountSecondaryFromPlanRows(plan.getSecondaryRows(), sb);
+        return sb.toString();
+    }
+
+    /** 宣读 AnswerPlan secondaryRows 中已有的客人数拆分行，不重算。 */
+    private static void appendRevenueCustomerCountSecondaryFromPlanRows(List<Map<String, Object>> secondaryRows,
+            StringBuilder sb) {
+        if (secondaryRows == null || secondaryRows.isEmpty()) {
+            return;
+        }
+        List<String> parts = new ArrayList<>();
+        for (Map<String, Object> r : secondaryRows) {
+            if (r == null || r.get("customerCount") == null) {
+                continue;
+            }
+            String label = null;
+            Object ch = r.get("channel");
+            if (ch != null) {
+                label = revenueChannelLabelCn(String.valueOf(ch));
+            }
+            if ((label == null || label.isBlank()) && r.get("label") != null) {
+                label = String.valueOf(r.get("label")).trim();
+            }
+            if (label != null && !label.isBlank()) {
+                parts.add(label + "客人数 " + plainNumericHint(r.get("customerCount")) + " 人");
+            }
+        }
+        if (!parts.isEmpty()) {
+            sb.append("其中").append(String.join("、", parts)).append("。");
+        }
     }
 
     private static String composeRevenueAovFromPlan(DailyRevenueAnswerPlan plan,

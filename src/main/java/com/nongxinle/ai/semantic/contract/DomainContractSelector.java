@@ -1,8 +1,8 @@
 package com.nongxinle.ai.semantic.contract;
 
 import com.nongxinle.ai.semantic.SemanticParserAllowedOutputContract;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteResult;
-import com.nongxinle.ai.semantic.routing.SemanticDomainRouteType;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteType;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Step 2：根据 Router 结果选择单域 allowed 合同摘要（只读 Catalog；不合并八域大合同）。
+ * Step 2：根据 Intake route 结果选择单域 allowed 合同摘要（只读 Catalog；不合并八域大合同）。
  */
 public final class DomainContractSelector {
 
@@ -119,6 +119,8 @@ public final class DomainContractSelector {
                         .answerPlanType(c.getAnswerPlanType())
                         .requiresAnchor(c.isRequiresAnchor())
                         .anchorType(c.getAnchorType())
+                        .intentCode(c.getIntentCode())
+                        .pathCode(c.getPathCode())
                         .selectedTools(
                                 c.getSelectedTools() != null && !c.getSelectedTools().isEmpty()
                                         ? new ArrayList<>(c.getSelectedTools())

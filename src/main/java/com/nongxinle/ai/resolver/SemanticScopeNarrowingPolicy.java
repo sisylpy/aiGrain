@@ -5,7 +5,6 @@ import com.nongxinle.ai.context.AiSemanticStoreNarrowingDiagnostics;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiFollowUpResolver;
-import com.nongxinle.ai.followup.rewrite.FollowUpRewriteResult;
 import com.nongxinle.ai.harness.AiMultiStoreHarnessTrace;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
@@ -17,9 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -209,82 +206,6 @@ public class SemanticScopeNarrowingPolicy {
             diag.setMatchedSemanticStoreMention(singleStoreMention.trim());
         }
         return AiFollowUpResolver.copyOrgNarrowedToSingleStore(mergedOrg, narrowed);
-    }
-
-    /**
-     * Scope pivot：Rewrite / 短句中点名单店，但 v2 未写入 requestedScope 时的收窄候选（基于 visibleStores / rewrite anchors，无店名硬编码）。
-     */
-    public static List<String> resolveSupplementalStoreMentionsForScopePivot(
-            FollowUpRewriteResult rewriteResult,
-            String scopeResolutionMessage,
-            String rawNormalized,
-            AiResolvedOrgScope org) {
-        LinkedHashSet<String> out = new LinkedHashSet<>();
-        if (rewriteResult != null
-                && rewriteResult.isCanRewrite()
-                && rewriteResult.getUsedAnchors() != null) {
-            for (Map<String, String> anchor : rewriteResult.getUsedAnchors()) {
-                if (anchor == null) {
-                    continue;
-                }
-                String type = anchor.get("anchorType");
-                String name = anchor.get("anchorName");
-                if ("STORE".equalsIgnoreCase(StringUtils.hasText(type) ? type.trim() : null)
-                        && StringUtils.hasText(name)) {
-                    out.add(name.trim());
-                }
-            }
-        }
-        collectVisibleStoresMentionedLexically(scopeResolutionMessage, org, out);
-        if (out.isEmpty()) {
-            collectVisibleStoresMentionedLexically(rawNormalized, org, out);
-        }
-        if (out.size() != 1 && StringUtils.hasText(rawNormalized) && org != null) {
-            List<String> fromRaw = listUniqueVisibleStoresInMessage(rawNormalized, org);
-            if (fromRaw.size() == 1) {
-                out.clear();
-                out.add(fromRaw.get(0));
-            }
-        }
-        return out.isEmpty() ? List.of() : new ArrayList<>(out);
-    }
-
-    private static void collectVisibleStoresMentionedLexically(
-            String message, AiResolvedOrgScope org, LinkedHashSet<String> out) {
-        if (!StringUtils.hasText(message) || org == null || out == null) {
-            return;
-        }
-        List<AiStoreScopeDTO> visible = org.getVisibleStores();
-        if (visible == null) {
-            return;
-        }
-        for (AiStoreScopeDTO store : visible) {
-            if (store == null || !StringUtils.hasText(store.getStoreName())) {
-                continue;
-            }
-            String name = store.getStoreName().trim();
-            if (messageLexicallyMentionsStoreName(message, name)) {
-                out.add(name);
-            }
-        }
-    }
-
-    private static List<String> listUniqueVisibleStoresInMessage(String message, AiResolvedOrgScope org) {
-        LinkedHashSet<String> out = new LinkedHashSet<>();
-        collectVisibleStoresMentionedLexically(message, org, out);
-        return out.isEmpty() ? List.of() : new ArrayList<>(out);
-    }
-
-    private static boolean messageLexicallyMentionsStoreName(String message, String storeName) {
-        if (!StringUtils.hasText(message) || !StringUtils.hasText(storeName)) {
-            return false;
-        }
-        if (AiFollowUpResolver.visibleStoreRowLabelMatchesDepartmentName(message, storeName)) {
-            return true;
-        }
-        String compactMsg = message.replace(" ", "").replace("\u3000", "").trim();
-        String compactName = storeName.replace(" ", "").replace("\u3000", "").trim();
-        return StringUtils.hasText(compactName) && compactMsg.contains(compactName);
     }
 
     /**

@@ -11,6 +11,7 @@ import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.AiOverviewStoreIssueItem;
 import com.nongxinle.ai.dto.business.AiOverviewVisibleStoreItem;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
@@ -45,6 +46,11 @@ import java.util.stream.Collectors;
 @Slf4j
 public class DishProfitAgentNode {
 
+    /**
+     * TODO(CLEANUP): 当前逻辑通过正则从用户原文提取菜名，仅可作为临时后备。
+     * 后续应改为从 semanticSlots / resultAnchors / contract entry 中获取菜品实体，
+     * 避免 Java 文本解析用户业务对象。
+     */
     private static final Pattern BEFORE_MAO = Pattern.compile("([\\u4e00-\\u9fa5]{2,16})毛利");
 
     private final AiSseEventPublisher publisher;
@@ -339,6 +345,7 @@ public class DishProfitAgentNode {
 
     /**
      * 为首批结构化子意图生成 AnswerPlan（选行/排序仅在服务端；与 {@link #dishRowsRaw} 全量 peer 排行一致）。
+     * <p>仅 contract-locked parse 可消费 wire 生成正式 DishProfitAnswerPlan。
      */
     private static void tryAttachDishProfitAnswerPlan(
             AiRunState state,
@@ -348,53 +355,60 @@ public class DishProfitAgentNode {
         if (state == null || out == null || dishRowsAllPeers == null) {
             return;
         }
+        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
+
+        // GATE: only contract-locked parse
+        AiResolvedQueryContext rctx = state.getResolvedQueryContext();
+        AiQuerySemanticParseResult sem = rctx != null ? rctx.getQuerySemanticParse() : null;
+        if (!SemanticContractCompletionEngine.isContractLockedParse(sem)) {
+            dbg.put("earlyReturnReason", "non_contract_locked_parse");
+            log.info("[DishProfitAgentNode] dishProfitAnswerPlan skip non_contract_locked runId={}", state.getRunId());
+            return;
+        }
+
         var qi = queryIntentFrom(state);
         if (qi == null) {
+            dbg.put("earlyReturnReason", "missing_query_intent");
             return;
         }
         String sid = qi.getStructuredIntentDetail();
         String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(sid);
-        String scopeLabel = dishProfitAnswerPlanScopeLabel(out);
-        String timeLabel = dishProfitAnswerPlanTimeLabel(out, state);
-        LinkedHashMap<String, Object> dbg = new LinkedHashMap<>();
-        dbg.put("structuredIntentDetail", sid);
-        dbg.put("structuredIntentDetailWire", wire);
-        AiResolvedQueryContext rctx = state.getResolvedQueryContext();
-        if (state.isDishProfitPath()
-                && DishProfitSemanticCapabilityMatrix.detectMatrixWireMissing(
-                        rctx != null ? rctx.getQuerySemanticParse() : null,
-                        qi.getPathCode(),
-                        wire)) {
-            dbg.put("matrixWireMissing", DishProfitSemanticCapabilityMatrix.MATRIX_WIRE_MISSING);
-            log.info(
-                    "[DishProfitAgentNode] dishProfitAnswerPlan {} runId={} structuredIntentDetail={} wire={}",
-                    DishProfitSemanticCapabilityMatrix.MATRIX_WIRE_MISSING,
-                    state.getRunId(),
-                    sid,
-                    wire);
+        if (!StringUtils.hasText(wire)) {
+            dbg.put("earlyReturnReason", "missing_contract_completed_wire");
+            log.info("[DishProfitAgentNode] dishProfitAnswerPlan skip missing wire runId={}", state.getRunId());
             return;
         }
+        DishProfitSemanticCapabilityMatrixRow matrixRow = DishProfitSemanticCapabilityMatrix.findFirstTurnRowByWire(wire);
+        if (matrixRow == null) {
+            dbg.put("earlyReturnReason", "contract_wire_not_accepted_dish_profit_matrix");
+            dbg.put("rejectedWire", wire);
+            log.info("[DishProfitAgentNode] dishProfitAnswerPlan skip wire not in matrix runId={} wire={}", state.getRunId(), wire);
+            return;
+        }
+
+        dbg.put("structuredIntentDetail", sid);
+        dbg.put("structuredIntentDetailWire", wire);
+        String scopeLabel = dishProfitAnswerPlanScopeLabel(out);
+        String timeLabel = dishProfitAnswerPlanTimeLabel(out, state);
+
         String dbgMention = effectiveMentionedDishNameForMetric(state);
         if (StringUtils.hasText(dbgMention)) {
             dbg.put("mentionedDishName", dbgMention);
         }
 
-        DishProfitSemanticCapabilityMatrixRow matrixRow = DishProfitSemanticCapabilityMatrix.findFirstTurnRowByWire(wire);
-        if (matrixRow != null) {
-            dbg.put("dishProfitMatrixRowId", matrixRow.getRowId());
-            if (tryAttachFirstTurnPlanFromMatrix(
-                    matrixRow,
-                    state,
-                    out,
-                    dishRowsAllPeers,
-                    dishRowsScoped,
-                    wire,
-                    scopeLabel,
-                    timeLabel,
-                    dbg,
-                    rctx)) {
-                return;
-            }
+        dbg.put("dishProfitMatrixRowId", matrixRow.getRowId());
+        if (tryAttachFirstTurnPlanFromMatrix(
+                matrixRow,
+                state,
+                out,
+                dishRowsAllPeers,
+                dishRowsScoped,
+                wire,
+                scopeLabel,
+                timeLabel,
+                dbg,
+                rctx)) {
+            return;
         }
 
         boolean peersEmpty = dishRowsAllPeers.isEmpty();
@@ -406,7 +420,8 @@ public class DishProfitAgentNode {
             List<RowSnap> ranked = dishRowsAllPeers.stream()
                     .map(r -> new RowSnap(r, briefFromRow(r)))
                     .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()))
-                    .sorted(Comparator.comparingDouble((RowSnap rs) -> nzDec(rs.brief().getActualCost()).doubleValue())
+                    .sorted(Comparator.comparingDouble((RowSnap rs) ->
+                                    DishProfitActualCostSemanticsSupport.displayActualCost(rs.row()).doubleValue())
                             .reversed())
                     .collect(Collectors.toList());
             if (ranked.isEmpty()) {
@@ -423,7 +438,7 @@ public class DishProfitAgentNode {
                     .planType(DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST)
                     .scopeLabel(scopeLabel)
                     .timeLabel(timeLabel)
-                    .sortKey("actualCostAmount")
+                    .sortKey("totalActualCostAmount123")
                     .sortDirection("DESC")
                     .topN(1)
                     .focusRows(List.of(insightRowToAnswerPlanRow(top.row(), top.brief())))
@@ -438,9 +453,9 @@ public class DishProfitAgentNode {
             List<RowSnap> ranked = dishRowsAllPeers.stream()
                     .map(r -> new RowSnap(r, briefFromRow(r)))
                     .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()))
-                    .sorted(Comparator.comparingDouble((RowSnap rs) -> dec(rs.row().get("actualCostAmount"))
-                                    .subtract(dec(rs.row().get("theoryCostAmount")))
-                                    .doubleValue())
+                    .sorted(Comparator.comparingDouble((RowSnap rs) ->
+                                    DishProfitActualCostSemanticsSupport.gapDisplayActualMinusTheory(rs.row())
+                                            .doubleValue())
                             .reversed())
                     .collect(Collectors.toList());
             if (ranked.isEmpty()) {
@@ -456,8 +471,7 @@ public class DishProfitAgentNode {
                 LinkedHashMap<String, Object> sm = new LinkedHashMap<>();
                 RowSnap rs = ranked.get(i);
                 putAnswerPlanField(sm, "dishName", rs.row().get("dishName"));
-                BigDecimal gap = dec(rs.row().get("actualCostAmount"))
-                        .subtract(dec(rs.row().get("theoryCostAmount")));
+                BigDecimal gap = DishProfitActualCostSemanticsSupport.gapDisplayActualMinusTheory(rs.row());
                 putAnswerPlanField(sm, "diffCostAmount", stripBdRound(gap, 2));
                 secondaryGap.add(sm);
             }
@@ -712,6 +726,9 @@ public class DishProfitAgentNode {
         putAnswerPlanField(m, "salesQuantity", b.getSalesQty());
         putAnswerPlanField(m, "listPriceRevenue", b.getSalesAmount());
         putAnswerPlanField(m, "theoryCostAmount", b.getTheoreticalCost());
+        putAnswerPlanField(m, "productionActualCostAmount", b.getProductionActualCost());
+        putAnswerPlanField(m, "totalActualCostAmount123", b.getTotalActualCost123());
+        putAnswerPlanField(m, "actualCostTotalAmount123", b.getTotalActualCost123());
         putAnswerPlanField(m, "actualCostAmount", b.getActualCost());
         putAnswerPlanField(m, "blendedGrossMarginRateOnListPrice", b.getGrossProfitRate());
         putAnswerPlanField(m, "riskReason", b.getRiskReason());
@@ -1082,8 +1099,16 @@ public class DishProfitAgentNode {
             putAnswerPlanField(m, "salesQuantity", row.get("soldPortionsTotal"));
             putAnswerPlanField(m, "listPriceRevenue", row.get("listPriceRevenue"));
             putAnswerPlanField(m, "theoryCostAmount", row.get("theoryCostAmount"));
-            putAnswerPlanField(m, "actualCostAmount", row.get("actualCostAmount"));
+            putAnswerPlanField(
+                    m, "productionActualCostAmount",
+                    DishProfitActualCostSemanticsSupport.plainMoney(
+                            DishProfitActualCostSemanticsSupport.productionActualCostType1(row)));
             putAnswerPlanField(m, "actualCostTotalAmount123", row.get("actualCostTotalAmount123"));
+            putAnswerPlanField(m, "totalActualCostAmount123", row.get("actualCostTotalAmount123"));
+            putAnswerPlanField(
+                    m, "actualCostAmount",
+                    DishProfitActualCostSemanticsSupport.plainMoney(
+                            DishProfitActualCostSemanticsSupport.displayActualCost(row)));
             putAnswerPlanField(m, "blendedGrossMarginRateOnListPrice", row.get("blendedGrossMarginRateOnListPrice"));
             putAnswerPlanField(m, "grossMarginRateTheoryOnListPrice", row.get("grossMarginRateTheoryOnListPrice"));
             putAnswerPlanField(m, "diffCostAmount", row.get("diffCostAmount"));
@@ -1103,7 +1128,7 @@ public class DishProfitAgentNode {
     private static LinkedHashMap<String, Object> insightRowToAnswerPlanRowWithDiff(
             Map<String, Object> row, AiDishProfitDishBrief brief) {
         LinkedHashMap<String, Object> m = insightRowToAnswerPlanRow(row, brief);
-        BigDecimal gap = dec(row.get("actualCostAmount")).subtract(dec(row.get("theoryCostAmount")));
+        BigDecimal gap = DishProfitActualCostSemanticsSupport.gapDisplayActualMinusTheory(row);
         putAnswerPlanField(m, "diffCostAmount", stripBdRound(gap, 2));
         return m;
     }
@@ -1135,14 +1160,22 @@ public class DishProfitAgentNode {
         if (state == null || !state.isDishProfitPath()) {
             return false;
         }
+        AiResolvedQueryContext rctx = state.getResolvedQueryContext();
+        if (rctx == null || rctx.getQuerySemanticParse() == null) {
+            return true;
+        }
+        if (!SemanticContractCompletionEngine.isContractLockedParse(rctx.getQuerySemanticParse())) {
+            return true;
+        }
         var qi = queryIntentFrom(state);
         if (qi == null) {
-            return false;
+            return true;
         }
         String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(qi.getStructuredIntentDetail());
-        AiResolvedQueryContext rctx = state.getResolvedQueryContext();
-        return DishProfitSemanticCapabilityMatrix.detectMatrixWireMissing(
-                rctx != null ? rctx.getQuerySemanticParse() : null, qi.getPathCode(), wire);
+        if (!StringUtils.hasText(wire)) {
+            return true;
+        }
+        return DishProfitSemanticCapabilityMatrix.findFirstTurnRowByWire(wire) == null;
     }
 
     private static boolean isHighActualCostRankingQuestion(AiRunState state) {
@@ -2231,16 +2264,22 @@ public class DishProfitAgentNode {
         if (!focusMode && bis != null) {
             agg.revenue = moneyFromSummaryField(bis.get("totalListPriceRevenue"));
             agg.theory = moneyFromSummaryField(bis.get("totalTheoryCostAmount"));
-            agg.actual = moneyFromSummaryField(bis.get("totalActualCostAmount"));
+            BigDecimal actualType1 = moneyFromSummaryField(bis.get("totalActualCostAmount"));
+            BigDecimal actual123 = moneyFromSummaryField(bis.get("totalActualCostTotalAmount123"));
+            agg.actual = actual123.signum() != 0 || bis.containsKey("totalActualCostTotalAmount123")
+                    ? actual123
+                    : actualType1;
             agg.profitAmt = agg.revenue.subtract(agg.actual).setScale(2, RoundingMode.HALF_UP);
+            String comprehensive = stringify(bis.get("comprehensiveGrossMarginRateOnListPrice"));
             String blended = stringify(bis.get("blendedGrossMarginRateOnListPrice"));
-            agg.portfolioRate = formatPercentTokenForDisplay(blended);
+            agg.portfolioRate = formatPercentTokenForDisplay(
+                    !comprehensive.isEmpty() ? comprehensive : blended);
             return agg;
         }
         for (Map<String, Object> row : rows) {
             agg.revenue = agg.revenue.add(dec(row.get("listPriceRevenue")));
             agg.theory = agg.theory.add(dec(row.get("theoryCostAmount")));
-            agg.actual = agg.actual.add(dec(row.get("actualCostAmount")));
+            agg.actual = agg.actual.add(DishProfitActualCostSemanticsSupport.displayActualCost(row));
         }
         agg.profitAmt = agg.revenue.subtract(agg.actual).setScale(2, RoundingMode.HALF_UP);
         if (rows.size() == 1) {
@@ -2340,15 +2379,22 @@ public class DishProfitAgentNode {
         }
         BigDecimal rev = dec(row.get("listPriceRevenue"));
         BigDecimal theory = dec(row.get("theoryCostAmount"));
-        BigDecimal actual = dec(row.get("actualCostAmount"));
+        BigDecimal type1 = DishProfitActualCostSemanticsSupport.productionActualCostType1(row);
+        BigDecimal type123 = DishProfitActualCostSemanticsSupport.totalActualCost123(row);
+        BigDecimal displayActual = DishProfitActualCostSemanticsSupport.displayActualCost(row);
         AiDishProfitDishBrief b = AiDishProfitDishBrief.builder()
                 .foodId(foodIdStr)
                 .dishName(name)
                 .salesQty(stringify(row.get("soldPortionsTotal")))
                 .salesAmount(stripBdRound(rev, 2))
                 .theoreticalCost(stripBdRound(theory, 2))
-                .actualCost(stripBdRound(actual, 2))
-                .grossProfitAmount(stripBdRound(rev.subtract(actual), 2))
+                .productionActualCost(stripBdRound(type1, 2))
+                .totalActualCost123(
+                        DishProfitActualCostSemanticsSupport.hasExplicitAmount123(row)
+                                ? stripBdRound(type123, 2)
+                                : null)
+                .actualCost(stripBdRound(displayActual, 2))
+                .grossProfitAmount(stripBdRound(rev.subtract(displayActual), 2))
                 .build();
 
         String rate = stringify(row.get("blendedGrossMarginRateOnListPrice"));
@@ -2358,10 +2404,10 @@ public class DishProfitAgentNode {
         b.setGrossProfitRate(rate.isEmpty() ? "暂无" : rate);
 
         List<String> mains = new ArrayList<>();
-        if (theory.signum() <= 0 && actual.signum() <= 0) {
+        if (theory.signum() <= 0 && displayActual.signum() <= 0) {
             mains.add("配方或出库核销未齐备，主料拆解暂不可用（见明细报表）。");
             b.setRiskReason("暂无完整配方/BOM或出库核销，单项毛利率可能不可靠");
-        } else if (theory.signum() > 0 && actual.compareTo(theory.multiply(BigDecimal.valueOf(1.1))) > 0) {
+        } else if (theory.signum() > 0 && displayActual.compareTo(theory.multiply(BigDecimal.valueOf(1.1))) > 0) {
             mains.add("实际出库成本高于配方理论口径");
             b.setRiskReason("实际成本明显高于理论用量成本，建议核对出库与配方");
         } else {

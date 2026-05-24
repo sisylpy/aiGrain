@@ -160,7 +160,7 @@ public final class AiFollowUpResolver {
     /**
      * 继承上一轮会话意图（path / structured / purchaseSource）。
      *
-     * @deprecated Phase1-J 第三批：主链不再调用；省略追问须先经 LlmFollowUpQueryRewriter + v2 intent。
+     * @deprecated Phase1-J 第三批：主链不再调用；省略追问须先经 SemanticIntake + v2 intent。
      */
     @Deprecated
     public static AiResolvedQueryIntent inheritIntentFromMemory(

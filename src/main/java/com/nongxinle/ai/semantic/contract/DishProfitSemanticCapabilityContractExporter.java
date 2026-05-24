@@ -1,6 +1,7 @@
 package com.nongxinle.ai.semantic.contract;
 
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
+import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrixRow;
@@ -8,12 +9,14 @@ import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.util.StringUtils;
 
 /**
  * 菜品毛利域 Step 2 小合同只读导出。
- * <p>ACTIVE：Matrix 首轮行 + DISH 锚追问 capability 行（无 knownGap）。
+ * <p>ACTIVE：Matrix 首轮无 knownGap 行（P2G 主流程：概览 / 排行 / 单菜毛利率）。
+ * KNOWN_GAP：扩展排行、诊断、原料构成等复杂下钻。
  */
 public final class DishProfitSemanticCapabilityContractExporter implements SemanticCapabilityContractExporter {
 
@@ -36,11 +39,9 @@ public final class DishProfitSemanticCapabilityContractExporter implements Seman
     public List<SemanticCapabilityContract> exportActiveContracts() {
         List<SemanticCapabilityContract> out = new ArrayList<>();
         for (DishProfitSemanticCapabilityMatrixRow row : DishProfitSemanticCapabilityMatrix.firstTurnRows()) {
-            out.add(fromMatrixRow(row, SemanticCapabilityContractStatus.ACTIVE, null));
-        }
-        for (DishProfitSemanticCapabilityMatrixRow row :
-                DishProfitSemanticCapabilityMatrix.dishAnchorFollowUpRows()) {
-            out.add(fromMatrixRow(row, SemanticCapabilityContractStatus.ACTIVE, null));
+            if (row.getKnownGapCode() == null) {
+                out.add(fromMatrixRow(row, SemanticCapabilityContractStatus.ACTIVE, null));
+            }
         }
         return List.copyOf(out);
     }
@@ -52,19 +53,38 @@ public final class DishProfitSemanticCapabilityContractExporter implements Seman
 
     @Override
     public List<SemanticCapabilityContract> exportKnownGapContracts() {
-        return List.of();
+        List<SemanticCapabilityContract> out = new ArrayList<>();
+        for (DishProfitSemanticCapabilityMatrixRow row : DishProfitSemanticCapabilityMatrix.firstTurnRows()) {
+            if (row.getKnownGapCode() != null) {
+                out.add(fromMatrixRow(row, SemanticCapabilityContractStatus.KNOWN_GAP, row.getKnownGapCode()));
+            }
+        }
+        for (DishProfitSemanticCapabilityMatrixRow row :
+                DishProfitSemanticCapabilityMatrix.dishAnchorFollowUpRows()) {
+            if (row.getKnownGapCode() != null) {
+                out.add(fromMatrixRow(row, SemanticCapabilityContractStatus.KNOWN_GAP, row.getKnownGapCode()));
+            }
+        }
+        return List.copyOf(out);
     }
 
     @Override
     public SemanticCapabilityContractExportSummary exportSummary() {
         List<SemanticCapabilityContract> active = exportActiveContracts();
+        List<SemanticCapabilityContract> gaps = exportKnownGapContracts();
+        List<String> gapMarkers = new ArrayList<>();
+        for (SemanticCapabilityContract c : gaps) {
+            if (c.getGapMarker() != null) {
+                gapMarkers.add(c.getGapMarker());
+            }
+        }
         return SemanticCapabilityContractExportSummary.builder()
                 .domainCode(DOMAIN_CODE)
-                .exportedContractCount(active.size())
+                .exportedContractCount(active.size() + gaps.size())
                 .activeContractCount(active.size())
                 .plannedContractCount(0)
-                .knownGapContractCount(0)
-                .knownGapMarkers(List.of())
+                .knownGapContractCount(gaps.size())
+                .knownGapMarkers(gapMarkers)
                 .build();
     }
 
@@ -85,28 +105,35 @@ public final class DishProfitSemanticCapabilityContractExporter implements Seman
                 StringUtils.hasText(row.getCapabilityId())
                         ? row.getCapabilityId()
                         : contractIdForRow(row);
-        return SemanticCapabilityContract.builder()
-                .contractId(contractId)
-                .domain(DOMAIN_CODE)
-                .intentCode(AiResolvedQueryIntent.DISH_PROFIT)
-                .pathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT)
-                .wire(row.getStructuredIntentDetailWire())
-                .queryObject(row.getQueryObject())
-                .operation(row.getOperation())
-                .metric(row.getMetric())
-                .sourceFacet(null)
-                .detailWanted(row.getDetailWanted())
-                .answerPlanType(row.getTargetDishProfitPlanType())
-                .requiresAnchor(requiresAnchor)
-                .anchorType(requiresAnchor ? DishProfitSemanticCapabilityMatrix.ANCHOR_TYPE_DISH : null)
-                .selectedTools(tools)
-                .status(status)
-                .gapMarker(gapMarker)
-                .build();
+        SemanticCapabilityContract.SemanticCapabilityContractBuilder builder =
+                SemanticCapabilityContract.builder()
+                        .contractId(contractId)
+                        .domain(DOMAIN_CODE)
+                        .intentCode(AiResolvedQueryIntent.DISH_PROFIT)
+                        .pathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT)
+                        .wire(row.getStructuredIntentDetailWire())
+                        .queryObject(row.getQueryObject())
+                        .metric(row.getMetric())
+                        .sourceFacet(null)
+                        .detailWanted(row.getDetailWanted())
+                        .answerPlanType(row.getTargetDishProfitPlanType())
+                        .requiresAnchor(requiresAnchor)
+                        .anchorType(requiresAnchor ? DishProfitSemanticCapabilityMatrix.ANCHOR_TYPE_DISH : null)
+                        .selectedTools(tools)
+                        .status(status)
+                        .gapMarker(gapMarker);
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_OVERVIEW.equals(
+                row.getStructuredIntentDetailWire())) {
+            builder.operations(Set.of("OVERVIEW", "SUMMARY"));
+        } else {
+            builder.operation(row.getOperation());
+        }
+        return builder.build();
     }
 
     private static String contractIdForRow(DishProfitSemanticCapabilityMatrixRow row) {
         return switch (row.getRowId()) {
+            case "DP-R0k" -> "dish_profit.overview";
             case "DP-R0a" -> "dish_profit.ranking_low_margin";
             case "DP-R0b" -> "dish_profit.ranking_high_margin";
             case "DP-R0c" -> "dish_profit.ranking_high_actual_cost";

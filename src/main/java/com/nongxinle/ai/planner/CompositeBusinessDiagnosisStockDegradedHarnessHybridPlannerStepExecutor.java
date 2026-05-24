@@ -11,6 +11,7 @@ import java.util.Objects;
  * {@link PlannerStepExecutor}（真实 Bridge）；诊断 compose / 建议仍为 mock。
  * <p><strong>不是</strong>生产主链；<strong>仅</strong>用于 {@code PLANNER_EXECUTOR_BUSINESS_DIAGNOSIS_COMPOSITE_STOCK_DEGRADED_CORE}。
  * 生产 SHADOW / ALL_REAL 路径使用 {@link CompositeBusinessDiagnosisAllDataRealHybridPlannerStepExecutor}。</p>
+ * <p><strong>Harness-only executor：仅用于 PlannerExecutor 降级回放/验证，不参与生产 SHADOW 全真路径，不得接入生产主回答链。</strong></p>
  */
 public final class CompositeBusinessDiagnosisStockDegradedHarnessHybridPlannerStepExecutor implements PlannerStepExecutor {
 

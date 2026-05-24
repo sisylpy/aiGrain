@@ -9,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.util.List;
+
 /**
  * Harness 入口：仅用 LLM 解析「用户语义意图/时间偏好/口述范围」，禁止产出任何 SQL 或可执行 ID；
  * {@link com.nongxinle.ai.resolver.AiResolvedQueryContextResolver} 负责把门店名等映射为权限内 ID。
@@ -66,18 +68,10 @@ public class AiQuerySemanticLlmParser {
                 logSemanticInvocation("v2", pid, raw, out, null);
                 return out;
             }
-            AiQuerySemanticParseResult parsed = AiQuerySemanticParseResultJsonParser.parseRaw(raw);
-            String err = parsed.isParseMissing()
-                    ? AiQuerySemanticParseResultJsonParser.describeParseFailureReason(raw)
-                    : null;
-            AiQuerySemanticParseResult out =
-                    parsed.toBuilder()
-                            .promptRegistryId(pid)
-                            .observationLlmRawText(rawObs)
-                            .observationJsonParseError(err)
-                            .build();
-            logSemanticInvocation("v2", pid, raw, out, null);
-            return out;
+            return finalizeParsed(
+                    pid,
+                    rawObs,
+                    parseWithOptionalProtocolRepair(systemPrompt, raw));
         } catch (Exception e) {
             log.warn("[AiQuerySemanticLlmParser] v2 llm semantic parse failed: {}", e.toString());
             AiQuerySemanticParseResult out =
@@ -90,6 +84,151 @@ public class AiQuerySemanticLlmParser {
             logSemanticInvocation("v2", pid, raw, out, null);
             return out;
         }
+    }
+
+    private record ParseAttempt(AiQuerySemanticParseResult parsed, String observationRaw) {}
+
+    private ParseAttempt parseWithOptionalProtocolRepair(String systemPrompt, String raw) {
+        AiQuerySemanticParseResultJsonParser.ProtocolNormalizeResult norm =
+                AiQuerySemanticParseResultJsonParser.parseAndNormalizeProtocol(raw);
+        AiQuerySemanticParseResult parsed = norm.parsed();
+        String normalizedRaw = norm.normalizedJson();
+        if (parsed.isParseMissing()) {
+            return new ParseAttempt(parsed, raw);
+        }
+        List<String> protocolErrors =
+                AiQuerySemanticParseResultJsonParser.collectProtocolErrors(normalizedRaw, parsed);
+        if (protocolErrors.isEmpty()) {
+            if (norm.relocate().changed()) {
+                return new ParseAttempt(markJavaProtocolRelocate(parsed, norm.relocate()), normalizedRaw);
+            }
+            return new ParseAttempt(parsed, normalizedRaw);
+        }
+        return parseWithProtocolRepair(systemPrompt, raw, normalizedRaw, parsed, protocolErrors);
+    }
+
+    /**
+     * JSON 可解析但协议不合格时，重试一次要求模型修正 schema/枚举/字段位置；不做业务语义推断。
+     * LLM repair 失败时仍保留 Java 协议搬移后的 parse（含已恢复的顶层 confidence 等）。
+     */
+    private ParseAttempt parseWithProtocolRepair(
+            String systemPrompt,
+            String originalRaw,
+            String normalizedRaw,
+            AiQuerySemanticParseResult normalizedParsed,
+            List<String> protocolErrors) {
+        String repairReason =
+                AiQuerySemanticParseResultJsonParser.buildProtocolRepairReasonCode(protocolErrors);
+        String repairUserMessage =
+                AiQuerySemanticParseResultJsonParser.buildProtocolRepairUserMessage(
+                        normalizedRaw, protocolErrors);
+        String repairedRaw = null;
+        try {
+            repairedRaw = llmGateway.chatSimple(systemPrompt, repairUserMessage);
+            if (!StringUtils.hasText(repairedRaw)) {
+                return new ParseAttempt(
+                        markRepaired(normalizedParsed, repairReason, false, "empty_repair_response"),
+                        normalizedRaw);
+            }
+            AiQuerySemanticParseResultJsonParser.ProtocolNormalizeResult repairedNorm =
+                    AiQuerySemanticParseResultJsonParser.parseAndNormalizeProtocol(repairedRaw);
+            AiQuerySemanticParseResult repaired = repairedNorm.parsed();
+            String repairedNormalizedRaw = repairedNorm.normalizedJson();
+            if (repaired.isParseMissing()) {
+                return new ParseAttempt(
+                        markRepaired(
+                                normalizedParsed,
+                                repairReason,
+                                false,
+                                AiQuerySemanticParseResultJsonParser.describeParseFailureReason(repairedRaw)),
+                        normalizedRaw);
+            }
+            List<String> repairedErrors =
+                    AiQuerySemanticParseResultJsonParser.collectProtocolErrors(
+                            repairedNormalizedRaw, repaired);
+            if (!repairedErrors.isEmpty()) {
+                return new ParseAttempt(
+                        markRepaired(
+                                normalizedParsed,
+                                repairReason,
+                                false,
+                                "repair_still_invalid:" + String.join(";", repairedErrors)),
+                        normalizedRaw);
+            }
+            AiQuerySemanticParseResult success =
+                    markRepaired(repaired, repairReason, true, null);
+            if (repairedNorm.relocate().changed()) {
+                String relocateSuffix =
+                        "java_protocol_relocate:" + String.join(";", repairedNorm.relocate().moves());
+                success =
+                        success.toBuilder()
+                                .querySemanticV2RepairReason(
+                                        repairReason + ";" + relocateSuffix)
+                                .build();
+            }
+            return new ParseAttempt(success, repairedNormalizedRaw);
+        } catch (Exception e) {
+            log.warn("[AiQuerySemanticLlmParser] v2 protocol repair failed: {}", e.toString());
+            return new ParseAttempt(
+                    markRepaired(
+                            normalizedParsed,
+                            repairReason,
+                            false,
+                            "repair_exception:" + e.getClass().getSimpleName()),
+                    normalizedRaw);
+        }
+    }
+
+    private static AiQuerySemanticParseResult markJavaProtocolRelocate(
+            AiQuerySemanticParseResult parsed,
+            AiQuerySemanticParseResultJsonParser.ProtocolRelocateResult relocate) {
+        String reason = "java_protocol_relocate";
+        if (relocate.moves() != null && !relocate.moves().isEmpty()) {
+            reason = reason + ":" + String.join(";", relocate.moves());
+        }
+        return parsed.toBuilder()
+                .querySemanticV2RepairAttempted(true)
+                .querySemanticV2RepairSuccess(true)
+                .querySemanticV2RepairReason(reason)
+                .build();
+    }
+
+    private static AiQuerySemanticParseResult markRepaired(
+            AiQuerySemanticParseResult baseParsed,
+            String repairReason,
+            boolean repairSuccess,
+            String detailError) {
+        String reason = repairReason;
+        if (StringUtils.hasText(detailError)) {
+            reason = repairReason + ";" + detailError;
+        }
+        return baseParsed.toBuilder()
+                .querySemanticV2RepairAttempted(true)
+                .querySemanticV2RepairSuccess(repairSuccess)
+                .querySemanticV2RepairReason(reason)
+                .build();
+    }
+
+    private AiQuerySemanticParseResult finalizeParsed(
+            String pid, String rawObsFallback, ParseAttempt attempt) {
+        AiQuerySemanticParseResult parsed = attempt.parsed();
+        String observationRaw = truncateSemanticObservationRaw(attempt.observationRaw());
+        if (observationRaw == null) {
+            observationRaw = rawObsFallback;
+        }
+        String err =
+                parsed.isParseMissing()
+                        ? AiQuerySemanticParseResultJsonParser.describeParseFailureReason(
+                                attempt.observationRaw())
+                        : null;
+        AiQuerySemanticParseResult out =
+                parsed.toBuilder()
+                        .promptRegistryId(pid)
+                        .observationLlmRawText(observationRaw)
+                        .observationJsonParseError(err)
+                        .build();
+        logSemanticInvocation("v2", pid, attempt.observationRaw(), out, null);
+        return out;
     }
 
     private static String truncateSemanticObservationRaw(String r) {

@@ -27,7 +27,7 @@ public final class DomainContractFrameCanonicalizerRegistry {
         if (parse == null || parse.isParseMissing()) {
             return parse;
         }
-        if (SemanticContractCompletionEngine.hasSelectedContractId(parse)) {
+        if (SemanticContractCompletionEngine.isContractLockedParse(parse)) {
             return ContractFrameLightNormalizer.normalize(parse);
         }
         String domain = normalizeDomain(context.getSelectedDomain());

@@ -7,8 +7,8 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.graph.business.scope.BusinessScopeResolutionSupport;
 import com.nongxinle.ai.mapping.AiRoleMapper;
-import com.nongxinle.ai.scope.AiQueryScope;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.security.AiPermissionGuard;
 import com.nongxinle.ai.tool.ToolRegistry;
@@ -49,18 +49,11 @@ public class WarehouseStockOverviewToolExecutor {
             if (dis != null) {
                 m.put(AiBusinessToolIds.ARG_DIS_ID, dis);
             }
-            AiQueryScope sc = state.getScope();
-            List<Integer> visibleStoreRoots = BusinessToolExecutionNode.extractVisibleStoreDepartmentIds(
-                    state.getResolvedQueryContext());
-            if (!visibleStoreRoots.isEmpty()) {
-                m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS, new ArrayList<>(visibleStoreRoots));
-                m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, visibleStoreRoots.size());
-            } else if (sc != null) {
-                if (sc.getResolvedDepartmentIds() != null && !sc.getResolvedDepartmentIds().isEmpty()) {
-                    m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS,
-                            new ArrayList<>(sc.getResolvedDepartmentIds()));
-                }
-                m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, sc.getParentStoreCount());
+            BusinessScopeResolutionSupport.GroupWideToolScope scope =
+                    BusinessScopeResolutionSupport.resolveGroupWideToolScope(state.getResolvedQueryContext());
+            if (!scope.resolvedDepartmentIds().isEmpty()) {
+                m.put(AiBusinessToolIds.ARG_RESOLVED_DEPARTMENT_IDS, new ArrayList<>(scope.resolvedDepartmentIds()));
+                m.put(AiBusinessToolIds.ARG_PARENT_STORE_COUNT, scope.parentStoreCount());
             }
             var ctx = state.getAiUserContext();
             if (ctx != null) {

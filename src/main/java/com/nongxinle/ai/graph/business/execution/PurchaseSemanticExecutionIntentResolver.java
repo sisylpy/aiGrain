@@ -1,12 +1,9 @@
 package com.nongxinle.ai.graph.business.execution;
 
 import com.nongxinle.ai.context.AiResolvedQueryContext;
-import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
-import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
-import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.frame.CurrentSemanticFrame;
@@ -14,18 +11,28 @@ import com.nongxinle.ai.semantic.matrix.PurchaseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.PurchaseSemanticCapabilityMatrixRow;
 import org.springframework.util.StringUtils;
 
-import java.util.List;
-
 /**
- * 从 {@link AiResolvedQueryContext} 解析采购 contract-driven execution intent（P4-B）。
- * <p>优先级：{@code semanticContractValidation.matchedContractId} → frame/matrix 形状 → anchorPolicy / resultAnchors。
+ * 从 {@link AiResolvedQueryContext} 解析采购 contract-driven execution intent（P4-B / P2-J）。
+ * <p>Tool Request 主链仅允许：
+ * <ul>
+ *   <li>{@code contractEntryValidated=true} + {@code selectedContractId} → contract entry 映射（source=contract_entry）</li>
+ *   <li>否则 → {@link PurchaseSemanticExecutionIntent#none()}（source=unresolved）；structuredIntentDetail wire 由
+ *   {@link com.nongxinle.ai.graph.business.PurchaseOverviewToolExecutor} pass-through，不在此推导 execution intent。</li>
+ * </ul>
+ * 禁止 Matrix {@code findByDetailWanted} / {@code slotsInferRowShape} 及非 contract 的 anchor/ranking 推导影响 Tool args。
  */
 public final class PurchaseSemanticExecutionIntentResolver {
+
+    public static final String RESOLUTION_SOURCE_CONTRACT_ENTRY = "contract_entry";
+    public static final String RESOLUTION_SOURCE_UNRESOLVED = "unresolved";
 
     private PurchaseSemanticExecutionIntentResolver() {}
 
     public static PurchaseSemanticExecutionIntent resolve(AiResolvedQueryContext rq) {
         if (rq == null) {
+            return PurchaseSemanticExecutionIntent.none();
+        }
+        if (!SemanticContractCompletionEngine.isContractLockedParse(rq.getQuerySemanticParse())) {
             return PurchaseSemanticExecutionIntent.none();
         }
         CurrentSemanticFrame frame =
@@ -34,18 +41,6 @@ public final class PurchaseSemanticExecutionIntentResolver {
         PurchaseSemanticExecutionIntent fromContract = fromMatchedContract(matchedContractId, frame, rq);
         if (fromContract != null && fromContract.isActive()) {
             return fromContract;
-        }
-        PurchaseSemanticExecutionIntent fromFrame = fromFrameAndMatrix(frame, rq);
-        if (fromFrame != null && fromFrame.isActive()) {
-            return fromFrame;
-        }
-        PurchaseSemanticExecutionIntent fromSupplierAnchor = fromSupplierAnchorGoodsLines(frame, rq);
-        if (fromSupplierAnchor != null && fromSupplierAnchor.isActive()) {
-            return fromSupplierAnchor;
-        }
-        PurchaseSemanticExecutionIntent fromChannel = fromChannelGoodsDetail(frame, rq);
-        if (fromChannel != null && fromChannel.isActive()) {
-            return fromChannel;
         }
         return PurchaseSemanticExecutionIntent.none();
     }
@@ -78,46 +73,32 @@ public final class PurchaseSemanticExecutionIntentResolver {
         if (row == null) {
             return null;
         }
-        return buildGoodsAnchorIntent(row, frame, rq, contractId.trim());
+        return withResolutionSource(
+                buildGoodsAnchorIntent(row, frame, rq, contractId.trim()), RESOLUTION_SOURCE_CONTRACT_ENTRY);
     }
 
-    private static PurchaseSemanticExecutionIntent fromFrameAndMatrix(
-            CurrentSemanticFrame frame, AiResolvedQueryContext rq) {
-        if (frame == null || !StringUtils.hasText(frame.getDetailWanted())) {
+    private static PurchaseSemanticExecutionIntent withResolutionSource(
+            PurchaseSemanticExecutionIntent intent, String source) {
+        if (intent == null) {
             return null;
         }
-        PurchaseSemanticCapabilityMatrixRow row =
-                PurchaseSemanticCapabilityMatrix.findByDetailWanted(frame.getDetailWanted());
-        if (row == null) {
-            return null;
-        }
-        if (!matchesGoodsAnchorFrame(row, frame)) {
-            return null;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart slots = semanticSlots(rq);
-        if (slots != null
-                && rq.getQuerySemanticParse() != null
-                && !PurchaseSemanticCapabilityMatrix.slotsInferRowShape(
-                        rq.getQuerySemanticParse(), row)) {
-            return null;
-        }
-        return buildGoodsAnchorIntent(row, frame, rq, row.getCapabilityId());
-    }
-
-    private static boolean matchesGoodsAnchorFrame(
-            PurchaseSemanticCapabilityMatrixRow row, CurrentSemanticFrame frame) {
-        String wire = frame.getStructuredIntentDetailWire();
-        if (!StringUtils.hasText(wire)
-                || !AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(wire)) {
-            return false;
-        }
-        String sf = frame.getSourceFacet();
-        if (row.getRequiredSourceFacet() != null
-                && sf != null
-                && !row.getRequiredSourceFacet().equalsIgnoreCase(sf.trim())) {
-            return false;
-        }
-        return row.getRequiredDetailWanted().equalsIgnoreCase(frame.getDetailWanted().trim());
+        return PurchaseSemanticExecutionIntent.builder()
+                .matchedContractId(intent.getMatchedContractId())
+                .wire(intent.getWire())
+                .queryObject(intent.getQueryObject())
+                .operation(intent.getOperation())
+                .detailWanted(intent.getDetailWanted())
+                .sourceFacet(intent.getSourceFacet())
+                .answerPlanType(intent.getAnswerPlanType())
+                .focusGoodsId(intent.getFocusGoodsId())
+                .focusGoodsName(intent.getFocusGoodsName())
+                .focusSupplierId(intent.getFocusSupplierId())
+                .anchorType(intent.getAnchorType())
+                .anchorResolved(intent.isAnchorResolved())
+                .executionIntentType(intent.getExecutionIntentType())
+                .toolDetailWantedKey(intent.getToolDetailWantedKey())
+                .resolutionSource(source)
+                .build();
     }
 
     private static PurchaseSemanticExecutionIntent buildGoodsAnchorIntent(
@@ -130,11 +111,11 @@ public final class PurchaseSemanticExecutionIntentResolver {
         String toolKey = toolDetailWantedKeyForRow(row);
         return PurchaseSemanticExecutionIntent.builder()
                 .matchedContractId(matchedContractId)
-                .wire(frame.getStructuredIntentDetailWire())
-                .queryObject(frame.getQueryObject())
-                .operation(frame.getOperation())
-                .detailWanted(frame.getDetailWanted())
-                .sourceFacet(frame.getSourceFacet())
+                .wire(frame != null ? frame.getStructuredIntentDetailWire() : null)
+                .queryObject(frame != null ? frame.getQueryObject() : null)
+                .operation(frame != null ? frame.getOperation() : null)
+                .detailWanted(frame != null ? frame.getDetailWanted() : null)
+                .sourceFacet(frame != null ? frame.getSourceFacet() : null)
                 .answerPlanType(row.getTargetPurchasePlanType())
                 .focusGoodsId(anchor.entityId())
                 .focusGoodsName(anchor.entityName())
@@ -142,74 +123,6 @@ public final class PurchaseSemanticExecutionIntentResolver {
                 .anchorResolved(anchor.resolved())
                 .executionIntentType(execType)
                 .toolDetailWantedKey(toolKey)
-                .build();
-    }
-
-    private static PurchaseSemanticExecutionIntent fromSupplierAnchorGoodsLines(
-            CurrentSemanticFrame frame, AiResolvedQueryContext rq) {
-        if (frame == null
-                || !"GOODS_UNIT_PRICE".equalsIgnoreCase(nullToEmpty(frame.getDetailWanted()))) {
-            return null;
-        }
-        String wire = frame.getStructuredIntentDetailWire();
-        if (!AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY.equals(wire)) {
-            return null;
-        }
-        if (!AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equalsIgnoreCase(
-                nullToEmpty(frame.getSourceFacet()))) {
-            return null;
-        }
-        Integer supplierId = resolveSupplierRankingTop1Id(rq);
-        if (supplierId == null) {
-            return null;
-        }
-        return PurchaseSemanticExecutionIntent.builder()
-                .wire(wire)
-                .queryObject(frame.getQueryObject())
-                .operation(frame.getOperation())
-                .detailWanted(frame.getDetailWanted())
-                .sourceFacet(frame.getSourceFacet())
-                .answerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL)
-                .focusSupplierId(supplierId)
-                .anchorType(AiResultAnchor.ENTITY_TYPE_SUPPLIER)
-                .anchorResolved(true)
-                .executionIntentType(PurchaseSemanticExecutionIntent.EXEC_SUPPLIER_ANCHOR_GOODS_LINES)
-                .toolDetailWantedKey("GOODS_UNIT_PRICE")
-                .build();
-    }
-
-    private static PurchaseSemanticExecutionIntent fromChannelGoodsDetail(
-            CurrentSemanticFrame frame, AiResolvedQueryContext rq) {
-        if (frame == null || !"GOODS_DETAIL".equalsIgnoreCase(nullToEmpty(frame.getDetailWanted()))) {
-            return null;
-        }
-        AiResolvedQueryIntent qi = rq.getQueryIntent();
-        if (qi == null) {
-            return null;
-        }
-        String pst = qi.getPurchaseSourceType();
-        if (!StringUtils.hasText(pst)) {
-            return null;
-        }
-        String pstTrim = pst.trim();
-        boolean supplier =
-                AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equalsIgnoreCase(pstTrim);
-        boolean self = AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE.equalsIgnoreCase(pstTrim);
-        if (!supplier && !self) {
-            return null;
-        }
-        String planType =
-                supplier
-                        ? PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL
-                        : PurchaseAnswerPlan.TYPE_PURCHASE_SELF_GOODS_DETAIL;
-        return PurchaseSemanticExecutionIntent.builder()
-                .wire(frame.getStructuredIntentDetailWire())
-                .detailWanted(frame.getDetailWanted())
-                .sourceFacet(pstTrim)
-                .answerPlanType(planType)
-                .anchorResolved(false)
-                .executionIntentType(PurchaseSemanticExecutionIntent.EXEC_CHANNEL_GOODS_DETAIL)
-                .toolDetailWantedKey("GOODS_DETAIL")
                 .build();
     }
 
@@ -280,66 +193,12 @@ public final class PurchaseSemanticExecutionIntentResolver {
         return GoodsAnchor.unresolved();
     }
 
-    private static Integer resolveSupplierRankingTop1Id(AiResolvedQueryContext rq) {
-        AiConversationTurnMemory prev = rq == null ? null : rq.getPreviousTurn();
-        List<AiResultAnchor> anchors = prev == null ? null : prev.getLastResultAnchors();
-        if (anchors == null || anchors.isEmpty()) {
-            return null;
-        }
-        for (AiResultAnchor a : anchors) {
-            if (a == null || !StringUtils.hasText(a.getEntityType())) {
-                continue;
-            }
-            if (!AiResultAnchor.ENTITY_TYPE_SUPPLIER.equalsIgnoreCase(a.getEntityType().trim())) {
-                continue;
-            }
-            if (!PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING.equals(
-                    nullToEmpty(a.getSourcePlanType()))) {
-                continue;
-            }
-            Integer rk = a.getRank();
-            boolean rankOne = rk != null && rk == 1;
-            boolean singleUnranked = rk == null && anchors.size() == 1;
-            if (!(rankOne || singleUnranked)) {
-                continue;
-            }
-            Integer id = parsePositiveInt(a.getEntityId());
-            if (id != null) {
-                return id;
-            }
-        }
-        return null;
-    }
-
-    private static AiQuerySemanticParseResult.SemanticSlotsPart semanticSlots(AiResolvedQueryContext rq) {
-        if (rq == null || rq.getQuerySemanticParse() == null) {
-            return null;
-        }
-        return rq.getQuerySemanticParse().getSemanticSlots();
-    }
-
     private static String blankToNull(String s) {
         if (!StringUtils.hasText(s)) {
             return null;
         }
         String t = s.trim();
         return t.isEmpty() ? null : t;
-    }
-
-    private static String nullToEmpty(String s) {
-        return s == null ? "" : s;
-    }
-
-    private static Integer parsePositiveInt(String raw) {
-        if (!StringUtils.hasText(raw)) {
-            return null;
-        }
-        try {
-            int v = Integer.parseInt(raw.trim());
-            return v > 0 ? v : null;
-        } catch (Exception e) {
-            return null;
-        }
     }
 
     record GoodsAnchor(String entityId, String entityName, boolean resolved) {
