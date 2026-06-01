@@ -24,16 +24,91 @@
             <if test="foodId != null">
                 and gb_dfg_food_id = #{foodId}
             </if>
+            <if test="foodIds != null and foodIds.size() &gt; 0">
+                and gb_dfg_food_id in
+                <foreach collection="foodIds" item="fid" open="(" separator="," close=")">
+                    #{fid}
+                </foreach>
+            </if>
             <if test="disId != null">
                 and gb_dfg_dis_id = #{disId}
             </if>
         </where>
     </select>
 
-    <select id="queryFoodGoodsByFoodId" resultType="com.nongxinle.entity.GbDistributerFoodGoodsEntity">
-        select * from gb_distributer_food_goods
-        where gb_dfg_food_id = #{gbDfgFoodId}
-        order by gb_distributer_food_goods_id
+
+
+
+    <resultMap id="foodGoodsWithDisGoods" type="com.nongxinle.entity.GbDistributerFoodGoodsEntity">
+        <id property="gbDistributerFoodGoodsId" column="gb_distributer_food_goods_id"/>
+        <result property="gbDfgDisId" column="gb_dfg_dis_id"/>
+        <result property="gbDfgFoodId" column="gb_dfg_food_id"/>
+        <result property="gbDfgDisGoodsId" column="gb_dfg_dis_goods_id"/>
+        <result property="gbDfgStatus" column="gb_dfg_status"/>
+        <result property="gbDfgGoodsAmount" column="gb_dfg_goods_amount"/>
+        <result property="gbDfgGoodsName" column="gb_dfg_goods_name"/>
+        <result property="gbDfgGoodsStandardname" column="gb_dfg_goods_standardname"/>
+        <result property="gbDfgGoodsAveragePrice" column="gb_dfg_goods_average_price"/>
+        <association property="gbDistributerGoodsEntity" javaType="com.nongxinle.entity.GbDistributerGoodsEntity">
+            <id property="gbDistributerGoodsId" column="gb_distributer_goods_id"/>
+            <result property="gbDgGoodsAveragePrice" column="gb_dg_goods_average_price"/>
+            <result property="gbDgGoodsName" column="gb_dg_goods_name"/>
+            <result property="gbDgGoodsStandardname" column="gb_dg_goods_standardname"/>
+            <result property="gbDgGoodsDetail" column="gb_dg_goods_detail"/>
+            <result property="gbDgGoodsBrand" column="gb_dg_goods_brand"/>
+            <result property="gbDgGoodsPlace" column="gb_dg_goods_place"/>
+            <result property="gbDgGoodsPrice" column="gb_dg_goods_price"/>
+            <result property="gbDgGoodsLowestPrice" column="gb_dg_goods_lowest_price"/>
+            <result property="gbDgGoodsHighestPrice" column="gb_dg_goods_highest_price"/>
+            <result property="gbDgControlPrice" column="gb_dg_control_price"/>
+            <result property="gbDgControlFresh" column="gb_dg_control_fresh"/>
+            <result property="gbDgGoodsType" column="gb_dg_goods_type"/>
+            <result property="gbDgDfgGoodsFatherId" column="gb_dg_dfg_goods_father_id"/>
+            <result property="gbDgDfgGoodsGrandId" column="gb_dg_dfg_goods_grand_id"/>
+            <result property="gbDgDfgGoodsGreatId" column="gb_dg_dfg_goods_great_id"/>
+            <result property="gbDgNxGoodsId" column="gb_dg_nx_goods_id"/>
+            <result property="gbDgNxFatherImg" column="gb_dg_nx_father_img"/>
+            <result property="gbDgNxFatherImgLarge" column="gb_dg_nx_father_img_large"/>
+            <result property="gbDgNxDistributerGoodsPrice" column="gb_dg_nx_distributer_goods_price"/>
+            <result property="gbDgGbDepartmentId" column="gb_dg_gb_department_id"/>
+            <result property="gbDgGoodsIsWeight" column="gb_dg_goods_is_weight"/>
+            <result property="gbDgPullOff" column="gb_dg_pull_off"/>
+            <result property="gbDgGoodsSonsSort" column="gb_dg_goods_sons_sort"/>
+            <result property="gbDgSellingPrice" column="gb_dg_selling_price"/>
+        </association>
+    </resultMap>
+
+    <select id="queryFoodGoodsByFoodId" resultMap="foodGoodsWithDisGoods">
+        select fg.*,
+               IFNULL(priceStats.gb_dfg_goods_average_price, '0') AS gb_dfg_goods_average_price,
+               IFNULL(priceStats.gb_dfg_goods_average_price, '0') AS gb_dg_goods_average_price,
+               dg.gb_distributer_goods_id, dg.gb_dg_goods_name, dg.gb_dg_goods_standardname,
+               dg.gb_dg_goods_detail, dg.gb_dg_goods_brand, dg.gb_dg_goods_place,
+               dg.gb_dg_goods_price, dg.gb_dg_goods_lowest_price, dg.gb_dg_goods_highest_price,
+               dg.gb_dg_control_price, dg.gb_dg_control_fresh, dg.gb_dg_goods_type,
+               dg.gb_dg_dfg_goods_father_id, dg.gb_dg_dfg_goods_grand_id, dg.gb_dg_dfg_goods_great_id,
+               dg.gb_dg_nx_goods_id, dg.gb_dg_nx_father_img, dg.gb_dg_nx_father_img_large,
+               dg.gb_dg_nx_distributer_goods_price,
+               dg.gb_dg_gb_department_id, dg.gb_dg_goods_is_weight, dg.gb_dg_pull_off,
+               dg.gb_dg_goods_sons_sort, dg.gb_dg_selling_price
+        from gb_distributer_food_goods fg
+        left join gb_distributer_goods dg on dg.gb_distributer_goods_id = fg.gb_dfg_dis_goods_id
+        left join (
+            SELECT gb_dgs_gb_dis_goods_id,
+                   gb_dgs_gb_distributer_id,
+                   CAST(ROUND(AVG(CAST(gb_dgs_price AS DECIMAL(10, 2))), 2) AS CHAR) AS gb_dfg_goods_average_price
+            FROM gb_department_goods_stock
+            WHERE gb_dgs_date &gt;= #{stockAvgStartDate}
+              AND gb_dgs_date &lt;= #{stockAvgStopDate}
+              AND gb_dgs_price IS NOT NULL
+              AND TRIM(gb_dgs_price) &lt;&gt; ''
+              AND CAST(gb_dgs_price AS DECIMAL(10, 2)) &gt; 0
+            GROUP BY gb_dgs_gb_dis_goods_id, gb_dgs_gb_distributer_id
+        ) AS priceStats
+            ON priceStats.gb_dgs_gb_dis_goods_id = fg.gb_dfg_dis_goods_id
+           AND priceStats.gb_dgs_gb_distributer_id = fg.gb_dfg_dis_id
+        where fg.gb_dfg_food_id = #{gbDfgFoodId}
+        order by fg.gb_distributer_food_goods_id
     </select>
 
     <select id="queryFoodGoodsByDisGoodsId" resultType="com.nongxinle.entity.GbDistributerFoodGoodsEntity">

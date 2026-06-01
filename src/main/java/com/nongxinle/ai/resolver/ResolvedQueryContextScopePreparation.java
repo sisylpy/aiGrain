@@ -6,6 +6,8 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.context.AiResolvedTimeWindowDisplaySupport;
 import com.nongxinle.ai.context.AiSemanticStoreNarrowingDiagnostics;
+import com.nongxinle.ai.context.ScopeResolutionTrace;
+import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
@@ -38,13 +40,16 @@ public class ResolvedQueryContextScopePreparation {
             boolean applyStructuralLlm,
             double querySemanticMinConfidence,
             AiConversationTurnMemory previousTurn,
+            AiUserContext userContext,
+            Long effectiveDepartmentId,
             AiResolvedOrgScope orgScope,
             AiFollowUpResolution followUp,
             AiResolvedQueryIntent queryIntent,
             AiResolvedQueryIntent mergedIntentStem,
             AiQuerySemanticParseResult semanticLlm,
             AiResolvedTimeWindow timeWindow,
-            String effectiveTimeSource) {}
+            String effectiveTimeSource,
+            ScopeResolutionTrace scopeResolutionTrace) {}
 
     public record ScopePrepareResult(
             AiResolvedOrgScope mergedOrg,
@@ -61,10 +66,37 @@ public class ResolvedQueryContextScopePreparation {
 
     public ScopePrepareResult prepare(ScopePrepareRequest req) {
         AiFollowUpResolution followUp = req.followUp();
-        AiResolvedOrgScope mergedOrg =
-                followUp != null && followUp.getMergedOrgScope() != null
-                        ? followUp.getMergedOrgScope()
+        ScopeResolutionTrace trace = req.scopeResolutionTrace();
+        boolean explicitGroupScopeRequest = RequestExplicitGroupScopeSupport.isExplicitGroupScopeRequest(req.request());
+        if (trace != null) {
+            trace.setGroupToStoreNarrowingAllowed(
+                    !explicitGroupScopeRequest
+                            || RequestExplicitGroupScopeSupport.shouldAllowGroupToStoreNarrowing(
+                                    req.normalized(), req.semanticLlm()));
+        }
+        AiResolvedOrgScope groupBaselineOrg =
+                explicitGroupScopeRequest
+                        ? RequestExplicitGroupScopeSupport.pinBaselineGroupOrgScope(
+                                orgScopeAssembler,
+                                req.userContext(),
+                                req.effectiveDepartmentId(),
+                                req.request(),
+                                req.orgScope())
                         : req.orgScope();
+        AiResolvedOrgScope mergedOrg =
+                explicitGroupScopeRequest ? groupBaselineOrg : (followUp != null && followUp.getMergedOrgScope() != null
+                                ? followUp.getMergedOrgScope()
+                                : req.orgScope());
+        if (trace != null) {
+            trace.setMergedOrgScopeTypeBeforePreparation(
+                    mergedOrg != null ? mergedOrg.getScopeType() : null);
+        }
+
+        if (explicitGroupScopeRequest && followUp != null) {
+            followUp.setInheritOrgScope(false);
+            followUp.setMergedOrgScope(groupBaselineOrg);
+            followUp.setEffectiveScopeSource(RequestExplicitGroupScopeSupport.EFFECTIVE_SCOPE_SOURCE_REQUEST);
+        }
 
         if (!req.clarificationRequired()) {
             String dishReasonScopeProbe =
@@ -82,10 +114,16 @@ public class ResolvedQueryContextScopePreparation {
                             req.mergedIntentStem() != null
                                     ? req.mergedIntentStem().getStructuredIntentDetail()
                                     : null,
-                            req.semanticLlm());
+                            req.semanticLlm(),
+                            explicitGroupScopeRequest);
             mergedOrg = orgOutcome.org();
+            if (trace != null) {
+                trace.setMultiTurnInherited(orgOutcome.inheritedFromPreviousTurn());
+            }
             if (orgOutcome.inheritedFromPreviousTurn()) {
                 followUp.setEffectiveScopeSource("INHERITED_PREVIOUS");
+            } else if (explicitGroupScopeRequest) {
+                followUp.setEffectiveScopeSource(RequestExplicitGroupScopeSupport.EFFECTIVE_SCOPE_SOURCE_REQUEST);
             } else if (followUp != null
                     && followUp.isInheritOrgScope()
                     && !"STORE_SCOPE_FOLLOW_UP".equals(followUp.getFollowUpType())
@@ -102,6 +140,7 @@ public class ResolvedQueryContextScopePreparation {
         multiStoreHarness.ingestDetectionCandidate(req.normalized(), req.semanticLlm(), mergedOrg);
         AiSemanticStoreNarrowingDiagnostics storeScopeNarrowDiag =
                 AiSemanticStoreNarrowingDiagnostics.empty();
+        boolean semanticNarrowingApplied = false;
         if (!req.clarificationRequired()) {
             AiResolvedOrgScope beforeSemanticStore = mergedOrg;
             mergedOrg =
@@ -115,8 +154,33 @@ public class ResolvedQueryContextScopePreparation {
                             null,
                             multiStoreHarness,
                             storeScopeNarrowDiag);
-            if (mergedOrg != beforeSemanticStore) {
+            semanticNarrowingApplied = mergedOrg != beforeSemanticStore;
+            if (semanticNarrowingApplied) {
                 followUp.setEffectiveScopeSource("CURRENT_MESSAGE_EXPLICIT_STORE");
+                followUp.setMergedOrgScope(mergedOrg);
+            }
+        }
+
+        if (explicitGroupScopeRequest
+                && !RequestExplicitGroupScopeSupport.shouldAllowGroupToStoreNarrowing(
+                        req.normalized(), req.semanticLlm())) {
+            mergedOrg =
+                    RequestExplicitGroupScopeSupport.pinBaselineGroupOrgScope(
+                            orgScopeAssembler,
+                            req.userContext(),
+                            req.effectiveDepartmentId(),
+                            req.request(),
+                            groupBaselineOrg);
+            if (followUp != null) {
+                followUp.setInheritOrgScope(false);
+                followUp.setMergedOrgScope(mergedOrg);
+                followUp.setEffectiveScopeSource(
+                        RequestExplicitGroupScopeSupport.EFFECTIVE_SCOPE_SOURCE_REQUEST);
+            }
+            if (storeScopeNarrowDiag != null
+                    && storeScopeNarrowDiag.getNarrowingFailureReason() == null) {
+                storeScopeNarrowDiag.setNarrowingFailureReason(
+                        AiSemanticStoreNarrowingDiagnostics.REASON_SKIPPED_EXPLICIT_GROUP_REQUEST);
             }
         }
 
@@ -137,6 +201,10 @@ public class ResolvedQueryContextScopePreparation {
                         multiStoreHarness);
 
         AiResolvedDataScope dataScope = orgScopeAssembler.buildDataScope(mergedOrg);
+        if (trace != null) {
+            trace.snapshotAfterPreparation(mergedOrg, Boolean.TRUE.equals(trace.getMultiTurnInherited()), semanticNarrowingApplied);
+            trace.snapshotDataScope(mergedOrg, dataScope);
+        }
 
         String normQuestion = req.normalized();
         if (followUp.isNormalizedInputExpandedAtResolvePhase()

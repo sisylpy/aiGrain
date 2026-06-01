@@ -27,6 +27,8 @@ public final class SemanticContractCatalog {
                     WarehouseSemanticCapabilityContractExporter.INSTANCE,
                     DishSalesSemanticCapabilityContractExporter.INSTANCE,
                     DishProfitSemanticCapabilityContractExporter.INSTANCE,
+                    DishCostAnalysisSemanticCapabilityContractExporter.INSTANCE,
+                    MenuOperationSemanticCapabilityContractExporter.INSTANCE,
                     BusinessDiagnosisSemanticCapabilityContractExporter.INSTANCE,
                     BusinessOverviewSemanticCapabilityContractExporter.INSTANCE);
 
@@ -47,6 +49,11 @@ public final class SemanticContractCatalog {
     public static List<SemanticCapabilityContract> listKnownGaps(String domain) {
         SemanticCapabilityContractExporter exporter = exporterFor(domain);
         return exporter == null ? List.of() : exporter.exportKnownGapContracts();
+    }
+
+    public static List<SemanticCapabilityContract> listPlannedCapabilityContracts(String domain) {
+        SemanticCapabilityContractExporter exporter = exporterFor(domain);
+        return exporter == null ? List.of() : exporter.exportPlannedContracts();
     }
 
     /**

@@ -79,6 +79,17 @@ public class SemanticScopeNarrowingPolicy {
             return mergedOrg;
         }
 
+        if (RequestExplicitGroupScopeSupport.isExplicitGroupScopeRequest(request)
+                && !RequestExplicitGroupScopeSupport.shouldAllowGroupToStoreNarrowing(
+                        normalizedUserMessage, semantic)) {
+            if (diag != null) {
+                diag.setNarrowingAttemptedSemanticExplicitStore(false);
+                diag.setNarrowingFailureReason(
+                        AiSemanticStoreNarrowingDiagnostics.REASON_SKIPPED_EXPLICIT_GROUP_REQUEST);
+            }
+            return mergedOrg;
+        }
+
         if (!explicitSemanticStoreIntent) {
             if (diag != null) {
                 diag.setNarrowingAttemptedSemanticExplicitStore(false);
@@ -204,6 +215,10 @@ public class SemanticScopeNarrowingPolicy {
             diag.setNarrowingFailureReason(null);
             diag.setMatchedStoreCandidate(summarizeStoreCandidateForDiag(narrowed));
             diag.setMatchedSemanticStoreMention(singleStoreMention.trim());
+        }
+        if (RequestExplicitGroupScopeSupport.isExplicitGroupScopeRequest(request)) {
+            return AiFollowUpResolver.copyOrgNarrowedToStoreSubsetKeepingGroup(
+                    mergedOrg, List.of(narrowed));
         }
         return AiFollowUpResolver.copyOrgNarrowedToSingleStore(mergedOrg, narrowed);
     }

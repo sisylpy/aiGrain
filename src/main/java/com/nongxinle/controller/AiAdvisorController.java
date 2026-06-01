@@ -1,6 +1,7 @@
 package com.nongxinle.controller;
 
 import com.nongxinle.ai.advisor.AiAdvisorConversationService;
+import com.nongxinle.ai.advisor.capability.AdvisorCapabilityService;
 import com.nongxinle.service.GbAiAdvisorService;
 import com.nongxinle.utils.R;
 import io.swagger.v3.oas.annotations.Operation;
@@ -20,6 +21,7 @@ public class AiAdvisorController {
 
     private final GbAiAdvisorService gbAiAdvisorService;
     private final AiAdvisorConversationService aiAdvisorConversationService;
+    private final AdvisorCapabilityService advisorCapabilityService;
 
     @GetMapping
     @Operation(summary = "业务顾问列表")
@@ -28,10 +30,14 @@ public class AiAdvisorController {
     }
 
     @GetMapping("/{advisorId}")
-    @Operation(summary = "业务顾问详情")
-    public R detail(@PathVariable Long advisorId) {
+    @Operation(summary = "业务顾问能力详情（commonWorkflows + questionTopics + recentRuns）")
+    public R detail(
+            @PathVariable Long advisorId,
+            @Parameter(description = "MINIAPP | DESKTOP；不传则 questionTopics 仅返回 scene=BOTH") @RequestParam(required = false)
+                    String scene,
+            @Parameter(description = "传入则填充 recentRuns；不传则为空数组") @RequestParam(required = false) Long userId) {
         try {
-            return R.ok().put("data", gbAiAdvisorService.getAdvisor(advisorId));
+            return R.ok().put("data", advisorCapabilityService.loadCapability(advisorId, scene, userId));
         } catch (IllegalArgumentException ex) {
             return R.error(400, ex.getMessage());
         }

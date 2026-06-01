@@ -820,6 +820,129 @@ class AiQuerySemanticLlmMergeHelperTest {
                 .isEqualTo(SemanticTimeContractCheck.FAIL_TIME_TYPE_DATE_MISMATCH);
     }
 
+    @Test
+    void reconcileTimePartForContract_contextFollowUpDefaultMonthToDate_inheritsPreviousTurn() {
+        AiConversationTurnMemory prev =
+                AiConversationTurnMemory.builder()
+                        .lastStartDate("2026-05-01")
+                        .lastEndDate("2026-05-31")
+                        .lastTimeLabel("LAST_MONTH")
+                        .build();
+        AiQuerySemanticParseResult sem =
+                AiQuerySemanticParseResult.builder()
+                        .parseMissing(false)
+                        .followUp(true)
+                        .timeAction("INHERIT_PREVIOUS")
+                        .intentAction("OVERRIDE")
+                        .time(
+                                AiQuerySemanticParseResult.TimePart.builder()
+                                        .timeType("THIS_MONTH")
+                                        .startDate("2026-06-01")
+                                        .endDate("2026-06-01")
+                                        .timeSource("DEFAULT_MONTH_TO_DATE")
+                                        .needInheritFromPrevious(false)
+                                        .build())
+                        .build();
+        LocalDate anchor = LocalDate.of(2026, 6, 1);
+        AiQuerySemanticParseResult reconciled =
+                SemanticTimeContractCheck.reconcileTimePartForContract(sem, prev, anchor);
+        SemanticTimeContractCheck.Result contract =
+                SemanticTimeContractCheck.check(reconciled, prev, anchor);
+        assertThat(contract.valid()).isTrue();
+        assertThat(contract.normalizedTimeSource())
+                .isEqualTo(SemanticTimeContractCheck.SOURCE_INHERITED_PREVIOUS);
+        assertThat(contract.normalizedStartDate()).isEqualTo(LocalDate.of(2026, 5, 1));
+        assertThat(contract.normalizedEndDate()).isEqualTo(LocalDate.of(2026, 5, 31));
+        assertThat(reconciled.getTime().getTimeType()).isEqualTo(AiResolvedTimeWindow.LAST_MONTH);
+    }
+
+    @Test
+    void reconcileTimePartForContract_intakeContextSignalsWithoutV2FollowUp_inheritsPreviousTurn() {
+        AiConversationTurnMemory prev =
+                AiConversationTurnMemory.builder()
+                        .lastStartDate("2026-05-01")
+                        .lastEndDate("2026-05-31")
+                        .lastTimeLabel("LAST_MONTH")
+                        .build();
+        AiQuerySemanticParseResult sem =
+                AiQuerySemanticParseResult.builder()
+                        .parseMissing(false)
+                        .followUp(false)
+                        .timeAction("OVERRIDE")
+                        .intentAction("OVERRIDE")
+                        .time(
+                                AiQuerySemanticParseResult.TimePart.builder()
+                                        .timeType("THIS_MONTH")
+                                        .startDate("2026-06-01")
+                                        .endDate("2026-06-01")
+                                        .timeSource("DEFAULT_MONTH_TO_DATE")
+                                        .build())
+                        .build();
+        TimeLayerContextSignals signals = new TimeLayerContextSignals(true, true);
+        LocalDate anchor = LocalDate.of(2026, 6, 1);
+        AiQuerySemanticParseResult reconciled =
+                SemanticTimeContractCheck.reconcileTimePartForContract(sem, prev, anchor, signals);
+        SemanticTimeContractCheck.Result contract =
+                SemanticTimeContractCheck.check(reconciled, prev, anchor);
+        assertThat(contract.valid()).isTrue();
+        assertThat(contract.normalizedTimeSource())
+                .isEqualTo(SemanticTimeContractCheck.SOURCE_INHERITED_PREVIOUS);
+        assertThat(contract.normalizedStartDate()).isEqualTo(LocalDate.of(2026, 5, 1));
+        assertThat(contract.normalizedEndDate()).isEqualTo(LocalDate.of(2026, 5, 31));
+    }
+
+    @Test
+    void reconcileTimePartForContract_firstTurnDefaultMonthToDate_unchanged() {
+        AiQuerySemanticParseResult sem =
+                AiQuerySemanticParseResult.builder()
+                        .parseMissing(false)
+                        .followUp(false)
+                        .timeAction("NEW")
+                        .time(
+                                AiQuerySemanticParseResult.TimePart.builder()
+                                        .timeType("THIS_MONTH")
+                                        .startDate("2026-06-01")
+                                        .endDate("2026-06-01")
+                                        .timeSource("DEFAULT_MONTH_TO_DATE")
+                                        .build())
+                        .build();
+        LocalDate anchor = LocalDate.of(2026, 6, 1);
+        AiQuerySemanticParseResult reconciled =
+                SemanticTimeContractCheck.reconcileTimePartForContract(sem, null, anchor);
+        assertThat(reconciled).isSameAs(sem);
+        SemanticTimeContractCheck.Result contract =
+                SemanticTimeContractCheck.check(reconciled, null, anchor);
+        assertThat(contract.valid()).isTrue();
+        assertThat(contract.normalizedTimeSource())
+                .isEqualTo(SemanticTimeContractCheck.SOURCE_DEFAULT_MONTH_TO_DATE);
+    }
+
+    @Test
+    void reconcileTimePartForContract_explicitCurrentMessage_notOverriddenByPrevious() {
+        AiConversationTurnMemory prev =
+                AiConversationTurnMemory.builder()
+                        .lastStartDate("2026-05-01")
+                        .lastEndDate("2026-05-31")
+                        .build();
+        AiQuerySemanticParseResult sem =
+                AiQuerySemanticParseResult.builder()
+                        .parseMissing(false)
+                        .followUp(true)
+                        .timeAction("OVERRIDE")
+                        .time(
+                                AiQuerySemanticParseResult.TimePart.builder()
+                                        .timeType("THIS_MONTH")
+                                        .startDate("2026-06-01")
+                                        .endDate("2026-06-01")
+                                        .timeSource("CURRENT_MESSAGE_EXPLICIT")
+                                        .build())
+                        .build();
+        LocalDate anchor = LocalDate.of(2026, 6, 1);
+        AiQuerySemanticParseResult reconciled =
+                SemanticTimeContractCheck.reconcileTimePartForContract(sem, prev, anchor);
+        assertThat(reconciled).isSameAs(sem);
+    }
+
     private static AiQuerySemanticParseResult revenueSemWithTime(
             String timeType,
             String start,

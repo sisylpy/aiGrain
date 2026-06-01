@@ -4,11 +4,11 @@ import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
 import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer;
-import lombok.experimental.UtilityClass;
 import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
@@ -18,10 +18,9 @@ import java.util.Map;
 /**
  * Phase 1：库房库存现量本域矩阵（Harness Engineering 契约表）。
  */
-@UtilityClass
 public final class WarehouseSemanticCapabilityMatrix {
 
-
+    private WarehouseSemanticCapabilityMatrix() {}
     public static final String MATRIX_WIRE_MISSING = "MATRIX_WIRE_MISSING";
     public static final String ANCHOR_STRATEGY_STORE = "STORE";
 
@@ -31,6 +30,10 @@ public final class WarehouseSemanticCapabilityMatrix {
     public static final String STOCK_FACET_GOODS_RANKING_LOW = "GOODS_RANKING_LOW";
     public static final String STOCK_FACET_LOW_STOCK = "LOW_STOCK";
     public static final String STOCK_FACET_NEAR_EXPIRY = "NEAR_EXPIRY";
+    public static final String STOCK_FACET_GOODS_DISH_COVER = "GOODS_DISH_COVER";
+
+    public static final String CONTRACT_GOODS_SUPPORTED_DISH_COVER =
+            GoodsSupportedDishCoverAnswerPlan.CONTRACT_ID;
 
     /** 缺货：仅有启发式 lowStockItems，无严格缺货口径 SQL。 */
     public static final String KNOWN_GAP_OUT_OF_STOCK_STRICT_NOT_SUPPORTED =
@@ -95,7 +98,7 @@ public final class WarehouseSemanticCapabilityMatrix {
                     STOCK_FACET_OVERVIEW,
                     null);
 
-    public static final WarehouseSemanticCapabilityMatrixRow OUT_OF_STOCK =
+    public static final WarehouseSemanticCapabilityMatrixRow INVENTORY_RISK_LIST =
             firstTurnRow(
                     "WH-F",
                     AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_STOCK_LOW_RISK,
@@ -104,7 +107,7 @@ public final class WarehouseSemanticCapabilityMatrix {
                     "RISK",
                     "LOW_STOCK",
                     STOCK_FACET_LOW_STOCK,
-                    KNOWN_GAP_OUT_OF_STOCK_STRICT_NOT_SUPPORTED);
+                    null);
 
     public static final WarehouseSemanticCapabilityMatrixRow NEAR_EXPIRY =
             firstTurnRow(
@@ -116,6 +119,17 @@ public final class WarehouseSemanticCapabilityMatrix {
                     "NEAR_EXPIRY",
                     STOCK_FACET_NEAR_EXPIRY,
                     KNOWN_GAP_NEAR_EXPIRY_NOT_IN_TOOL);
+
+    public static final WarehouseSemanticCapabilityMatrixRow GOODS_SUPPORTED_DISH_COVER =
+            firstTurnRow(
+                    "WH-H",
+                    AiQuerySemanticLexicon.STRUCTURED_GOODS_SUPPORTED_DISH_COVER,
+                    GoodsSupportedDishCoverAnswerPlan.TYPE,
+                    "GOODS",
+                    "DETAIL",
+                    "SUPPORTED_DISH_COVER",
+                    STOCK_FACET_GOODS_DISH_COVER,
+                    null);
 
 
 
@@ -136,8 +150,9 @@ public final class WarehouseSemanticCapabilityMatrix {
                 GOODS_AMOUNT_RANKING_LOW,
                 STORE_AMOUNT_RANKING,
                 SINGLE_STORE_OVERVIEW,
-                OUT_OF_STOCK,
-                NEAR_EXPIRY);
+                INVENTORY_RISK_LIST,
+                NEAR_EXPIRY,
+                GOODS_SUPPORTED_DISH_COVER);
     }
 
 
@@ -173,7 +188,7 @@ public final class WarehouseSemanticCapabilityMatrix {
             return GOODS_AMOUNT_RANKING_HIGH;
         }
         if (AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_STOCK_OVERVIEW.equals(canon)) {
-if (isSingleStoreFirstTurnScope(rq)) {
+            if (isSingleStoreFirstTurnScope(rq)) {
                 return SINGLE_STORE_OVERVIEW;
             }
             return OVERVIEW;

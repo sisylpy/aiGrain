@@ -371,16 +371,41 @@
         "pinId": 456,
         "noted": false,
         "noteId": null
+      },
+      {
+        "messageId": 2,
+        "role": "assistant",
+        "content": "本月菜单经营…",
+        "status": "COMPLETED",
+        "runId": 1778344855542,
+        "cards": [
+          {
+            "cardType": "MENU_PORTFOLIO_QUADRANT_CARD",
+            "title": "菜单结构四象限",
+            "subtitle": "…",
+            "chartType": "PIE",
+            "payload": { "categories": [] },
+            "source": {
+              "answerPlan": "menuOperationAnswerPlan",
+              "dataRef": "menuPortfolioClassification"
+            }
+          }
+        ],
+        "cardPayload": {
+          "cardType": "MENU_PORTFOLIO_QUADRANT_CARD",
+          "data": { "categories": [] }
+        }
       }
     ]
   }
 }
 ```
 
-- **字段稳定性**：stable
+- **字段稳定性**：stable（`cards`）；`cardPayload` 为 **deprecated** 兼容字段（由 `cards[0]` 投影，`data` 镜像 `payload`），不单独落库
 - **后台确认结论**：
   - 消息上的 `pinned`/`pinId`/`noted`/`noteId` 来自 `gb_ai_work_pin` / `gb_ai_work_note` 表
-  - 仅返回 `gb_ai_message` 表中已有的数据；多智能体默认不写消息表
+  - assistant 结构化卡片持久化在 `gb_ai_message.gb_ai_message_cards_json`（统一 `cards[]` 快照）
+  - `POST /api/ai/runs` 完成时写入 assistant 行；历史以 `cards_json` 为准，`cards_json` 为空时可选从进程内 Run Session hydrate（旧消息兜底）
 - **待补字段**：无
 
 ---
@@ -445,13 +470,31 @@
 
 ---
 
-### 17. GET /ai/advisors/{id} — 顾问详情
+### 17. GET /ai/advisors/{id} — 顾问能力详情（AdvisorCapability）
 
 - **方法**：GET
 - **路径**：`/api/ai/advisors/{advisorId}`
-- **Controller**：`AiAdvisorController.java:30`
-- **响应**：`{ "code": 0, "data": { advisor 实体 } }`
-- **字段稳定性**：stable
+- **Controller**：`AiAdvisorController.detail()`
+- **Service**：`AdvisorCapabilityService.loadCapability()`
+- **参数**：
+  - `scene`（可选）：`MINIAPP` | `DESKTOP`；不传则 `questionTopics` **仅**返回 `scene=BOTH` 的问句
+  - `userId`（可选）：传入则填充 `recentRuns`；不传则为 `[]`
+- **scene 过滤**：
+  - `scene=MINIAPP` → 返回 `BOTH` + `MINIAPP`
+  - `scene=DESKTOP` → 返回 `BOTH` + `DESKTOP`
+  - 不传 → 仅 `BOTH`
+- **响应**：`{ "code": 0, "data": AiAdvisorCapabilityDTO }`
+- **字段**：
+  - 顾问基础：`advisorId`, `advisorCode`, `advisorName`, `subtitle`, `description`, `capabilityDescription`, `avatarUrl`, `sortOrder`, `scene`
+  - `commonWorkflows[]`：仅 `workflow.enabled=1` 的绑定工作流（Electron「常用工作流」）
+  - `questionTopics[]` → `questions[]`：含 `questionId`, `questionCode`, `text`, `workflowId`, `workflowCode`, `enabled`, `status`, **`clickable`**, `sort`, `scene`, `intentHint`, `contractHint`
+  - `recentRuns[]`：P1 可无 `userId` 时为空
+- **`clickable` 规则**：`enabled && status==ACTIVE`；`COMING_SOON` 可见但 `clickable=false`
+- **点击问句**：仅将 `text` 填入输入框，**不**自动 `POST /api/ai/runs`；`workflowCode`/`questionCode` 不参与 run 路由
+- **小程序**：`GET ...?scene=MINIAPP`，主要消费 `questionTopics`
+- **Electron**：`GET ...?scene=DESKTOP&userId=...`，消费 `commonWorkflows` + `questionTopics`
+- **Breaking**：已删除 `GET /api/ai/advisors/{id}/suggested-questions`，无兼容层
+- **字段稳定性**：stable（本迭代起）
 
 ---
 
@@ -837,6 +880,14 @@ Debug 字段的两种下发渠道：
 | `followUpDetailWanted` / `followUpAction` / `followUpTargetEntity*` / `followUpSourcePlanType` / `followUpRegistryQueryMode` | `followUpRewriteApplied` / `completedUserQuery`（Rewrite）；`executionDetailWanted` / `anchorPolicy` / `resultAnchors`（anchor execution） |
 | `DrilldownMatrix` / `harness.followup` 相关键 | 无；使用 **§7.13** 语义 / 执行意图分组 |
 | `metric.rankingType` 作为主链调试字段 | `semanticSlots.structuredIntentDetailWire` / `structuredIntentDetail`；`querySemanticLlm.metric.rankingType` 仅 **deprecated/debug**（见 §7.13） |
+| **重复别名（2026-05-26 已删）** `intent` / `path` / `timeSource` | 使用 `effectiveIntentCode` / `effectivePathCode` / `effectiveTimeWindowSource` |
+| `time` 嵌套块 | 使用顶层 `startDate` / `endDate` / `timeLabel` |
+| `storeRootDepartmentIds` / `expandedChildDepartmentIds` | 使用 `visibleStoreRootIds` / `childDepartmentIds` |
+| `queryScopeExpansionMode` | 使用 `queryScopeMode` |
+| `dishName` | 使用 `mentionedDishName` |
+| `phase2ResolvedQueryPreview` | 直接读 summary 顶层同名字段 |
+| `semanticContractCatalog` / `semanticContractStrictBlockers` 全量 | 使用 `semanticContractCatalogSummary` |
+| SSE `debugSummary` 内嵌 `resolvedQueryContextSummary` 及重复 routing 字段 | 读 `data.resolvedQueryContextSummary`；`debugSummary` 仅 Run 元数据 |
 
 ### 7.13 前台 Debug / Replay 推荐展示（P4-G）
 
@@ -862,6 +913,138 @@ Debug 字段的两种下发渠道：
 **勿再使用的 UI 分组**：「Drilldown」「FollowUp Detail」「rankingType 主 wire」—— 均已下线。
 
 **Replay API**：`POST /api/ai/harness/replay` 每轮 `resolvedQueryContextSummary` 与 GET Run 同源字段；断言契约见 **`docs/AI_HARNESS_REPLAY_CASES.md`** §「Replay 断言契约」。
+
+### 7.14 结构化卡片 — `DISH_PROFIT_PRESCRIPTION_CARD`（P1 · 后端已输出）
+
+**状态**：后端 P1 已通过（见 **`docs/ai/dish-profit-prescription-p1-acceptance.md`**）。**小程序下一步**：在 `storeAiChat`（或等价聊天页）增加该 `cardType` 的展示组件；**只读展示** `payload`，勿二次请求业务接口、勿在前端重算毛利/建议价。
+
+**出现位置**（与其它卡片一致）：
+
+- SSE `run_finished` / `answer_delta` → `data.cards[]`
+- GET `/api/ai/runs/{runId}` → 根级 `cards[]`
+- GET `/api/ai/conversations/{id}/messages` → assistant 消息 `cards[]`（持久化自 `gb_ai_message_cards_json`）
+
+**卡片壳字段**（`cards[]` 元素）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `cardType` | string | 固定 **`DISH_PROFIT_PRESCRIPTION_CARD`** |
+| `title` | string | 如 `香煎青鱼 · 利润处方` |
+| `subtitle` | string | 时间 / 范围标签 |
+| `chartType` | string | 固定 **`PRESCRIPTION`** |
+| `payload` | object | 见下表 |
+| `source.answerPlan` | string | `dishProfitPrescriptionAnswerPlan` |
+| `source.dataRef` | string | `dishProfitPrescriptionAnswerPlan` |
+
+**`payload` 主要字段**（stable 展示用；缺键隐藏行，勿猜）：
+
+| 字段 | 说明 |
+|------|------|
+| `status` | `SUCCESS` / `PARTIAL` / `FAILED` |
+| `dishId` / `dishName` | 锚定菜品 |
+| `timeLabel` / `scopeLabel` | 时间与组织范围文案 |
+| `summary` | 一句话结论（优先 `diagnosis.headlineZh`） |
+| `pricing` | `listPricePerPortion`、`salesPortions`、`salesAmount` 等 |
+| `margin` | `actualCostPerPortion123`、`theoryCostPerPortion`、`blendedGrossMarginRateOnListPrice`、`grossMarginStandardTarget`、`pricingVerdict` 等 |
+| `suggestedPrice` | `targetGrossMarginRate`、`suggestedPricePerPortion`、`costBasePerPortion`（用户指定目标毛利时出现） |
+| `menuContext` | `salesRank` / `salesRankOf`、`marginRank` / `marginRankOf`、`rankTruncated`（**菜单内**排名，非跨店） |
+| `diagnosis` | `headlineZh`（中文标题）、`primaryIssue`（内部枚举，展示用 `headlineZh` 即可） |
+| `ingredientRows[]` | 配料：`gbDgGoodsName`、`unitPrice`、`unitPriceSource`、用量与 `reviewFlags`（内部 code；展示时映射为中文或图标，**勿**原样输出 `USAGE_ABNORMAL` 等给用户） |
+| `recommendedActions[]` | `actionName`（中文）、`reasonZh`、`priority` |
+| `capabilityLimits` | P1 边界标记（值为 `NOT_IN_P1`）；**勿**把 key/value 英文直接展示 — 固定文案：「不含最新采购价、外部市场价、跨店排名」 |
+
+**`answerPreview`（聊天气泡正文）**：
+
+- 与卡片同源 AnswerPlan，经 **`DishProfitPrescriptionDeterministicRenderer`** 生成**纯中文**段落。
+- **不得**出现 `LATEST_PURCHASE_PRICE_NOT_IN_P1` 等英文 knownGap code。
+- Harness debug 字段 **`dishProfitPrescriptionKnownGaps`** 仅 Debug 面板，**不是** `answerPreview`。
+
+**与成本卡分流**：
+
+- 问「成本怎么样」→ 仍 **`DISH_COST_ANALYSIS_CARD`** + `dish_cost_analysis` wire（P1 未改旧路径）。
+
+**P1 产品边界（展示 copy 建议）**：
+
+- 配料单价 = **出库均价**，非最新采购价。
+- 不提供外部市场比价。
+- 排名为当前 scope 内菜单列表，非集团跨店榜。
+
+### 7.15 结构化卡片 — 菜单顾问 P1（`MENU_*` · 后端已输出）
+
+**状态**：MenuOperation 三条 + 单菜处方（§7.14）构成菜单顾问 P1。**汇总文档**：**`docs/ai/menu-operation-p1-card-summary.md`**（接手、联调优先读此文件）。
+
+**出现位置**：与 §7.14 相同（SSE / GET Run / 历史 `message.cards[]`，持久化 `gb_ai_message_cards_json`）。
+
+**统一壳字段**（每张卡相同结构）：
+
+| 字段 | 说明 |
+|------|------|
+| `cardType` | 见下表 |
+| `title` / `subtitle` | 展示标题 |
+| `chartType` | `PIE` / `TABLE` / `PLAN` |
+| `payload` | 业务数据（**唯一渲染数据源**） |
+| `source.answerPlan` | 菜单三条均为 `menuOperationAnswerPlan` |
+| `source.dataRef` | 见下表 |
+
+> **Historical**：根级 `cardPayload` 仅 `{ cardType, data }` 兼容镜像，**勿**再扩展或作为主协议文档。
+
+#### 7.15.1 `MENU_PORTFOLIO_QUADRANT_CARD`
+
+| 项 | 值 |
+|----|-----|
+| 问法示例 | 这个月菜单经营怎么样？ |
+| 合同 / wire | `menu.operation.overview.v1` · `menu_operation_overview` |
+| `chartType` | `PIE` |
+| `source.dataRef` | `menuPortfolioClassification` |
+
+**`payload`**：`totalDishCount`, `thresholdMethod`, `salesMetricName`, `profitMetricName`, `salesHighThreshold`, `profitHighThreshold`, `categories[]`（`categoryCode`=`STAR`/`TRAFFIC`/`POTENTIAL`/`ELIMINATE`, `count`, `ratio`, `summary`, `recommendedAction`, `dishes[]`）。
+
+**多卡**：同轮可能追加 §7.15.3 **副卡**（`actions[]` 形态）。
+
+#### 7.15.2 `MENU_HIGH_SALES_LOW_MARGIN_CARD`
+
+| 项 | 值 |
+|----|-----|
+| 问法示例 | 哪些畅销菜毛利偏低？ |
+| 合同 / wire | `menu.dish.high_sales_low_profit.v1` · `menu_dish_high_sales_low_profit` |
+| `chartType` | `TABLE` |
+| `source.dataRef` | `riskDishes` |
+
+**`payload`**：`totalRiskDishCount`, `summary`, `status`（空态 `EMPTY`）, `dishes[]`（`dishName`, `salesCount`, `salesAmount`, `blendedGrossMarginRateOnListPrice`, `actualProfitAmount`, `riskReason`, `recommendedAction`, `evidenceRefId`）。
+
+#### 7.15.3 `MENU_ACTION_RECOMMENDATION_CARD`
+
+| 项 | 值 |
+|----|-----|
+| 问法示例 | 菜单怎么优化？ |
+| 合同 / wire | `menu.action.recommendation.v1` · `menu_action_recommendation` |
+| `title` | 菜单优化方案 |
+| `chartType` | `PLAN` |
+| `source.dataRef` | `menuOptimizationPlan` |
+
+**主 payload（优化方案 · 必渲染）** — 当存在 `optimizationSummary`：
+
+| 字段 | 说明 |
+|------|------|
+| `optimizationSummary` | 一句优化重点 |
+| `priorityGroups[]` | `groupCode`, `groupName`, `priority`, `reason`, `suggestedAction`, `dishes[]` |
+| `costReviewDishes[]` / `protectDishes[]` / `promotionDishes[]` / `watchListDishes[]` | 分桶菜品（字段同组内 `dishes[]`） |
+| `nextSteps[]` | 2–3 条可执行动作 |
+| `evidenceRows[]` | `displayLabel`, `value`, `unit` |
+| `capabilityLimits` | 机器字段 `NOT_IN_P1` — **映射中文**，勿直出 |
+| `status` | `ACTIVE` / `EMPTY` |
+
+**Historical 副卡形态** — overview 追加、且 **无** `optimizationSummary` 时：`actions[]`, `totalActionCount`, `summary`。勿当作「菜单怎么优化？」主 UI。
+
+**前端勿**：解析 `answerPreview` 补字段；在前端重算四象限或主推/降本分类。
+
+#### 7.15.4 P1 边界（菜单卡 + 处方卡共用 copy）
+
+当前版本暂不提供：最新采购价、外部市场比价、连续多周期趋势、跨门店单菜排名、套餐点单组合分析、自动改配方克数。`capabilityLimits` / Harness `knownGaps` 仅 Debug；用户可见处用固定中文。
+
+#### 7.15.5 第四条卡片
+
+单菜价格与配方诊断 → **`DISH_PROFIT_PRESCRIPTION_CARD`**，见 **§7.14**（与 MenuOperation 独立 Plan）。
 
 ---
 
@@ -917,6 +1100,9 @@ Debug 字段的两种下发渠道：
 
 | 缺失项 | 说明 |
 |--------|------|
+| **菜单顾问 P1 卡片组件** | 后端已输出 `cards[]`（§7.15 + §7.14）；聊天页按 `cardType` 渲染；汇总见 **`docs/ai/menu-operation-p1-card-summary.md`** |
+| **`DISH_PROFIT_PRESCRIPTION_CARD`** | 处方卡字段见 §7.14 |
+| **`MENU_*` 三张菜单卡** | 四象限 / 畅销低利 / 优化方案，字段见 §7.15 |
 | `/exports` 全组 | 整个功能组未实现（导出记录 CRUD） |
 | `/tasks` 全组 | 整个功能组未实现（任务 CRUD） |
 | `/knowledge/search` | 搜索端点不存在，需新增或前台改用 `/summary` + `/recommend` |

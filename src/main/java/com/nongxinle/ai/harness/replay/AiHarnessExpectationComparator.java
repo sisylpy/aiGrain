@@ -201,6 +201,7 @@ public final class AiHarnessExpectationComparator {
         }
 
         assertOptionalString(summary, exp.getCanonicalStructuredIntentDetailWire(), "canonicalStructuredIntentDetailWire", out);
+        assertOptionalString(summary, exp.getSelectedContractIdExpected(), "selectedContractId", out);
         assertOptionalString(summary, exp.getSemanticSlotQueryObject(), "queryObject", out);
         assertOptionalString(summary, exp.getSemanticSlotOperation(), "operation", out);
         assertOptionalString(summary, exp.getSemanticSlotMetric(), "metric", out);
@@ -232,7 +233,7 @@ public final class AiHarnessExpectationComparator {
         }
         assertOptionalString(
                 summary, exp.getHarnessReplayWarehouseAnswerPlanType(), "warehouseAnswerPlanType", out);
-        assertOptionalString(summary, exp.getDishSalesMatrixRowIdExpected(), "dishSalesMatrixRowId", out);
+        assertOptionalString(summary, exp.getDishSalesMatrixObservedRowIdExpected(), "dishSalesMatrixObservedRowId", out);
         assertOptionalString(summary, exp.getDishSalesKnownGapExpected(), "dishSalesKnownGap", out);
         if (Boolean.TRUE.equals(exp.getDishSalesKnownGapMustBeAbsent())) {
             String gap = stringVal(summary.get("dishSalesKnownGap"));
@@ -281,11 +282,13 @@ public final class AiHarnessExpectationComparator {
         assertQuerySemanticV2TimeActionNoneOf(summary, exp, out);
         assertQuerySemanticV2TimeTypeNoneOf(summary, exp, out);
         assertForbiddenSummarySubstrings(summary, exp, out);
+        assertRequiredSummarySubstrings(summary, exp, out);
         assertQuerySemanticV2ForbiddenKeys(summary, exp, out);
         assertEffectiveTimeWindowSourceNoneOf(summary, exp, out);
         assertEffectiveIntentCodeNoneOf(summary, exp, out);
         assertPurchaseSourceTypeNoneOf(summary, exp, out);
         assertMentionedDishNameEquals(summary, exp, out);
+        assertMentionedGoodsNameEquals(summary, exp, out);
         assertDishProfitMetricType(summary, exp, out);
         assertOrchestrationTaskModeExpected(summary, exp, out);
         assertQueryScopeModeKindExpected(summary, exp, out);
@@ -552,7 +555,7 @@ public final class AiHarnessExpectationComparator {
             Map<String, Object> summary,
             AiHarnessReplayExpectedRound exp,
             List<AiHarnessMismatch> out) {
-        assertOptionalString(summary, exp.getMatchedCapabilityIdExpected(), "matchedCapabilityId", out);
+        assertContractSovereigntyIdExpected(summary, exp.getMatchedCapabilityIdExpected(), out);
         assertOptionalString(
                 summary, exp.getContractExecutionQueryModeExpected(), "contractExecutionQueryMode", out);
         assertOptionalString(summary, exp.getFramePlanTypeExpected(), "framePlanType", out);
@@ -630,6 +633,27 @@ public final class AiHarnessExpectationComparator {
         assertOptionalBooleanProbe(
                 summary, exp.getDishProfitAnswerPlanPresentExpected(), "dishProfitAnswerPlanPresent", out);
         assertOptionalString(summary, exp.getDishProfitAnswerPlanHumanTypeExpected(), "dishProfitAnswerPlanType", out);
+        assertOptionalString(
+                summary,
+                exp.getDishIngredientCoverAnswerPlanTypeExpected(),
+                "dishIngredientCoverAnswerPlanType",
+                out);
+        assertOptionalString(
+                summary, exp.getDishIngredientCoverDishNameExpected(), "dishIngredientCoverDishName", out);
+        assertOptionalString(
+                summary,
+                exp.getGoodsSupportedDishCoverAnswerPlanTypeExpected(),
+                "goodsSupportedDishCoverAnswerPlanType",
+                out);
+        assertOptionalString(
+                summary,
+                exp.getGoodsSupportedDishCoverGoodsNameExpected(),
+                "goodsSupportedDishCoverGoodsName",
+                out);
+        assertOptionalBooleanProbe(
+                summary, exp.getDishIngredientCoverNoRecipeGapExpected(), "dishIngredientCoverNoRecipeGap", out);
+        assertOptionalString(
+                summary, exp.getDishProfitAnswerPlanSortKeyExpected(), "dishProfitAnswerPlanSortKey", out);
 
         Integer minDishRa = exp.getDishProfitAnswerPlanResultAnchorsCountMin();
         if (minDishRa != null) {
@@ -1368,6 +1392,111 @@ public final class AiHarnessExpectationComparator {
         return raw.trim().toUpperCase(Locale.ROOT).replace('-', '_');
     }
 
+    /**
+     * 合同主权 id：优先顶层 {@code selectedContractId}，其次 validation / execution / completion trace；
+     * 顶层 {@code matchedCapabilityId} 仅作历史兼容。
+     */
+    private static String contractSovereigntyIdFromSummary(Map<String, Object> summary) {
+        if (summary == null) {
+            return null;
+        }
+        String selected = stringVal(summary.get("selectedContractId"));
+        if (StringUtils.hasText(selected)) {
+            return selected;
+        }
+        String nested = nestedMapString(summary, "semanticContractValidation", "matchedContractId");
+        if (StringUtils.hasText(nested)) {
+            return nested;
+        }
+        String matched = stringVal(summary.get("matchedContractId"));
+        if (StringUtils.hasText(matched)) {
+            return matched;
+        }
+        String traceSel = nestedMapString(summary, "contractCompletionTrace", "selectedContractId");
+        if (StringUtils.hasText(traceSel)) {
+            return traceSel;
+        }
+        return stringVal(summary.get("matchedCapabilityId"));
+    }
+
+    private static void assertContractSovereigntyIdExpected(
+            Map<String, Object> summary, String expected, List<AiHarnessMismatch> out) {
+        if (!StringUtils.hasText(expected)) {
+            return;
+        }
+        String actual = contractSovereigntyIdFromSummary(summary);
+        if (!eq(actual, expected.trim())) {
+            out.add(mm(
+                    AiHarnessFailureType.INTENT_MISMATCH,
+                    "contractSovereigntyId(selectedContractId|matchedContractId|contractCompletionTrace)",
+                    expected.trim(),
+                    actual));
+        }
+    }
+
+    private static String nestedMapString(
+            Map<String, Object> summary, String mapKey, String fieldKey) {
+        Object nested = summary.get(mapKey);
+        if (!(nested instanceof Map<?, ?> map)) {
+            return null;
+        }
+        Object v = map.get(fieldKey);
+        return stringVal(v);
+    }
+
+    /**
+     * 禁止子串只扫「最终选中路径」相关字段，避免 {@code allowedWires} / {@code allowedContractIds} 等目录字段误伤。
+     */
+    private static String forbiddenSubstringHaystack(Map<String, Object> summary) {
+        if (summary == null || summary.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(256);
+        appendHaystackScalar(sb, summary.get("selectedContractId"));
+        appendHaystackScalar(sb, structuredIntentWireFromSummary(summary));
+        appendHaystackScalar(sb, summary.get("canonicalStructuredIntentDetailWire"));
+        appendHaystackScalar(sb, summary.get("effectivePathCode"));
+        appendHaystackScalar(sb, summary.get("executionIntentType"));
+        appendHaystackScalar(sb, summary.get("harnessReplayPurchaseAnswerPlanType"));
+        appendHaystackScalar(sb, summary.get("harnessReplayRevenueAnswerPlanType"));
+        appendHaystackScalar(sb, summary.get("harnessReplayDishProfitAnswerPlanType"));
+        appendHaystackScalar(sb, summary.get("harnessReplayWarehouseAnswerPlanType"));
+        appendHaystackScalar(sb, summary.get("harnessReplayDishSalesAnswerPlanType"));
+        appendHaystackScalar(sb, summary.get("answerPlanType"));
+        appendHaystackScalar(sb, summary.get("mappedPlanType"));
+        appendHaystackScalar(sb, summary.get("finalAnswerText"));
+        appendHaystackScalar(sb, summary.get("answerPreview"));
+        appendHaystackList(sb, summary.get("cardsCardTypes"));
+        appendHaystackList(sb, summary.get("usedTools"));
+        Object trace = summary.get("contractCompletionTrace");
+        if (trace instanceof Map<?, ?> traceMap) {
+            appendHaystackScalar(sb, traceMap.get("selectedContractId"));
+            appendHaystackScalar(sb, traceMap.get("mappedPlanType"));
+            appendHaystackScalar(sb, traceMap.get("pathCode"));
+        }
+        return sb.toString();
+    }
+
+    private static void appendHaystackScalar(StringBuilder sb, Object value) {
+        if (value == null) {
+            return;
+        }
+        String s = value.toString();
+        if (StringUtils.hasText(s)) {
+            sb.append(s);
+            sb.append('\n');
+        }
+    }
+
+    private static void appendHaystackList(StringBuilder sb, Object value) {
+        if (!(value instanceof List<?> list)) {
+            return;
+        }
+        for (Object item : list) {
+            appendHaystackScalar(sb, item);
+        }
+    }
+
     private static void assertForbiddenSummarySubstrings(
             Map<String, Object> summary,
             AiHarnessReplayExpectedRound exp,
@@ -1376,10 +1505,26 @@ public final class AiHarnessExpectationComparator {
         if (subs == null || subs.isEmpty()) {
             return;
         }
+        String haystack = forbiddenSubstringHaystack(summary);
+        for (String s : subs) {
+            if (StringUtils.hasText(s) && haystack.contains(s)) {
+                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "forbiddenSubstringInSummary", s, "(present)"));
+            }
+        }
+    }
+
+    private static void assertRequiredSummarySubstrings(
+            Map<String, Object> summary,
+            AiHarnessReplayExpectedRound exp,
+            List<AiHarnessMismatch> out) {
+        List<String> subs = exp.getRequiredSubstringsInSummaryJson();
+        if (subs == null || subs.isEmpty()) {
+            return;
+        }
         String json = JSON.toJSONString(summary);
         for (String s : subs) {
-            if (StringUtils.hasText(s) && json.contains(s)) {
-                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "forbiddenSubstringInSummary", s, "(present)"));
+            if (StringUtils.hasText(s) && !json.contains(s)) {
+                out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "requiredSubstringInSummary", s, "(absent)"));
             }
         }
     }
@@ -1482,6 +1627,19 @@ public final class AiHarnessExpectationComparator {
         String actual = stringVal(summary.get("mentionedDishName"));
         if (!eq(actual, exp.getMentionedDishName().trim())) {
             out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "mentionedDishName", exp.getMentionedDishName(), actual));
+        }
+    }
+
+    private static void assertMentionedGoodsNameEquals(
+            Map<String, Object> summary,
+            AiHarnessReplayExpectedRound exp,
+            List<AiHarnessMismatch> out) {
+        if (!StringUtils.hasText(exp.getMentionedGoodsName())) {
+            return;
+        }
+        String actual = stringVal(summary.get("mentionedGoodsName"));
+        if (!eq(actual, exp.getMentionedGoodsName().trim())) {
+            out.add(mm(AiHarnessFailureType.INTENT_MISMATCH, "mentionedGoodsName", exp.getMentionedGoodsName(), actual));
         }
     }
 

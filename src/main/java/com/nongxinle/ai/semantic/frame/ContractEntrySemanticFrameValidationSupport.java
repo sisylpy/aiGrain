@@ -19,7 +19,10 @@ import java.util.function.Predicate;
 /**
  * 基础域 contract-entry 主链校验：selectedContractId + active contract entry + semanticSlots 一致性。
  * <p>不做 slots→wire 推导、不改写 contract；违例仅 clarify。
- * <p>缺失且可由 contract entry 补齐的槽位（wire / answerPlanType 等）不算 mismatch；仅 LLM 已输出且与合同冲突时 block。
+ * <p>缺失且可由 contract entry 补齐的槽位不算 mismatch；仅 LLM 已输出且与合同冲突时 block。
+ * <p>{@code structuredIntentDetailWire} 为 contract-owned execution metadata：命中 ACTIVE entry 后由
+ * {@link com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine} 从 {@code contract.getWire()} 补齐，
+ * 不作为 slot mismatch 阻断条件。
  */
 public final class ContractEntrySemanticFrameValidationSupport {
 
@@ -148,18 +151,6 @@ public final class ContractEntrySemanticFrameValidationSupport {
             String frameDetail = normalizeToken(frame.getDetailWanted());
             if (StringUtils.hasText(frameDetail) && !contractDetail.equals(frameDetail)) {
                 mismatches.add("detailWanted");
-            }
-        }
-        String contractWire =
-                StringUtils.hasText(contract.getWire())
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(contract.getWire().trim())
-                        : null;
-        String frameWire = frame.getStructuredIntentDetailWire();
-        if (StringUtils.hasText(contractWire) && StringUtils.hasText(frameWire)) {
-            String frameCanon =
-                    AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(frameWire.trim());
-            if (!contractWire.equals(frameCanon)) {
-                mismatches.add("structuredIntentDetailWire");
             }
         }
         if (rawParse != null && rawParse.getSemanticSlots() != null) {

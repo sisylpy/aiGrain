@@ -58,6 +58,40 @@ final class AiHarnessSummaryUtils {
         }
     }
 
+    /**
+     * Harness 观测用：保留 V2 输入上下文，省略 {@code allowedOutputContract.allowedContracts} 全量条目
+     * （与 {@code domainContractSelection} / {@code semanticContractValidation} 重复且体积大）。
+     */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> compactQuerySemanticV2InputPreview(Map<String, Object> in) {
+        Map<String, Object> copy = jsonDeepCopyMap(in);
+        if (copy == null) {
+            return null;
+        }
+        Object contractObj = copy.get("allowedOutputContract");
+        if (!(contractObj instanceof Map<?, ?> contractRaw)) {
+            return copy;
+        }
+        LinkedHashMap<String, Object> compactContract = new LinkedHashMap<>((Map<String, Object>) contractRaw);
+        Object entries = compactContract.remove("allowedContracts");
+        List<String> contractIds = new ArrayList<>();
+        if (entries instanceof List<?> list) {
+            for (Object row : list) {
+                if (!(row instanceof Map<?, ?> m)) {
+                    continue;
+                }
+                Object id = m.get("contractId");
+                if (id != null && StringUtils.hasText(id.toString())) {
+                    contractIds.add(id.toString().trim());
+                }
+            }
+        }
+        compactContract.put("allowedContractIds", contractIds.isEmpty() ? null : contractIds);
+        compactContract.put("allowedContractCount", contractIds.size());
+        copy.put("allowedOutputContract", compactContract);
+        return copy;
+    }
+
     static List<Long> longList(List<Long> in) {
         if (in == null || in.isEmpty()) {
             return List.of();

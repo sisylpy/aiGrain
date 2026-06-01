@@ -3,6 +3,7 @@ package com.nongxinle.ai;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.nongxinle.ai.gateway.LlmGatewayFailureMarker;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -84,7 +85,8 @@ public class DeepSeekCompletionClient {
                     String errBody = response.body() != null ? response.body().string() : "";
                     log.error("[DeepSeek] phase={} httpStatus={} bodyPreview={}", phase, response.code(),
                             abbreviate(errBody, 800));
-                    return "抱歉，AI 服务暂时不可用。请稍后重试。";
+                    return LlmGatewayFailureMarker.wrapUnavailable(
+                            "抱歉，AI 服务暂时不可用。请稍后重试。");
                 }
                 String responseBody = response.body() != null ? response.body().string() : "";
                 JSONObject json = JSONUtil.parseObj(responseBody);
@@ -100,7 +102,7 @@ public class DeepSeekCompletionClient {
             }
         } catch (Exception e) {
             log.error("[DeepSeek] phase={} exception: {}", phase, e.getMessage(), e);
-            return "抱歉，AI 服务出现异常。请稍后重试。";
+            return LlmGatewayFailureMarker.wrapUnavailable("抱歉，AI 服务出现异常。请稍后重试。");
         }
     }
 

@@ -37,8 +37,9 @@ public final class DomainContractSelector {
         List<SemanticCapabilityContract> gaps = SemanticContractCatalog.listKnownGaps(primary);
 
         boolean missing = active.isEmpty();
+        List<SemanticCapabilityContract> planned = SemanticContractCatalog.listPlannedCapabilityContracts(primary);
         SemanticParserAllowedOutputContract parserContract =
-                missing ? null : flattenActiveContracts(primary, active);
+                missing ? null : flattenParserContracts(primary, active, gaps, planned);
 
         return DomainContractSelectionResult.builder()
                 .selectedDomain(primary)
@@ -58,8 +59,11 @@ public final class DomainContractSelector {
                 .build();
     }
 
-    static SemanticParserAllowedOutputContract flattenActiveContracts(
-            String domain, List<SemanticCapabilityContract> active) {
+    static SemanticParserAllowedOutputContract flattenParserContracts(
+            String domain,
+            List<SemanticCapabilityContract> active,
+            List<SemanticCapabilityContract> knownGaps,
+            List<SemanticCapabilityContract> planned) {
         LinkedHashSet<String> wires = new LinkedHashSet<>();
         LinkedHashSet<String> queryObjects = new LinkedHashSet<>();
         LinkedHashSet<String> operations = new LinkedHashSet<>();
@@ -68,12 +72,13 @@ public final class DomainContractSelector {
         LinkedHashSet<String> detailWanted = new LinkedHashSet<>();
         LinkedHashSet<String> answerPlanTypes = new LinkedHashSet<>();
         List<SemanticParserAllowedOutputContract.AllowedContractEntry> entries = new ArrayList<>();
+        List<SemanticParserAllowedOutputContract.AllowedContractEntry> gapEntries = new ArrayList<>();
 
         for (SemanticCapabilityContract c : active) {
             if (c == null || c.getStatus() != SemanticCapabilityContractStatus.ACTIVE) {
                 continue;
             }
-            entries.add(toAllowedEntry(c));
+            entries.add(toAllowedEntry(c, SemanticCapabilityContractStatus.ACTIVE.name()));
             addIfText(wires, c.getWire());
             addIfText(answerPlanTypes, c.getAnswerPlanType());
             addIfText(sourceFacets, c.getSourceFacet());
@@ -88,10 +93,22 @@ public final class DomainContractSelector {
                 c.getMetrics().forEach(v -> addIfText(metrics, v));
             }
         }
+        for (SemanticCapabilityContract c : knownGaps) {
+            if (c != null) {
+                gapEntries.add(toAllowedEntry(c, SemanticCapabilityContractStatus.KNOWN_GAP.name()));
+            }
+        }
+        for (SemanticCapabilityContract c : planned) {
+            if (c != null) {
+                gapEntries.add(toAllowedEntry(c, SemanticCapabilityContractStatus.PLANNED.name()));
+            }
+        }
 
         return SemanticParserAllowedOutputContract.builder()
                 .selectedDomain(domain)
                 .allowedContracts(entries)
+                .knownGapContracts(gapEntries.isEmpty() ? null : gapEntries)
+                .contractSelectionBoundaryHints(null)
                 .allowedWires(new ArrayList<>(wires))
                 .allowedQueryObjects(new ArrayList<>(queryObjects))
                 .allowedOperations(new ArrayList<>(operations))
@@ -103,7 +120,7 @@ public final class DomainContractSelector {
     }
 
     private static SemanticParserAllowedOutputContract.AllowedContractEntry toAllowedEntry(
-            SemanticCapabilityContract c) {
+            SemanticCapabilityContract c, String capabilityStatus) {
         List<String> qos = c.getQueryObjects() != null ? new ArrayList<>(c.getQueryObjects()) : List.of();
         List<String> ops = c.getOperations() != null ? new ArrayList<>(c.getOperations()) : List.of();
         List<String> mets = c.getMetrics() != null ? new ArrayList<>(c.getMetrics()) : List.of();
@@ -133,6 +150,21 @@ public final class DomainContractSelector {
         }
         if (mets.size() == 1) {
             b.metric(mets.get(0));
+        }
+        b.description(c.getDescription())
+                .selectionHint(c.getSelectionHint())
+                .negativeHint(c.getNegativeHint());
+        if (c.getPositiveExamples() != null && !c.getPositiveExamples().isEmpty()) {
+            b.positiveExamples(new ArrayList<>(c.getPositiveExamples()));
+        }
+        if (c.getNegativeExamples() != null && !c.getNegativeExamples().isEmpty()) {
+            b.negativeExamples(new ArrayList<>(c.getNegativeExamples()));
+        }
+        if (StringUtils.hasText(capabilityStatus)) {
+            b.capabilityStatus(capabilityStatus);
+        }
+        if (StringUtils.hasText(c.getGapMarker())) {
+            b.gapMarker(c.getGapMarker());
         }
         return b.build();
     }

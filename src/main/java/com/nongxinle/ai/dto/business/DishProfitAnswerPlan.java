@@ -26,6 +26,10 @@ public class DishProfitAnswerPlan {
     public static final String TYPE_DISH_LOWEST_MARGIN = "DISH_LOWEST_MARGIN";
     /** 高毛利率排行（综合毛利率由高到低）。 */
     public static final String TYPE_DISH_HIGHEST_MARGIN = "DISH_HIGHEST_MARGIN";
+    /** 低毛利额排行（标价收入−实际成本，由低到高）。 */
+    public static final String TYPE_DISH_LOWEST_PROFIT_AMOUNT = "DISH_LOWEST_PROFIT_AMOUNT";
+    /** 高毛利额排行（标价收入−实际成本，由高到低）。 */
+    public static final String TYPE_DISH_HIGHEST_PROFIT_AMOUNT = "DISH_HIGHEST_PROFIT_AMOUNT";
     public static final String TYPE_DISH_HIGHEST_ACTUAL_COST = "DISH_HIGHEST_ACTUAL_COST";
     public static final String TYPE_DISH_PROFIT_REASON = "DISH_PROFIT_REASON";
 
@@ -53,6 +57,36 @@ public class DishProfitAnswerPlan {
      * D-13.3A：原料成本构成下钻（当前 Tool 无 ingredient 明细；协议与 Composer 诚实降级）。
      */
     public static final String TYPE_DISH_INGREDIENT_COST_BREAKDOWN = "DISH_INGREDIENT_COST_BREAKDOWN";
+
+    /** 排行类无销量证据时的 EMPTY/NO_DATA 态（非聚合 portfolio fallback）。 */
+    public static final String TYPE_DISH_PROFIT_RANKING_NO_DATA = "DISH_PROFIT_RANKING_NO_DATA";
+
+    /**
+     * 菜品成本/毛利排行卡（{@code focusRows + secondaryRows} 投影，不重算）；
+     * 含 EMPTY 无数据态。
+     */
+    public static final String CARD_TYPE_DISH_PROFIT_RANKING = "DISH_PROFIT_RANKING_CARD";
+
+    /** @deprecated 请读 {@link #CARD_TYPE_DISH_PROFIT_RANKING}；保留常量供旧断言/前端过渡。 */
+    @Deprecated
+    public static final String CARD_TYPE_DISH_PROFIT_COST_RANKING = CARD_TYPE_DISH_PROFIT_RANKING;
+
+    /** payload.rankingType：实际成本由高到低。 */
+    public static final String RANKING_TYPE_ACTUAL_COST_HIGH = "ACTUAL_COST_HIGH";
+    /** payload.rankingType：实际成本由低到高（预留，与 AnswerPlan 扩展对齐）。 */
+    public static final String RANKING_TYPE_ACTUAL_COST_LOW = "ACTUAL_COST_LOW";
+    /** payload.rankingType：毛利率由高到低。 */
+    public static final String RANKING_TYPE_MARGIN_HIGH = "MARGIN_HIGH";
+    /** payload.rankingType：毛利率由低到高。 */
+    public static final String RANKING_TYPE_MARGIN_LOW = "MARGIN_LOW";
+    /** payload.rankingType：毛利额（元）由高到低。 */
+    public static final String RANKING_TYPE_PROFIT_AMOUNT_HIGH = "PROFIT_AMOUNT_HIGH";
+    /** payload.rankingType：毛利额（元）由低到高。 */
+    public static final String RANKING_TYPE_PROFIT_AMOUNT_LOW = "PROFIT_AMOUNT_LOW";
+    /** payload.rankingType：实际与理论成本差额由高到低（{@link #TYPE_DISH_COST_GAP}）。 */
+    public static final String RANKING_TYPE_COST_GAP_HIGH = "COST_GAP_HIGH";
+    /** Card 投影无法从明确 {@link #planType} 解析排行展示语义时使用；须带 payload 警告，禁止用 sortDirection 兜底。 */
+    public static final String RANKING_TYPE_UNKNOWN = "UNKNOWN";
 
     /** 与文档 {@code answerPlan.type} 对齐 */
     @JSONField(name = "type")

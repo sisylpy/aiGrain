@@ -27,15 +27,34 @@
         SELECT gdg.*,
         IFNULL(stockStats.goodsStockTotal, 0) AS goodsStockTotal,
         IFNULL(stockStats.goodsStockWeightTotal, 0) AS goodsStockWeightTotal
+        <if test="stockAvgStartDate != null and stockAvgStopDate != null">
+        ,IFNULL(priceStats.gb_dg_goods_average_price, '0') AS gb_dg_goods_average_price
+        </if>
         FROM gb_distributer_goods AS gdg
         LEFT JOIN (
             SELECT gb_dgs_gb_dis_goods_id,
                    SUM(gb_dgs_rest_subtotal) AS goodsStockTotal,
                    SUM(gb_dgs_rest_weight) AS goodsStockWeightTotal
             FROM gb_department_goods_stock
-            WHERE gb_dgs_rest_weight > 0
+            WHERE gb_dgs_rest_weight &gt; 0
             GROUP BY gb_dgs_gb_dis_goods_id
         ) AS stockStats ON stockStats.gb_dgs_gb_dis_goods_id = gdg.gb_distributer_goods_id
+        <if test="stockAvgStartDate != null and stockAvgStopDate != null">
+        LEFT JOIN (
+            SELECT gb_dgs_gb_dis_goods_id,
+                   CAST(ROUND(AVG(CAST(gb_dgs_price AS DECIMAL(10, 2))), 2) AS CHAR) AS gb_dg_goods_average_price
+            FROM gb_department_goods_stock
+            WHERE gb_dgs_date &gt;= #{stockAvgStartDate}
+              AND gb_dgs_date &lt;= #{stockAvgStopDate}
+              AND gb_dgs_price IS NOT NULL
+              AND gb_dgs_price != ''
+              AND CAST(gb_dgs_price AS DECIMAL(10, 2)) &gt; 0
+            <if test="disId != null">
+              AND gb_dgs_gb_distributer_id = #{disId}
+            </if>
+            GROUP BY gb_dgs_gb_dis_goods_id
+        ) AS priceStats ON priceStats.gb_dgs_gb_dis_goods_id = gdg.gb_distributer_goods_id
+        </if>
         <where>
             <if test="disId != null">
                 AND gdg.gb_dg_distributer_id = #{disId}

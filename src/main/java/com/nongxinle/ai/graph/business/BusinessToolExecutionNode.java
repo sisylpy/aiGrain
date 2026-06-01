@@ -4,12 +4,14 @@ import com.nongxinle.ai.agent.business.MasterBusinessAgent;
 import com.nongxinle.ai.agent.business.MasterBusinessAgentResult;
 import com.nongxinle.ai.context.*;
 import com.nongxinle.ai.graph.business.scope.BusinessScopeResolutionSupport;
+import com.nongxinle.ai.platform.AiCardPayloadWireSupport;
 import com.nongxinle.ai.graph.business.toolrequest.BusinessToolExecutionRequestResolver;
 import com.nongxinle.ai.graph.business.toolrequest.PurchaseToolRequestContext;
 import com.nongxinle.ai.harness.HarnessPlannedToolArgsCapture;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.mapping.AiRoleMapper;
+import com.nongxinle.ai.scope.AiConversationScopeMode;
 import com.nongxinle.ai.security.AiRoleCodes;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.security.AiPermissionGuard;
@@ -47,6 +49,9 @@ public class BusinessToolExecutionNode implements AgentNode {
     private final RevenueQueryToolExecutor revenueQueryToolExecutor;
     private final StockReduceQueryToolExecutor stockReduceQueryToolExecutor;
     private final DishProfitQueryToolExecutor dishProfitQueryToolExecutor;
+    private final DishCostAnalysisToolRequestSupport dishCostAnalysisToolRequestSupport;
+    private final DishSalesAnalysisToolRequestSupport dishSalesAnalysisToolRequestSupport;
+    private final WarehouseStockOverviewToolExecutor warehouseStockOverviewToolExecutor;
     private final MasterBusinessAgent masterBusinessAgent;
     private final BusinessToolExecutionRequestResolver toolExecutionRequestResolver;
 
@@ -67,6 +72,8 @@ public class BusinessToolExecutionNode implements AgentNode {
                 || state.isPurchaseOverviewPath()
                 || state.isWarehouseStockOverviewPath()
                 || state.isDishProfitPath()
+                || state.isDishCostAnalysisPath()
+                || state.isMenuOperationPath()
                 || state.isStockReduceQueryPath()
                 || state.isBusinessDiagnosisPath()
                 || state.isRevenueOverviewPath()
@@ -93,6 +100,8 @@ public class BusinessToolExecutionNode implements AgentNode {
             hint = "库房库存概览汇总…";
         } else if (state.isBusinessDiagnosisPath()) {
             hint = "经营诊断（采购·出库·菜品毛利）…";
+        } else if (state.isMenuOperationPath()) {
+            hint = "菜单经营透视（复用菜品毛利快照）…";
         } else if (state.isDishProfitPath()) {
             hint = "菜品毛利透视…";
         } else if (state.isCostInsightPath()) {
@@ -112,7 +121,9 @@ public class BusinessToolExecutionNode implements AgentNode {
                 deptForScopedTools);
         String start = state.getStatStartDate();
         String stop = state.getStatEndDate();
-        if (state.isBusinessOverviewPath() || state.isDishProfitPath() || state.isWarehouseStockOverviewPath()
+        if (state.isBusinessOverviewPath() || state.isDishProfitPath() || state.isDishCostAnalysisPath()
+                || state.isMenuOperationPath()
+                || state.isWarehouseStockOverviewPath()
                 || state.isPurchaseCostInsightPath()
                 || state.isStockReduceQueryPath()
                 || state.isRevenueOverviewPath()
@@ -194,7 +205,7 @@ public class BusinessToolExecutionNode implements AgentNode {
                     continue;
                 }
 
-                if (warehouseHandledByMaster && AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)) {
+                if (warehouseHandledByMaster && isWarehouseToolOwnedByMasterAgent(toolId)) {
                     continue;
                 }
 
@@ -250,16 +261,26 @@ public class BusinessToolExecutionNode implements AgentNode {
                         .map(t -> t.execute(req))
                         .orElseGet(() -> ToolResult.builder().success(false).message("unknown_tool").data(Map.of()).build());
 
+                if (shouldPreserveExistingSuccessfulToolEnvelope(state, toolId, executed)) {
+                    publisher.publish(rid, "tool_finished", Map.of(
+                            "tool", toolId,
+                            "displayText", "工具已完成：" + toolId,
+                            "success", true,
+                            "skippedDuplicateFailure", true));
+                    continue;
+                }
+
                 Map<String, Object> payload = unwrapData(executed.getData());
                 state.getToolResults().put(toolId, payload != null ? payload : Map.of());
-
                 toolEnvelopes.put(toolId, state.getToolResults().get(toolId));
 
-                publisher.publish(rid, "tool_finished", Map.of(
-                        "tool", toolId,
-                        "displayText", executed.isSuccess() ? "工具已完成：" + toolId : "工具失败：" + toolId,
-                        "success", executed.isSuccess()
-                ));
+                publisher.publish(rid, "tool_finished", AiCardPayloadWireSupport.toolFinishedPayload(
+                        state,
+                        payload,
+                        Map.of(
+                                "tool", toolId,
+                                "displayText", executed.isSuccess() ? "工具已完成：" + toolId : "工具失败：" + toolId,
+                                "success", executed.isSuccess())));
             }
 
             publisher.publish(rid, "agent_finished", Map.of(
@@ -272,6 +293,7 @@ public class BusinessToolExecutionNode implements AgentNode {
             PurchaseAnswerPlanBuilder.attachIfApplicable(state);
             StockReduceAnswerPlanBuilder.attachIfApplicable(state);
             DailyRevenueAnswerPlanBuilder.attachIfApplicable(state);
+            GoodsSupportedDishCoverAnswerPlanBuilder.attachIfApplicable(state);
             WarehouseAnswerPlanBuilder.attachIfApplicable(state);
         }
         return state;
@@ -441,6 +463,10 @@ public class BusinessToolExecutionNode implements AgentNode {
      * 避免「集团角色 + 单店解析范围」误传 sentinel，或与单店 depFather 错位。
      */
     static boolean shouldRouteGroupWideDishInsight(AiRunState state) {
+        if (!AiConversationScopeMode.enumeratesDistributerStores(
+                state != null ? state.getResolvedQueryContext() : null)) {
+            return false;
+        }
         return shouldRouteGroupWideBusinessOverview(state) && resolvedOrgIndicatesGroupOrMultiStoreDishAggregate(state);
     }
 
@@ -478,6 +504,28 @@ public class BusinessToolExecutionNode implements AgentNode {
     }
 
     @SuppressWarnings("unchecked")
+    /**
+     * 库房专线已由 {@link MasterBusinessAgent#tryOrchestrateWarehouseStockOverview} 执行时，禁止 ToolExecution 重复调用。
+     */
+    static boolean isWarehouseToolOwnedByMasterAgent(String toolId) {
+        return AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)
+                || AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(toolId)
+                || AiBusinessToolIds.WAREHOUSE_GOODS_SUPPORTED_DISH_COVER.equals(toolId);
+    }
+
+    @SuppressWarnings("unchecked")
+    static boolean shouldPreserveExistingSuccessfulToolEnvelope(
+            AiRunState state, String toolId, ToolResult executed) {
+        if (state == null || executed == null || executed.isSuccess()) {
+            return false;
+        }
+        Object existing = state.getToolResults() == null ? null : state.getToolResults().get(toolId);
+        if (!(existing instanceof Map<?, ?> env)) {
+            return false;
+        }
+        return Boolean.TRUE.equals(env.get("success"));
+    }
+
     private static Map<String, Object> unwrapData(Object data) {
         if (data instanceof Map<?, ?> m) {
             return (Map<String, Object>) m;
@@ -510,12 +558,34 @@ public class BusinessToolExecutionNode implements AgentNode {
             return dishProfitQueryToolExecutor.buildDishProfitAnalysisToolArgs(
                     deptScoped, deptBuild, dis, start, stop, state);
         }
+        if (AiBusinessToolIds.DISH_COST_ANALYSIS.equals(toolId) && state != null) {
+            Long deptScoped = toolDepartmentResolutionSupport.resolveToolDepartmentFatherId(state, state.getDepartmentId());
+            Long deptBuild =
+                    toolDepartmentResolutionSupport.resolveBuildInsightDepartmentFatherId(state, deptScoped);
+            return dishCostAnalysisToolRequestSupport.buildDishCostAnalysisToolArgs(
+                    deptScoped, deptBuild, dis, start, stop, state);
+        }
+        if (AiBusinessToolIds.DISH_SALES_ANALYSIS_CARD.equals(toolId) && state != null) {
+            Long deptScoped = toolDepartmentResolutionSupport.resolveToolDepartmentFatherId(state, state.getDepartmentId());
+            Long deptBuild =
+                    toolDepartmentResolutionSupport.resolveBuildInsightDepartmentFatherId(state, deptScoped);
+            return dishSalesAnalysisToolRequestSupport.buildDishSalesAnalysisToolArgs(
+                    deptScoped, deptBuild, dis, start, stop, state);
+        }
+        if (AiBusinessToolIds.WAREHOUSE_GOODS_SUPPORTED_DISH_COVER.equals(toolId) && state != null) {
+            Long deptScoped =
+                    toolDepartmentResolutionSupport.resolveToolDepartmentFatherId(state, state.getDepartmentId());
+            return warehouseStockOverviewToolExecutor.buildGoodsSupportedDishCoverToolArgs(
+                    deptScoped, dis, state);
+        }
         Map<String, Object> m = new HashMap<>(8);
         if (AiBusinessToolIds.REVENUE_QUERY.equals(toolId)
                 || AiBusinessToolIds.STOCK_REDUCE_QUERY.equals(toolId)
-                || AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)) {
+                || AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)
+                || AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(toolId)) {
             boolean warehouseOverviewTool = AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId);
-            if (warehouseOverviewTool && state.isGroupWarehouseStockOverview()) {
+            boolean warehouseRiskTool = AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(toolId);
+            if ((warehouseOverviewTool || warehouseRiskTool) && state.isGroupWarehouseStockOverview()) {
                 m.put(AiBusinessToolIds.ARG_GROUP_WAREHOUSE_STOCK_AGGREGATION, Boolean.TRUE);
                 if (dis != null) {
                     m.put(AiBusinessToolIds.ARG_DIS_ID, dis);
@@ -538,10 +608,12 @@ public class BusinessToolExecutionNode implements AgentNode {
                 if (dept != null) {
                     m.put(AiBusinessToolIds.ARG_DEPARTMENT_FATHER_ID, dept);
                 }
-                if (dis != null && AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)) {
+                if (dis != null
+                        && (AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)
+                                || AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(toolId))) {
                     m.put(AiBusinessToolIds.ARG_DIS_ID, dis);
                 }
-                if (warehouseOverviewTool) {
+                if (warehouseOverviewTool || warehouseRiskTool) {
                     putWarehouseResolvedScopeArgs(m, state);
                 }
             }
@@ -571,6 +643,10 @@ public class BusinessToolExecutionNode implements AgentNode {
             }
             if (stop != null) {
                 m.put(AiBusinessToolIds.ARG_STOP_DATE, stop);
+            }
+            if (state != null
+                    && (warehouseOverviewTool || warehouseRiskTool)) {
+                WarehouseStockOverviewToolExecutor.enrichInventorySnapshotToolArgs(m, toolId, state);
             }
         } else if (AiBusinessToolIds.PURCHASE_OVERVIEW.equals(toolId)) {
             m.putAll(PurchaseOverviewToolExecutor.buildPurchaseOverviewToolArgs(dept, dis, start, stop, state));

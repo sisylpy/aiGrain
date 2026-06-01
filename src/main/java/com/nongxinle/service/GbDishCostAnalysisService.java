@@ -36,6 +36,36 @@ public interface GbDishCostAnalysisService {
             Integer depFatherId, String sortBy, String sortOrder);
 
     /**
+     * 菜单分类经营概览专用：配料分析同口径的单次数据加载，返回按 {@code foodId} 聚合的轻量菜品行（无 ingredientRows）。
+     */
+    List<Map<String, Object>> buildCategoryOverviewDishRows(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, Collection<Integer> scopeDepartmentIdsAllowFilter);
+
+    /**
+     * 单菜经营行（与 {@link #buildCategoryOverviewDishRows} 单行同结构）；{@code foodId} 并入 scope，供菜单详情页使用。
+     */
+    default Map<String, Object> buildCategoryOverviewDishRowForFoodId(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, Integer foodId) {
+        return buildCategoryOverviewDishRowForFoodId(startDate, stopDate, disId, depFatherId, foodId, null);
+    }
+
+    Map<String, Object> buildCategoryOverviewDishRowForFoodId(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, Integer foodId, Collection<Integer> scopeDepartmentIdsAllowFilter);
+
+    /**
+     * 单菜配料分析行（与 {@link #buildIngredientAnalysisReport} 的 {@code salesDishRows[]} 元素同结构，含
+     * {@code ingredientRows} / {@code bottle}）；{@code foodId} 并入 scope，本期内零销量仍可返回配方与出库分摊行。
+     */
+    default Map<String, Object> buildIngredientAnalysisDishRowForFoodId(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, Integer foodId) {
+        return buildIngredientAnalysisDishRowForFoodId(startDate, stopDate, disId, depFatherId, null, foodId, null);
+    }
+
+    Map<String, Object> buildIngredientAnalysisDishRowForFoodId(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, String searchDepId, Integer foodId,
+            Collection<Integer> scopeDepartmentIdsAllowFilter);
+
+    /**
      * 按分销商商品（配料）聚合的出库分析：同区间与配料分摊口径，汇总出库金额/重量及按料行的理论、实际、差异与涉及菜品行。
      *
      * @param sortBy {@code outbound|outboundAmount} 本商品 1+2+3 出库**金额**合计；{@code util|utilization|利用率} 同料**利用率**，无理论为末；

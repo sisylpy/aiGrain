@@ -102,6 +102,16 @@ public interface GbDistributerPurchaseGoodsService extends IService<GbDistribute
 
     List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopPriceFluctuation(Map<String, Object> map);
 
+    /**
+     * 本期入库采购单价 vs 同商品上一次入库采购单价；条件同 {@link #queryGbPurchaseGoodsCount}。
+     */
+    List<Map<String, Object>> queryGbPurchaseGoodsUnitPriceChangedVsPrevious(Map<String, Object> map);
+
+    /**
+     * 本期平均采购单价 vs 对比期平均采购单价；条件同 {@link #queryGbPurchaseGoodsCount}。
+     */
+    List<Map<String, Object>> queryGbPurchaseGoodsUnitPriceChangedPeriodAvgVsCompare(Map<String, Object> map);
+
     Integer queryGbDisGoodsTreeCount(Map<String, Object> queryMap);
 
     List<GbDistributerGoodsEntity> queryDisTreeGoodsWithPurList(Map<String, Object> queryMap);

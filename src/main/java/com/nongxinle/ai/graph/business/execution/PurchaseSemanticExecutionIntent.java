@@ -19,6 +19,8 @@ public class PurchaseSemanticExecutionIntent {
     public static final String EXEC_SUPPLIER_ANCHOR_GOODS_LINES = "SUPPLIER_ANCHOR_GOODS_LINES";
     /** 渠道 overview 追问 GOODS_DETAIL（无 GOODS 实体锚）。 */
     public static final String EXEC_CHANNEL_GOODS_DETAIL = "CHANNEL_GOODS_DETAIL";
+    /** 时间窗内采购原料/商品明细清单（无锚点；contract {@code purchase.period_goods_list}）。 */
+    public static final String EXEC_PERIOD_GOODS_LIST = "PERIOD_GOODS_LIST";
 
     public static PurchaseSemanticExecutionIntent none() {
         return PurchaseSemanticExecutionIntent.builder()

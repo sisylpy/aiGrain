@@ -3,6 +3,7 @@ package com.nongxinle.ai.tool.business;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionArgs;
+import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntent;
 import com.nongxinle.ai.tool.AiTool;
 import com.nongxinle.ai.tool.ToolRequest;
 import com.nongxinle.ai.tool.ToolResult;
@@ -45,6 +46,7 @@ import static com.nongxinle.ai.tool.business.AiBusinessToolIds.PAYLOAD_PURCHASE_
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_PUR_DEP_IDS;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_SOURCE_FOCUS;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_TIME_WINDOW;
+import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_EXECUTION_INTENT_TYPE;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_DIS_GOODS_ID;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_ENTITY_TYPE;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_GOODS_NAME;
@@ -117,46 +119,30 @@ public class PurchaseOverviewTool implements AiTool {
         try {
             AiTimeWindowTextFormatter.UserPhrases periodPhrases =
                     AiTimeWindowTextFormatter.fromIsoRange(start, stop, LocalDate.now());
-            List<Integer> storeRootsForScope = Collections.emptyList();
-            List<Integer> actualQueryDepartmentIds = Collections.emptyList();
-            Map<Integer, Integer> purDepRowToStoreRoot = Collections.emptyMap();
+            Map<String, Object> base = buildPurchaseGoodsSqlQueryBase(args);
+            if (base == null || base.isEmpty()) {
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("purchaseOverview", Map.of("error", "missing disId or date range"));
+                return ToolResult.builder()
+                        .success(false)
+                        .message("missing disId/date range")
+                        .data(AiBusinessToolResponses.envelope(name(), false, false, start, stop, dept, disId, data,
+                                "参数不完整"))
+                        .build();
+            }
 
+            List<Integer> storeRootsForScope = Collections.emptyList();
             if (groupAgg) {
                 storeRootsForScope = resolveGroupPurchaseStoreRoots(purDepIds, visibleStoresArg);
-                if (storeRootsForScope.isEmpty()) {
-                    log.warn(
-                            "[PurchaseOverviewTool] runId={} groupPurchaseAggregation=true but empty store roots (resolvedIds={}, visibleStoresSize={})",
-                            request.getRunId(), purDepIds == null ? 0 : purDepIds.size(), visibleStoresArg.size());
-                }
             } else if (!visibleStoresArg.isEmpty()) {
                 storeRootsForScope = resolveGroupPurchaseStoreRoots(List.of(), visibleStoresArg);
             }
-
+            Map<Integer, Integer> purDepRowToStoreRoot = Collections.emptyMap();
             if (!storeRootsForScope.isEmpty()) {
-                actualQueryDepartmentIds =
-                        gbAiDailyRevenueService.expandStoreRootsToDailyRevenueScopeIds(storeRootsForScope);
-                if (actualQueryDepartmentIds == null || actualQueryDepartmentIds.isEmpty()) {
-                    actualQueryDepartmentIds = new ArrayList<>(storeRootsForScope);
-                }
                 purDepRowToStoreRoot = buildPurDepartmentToStoreRootMap(storeRootsForScope);
             }
-
-            Map<String, Object> base = new HashMap<>(16);
-            base.put("disId", disId.intValue());
-            base.put("startDate", start);
-            base.put("stopDate", stop);
-            base.put("useStockFinishDate", Boolean.TRUE);
-            base.put("dayuStatus", 2);
-            base.put("typeNotEqual", GbConstants.PurchaseOrderType.RETURN);
-            if (groupAgg && storeRootsForScope.isEmpty()) {
-                base.put("purDepIds", List.of(-1));
-            } else if (!actualQueryDepartmentIds.isEmpty()) {
-                base.put("purDepIds", new ArrayList<>(actualQueryDepartmentIds));
-            } else if (purDep != null) {
-                base.put("purDepId", purDep.intValue());
-            }
-
-            applyLegacySourceFocusToQueryParams(base, purchaseSourceFocus);
+            boolean rollupToStoreRoots = !purDepRowToStoreRoot.isEmpty();
+            int expandedQueryIdCount = resolveExpandedQueryDepartmentIdCount(base);
 
             String narrativeMode = purchaseNarrativeMode;
             if (narrativeMode.isEmpty() && !purchaseSourceFocus.isEmpty()) {
@@ -165,8 +151,6 @@ public class PurchaseOverviewTool implements AiTool {
             if (narrativeMode.isEmpty()) {
                 narrativeMode = AiQuerySemanticLexicon.STRUCTURED_PURCHASE_OVERVIEW_SUMMARY;
             }
-
-            boolean rollupToStoreRoots = !purDepRowToStoreRoot.isEmpty();
 
             Integer rowCount = purchaseGoodsService.queryGbPurchaseGoodsCount(base);
             boolean hasRows = rowCount != null && rowCount > 0;
@@ -272,7 +256,7 @@ public class PurchaseOverviewTool implements AiTool {
                                 .filter(id -> id != null && id > 0)
                                 .collect(Collectors.toList()),
                         storeRootsForScope,
-                        actualQueryDepartmentIds == null ? 0 : actualQueryDepartmentIds.size(),
+                        expandedQueryIdCount,
                         start,
                         stop,
                         rowCount == null ? 0 : rowCount,
@@ -289,8 +273,11 @@ public class PurchaseOverviewTool implements AiTool {
             List<GbDistributerGoodsEntity> topBySub = hasRows
                     ? nullToEmpty(purchaseGoodsService.queryGbPurchaseGoodsTopSubtotalMerged(topBase))
                     : List.of();
-            List<GbDistributerGoodsEntity> topPrice = hasRows
-                    ? nullToEmpty(purchaseGoodsService.queryGbPurchaseGoodsTopPriceFluctuation(topBase))
+            Map<String, Object> unitPriceBase = new HashMap<>(base);
+            unitPriceBase.put("limit", 20);
+            List<Map<String, Object>> unitPriceChanged = hasRows
+                    ? nullToEmptyMap(
+                            purchaseGoodsService.queryGbPurchaseGoodsUnitPriceChangedVsPrevious(unitPriceBase))
                     : List.of();
             List<Map<String, Object>> topSuppliers = hasRows
                     ? applyTopSuppliersFocus(
@@ -382,6 +369,19 @@ public class PurchaseOverviewTool implements AiTool {
                     purchaseOverview.put("purchaseSupplierGoodsDetailAlternativeFacet", null);
                     purchaseOverview.put("purchaseSupplierGoodsDetailAlternativeHasData", null);
                     purchaseOverview.put("purchaseSupplierGoodsDetailQueryMethod", null);
+                } else if (anchorExecution.periodGoodsList) {
+                    purchaseOverview.put("purchasePeriodGoodsDetailActive", Boolean.TRUE);
+                    purchaseOverview.put(
+                            "purchasePeriodGoodsDetailQueryMethod",
+                            anchorExecution.queryMethod == null || anchorExecution.queryMethod.isBlank()
+                                    ? "queryDisTreeGoodsWithPurList"
+                                    : anchorExecution.queryMethod);
+                    purchaseOverview.put(
+                            "purchasePeriodGoodsDetailRows", new ArrayList<>(anchorExecution.detailRows));
+                    purchaseOverview.put("purchasePeriodGoodsDetailRowsCount", anchorExecution.detailRows.size());
+                    purchaseOverview.put("purchasePeriodGoodsDetailNoDataReason", anchorExecution.noDataReason);
+                    purchaseOverview.put("purchaseSupplierGoodsDetailRows", List.of());
+                    purchaseOverview.put("purchaseSupplierGoodsDetailRowsCount", 0);
                 } else {
                     purchaseOverview.put("purchaseSupplierGoodsDetailRows",
                             new ArrayList<>(anchorExecution.detailRows));
@@ -414,23 +414,26 @@ public class PurchaseOverviewTool implements AiTool {
                         purchaseOverview.put("purchaseSupplierGoodsDetailFocusSupplierId", anchorExecution.focusSupplierId);
                     }
                 }
-                String timeWindow =
-                        str(args.get(ARG_START_DATE)).isEmpty() || str(args.get(ARG_STOP_DATE)).isEmpty()
-                                ? null
-                                : str(args.get(ARG_START_DATE)) + "~" + str(args.get(ARG_STOP_DATE));
-                Object pids = base.get("purDepIds");
-                Object purDepPayload =
-                        pids instanceof List<?> l && !l.isEmpty()
-                                ? new ArrayList<>(l)
-                                : (base.get("purDepId") != null ? List.of(base.get("purDepId")) : null);
-                String sourceFocusPayload =
-                        purchaseSourceFocus.isEmpty() ? null : purchaseSourceFocus;
-                putSupplierAnchorExecutionScopePayload(
-                        purchaseOverview, timeWindow, purDepPayload, sourceFocusPayload);
+                if (!anchorExecution.periodGoodsList) {
+                    String timeWindow =
+                            str(args.get(ARG_START_DATE)).isEmpty() || str(args.get(ARG_STOP_DATE)).isEmpty()
+                                    ? null
+                                    : str(args.get(ARG_START_DATE)) + "~" + str(args.get(ARG_STOP_DATE));
+                    Object pids = base.get("purDepIds");
+                    Object purDepPayload =
+                            pids instanceof List<?> l && !l.isEmpty()
+                                    ? new ArrayList<>(l)
+                                    : (base.get("purDepId") != null ? List.of(base.get("purDepId")) : null);
+                    String sourceFocusPayload =
+                            purchaseSourceFocus.isEmpty() ? null : purchaseSourceFocus;
+                    putSupplierAnchorExecutionScopePayload(
+                            purchaseOverview, timeWindow, purDepPayload, sourceFocusPayload);
+                }
             }
             purchaseOverview.put("topGoods", mapTopGoods(topByTimes, topBySub));
             purchaseOverview.put("topSuppliers", topSuppliers);
-            purchaseOverview.put("priceChangeItems", mapPriceChange(topPrice));
+            purchaseOverview.put("unitPriceChangedItems", new ArrayList<>(unitPriceChanged));
+            purchaseOverview.put("priceChangeItems", mapUnitPriceChangedRows(unitPriceChanged));
             purchaseOverview.put("highAmountItems", mapHighAmount(topBySub));
             purchaseOverview.put("purchaseWithoutSalesItems", List.of());
             purchaseOverview.put("recommendations", buildRecommendations(hasRows, periodPhrases));
@@ -460,6 +463,7 @@ public class PurchaseOverviewTool implements AiTool {
             failOverview.put("goodsPurchaseAmountTop", List.of());
             failOverview.put("topGoods", List.of());
             failOverview.put("topSuppliers", List.of());
+            failOverview.put("unitPriceChangedItems", List.of());
             failOverview.put("priceChangeItems", List.of());
             failOverview.put("highAmountItems", List.of());
             failOverview.put("purchaseWithoutSalesItems", List.of());
@@ -485,6 +489,9 @@ public class PurchaseOverviewTool implements AiTool {
             String purchaseSourceFocus,
             List<Map<String, Object>> goodsAmountTop) {
         PurchaseAnchorExecutionExtras out = new PurchaseAnchorExecutionExtras();
+        if (isPeriodGoodsListExecutionArgs(args)) {
+            return resolvePeriodGoodsListExecution(base, hasRows, out);
+        }
         if (isGoodsAnchorSourceBreakdownExecutionArgs(args)) {
             return resolveGoodsAnchorSourceBreakdownExecution(args, base, hasRows, out);
         }
@@ -670,6 +677,33 @@ public class PurchaseOverviewTool implements AiTool {
         return "SOURCE_BREAKDOWN".equalsIgnoreCase(PurchaseSemanticExecutionArgs.readExecutionDetailWanted(args));
     }
 
+    /** 时间窗内采购原料/商品明细清单（contract {@code purchase.period_goods_list}）。 */
+    private static boolean isPeriodGoodsListExecutionArgs(Map<String, Object> args) {
+        if (args == null) {
+            return false;
+        }
+        String execType = str(args.get(ARG_PURCHASE_EXECUTION_INTENT_TYPE));
+        if (PurchaseSemanticExecutionIntent.EXEC_PERIOD_GOODS_LIST.equals(execType)) {
+            return true;
+        }
+        return "PERIOD_GOODS_LIST".equalsIgnoreCase(PurchaseSemanticExecutionArgs.readExecutionDetailWanted(args));
+    }
+
+    private PurchaseAnchorExecutionExtras resolvePeriodGoodsListExecution(
+            Map<String, Object> base, boolean hasRows, PurchaseAnchorExecutionExtras out) {
+        out.active = true;
+        out.periodGoodsList = true;
+        out.goodsAnchorSupplierBreakdown = false;
+        out.queryMethod = "queryDisTreeGoodsWithPurList";
+        List<GbDistributerGoodsEntity> goods =
+                nullToEmpty(purchaseGoodsService.queryDisTreeGoodsWithPurList(new HashMap<>(base)));
+        out.detailRows = mapPeriodGoodsDetailList(goods);
+        if (out.detailRows.isEmpty()) {
+            out.noDataReason = hasRows ? "NO_PURCHASE_LINES_FOR_SCOPE" : "NO_PURCHASE_RECORD_FOR_SCOPE";
+        }
+        return out;
+    }
+
     /** 渠道 overview 追问 GOODS_DETAIL，仅 executionDetailWanted（无 focus 实体）。 */
     private static boolean isChannelOverviewGoodsDetailExecutionArgs(Map<String, Object> args) {
         if (args == null) {
@@ -825,6 +859,8 @@ public class PurchaseOverviewTool implements AiTool {
         boolean goodsSourceBreakdown;
         /** true：商品锚下各供应商行；false：供应商锚下各商品行。 */
         boolean goodsAnchorSupplierBreakdown = true;
+        /** contract {@code purchase.period_goods_list}：时间窗原料采购清单。 */
+        boolean periodGoodsList;
         String queryMethod;
         Integer focusSupplierId;
         String targetGoodsName = "";
@@ -935,6 +971,82 @@ public class PurchaseOverviewTool implements AiTool {
             return "0.0";
         }
         return v.setScale(1, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    /**
+     * 与 {@link com.nongxinle.mapper.GbDistributerPurchaseGoodsMapper#queryGbPurchaseGoodsCount} 同 scope 的动态 SQL 参数；
+     * 供经营采购卡等业务侧只读查询复用（不解析用户原文）。
+     */
+    public Map<String, Object> buildPurchaseGoodsSqlQueryBase(Map<String, Object> args) {
+        if (args == null || args.isEmpty()) {
+            return Map.of();
+        }
+        Long purDep = toLong(args.get(ARG_PURCHASE_DEPARTMENT_ID));
+        if (purDep == null) {
+            purDep = toLong(args.get(ARG_DEPARTMENT_FATHER_ID));
+        }
+        Long disId = toLong(args.get(ARG_DIS_ID));
+        String start = str(args.get(ARG_START_DATE));
+        String stop = str(args.get(ARG_STOP_DATE));
+        if (disId == null || start.isEmpty() || stop.isEmpty()) {
+            return Map.of();
+        }
+        boolean groupAgg = Boolean.TRUE.equals(args.get(ARG_GROUP_PURCHASE_AGGREGATION));
+        List<Integer> purDepIds = extractIntList(args.get(ARG_RESOLVED_DEPARTMENT_IDS));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> visibleStoresArg =
+                args.get(ARG_VISIBLE_STORES) instanceof List<?> raw
+                        ? (List<Map<String, Object>>) raw
+                        : List.of();
+        String purchaseSourceFocus = str(args.get(ARG_PURCHASE_SOURCE_FOCUS));
+
+        List<Integer> storeRootsForScope = Collections.emptyList();
+        List<Integer> actualQueryDepartmentIds = Collections.emptyList();
+        if (groupAgg) {
+            storeRootsForScope = resolveGroupPurchaseStoreRoots(purDepIds, visibleStoresArg);
+            if (storeRootsForScope.isEmpty()) {
+                log.warn(
+                        "[PurchaseOverviewTool] groupPurchaseAggregation=true but empty store roots (resolvedIds={}, visibleStoresSize={})",
+                        purDepIds == null ? 0 : purDepIds.size(), visibleStoresArg.size());
+            }
+        } else if (!visibleStoresArg.isEmpty()) {
+            storeRootsForScope = resolveGroupPurchaseStoreRoots(List.of(), visibleStoresArg);
+        }
+        if (!storeRootsForScope.isEmpty()) {
+            actualQueryDepartmentIds =
+                    gbAiDailyRevenueService.expandStoreRootsToDailyRevenueScopeIds(storeRootsForScope);
+            if (actualQueryDepartmentIds == null || actualQueryDepartmentIds.isEmpty()) {
+                actualQueryDepartmentIds = new ArrayList<>(storeRootsForScope);
+            }
+        }
+
+        Map<String, Object> base = new HashMap<>(16);
+        base.put("disId", disId.intValue());
+        base.put("startDate", start);
+        base.put("stopDate", stop);
+        base.put("useStockFinishDate", Boolean.TRUE);
+        base.put("dayuStatus", 2);
+        base.put("typeNotEqual", GbConstants.PurchaseOrderType.RETURN);
+        if (groupAgg && storeRootsForScope.isEmpty()) {
+            base.put("purDepIds", List.of(-1));
+        } else if (!actualQueryDepartmentIds.isEmpty()) {
+            base.put("purDepIds", new ArrayList<>(actualQueryDepartmentIds));
+        } else if (purDep != null) {
+            base.put("purDepId", purDep.intValue());
+        }
+        applyLegacySourceFocusToQueryParams(base, purchaseSourceFocus);
+        return base;
+    }
+
+    private static int resolveExpandedQueryDepartmentIdCount(Map<String, Object> base) {
+        if (base == null || base.isEmpty()) {
+            return 0;
+        }
+        Object purDepIdsObj = base.get("purDepIds");
+        if (purDepIdsObj instanceof List<?> list) {
+            return list.size();
+        }
+        return base.get("purDepId") != null ? 1 : 0;
     }
 
     /**
@@ -1106,6 +1218,71 @@ public class PurchaseOverviewTool implements AiTool {
         return out;
     }
 
+    private static List<Map<String, Object>> mapPeriodGoodsDetailList(List<GbDistributerGoodsEntity> goods) {
+        if (goods == null || goods.isEmpty()) {
+            return List.of();
+        }
+        List<GbDistributerGoodsEntity> sorted = new ArrayList<>(goods);
+        sorted.sort(
+                (a, b) ->
+                        Double.compare(
+                                periodGoodsDetailAmount(b),
+                                periodGoodsDetailAmount(a)));
+        int cap = Math.min(sorted.size(), 200);
+        List<Map<String, Object>> out = new ArrayList<>(cap);
+        for (int i = 0; i < cap; i++) {
+            GbDistributerGoodsEntity g = sorted.get(i);
+            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+            row.put("goodsName", g.getGbDgGoodsName());
+            if (g.getGbDistributerGoodsId() != null) {
+                row.put("disGoodsId", g.getGbDistributerGoodsId());
+            }
+            if (g.getGbDgSelfPrice() != null && !g.getGbDgSelfPrice().isBlank()) {
+                row.put("quantity", g.getGbDgSelfPrice());
+            }
+            if (g.getGbDgGoodsStandardname() != null && !g.getGbDgGoodsStandardname().isBlank()) {
+                row.put("unit", g.getGbDgGoodsStandardname().trim());
+            }
+            if (g.getGbDgGoodsAveragePrice() != null && !g.getGbDgGoodsAveragePrice().isBlank()) {
+                row.put("unitPrice", g.getGbDgGoodsAveragePrice());
+            }
+            String amount =
+                    g.getGbDgSellingPrice() != null && !g.getGbDgSellingPrice().isBlank()
+                            ? g.getGbDgSellingPrice()
+                            : g.getGoodsPurTotalSubtotal();
+            if (amount != null && !amount.isBlank()) {
+                row.put("amount", amount);
+                row.put("purchaseSubtotal", amount);
+            }
+            if (g.getGoodsPurTotalCount() > 0) {
+                row.put("purchaseLineCount", g.getGoodsPurTotalCount());
+            }
+            if (g.getGbDgGbSupplierId() != null && g.getGbDgGbSupplierId() > 0) {
+                row.put("supplierId", g.getGbDgGbSupplierId());
+            }
+            out.add(row);
+        }
+        return out;
+    }
+
+    private static double periodGoodsDetailAmount(GbDistributerGoodsEntity g) {
+        if (g == null) {
+            return 0.0;
+        }
+        String raw =
+                g.getGbDgSellingPrice() != null && !g.getGbDgSellingPrice().isBlank()
+                        ? g.getGbDgSellingPrice()
+                        : g.getGoodsPurTotalSubtotal();
+        if (raw == null || raw.isBlank()) {
+            return 0.0;
+        }
+        try {
+            return Double.parseDouble(raw.trim());
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
     private static List<Map<String, Object>> mapTopGoods(List<GbDistributerGoodsEntity> byTimes,
             List<GbDistributerGoodsEntity> bySubtotal) {
         List<Map<String, Object>> out = new ArrayList<>();
@@ -1243,6 +1420,29 @@ public class PurchaseOverviewTool implements AiTool {
             return false;
         }
         return true;
+    }
+
+    private static List<Map<String, Object>> mapUnitPriceChangedRows(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        int n = Math.min(rows.size(), 20);
+        for (int i = 0; i < n; i++) {
+            Map<String, Object> src = rows.get(i);
+            if (src == null || src.isEmpty()) {
+                continue;
+            }
+            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+            row.put("goodsName", src.get("goodsName"));
+            row.put("standardName", src.get("standardName"));
+            row.put("currentUnitPrice", src.get("currentUnitPrice"));
+            row.put("previousUnitPrice", src.get("previousUnitPrice"));
+            row.put("priceChangePercent", src.get("priceChangePercent"));
+            row.put("priceFluctuationPercent", src.get("priceChangePercent"));
+            out.add(row);
+        }
+        return out;
     }
 
     private static List<Map<String, Object>> mapPriceChange(List<GbDistributerGoodsEntity> xs) {

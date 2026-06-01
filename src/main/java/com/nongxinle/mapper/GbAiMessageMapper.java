@@ -30,6 +30,8 @@ public interface GbAiMessageMapper extends BaseMapper<GbAiMessageEntity> {
 			@Param("content") String content,
 			@Param("runId") Long runId,
 			@Param("status") String status,
+			@Param("cardsJson") String cardsJson,
+			@Param("contextSummaryJson") String contextSummaryJson,
 			@Param("createTime") Date createTime,
 			@Param("updateTime") Date updateTime);
 

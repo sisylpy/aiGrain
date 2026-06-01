@@ -1,0 +1,72 @@
+---
+description: 系统级 Time Layer 时间继承规则——与业务域/合同/Card 无关，每个会话必须遵守
+alwaysApply: true
+---
+
+# Time Layer 时间继承（系统级）
+
+时间继承是 **Time Layer** 能力，**不属于**任何具体业务域（DISH_PROFIT / PURCHASE / REVENUE 等）。
+
+Business Frame / `selectedContractId` 只决定**当前业务合同**；**不等于** time 必须重置。合同切换**不影响**时间继承判断。
+
+---
+
+## 继承条件（同时满足才继承）
+
+1. **当前用户问题没有显式时间**（结构化：`timeSource ≠ CURRENT_MESSAGE_EXPLICIT`；本句未由 V2/Intake 判定为带新时间窗）
+2. **上下文延续**：Intake 判定 `isFollowUp=true` 和/或 `usedPreviousContext=true`（或 V2 等价结构化信号：`followUp`、`timeAction=INHERIT_PREVIOUS` 等）
+3. **`previousTurn` 存在有效时间窗**（`lastStartDate` / `lastEndDate`）
+
+→ 最终 `effectiveTimeWindowSource = INHERITED_PREVIOUS`，起止日复制上一轮。
+
+---
+
+## 禁止继承（显式时间优先）
+
+当前用户问题**显式包含**时间表达（今天、昨天、本周、上个月、本月、本季度、最近 N 天等），且 V2 已输出 **`CURRENT_MESSAGE_EXPLICIT`** + 对应起止日：
+
+→ **必须**使用当前句时间，**禁止**继承上一轮时间。
+
+显式时间由 **LLM + contract** 判定并输出结构化字段；Java **不得**用 `contains("上个月")` 等 NL 规则补判。
+
+---
+
+## 与 DEFAULT_MONTH_TO_DATE 的边界
+
+- **首轮**、无 `previousTurn`、本句无显式时间 → `DEFAULT_MONTH_TO_DATE`（锚定日所在自然月 1 号至锚定日）
+- **上下文延续**、本句无显式时间、有 `previousTurn` → **`INHERITED_PREVIOUS`**，**禁止** V2 的 `DEFAULT_MONTH_TO_DATE` / `THIS_MONTH` 覆盖 inherited 区间
+
+---
+
+## 唯一实现入口（禁止分散 if/else）
+
+时间合成与继承**只**在 Time Layer 完成：
+
+| 组件 | 职责 |
+|------|------|
+| `TimeLayerContextSignals` | 读取 Intake 的 `isFollowUp` / `usedPreviousContext`，与 Business Frame 分层 |
+| `SemanticTimeContractCheck.reconcileTimePartForContract` | 缺字段补齐、DEFAULT 覆盖纠正、inherit 决策 |
+| `SemanticTimeContractCheck.check` | 结构自洽校验 |
+| `SemanticAdoptionPipeline` | 将 Intake 信号传入 Time Contract（**不**在 inheritance applier 里改 time） |
+| `AiResolvedQueryContextResolver` | 写入 `effectiveTimeWindowSource` / `AiResolvedTimeWindow` |
+
+---
+
+## 硬禁止
+
+- 在 **各业务域**（`DishProfitAgentNode`、`Purchase*`、dashboard renderer 等）写时间继承 if/else
+- 在 **各合同** / **contract completion** / **matrix wire** 内重置或覆盖 time
+- 在 **各 Card** / **AnswerPlan** / **Composer** 内推断「该不该继承上一轮时间」
+- 用 `rawMessage` / `completedUserQuery` / `normalizedMessage.contains(...)` 识别时间词
+- 因 **Business Frame / selectedContractId 切换** 而强制重置 time 或禁止 inherit
+
+时间继承**只看两件事**：当前句是否显式给了时间；上下文是否延续。
+
+---
+
+## 相关文档与代码
+
+- `docs/ai/semantic-inheritance-architecture.md` — Business Frame vs Time/Scope 分层
+- `.cursor/rules/harness-java-boundary.md` — §错误 4（Java 不做 NL 时间解释）
+- `src/main/java/com/nongxinle/ai/semantic/TimeLayerContextSignals.java`
+- `src/main/java/com/nongxinle/ai/semantic/SemanticTimeContractCheck.java`

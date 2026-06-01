@@ -68,7 +68,7 @@ public class MasterBusinessAgent {
         BusinessAgentDispatchPlan dispatchPlan = buildFourDomainHarnessDispatchPlan(state);
         dbg.put("businessOverviewDispatchPlan", summarizeDispatchPlan(dispatchPlan));
 
-        BusinessAgentRequest.BusinessAgentRequestBuilder requestBuilder =
+        BusinessAgentRequest request =
                 BusinessAgentRequest.builder()
                         .runId(state.getRunId())
                         .conversationId(state.getConversationId())
@@ -78,9 +78,9 @@ public class MasterBusinessAgent {
                         .semanticResult(rq != null ? rq.getQuerySemanticParse() : null)
                         .executionContext(state)
                         .orchestratedBusinessOverviewMultiAgent(true)
-                        .debugOptions(new LinkedHashMap<>());
-        BusinessFourDomainHarnessSupport.populateHarnessContract(requestBuilder, state, rq);
-        BusinessAgentRequest request = requestBuilder.build();
+                        .debugOptions(new LinkedHashMap<>())
+                        .build();
+        BusinessFourDomainHarnessSupport.populateHarnessContract(request, state, rq);
 
         dbg.put("harnessOrchestratedSurfacePath", request.getOrchestratedSurfacePathCode());
         dbg.put("harnessOrchestratedSurfaceIntent", request.getOrchestratedSurfaceIntentCode());
@@ -1160,7 +1160,13 @@ public class MasterBusinessAgent {
             return false;
         }
         List<String> plan = state.getDataPlanTools();
-        if (plan == null || plan.size() != 1 || !AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(plan.get(0))) {
+        if (plan == null || plan.size() != 1) {
+            return false;
+        }
+        String tool = plan.get(0);
+        if (!AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(tool)
+                && !AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(tool)
+                && !AiBusinessToolIds.WAREHOUSE_GOODS_SUPPORTED_DISH_COVER.equals(tool)) {
             return false;
         }
         AiResolvedQueryContext rq = state.getResolvedQueryContext();

@@ -117,6 +117,21 @@ public class DishProfitAgentNode {
         return !AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(path);
     }
 
+    static boolean isMenuOperationQueryOnlyPath(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        if (state.isMenuOperationPath()) {
+            return true;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return false;
+        }
+        String path = effectivePath(rq);
+        return AiResolvedQueryIntent.PATH_MENU_OPERATION.equals(path);
+    }
+
     private static String effectivePath(AiResolvedQueryContext rq) {
         if (StringUtils.hasText(rq.getEffectivePathCode())) {
             return rq.getEffectivePathCode().trim();
@@ -169,6 +184,11 @@ public class DishProfitAgentNode {
         if (isDishSalesQueryOnlyPath(state)) {
             state.setDishProfitAnswerPlan(null);
             DishSalesAnswerPlanBuilder.attachIfApplicable(state);
+            return null;
+        }
+        if (isMenuOperationQueryOnlyPath(state)) {
+            state.setDishProfitAnswerPlan(null);
+            state.setDishProfitOverviewResult(null);
             return null;
         }
         Map<String, Object> data = toolEnvelopeData(state, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
@@ -418,6 +438,15 @@ public class DishProfitAgentNode {
         }
 
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(wire)) {
+            if (attachRankingNoDataPlanIfNeeded(
+                    state,
+                    DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST,
+                    dishRowsAllPeers,
+                    scopeLabel,
+                    timeLabel,
+                    dbg)) {
+                return;
+            }
             List<RowSnap> ranked = dishRowsAllPeers.stream()
                     .map(r -> new RowSnap(r, briefFromRow(r)))
                     .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()))
@@ -451,6 +480,15 @@ public class DishProfitAgentNode {
         }
 
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_GAP_RANKING_MAX.equals(wire)) {
+            if (attachRankingNoDataPlanIfNeeded(
+                    state,
+                    DishProfitAnswerPlan.TYPE_DISH_COST_GAP,
+                    dishRowsAllPeers,
+                    scopeLabel,
+                    timeLabel,
+                    dbg)) {
+                return;
+            }
             List<RowSnap> ranked = dishRowsAllPeers.stream()
                     .map(r -> new RowSnap(r, briefFromRow(r)))
                     .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()))
@@ -561,23 +599,32 @@ public class DishProfitAgentNode {
             return false;
         }
         String target = matrixRow.getTargetDishProfitPlanType();
+        if (DishProfitSemanticCapabilityMatrix.isRankingTargetPlanType(target)) {
+            List<Map<String, Object>> peers =
+                    dishRowsAllPeers != null ? dishRowsAllPeers : List.of();
+            if (attachRankingNoDataPlanIfNeeded(state, target, peers, scopeLabel, timeLabel, dbg)) {
+                return true;
+            }
+        }
         if (DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN.equals(target)) {
             attachIngredientCostBreakdownPlan(
                     state, out, dishRowsAllPeers, dishRowsScoped, scopeLabel, timeLabel, dbg);
             return true;
         }
         if (DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN.equals(target)) {
-            if (dishRowsAllPeers == null || dishRowsAllPeers.isEmpty()) {
-                return false;
-            }
             attachLowestMarginRankingPlan(state, dishRowsAllPeers, scopeLabel, timeLabel, dbg);
             return state.getDishProfitAnswerPlan() != null;
         }
         if (DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN.equals(target)) {
-            if (dishRowsAllPeers == null || dishRowsAllPeers.isEmpty()) {
-                return false;
-            }
             attachHighestMarginRankingPlan(state, dishRowsAllPeers, scopeLabel, timeLabel, dbg);
+            return state.getDishProfitAnswerPlan() != null;
+        }
+        if (DishProfitAnswerPlan.TYPE_DISH_LOWEST_PROFIT_AMOUNT.equals(target)) {
+            attachLowestProfitAmountRankingPlan(state, dishRowsAllPeers, scopeLabel, timeLabel, dbg);
+            return state.getDishProfitAnswerPlan() != null;
+        }
+        if (DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT.equals(target)) {
+            attachHighestProfitAmountRankingPlan(state, dishRowsAllPeers, scopeLabel, timeLabel, dbg);
             return state.getDishProfitAnswerPlan() != null;
         }
         if (DishProfitAnswerPlan.TYPE_DISH_THEORETICAL_COST.equals(target)
@@ -598,6 +645,14 @@ public class DishProfitAgentNode {
     static void maybeAttachPortfolioAggregatePlan(
             AiRunState state, AiDishProfitOverviewResult out, boolean orchestrationEnvelope) {
         if (state == null || out == null) {
+            return;
+        }
+        String rankingWire = structuredIntentDetailWireFromState(state);
+        if (DishProfitSemanticCapabilityMatrix.isRankingStructuredWire(rankingWire)) {
+            log.info(
+                    "[DishProfitAgentNode] skip portfolio aggregate for ranking intent runId={} wire={}",
+                    state.getRunId(),
+                    rankingWire);
             return;
         }
         if (!(state.isBusinessDiagnosisPath() || state.isBusinessOverviewPath() || state.isDishProfitPath())) {
@@ -764,6 +819,15 @@ public class DishProfitAgentNode {
             String scopeLabel,
             String timeLabel,
             LinkedHashMap<String, Object> dbg) {
+        if (attachRankingNoDataPlanIfNeeded(
+                state,
+                DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN,
+                dishRowsAllPeers,
+                scopeLabel,
+                timeLabel,
+                dbg)) {
+            return;
+        }
         List<RowSnap> ranked = dishRowsAllPeers.stream()
                 .map(r -> new RowSnap(r, briefFromRow(r)))
                 .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()) && !isCostDataIncomplete(rs.brief()))
@@ -798,6 +862,15 @@ public class DishProfitAgentNode {
             String scopeLabel,
             String timeLabel,
             LinkedHashMap<String, Object> dbg) {
+        if (attachRankingNoDataPlanIfNeeded(
+                state,
+                DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN,
+                dishRowsAllPeers,
+                scopeLabel,
+                timeLabel,
+                dbg)) {
+            return;
+        }
         List<RowSnap> ranked = dishRowsAllPeers.stream()
                 .map(r -> new RowSnap(r, briefFromRow(r)))
                 .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()) && !isCostDataIncomplete(rs.brief()))
@@ -817,6 +890,96 @@ public class DishProfitAgentNode {
                 .scopeLabel(scopeLabel)
                 .timeLabel(timeLabel)
                 .sortKey("blendedGrossMarginRateOnListPrice")
+                .sortDirection("DESC")
+                .topN(1)
+                .focusRows(List.of(insightRowToAnswerPlanRow(top.row(), top.brief())))
+                .secondaryRows(secondary)
+                .debug(dbg)
+                .build();
+        finishAttachDishProfitAnswerPlan(state, plan);
+    }
+
+    private static void attachLowestProfitAmountRankingPlan(
+            AiRunState state,
+            List<Map<String, Object>> dishRowsAllPeers,
+            String scopeLabel,
+            String timeLabel,
+            LinkedHashMap<String, Object> dbg) {
+        if (attachRankingNoDataPlanIfNeeded(
+                state,
+                DishProfitAnswerPlan.TYPE_DISH_LOWEST_PROFIT_AMOUNT,
+                dishRowsAllPeers,
+                scopeLabel,
+                timeLabel,
+                dbg)) {
+            return;
+        }
+        List<RowSnap> ranked = dishRowsAllPeers.stream()
+                .map(r -> new RowSnap(r, briefFromRow(r)))
+                .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()) && !isCostDataIncomplete(rs.brief()))
+                .sorted(Comparator.comparingDouble(rs -> profitAmountSortKeyAsc(rs.brief())))
+                .collect(Collectors.toList());
+        if (ranked.isEmpty()) {
+            log.info(
+                    "[DishProfitAgentNode] dishProfitAnswerPlan skip LOW_PROFIT_AMOUNT rankedEmpty runId={}",
+                    state.getRunId());
+            return;
+        }
+        RowSnap top = ranked.get(0);
+        List<Map<String, Object>> secondary = new ArrayList<>();
+        for (int i = 1; i < ranked.size() && secondary.size() < 3; i++) {
+            secondary.add(insightRowToAnswerPlanRow(ranked.get(i).row(), ranked.get(i).brief()));
+        }
+        DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                .planType(DishProfitAnswerPlan.TYPE_DISH_LOWEST_PROFIT_AMOUNT)
+                .scopeLabel(scopeLabel)
+                .timeLabel(timeLabel)
+                .sortKey("grossProfitAmount")
+                .sortDirection("ASC")
+                .topN(1)
+                .focusRows(List.of(insightRowToAnswerPlanRow(top.row(), top.brief())))
+                .secondaryRows(secondary)
+                .debug(dbg)
+                .build();
+        finishAttachDishProfitAnswerPlan(state, plan);
+    }
+
+    private static void attachHighestProfitAmountRankingPlan(
+            AiRunState state,
+            List<Map<String, Object>> dishRowsAllPeers,
+            String scopeLabel,
+            String timeLabel,
+            LinkedHashMap<String, Object> dbg) {
+        if (attachRankingNoDataPlanIfNeeded(
+                state,
+                DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT,
+                dishRowsAllPeers,
+                scopeLabel,
+                timeLabel,
+                dbg)) {
+            return;
+        }
+        List<RowSnap> ranked = dishRowsAllPeers.stream()
+                .map(r -> new RowSnap(r, briefFromRow(r)))
+                .filter(rs -> soldQtyGtZero(rs.brief().getSalesQty()) && !isCostDataIncomplete(rs.brief()))
+                .sorted(Comparator.comparingDouble((RowSnap rs) -> profitAmountSortKeyDesc(rs.brief())).reversed())
+                .collect(Collectors.toList());
+        if (ranked.isEmpty()) {
+            log.info(
+                    "[DishProfitAgentNode] dishProfitAnswerPlan skip HIGH_PROFIT_AMOUNT rankedEmpty runId={}",
+                    state.getRunId());
+            return;
+        }
+        RowSnap top = ranked.get(0);
+        List<Map<String, Object>> secondary = new ArrayList<>();
+        for (int i = 1; i < ranked.size() && secondary.size() < 3; i++) {
+            secondary.add(insightRowToAnswerPlanRow(ranked.get(i).row(), ranked.get(i).brief()));
+        }
+        DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
+                .planType(DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT)
+                .scopeLabel(scopeLabel)
+                .timeLabel(timeLabel)
+                .sortKey("grossProfitAmount")
                 .sortDirection("DESC")
                 .topN(1)
                 .focusRows(List.of(insightRowToAnswerPlanRow(top.row(), top.brief())))
@@ -1112,6 +1275,9 @@ public class DishProfitAgentNode {
                             DishProfitActualCostSemanticsSupport.displayActualCost(row)));
             putAnswerPlanField(m, "blendedGrossMarginRateOnListPrice", row.get("blendedGrossMarginRateOnListPrice"));
             putAnswerPlanField(m, "grossMarginRateTheoryOnListPrice", row.get("grossMarginRateTheoryOnListPrice"));
+            if (brief != null && StringUtils.hasText(brief.getGrossProfitAmount())) {
+                putAnswerPlanField(m, "grossProfitAmount", brief.getGrossProfitAmount());
+            }
             putAnswerPlanField(m, "diffCostAmount", row.get("diffCostAmount"));
             putAnswerPlanField(m, "grossMarginLevel", row.get("grossMarginLevel"));
             putAnswerPlanField(m, "riskReason", row.get("riskReason"));
@@ -2498,6 +2664,32 @@ public class DishProfitAgentNode {
         return Double.NEGATIVE_INFINITY;
     }
 
+    private static double profitAmountSortKeyAsc(AiDishProfitDishBrief brief) {
+        BigDecimal amt = nzDec(brief.getGrossProfitAmount());
+        if (amt != null) {
+            return amt.doubleValue();
+        }
+        BigDecimal rev = nzDec(brief.getSalesAmount());
+        BigDecimal actual = nzDec(brief.getActualCost());
+        if (rev != null && actual != null) {
+            return rev.subtract(actual).doubleValue();
+        }
+        return 1_000_000d;
+    }
+
+    private static double profitAmountSortKeyDesc(AiDishProfitDishBrief brief) {
+        BigDecimal amt = nzDec(brief.getGrossProfitAmount());
+        if (amt != null) {
+            return amt.doubleValue();
+        }
+        BigDecimal rev = nzDec(brief.getSalesAmount());
+        BigDecimal actual = nzDec(brief.getActualCost());
+        if (rev != null && actual != null) {
+            return rev.subtract(actual).doubleValue();
+        }
+        return Double.NEGATIVE_INFINITY;
+    }
+
     private static boolean soldQtyGtZero(String q) {
         try {
             if (q == null || q.isBlank()) {
@@ -2566,6 +2758,43 @@ public class DishProfitAgentNode {
             }
         }
         return best;
+    }
+
+    private static String structuredIntentDetailWireFromState(AiRunState state) {
+        if (state == null) {
+            return null;
+        }
+        AiResolvedQueryContext rctx = state.getResolvedQueryContext();
+        if (rctx == null || rctx.getQueryIntent() == null) {
+            return null;
+        }
+        return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                rctx.getQueryIntent().getStructuredIntentDetail());
+    }
+
+    private static boolean attachRankingNoDataPlanIfNeeded(
+            AiRunState state,
+            String requestedRankingPlanType,
+            List<Map<String, Object>> dishRowsAllPeers,
+            String scopeLabel,
+            String timeLabel,
+            LinkedHashMap<String, Object> dbg) {
+        if (state == null || !DishProfitSemanticCapabilityMatrix.isRankingTargetPlanType(requestedRankingPlanType)) {
+            return false;
+        }
+        Map<String, Object> toolData = toolEnvelopeData(state, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        if (DishProfitRankingSalesEvidenceSupport.hasRankingSalesEvidence(dishRowsAllPeers, toolData)) {
+            return false;
+        }
+        finishAttachDishProfitAnswerPlan(
+                state,
+                DishProfitRankingSalesEvidenceSupport.buildNoDataRankingPlan(
+                        requestedRankingPlanType, scopeLabel, timeLabel, dbg));
+        log.info(
+                "[DishProfitAgentNode] dishProfitAnswerPlan ranking NO_DATA runId={} requestedType={}",
+                state.getRunId(),
+                requestedRankingPlanType);
+        return true;
     }
 
     private static Map<String, Object> toolEnvelopeData(AiRunState state, String toolKey) {

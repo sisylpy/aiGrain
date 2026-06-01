@@ -32,6 +32,9 @@ public class SemanticParserPreviousTurn {
 
     private String mentionedDishName;
 
+    /** 上一轮 GOODS 锚点原料名（库房 goods_supported_dish_cover 等）；首轮为 null */
+    private String mentionedGoodsName;
+
     /** 上一轮 D-13 语义槽位（与 LLM 输出 `semanticSlots` 同形）；首轮为 null */
     private AiQuerySemanticParseResult.SemanticSlotsPart semanticSlots;
 

@@ -147,6 +147,40 @@ class StockReduceAnswerPlanBuilderTest {
     }
 
     @Test
+    void attachIfApplicable_businessOverviewSummaryWire_buildsStockReduceOverview() {
+        AiResolvedQueryContext rq = BusinessOverviewSubPlanAttachSupportTest.businessOverviewContext(
+                AiQuerySemanticLexicon.STRUCTURED_BUSINESS_OVERVIEW_SUMMARY);
+        AiRunState state = AiRunState.builder()
+                .runId(222L)
+                .businessOverviewPath(true)
+                .resolvedQueryContext(rq)
+                .dataPlanTools(List.of(AiBusinessToolIds.STOCK_REDUCE_QUERY))
+                .rawUserInput("这个月经营怎么样？")
+                .build();
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("produceTotal", new BigDecimal("100"));
+        data.put("wasteTotal", BigDecimal.ZERO);
+        data.put("lossTotal", BigDecimal.ZERO);
+        data.put("returnTotal", BigDecimal.ZERO);
+        data.put("grandTotalFourTypes", new BigDecimal("100"));
+        data.put("totalsBasis", "CALENDAR_NATURAL_DAY");
+
+        Map<String, Object> env = new LinkedHashMap<>();
+        env.put("success", true);
+        env.put("data", data);
+        state.getToolResults().put(AiBusinessToolIds.STOCK_REDUCE_QUERY, env);
+
+        StockReduceAnswerPlanBuilder.attachIfApplicable(state);
+        assertTrue(state.getStockReduceAnswerPlan() != null);
+        assertEquals(StockReduceAnswerPlan.TYPE_STOCK_REDUCE_OVERVIEW,
+                state.getStockReduceAnswerPlan().getPlanType());
+        assertEquals(1, state.getStockReduceAnswerPlan().getFocusRows().size());
+        assertEquals(BusinessOverviewSubPlanAttachSupport.ATTACH_MODE,
+                state.getStockReduceAnswerPlan().getDebug().get("attachMode"));
+    }
+
+    @Test
     void build_countRanking_populatesFocusFromOutboundTimesList() {
         AiResolvedQueryIntent qi = AiResolvedQueryIntent.builder()
                 .structuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_COUNT_RANKING)

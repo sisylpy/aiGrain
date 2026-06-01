@@ -6,17 +6,22 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.context.AiSemanticStoreNarrowingDiagnostics;
+import com.nongxinle.ai.context.ScopeResolutionTrace;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeNormalizationType;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeStatus;
+import com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResultDebugSerializer;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
+import com.nongxinle.ai.semantic.dimension.BareRankingDimensionSwitchPlan;
+import com.nongxinle.ai.semantic.dimension.BareRankingDimensionSwitchSupport;
+import com.nongxinle.ai.semantic.inheritance.SemanticSlotInheritanceApplier;
 import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 
 import java.util.ArrayList;
@@ -76,7 +81,11 @@ public final class AiResolvedQueryContextBuilderSupport {
             DomainContractSelectionResult domainContractSelection,
             SemanticContractValidationDebug semanticContractValidation,
             SemanticContractStrictDecision semanticContractStrictDecision,
-            AiQuerySemanticParseResult querySemanticV2Raw) {}
+            AiQuerySemanticParseResult querySemanticV2Raw,
+            String semanticFailureCode,
+            String semanticFailureStage,
+            ScopeResolutionTrace scopeResolutionTrace,
+            BareRankingDimensionSwitchPlan bareRankingDimensionSwitchPlan) {}
 
     public static AiResolvedQueryContext build(BuildPayload p) {
         SemanticOrchestrationDecisionReconciler.OrchestrationAssemblyFields orch = p.orchestration();
@@ -188,10 +197,7 @@ public final class AiResolvedQueryContextBuilderSupport {
                 .querySemanticV2MentionedStoreNames(
                         AiResolvedQueryContextDebugFactory.querySemanticV2EffectiveStoreNames(p.semanticLlm()))
                 .querySemanticV2MentionedDishName(
-                        p.semanticLlm() == null
-                                ? null
-                                : AiResolvedQueryContextDebugFactory.blankToNullSemantic(
-                                        p.semanticLlm().getMentionedDishName()))
+                        AiResolvedQueryContextDebugFactory.querySemanticV2EffectiveMentionedDishName(p.semanticLlm()))
                 .querySemanticV2RawText(
                         p.semanticLlm() == null
                                 ? null
@@ -255,7 +261,28 @@ public final class AiResolvedQueryContextBuilderSupport {
                 .routeParserDomainMismatchReason(
                         AiResolvedQueryContextDebugFactory.observeRouteParserDomainMismatchReason(
                                 p.semanticDomainRoute(), p.querySemanticV2Raw()))
+                .semanticFailureCode(
+                        AiResolvedQueryContextDebugFactory.blankToNullSemantic(p.semanticFailureCode()))
+                .semanticFailureStage(
+                        AiResolvedQueryContextDebugFactory.blankToNullSemantic(p.semanticFailureStage()))
+                .scopeResolutionTrace(p.scopeResolutionTrace())
+                .bareRankingDimensionSwitchDebug(
+                        buildBareRankingDimensionSwitchDebug(
+                                p.bareRankingDimensionSwitchPlan(), p.semanticLlm()))
                 .build();
+    }
+
+    private static Map<String, Object> buildBareRankingDimensionSwitchDebug(
+            BareRankingDimensionSwitchPlan plan, AiQuerySemanticParseResult semanticLlm) {
+        String contractSelectionSource =
+                plan != null && plan.isActive()
+                        ? BareRankingDimensionSwitchSupport.CONTRACT_SELECTION_SOURCE_PLAN
+                        : BareRankingDimensionSwitchSupport.CONTRACT_SELECTION_SOURCE_INTAKE;
+        String completionContractSource =
+                BareRankingDimensionSwitchSupport.resolveCompletionContractSource(plan, semanticLlm);
+        boolean anchorSuppressed = SemanticSlotInheritanceApplier.suppressPreviousDishAnchor(semanticLlm);
+        return BareRankingDimensionSwitchSupport.buildDebugTrace(
+                plan, contractSelectionSource, completionContractSource, anchorSuppressed);
     }
 
     private static String resolveCompletedUserQuery(
@@ -278,6 +305,11 @@ public final class AiResolvedQueryContextBuilderSupport {
         if (intake.getStatus() != SemanticIntakeStatus.NEED_CLARIFICATION
                 && intake.getStatus() != SemanticIntakeStatus.INVALID) {
             return null;
+        }
+        String warehouseRisk =
+                WarehouseInventoryShortageSemanticsSupport.resolveClarificationQuestion(intake);
+        if (org.springframework.util.StringUtils.hasText(warehouseRisk)) {
+            return warehouseRisk;
         }
         return org.springframework.util.StringUtils.hasText(intake.getClarificationQuestion())
                 ? intake.getClarificationQuestion().trim()

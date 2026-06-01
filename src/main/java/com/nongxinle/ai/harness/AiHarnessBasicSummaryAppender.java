@@ -27,11 +27,7 @@ final class AiHarnessBasicSummaryAppender {
         out.put("advisorId", state != null ? state.getAdvisorId() : null);
         out.put("effectiveIntentCode", AiHarnessSummaryUtils.blankToNull(ctx.getEffectiveIntentCode()));
         out.put("effectivePathCode", AiHarnessSummaryUtils.blankToNull(ctx.getEffectivePathCode()));
-        out.put("intent", AiHarnessSummaryUtils.blankToNull(ctx.getEffectiveIntentCode()));
-        out.put("path", AiHarnessSummaryUtils.blankToNull(ctx.getEffectivePathCode()));
-        String productionTimeSrc = AiHarnessSummaryUtils.blankToNull(ctx.getEffectiveTimeWindowSource());
-        out.put("effectiveTimeWindowSource", productionTimeSrc);
-        out.put("timeSource", productionTimeSrc);
+        out.put("effectiveTimeWindowSource", AiHarnessSummaryUtils.blankToNull(ctx.getEffectiveTimeWindowSource()));
         out.put("effectiveIntentSource", AiHarnessSummaryUtils.blankToNull(ctx.getEffectiveIntentSource()));
         out.put("effectiveScopeSource", AiHarnessSummaryUtils.blankToNull(ctx.getEffectiveScopeSource()));
 

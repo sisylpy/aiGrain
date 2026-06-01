@@ -620,6 +620,14 @@ public final class AiQuerySemanticLlmMergeHelper {
                     AiResolvedQueryIntent.DISH_SALES_QUERY,
                     AiResolvedQueryIntent.PATH_DISH_SALES_QUERY,
                     "菜品销量/销售额");
+            case "DISH_COST", "DISH_COST_ANALYSIS" -> new WireIntent(
+                    AiResolvedQueryIntent.DISH_COST_ANALYSIS,
+                    AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS,
+                    "菜品成本分析");
+            case "MENU_OPERATION" -> new WireIntent(
+                    AiResolvedQueryIntent.MENU_OPERATION,
+                    AiResolvedQueryIntent.PATH_MENU_OPERATION,
+                    "菜单经营顾问");
             case "COST_DIAGNOSIS", "COST_DIAG" -> new WireIntent(
                     AiResolvedQueryIntent.COST_DIAGNOSIS,
                     AiResolvedQueryIntent.PATH_COST_DIAGNOSIS,

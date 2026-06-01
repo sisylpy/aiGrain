@@ -74,6 +74,11 @@ public final class SemanticContractClarificationQuestionFactory {
         if (code == null) {
             return defaultClarification();
         }
+        if (code == SemanticContractViolationCode.ANCHOR_CONTRACT_MISMATCH
+                && violationReason != null
+                && violationReason.contains("DISH")) {
+            return "请说明要查询的具体菜品名称。";
+        }
         return buildQuestion(
                 SemanticContractClarificationRequest.builder()
                         .violationCode(code)

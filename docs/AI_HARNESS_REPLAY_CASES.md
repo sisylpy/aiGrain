@@ -70,8 +70,20 @@
 | **`BUSINESS_OVERVIEW_MULTI_AGENT_CORE_3`** | **BusinessOverview 四域 MultiAgent（3 轮，`GRAPH_RUN` 默认）**：固化「这个月经营怎么样 → 那上个月 → 双店对比」真实问法；断言 **`effectiveIntentCode=BUSINESS_OVERVIEW`**、**`orchestrationTaskMode=MULTI_AGENT`**、**`businessOverviewSuccessfulDomains`** ⊇ revenue/purchase/stockReduce/dishProfit、四类 **`consumedAnswerPlans`**、**`missingAnswerPlans=[]`**、**`answerPreview`** 经营概览话术且不含旧 AiBusinessOverviewResult fallback / 误诊「经营诊断·证据型」、第 3 轮 **`multiStoreScopeApplied`** + **`queryStoreIds` ⊇ {1,3}** + **`scopeLabel`** 含占位店名。详见 **Case BusinessOverview MultiAgent**。 |
 | **`REVENUE_AGENT_GRAPH_CORE`** | **营业额单域（3 轮 · `GRAPH_RUN` 默认）**：`这个月营业额多少？` → `上个月呢？` → `AAA 这个月营业额多少？`。断言 **`REVENUE_OVERVIEW`** / **`revenue_overview_path`**，**非** `BUSINESS_OVERVIEW` / `BUSINESS_DIAGNOSIS`；**`usedTools` ⊇ `revenue_query`**、**`masterRevenueToolResultSuccess`**、**`DailyRevenueAnswerPlan`** 消费镜像、**`answerPreview`** 含营业额语义、第 3 轮 **`queryStoreIds` ⊇ {1}**（AAA）。 |
 | **`PURCHASE_AGENT_GRAPH_CORE`** | **采购单域（3 轮 · `GRAPH_RUN` 默认）**：采购金额三连问同上结构。断言 **`PURCHASE_OVERVIEW`** / **`purchase_overview_path`**、**`purchase_overview` tool**、**`PurchaseAnswerPlan`**、**`answerPreview`** 含采购、第 3 轮 **STORE / `queryStoreIds` ⊇ {1}**。 |
+| **`PURCHASE_PERIOD_GOODS_LIST_1`** | **原料采购清单（1 轮 · `GRAPH_RUN` 默认）**：`昨天买了什么？` → **`selectedContractId=purchase.period_goods_list`** / wire **`purchase_period_goods_list`**；**`purchaseSourceType=ALL`**；**`harnessReplayPurchaseAnswerPlanType=PURCHASE_PERIOD_GOODS_DETAIL`**；**`executionIntentType=EXEC_PERIOD_GOODS_LIST`**（不以 **`executionDetailWanted`** 断言）；**STORE / `queryStoreIds` ⊇ {3}**（汀兰餐厅，与当前权限环境一致）；**不得**在最终选中 wire/plan 上误落 **`purchase_overview_summary`**；时间窗为 **`frozenClockDate` 前一日**；**`answerPreview`** 含原料采购 / 详见下方卡片。 |
+| **`PURCHASE_PERIOD_GOODS_LIST_SELF_1`** | **自采原料清单（1 轮 · `GRAPH_RUN`）**：`昨天自采了什么？` → **`purchase.period_goods_list.self`**；**`purchaseSourceType=SELF_PURCHASE`**；同 **`PURCHASE_GOODS_DETAIL_CARD`**；**STORE / `queryStoreIds` ⊇ {3}**；**不得**在最终选中路径上误落 **`purchase_overview_summary`** / **`purchase.self_overview`**。 |
+| **`PURCHASE_PERIOD_GOODS_LIST_SUPPLIER_1`** | **供货商订货清单（1 轮 · `GRAPH_RUN`）**：`昨天订货了什么？` → **`purchase.period_goods_list.supplier`**；**`purchaseSourceType=SUPPLIER_PURCHASE`**；同 **`PURCHASE_GOODS_DETAIL_CARD`**；**STORE / `queryStoreIds` ⊇ {3}**；**不得**在最终选中路径上误落 **`purchase_overview_summary`** / **`purchase.supplier_overview`**。 |
 | **`STOCK_REDUCE_AGENT_GRAPH_CORE`** | **出库核销单域（3 轮 · `GRAPH_RUN` 默认）**。断言 **`STOCK_REDUCE_QUERY`** / **`stock_reduce_query_path`**、**`stock_reduce_query` tool**、**`StockReduceAnswerPlan`**、**`answerPreview`** 含出库或核销、第 3 轮 **`queryStoreIds` ⊇ {1}**。 |
 | **`DISH_PROFIT_AGENT_GRAPH_CORE`** | **菜品毛利单域（3 轮 · `GRAPH_RUN` 默认）**：`上个月哪个菜毛利率最低？` → `核桃芽菜西芹毛利怎么样？` → `这个月哪个菜毛利率最高？`。第 2 轮同 **`DISH_PROFIT_RANKING_TO_NAMED_DISH_FOLLOWUP_2`**（**`dish_gross_margin_query` / `OVERRIDE` metric / `GROSS_MARGIN`**）；第 3 轮 **高毛利排行**（**`dish_profit_ranking_high_margin`**，**`RANKING_HIGH_MARGIN`**，**`mentionedDishName` 须空**），**`querySemanticV2MetricAction=OVERRIDE`**（不继承单菜追问口径）。 |
+| **`DISH_PROFIT_ACTUAL_COST_RANKING_1`** | **实际成本最高排行（1 轮 · `GRAPH_RUN` 默认）**：`上个月成本最高的是什么菜？` → **`primaryDomain=DISH_PROFIT`**、**`selectedContractId=dish_profit.ranking_high_actual_cost`**、wire **`dish_actual_cost_ranking_high`**、**`operation=RANKING`**、**`metric=ACTUAL_COST`**、**`harnessReplayDishProfitAnswerPlanType=DISH_HIGHEST_ACTUAL_COST`**；**不得** **`DISH_COST`** / **`MISSING_SELECTED_CONTRACT_ID`**。 |
+| **`DISH_PROFIT_HIGH_PROFIT_AMOUNT_RANKING_1`** | **利润额最高排行（1 轮 · `GRAPH_RUN` 默认）**：`这个月哪个菜最挣钱？` → **`selectedContractId=dish_profit.ranking_high_profit_amount`**、wire **`dish_profit_ranking_high_profit_amount`**、**`metric=GROSS_PROFIT_AMOUNT`**、**`harnessReplayDishProfitAnswerPlanType=DISH_HIGHEST_PROFIT_AMOUNT`**、**`sortKey=grossProfitAmount`**；**不得** **`dish_profit_ranking_high_margin`** / **`DISH_HIGHEST_MARGIN`**（与「毛利率最高」互斥）。 |
+| **`DISH_SALES_TO_COST_DIMENSION_SWITCH_2`** | **维度切换（2 轮）**：`销量高` → `成本呢` → 第 2 轮须 **`DISH_PROFIT`** + **`dish_profit.ranking_high_actual_cost`** + **`IGNORE_PREVIOUS_ANCHOR`**；**`mentionedDishName` 须空**；**不得** **`DISH_COST`** / **`dish_cost.single_dish_analysis`**。 |
+| **`DISH_SALES_TO_MARGIN_DIMENSION_SWITCH_2`** | **维度切换（2 轮）**：`销量高` → `毛利呢` → 第 2 轮须 **`DISH_PROFIT`** 毛利排行 + 时间继承；**不得**单菜 **`DISH_COST`**。 |
+| **`DISH_PROFIT_COST_TO_SALES_DIMENSION_SWITCH_2`** | **维度切换（2 轮）**：`上个月成本最高的是什么菜？` → `销量呢` → 第 2 轮须 **`DISH_SALES`** 销量排行 + 时间继承；**不得** **`DISH_COST`**。 |
+| **`DISH_PROFIT_MARGIN_TO_SALES_DIMENSION_SWITCH_2`** | **维度切换（2 轮）**：`上个月毛利最高的是什么菜？` → `销量呢` → 第 2 轮须 **`dish_sales.count_ranking_high`** + **`IGNORE_PREVIOUS_ANCHOR`**。 |
+| **`DISH_SALES_TO_AMOUNT_DIMENSION_SWITCH_2`** | **维度切换（2 轮）**：`销量高` → `销售额呢` → 第 2 轮须 **`dish_sales.amount_ranking_high`** + **`SALES_AMOUNT`** + **`IGNORE_PREVIOUS_ANCHOR`**。 |
+| **`DISH_NAMED_DISH_COST_SINGLE_1`** | **点名菜成本（1 轮）**：`酸奶碗成本呢` → 仍须 **`DISH_COST`** + **`dish_cost.single_dish_analysis`** + **`mentionedDishName=酸奶碗`**。 |
+| **（手动 · P1 已通过）** **`DISH_PROFIT_PRESCRIPTION_P1`** | **单菜利润处方 P1（3 条单轮 · `GRAPH_RUN`）**：处方主问句 / 55% 目标毛利 / 成本旧路径不回归。须 **`userId=3`** + **`scopeMode=GROUP`**（D-11 权限）；**不得**用 `userId=1` 跑处方双 Tool。断言 **`dish.profit.prescription.v1`**、**`dish_profit_prescription`**、**`DISH_PROFIT_PRESCRIPTION_CARD`**、**`answerPreview` 不含英文 knownGap code**；成本问句仍 **`DISH_COST_ANALYSIS_CARD`**。完整探针表见 **`docs/ai/dish-profit-prescription-p1-acceptance.md`**。 |
 
 ### GRAPH_RUN 主干变更（Diagnosis / BusinessOverview 四域）
 
@@ -194,13 +206,13 @@
 | `departmentId` / `distributerId` | 与正式 Run 一致 |
 | `scopeMode` | 可选；**集团多轮 Case 1 建议显式传 `GROUP`**（若仅传 `departmentId` 而不传 `scopeMode`，会话创建规则与 `AiRunService` 相同：有 `departmentId` 会走 **STORE** 会话，易与集团预期不符） |
 | `frozenClockDate` | 可选，`yyyy-MM-dd`；不传则用 JVM 当天，断言不稳定 |
-| `caseId` | 可选：`PURCHASE_MULTITURN_1`（7 轮）、`MULTI_STORE_PUBLIC_SCOPE_BLOCK3`（3 轮，多门店公共范围）、`MULTI_STORE_GLOBAL_LINKS_CONFIRM_5`（5 轮）、`V2_SEMANTIC_MAINLINE_CORE_10`（10 轮，v2 主语义固化）、**`DISH_PROFIT_RANKING_TO_NAMED_DISH_FOLLOWUP_2`**（2 轮，毛利率最低排行→点名单菜毛利继承窗）、**`BUSINESS_DIAGNOSIS_V1_CORE_3`**（3 轮，DiagnosisAgent v1）、**`BUSINESS_OVERVIEW_MULTI_AGENT_CORE_3`**（3 轮，BusinessOverview 四域 `GRAPH_RUN`）、**`REVENUE_AGENT_GRAPH_CORE`** / **`PURCHASE_AGENT_GRAPH_CORE`** / **`STOCK_REDUCE_AGENT_GRAPH_CORE`** / **`DISH_PROFIT_AGENT_GRAPH_CORE`**（各 3 轮，单域 `GRAPH_RUN` 默认）；或由 `frozenClockDate` 推导日期 |
-| `replayMode` | 可选；**`GRAPH_RUN`**（同步跑业务图 + Harness 摘要）或 Resolver-only。**`BUSINESS_DIAGNOSIS_V1_CORE_3`**、**`BUSINESS_OVERVIEW_MULTI_AGENT_CORE_3`**、**`REVENUE_AGENT_GRAPH_CORE`**、**`PURCHASE_AGENT_GRAPH_CORE`**、**`STOCK_REDUCE_AGENT_GRAPH_CORE`**、**`DISH_PROFIT_AGENT_GRAPH_CORE`** 在 **未指定** `replayMode` 时 **默认 `GRAPH_RUN`** |
+| `caseId` | 可选：`PURCHASE_MULTITURN_1`（7 轮）、`MULTI_STORE_PUBLIC_SCOPE_BLOCK3`（3 轮，多门店公共范围）、`MULTI_STORE_GLOBAL_LINKS_CONFIRM_5`（5 轮）、`V2_SEMANTIC_MAINLINE_CORE_10`（10 轮，v2 主语义固化）、**`DISH_PROFIT_RANKING_TO_NAMED_DISH_FOLLOWUP_2`**（2 轮，毛利率最低排行→点名单菜毛利继承窗）、**`DISH_PROFIT_ACTUAL_COST_RANKING_1`**（1 轮，实际成本最高排行）、**`DISH_PROFIT_HIGH_PROFIT_AMOUNT_RANKING_1`**（1 轮，利润额/最挣钱排行）、**`BUSINESS_DIAGNOSIS_V1_CORE_3`**（3 轮，DiagnosisAgent v1）、**`BUSINESS_OVERVIEW_MULTI_AGENT_CORE_3`**（3 轮，BusinessOverview 四域 `GRAPH_RUN`）、**`REVENUE_AGENT_GRAPH_CORE`** / **`PURCHASE_AGENT_GRAPH_CORE`** / **`STOCK_REDUCE_AGENT_GRAPH_CORE`** / **`DISH_PROFIT_AGENT_GRAPH_CORE`**（各 3 轮，单域 `GRAPH_RUN` 默认）；或由 `frozenClockDate` 推导日期 |
+| `replayMode` | 可选；**`GRAPH_RUN`**（同步跑业务图 + Harness 摘要）或 Resolver-only。**`BUSINESS_DIAGNOSIS_V1_CORE_3`**、**`BUSINESS_OVERVIEW_MULTI_AGENT_CORE_3`**、**`REVENUE_AGENT_GRAPH_CORE`**、**`PURCHASE_AGENT_GRAPH_CORE`**、**`STOCK_REDUCE_AGENT_GRAPH_CORE`**、**`DISH_PROFIT_AGENT_GRAPH_CORE`**、**`DISH_PROFIT_ACTUAL_COST_RANKING_1`**、**`DISH_PROFIT_HIGH_PROFIT_AMOUNT_RANKING_1`** 在 **未指定** `replayMode` 时 **默认 `GRAPH_RUN`** |
 | `expectations` | 可选；与 `messages` 等长的自定义预期，**优先于** `caseId` |
 | `messages` | 必填；多轮问句顺序 |
 | `strictStoreSqlMatch` | 默认 `true`；`false` 时跳过 `visibleStoreRootIds` / `expandedSqlDepartmentIds` / **`queryStoreIds` 整表相等** 等强校验（库与占位 ID 不一致时用）；**仍**断言 **`queryStoreIdsMustContain` 子集**、`visibleStoreRootCountMin`、`querySemanticEffectiveMentionedStoreNames`（若内置预期含）等 |
 
-Replay **断言门店 visible 范围**时请以 **`visibleStoreRootIds` / `storeRootDepartmentIds` / `visibleStores`** 为准；**不要**把 **`sqlQueryDepartmentIds`（及 `queryDepartmentIds` / `effectiveSqlDepartmentIds`）**当成「门店列表」——其中含子部门，故常见 `storeRoot=[3]` 而 SQL 列表为 `[3,4]`。
+Replay **断言门店 visible 范围**时请以 **`visibleStoreRootIds` / `visibleStores`** 为准；**不要**把 **`sqlQueryDepartmentIds`（及 `queryDepartmentIds` / `effectiveSqlDepartmentIds`）**当成「门店列表」——其中含子部门，故常见 `storeRoot=[3]` 而 SQL 列表为 `[3,4]`。
 
 - `conversationId`：本次新开会话（每请求一条，避免污染线上会话）
 - `overallPass`：所有带断言的轮次均通过
@@ -471,11 +483,9 @@ Replay **断言门店 visible 范围**时请以 **`visibleStoreRootIds` / `store
 | `scopeType` | `AiResolvedOrgScope#scopeType`：`GROUP` / `STORE` / … |
 | `visibleStores` | 可见门店根列表 `{ storeDepartmentId, storeName }`（展示口径） |
 | `visibleStoreIds` | 与本轮 `AiResolvedDataScope#getVisibleStoreIds()` 对齐 |
-| `storeRootDepartmentIds` | `resolveStoreRootDepartmentIds()`（门店根列表） |
-| **`visibleStoreRootIds`** | **别名**：与 `storeRootDepartmentIds` 相同（与其它文档统一） |
+| **`visibleStoreRootIds`** | 门店根部门 ID 列表（`AiResolvedDataScope#getVisibleStoreRootIds()`） |
+| `childDepartmentIds` | 由门店根展开出的直属子部门 ID（扁平） |
 | `sqlQueryDepartmentIds` | 实际 SQL IN 用的部门 ID（门店根 ∪ 直属子部门等）；**不单算「几家店」** |
-| **`effectiveSqlDepartmentIds`** | **别名**：与 `sqlQueryDepartmentIds`、`queryDepartmentIds` 一致 |
-| `expandedChildDepartmentIds` | 由门店根展开出的直属子部门 ID（扁平） |
 | `storeToChildDepartmentIds` | 门店根 → 子部门映射（Harness 中用字符串键，如 `"1":[2,5]`） |
 | `visibleWarehouseIds` | 库房场景的库房部门 ID |
 | `explicitChildDepartmentIds` | 用户点名子部门（当前多为空，预留） |
@@ -539,6 +549,16 @@ Replay **断言门店 visible 范围**时请以 **`visibleStoreRootIds` / `store
 ## Unknown semantic 采集（Historical removed）
 
 **D-AI-FILE-INVENTORY-CLEANUP-P1（2026-05-20）**：已删除未接线的 **`AiHarnessUnknownPurchaseSemanticLogger`** 与配置项 **`ai.harness.unknown-purchase-semantic-log-enabled`**。采购短追问语义扩充请走 **V2 `semanticSlots` + `AiQuerySemanticLexicon`** 正常迭代，勿恢复专用 Logger。
+
+---
+
+## 单菜利润处方 P1（后端已收口）
+
+**验收文档**：**`docs/ai/dish-profit-prescription-p1-acceptance.md`**（2026-05-27，`userId=3` + `GROUP` full probe PASS）。
+
+**P1 不含**：最新采购价、外部市场价、跨店菜品排名（用户正文为中文说明；Harness 可看 `dishProfitPrescriptionKnownGaps`）。
+
+**前台待办**：渲染 **`DISH_PROFIT_PRESCRIPTION_CARD`**（§ **`docs/api/frontend-api-contract.md` §7.14**）。
 
 ---
 

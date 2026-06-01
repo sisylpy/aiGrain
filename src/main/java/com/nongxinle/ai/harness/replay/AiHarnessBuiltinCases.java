@@ -7,10 +7,13 @@ import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
+import com.nongxinle.ai.dto.business.DishIngredientCoverAnswerPlan;
+import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntent;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
+import com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport;
 import com.nongxinle.ai.semantic.matrix.DishProfitSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.RevenueSemanticCapabilityMatrix;
@@ -73,6 +76,11 @@ public final class AiHarnessBuiltinCases {
         public String previousMonthLastDay() {
             YearMonth ym = YearMonth.from(frozenClock).minusMonths(1);
             return ym.atEndOfMonth().toString();
+        }
+
+        /** 语义「昨天」：锚点日期的前一日（闭区间单日）。 */
+        public String yesterdayDay() {
+            return frozenClock.minusDays(1).toString();
         }
     }
 
@@ -474,6 +482,24 @@ public final class AiHarnessBuiltinCases {
             "PURCHASE_SUPPLIER_ANCHOR_THEN_SOURCE_AMOUNT_SUMMARY_2";
 
     /**
+     * 时间窗原料采购清单（「昨天买了什么？」）；contract {@code purchase.period_goods_list} →
+     * {@link PurchaseAnswerPlan#TYPE_PURCHASE_PERIOD_GOODS_DETAIL} + {@code PURCHASE_GOODS_DETAIL_CARD}。
+     */
+    public static final String PURCHASE_PERIOD_GOODS_LIST_1 = "PURCHASE_PERIOD_GOODS_LIST_1";
+
+    /**
+     * 时间窗自采原料采购清单（「昨天自采了什么？」）；contract {@code purchase.period_goods_list.self} →
+     * {@link PurchaseAnswerPlan#TYPE_PURCHASE_PERIOD_GOODS_DETAIL} + {@code PURCHASE_GOODS_DETAIL_CARD}。
+     */
+    public static final String PURCHASE_PERIOD_GOODS_LIST_SELF_1 = "PURCHASE_PERIOD_GOODS_LIST_SELF_1";
+
+    /**
+     * 时间窗供货商订货清单（「昨天订货了什么？」）；contract {@code purchase.period_goods_list.supplier} →
+     * {@link PurchaseAnswerPlan#TYPE_PURCHASE_PERIOD_GOODS_DETAIL} + {@code PURCHASE_GOODS_DETAIL_CARD}。
+     */
+    public static final String PURCHASE_PERIOD_GOODS_LIST_SUPPLIER_1 = "PURCHASE_PERIOD_GOODS_LIST_SUPPLIER_1";
+
+    /**
      * D-13.2：本月经营诊断 → 门店优先级 → STORE 原因追问；默认 {@link AiHarnessReplayMode#GRAPH_RUN}，预期见
      * {@link #expectationsBusinessStorePriorityReasonExplanation3(LocalDateAnchor)}。
      */
@@ -517,6 +543,49 @@ public final class AiHarnessBuiltinCases {
 
     /** 菜品毛利单域 {@link AiHarnessReplayMode#GRAPH_RUN}：低毛利排行 → 点名菜毛利 → 本月最高毛利菜。 */
     public static final String DISH_PROFIT_AGENT_GRAPH_CORE = "DISH_PROFIT_AGENT_GRAPH_CORE";
+
+    /** 菜品实际成本最高排行（1 轮 · {@link AiHarnessReplayMode#GRAPH_RUN}）：「上个月成本最高的是什么菜？」。 */
+    public static final String DISH_PROFIT_ACTUAL_COST_RANKING_1 = "DISH_PROFIT_ACTUAL_COST_RANKING_1";
+
+    /** 利润额最高排行（1 轮 · 与毛利率排行互斥）。 */
+    public static final String DISH_PROFIT_HIGH_PROFIT_AMOUNT_RANKING_1 =
+            "DISH_PROFIT_HIGH_PROFIT_AMOUNT_RANKING_1";
+
+    /** 销量排行 → 成本呢（2 轮 · 维度切换 Intake 回归）。 */
+    public static final String DISH_SALES_TO_COST_DIMENSION_SWITCH_2 = "DISH_SALES_TO_COST_DIMENSION_SWITCH_2";
+
+    /** 销量排行 → 毛利呢（2 轮 · 维度切换 Intake 回归）。 */
+    public static final String DISH_SALES_TO_MARGIN_DIMENSION_SWITCH_2 = "DISH_SALES_TO_MARGIN_DIMENSION_SWITCH_2";
+
+    /** 成本最高排行 → 销量呢（2 轮 · 维度切换 Intake 回归）。 */
+    public static final String DISH_PROFIT_COST_TO_SALES_DIMENSION_SWITCH_2 =
+            "DISH_PROFIT_COST_TO_SALES_DIMENSION_SWITCH_2";
+
+    /** 毛利最高排行 → 销量呢（2 轮 · 维度切换 Plan 回归）。 */
+    public static final String DISH_PROFIT_MARGIN_TO_SALES_DIMENSION_SWITCH_2 =
+            "DISH_PROFIT_MARGIN_TO_SALES_DIMENSION_SWITCH_2";
+
+    /** 销量排行 → 销售额呢（2 轮 · 维度切换 Plan 回归）。 */
+    public static final String DISH_SALES_TO_AMOUNT_DIMENSION_SWITCH_2 = "DISH_SALES_TO_AMOUNT_DIMENSION_SWITCH_2";
+
+    /** 点名菜成本追问（1 轮 · 仍须 DISH_COST 单菜）。 */
+    public static final String DISH_NAMED_DISH_COST_SINGLE_1 = "DISH_NAMED_DISH_COST_SINGLE_1";
+
+    /** 单菜配料可支撑天数（1 轮 · dish.ingredient_cover_days.v1）。 */
+    public static final String DISH_INGREDIENT_COVER_SINGLE_1 = "DISH_INGREDIENT_COVER_SINGLE_1";
+
+    /** 原料反查关联菜品（1 轮 · warehouse.goods_supported_dish_cover.v1，老板口语「能做哪些菜」）。 */
+    public static final String GOODS_SUPPORTED_DISH_COVER_SINGLE_1 = "GOODS_SUPPORTED_DISH_COVER_SINGLE_1";
+
+    /** 原料够卖几天（1 轮 · 同上合同，老板口语「够卖几天」）。 */
+    public static final String GOODS_SUPPORTED_DISH_COVER_DAYS_PROBE_1 =
+            "GOODS_SUPPORTED_DISH_COVER_DAYS_PROBE_1";
+
+    /**
+     * 库房库存风险 → 单菜配料可支撑天数（2 轮 · 跨域续问：不得继承 WAREHOUSE business frame）。
+     */
+    public static final String WAREHOUSE_INVENTORY_RISK_TO_DISH_INGREDIENT_COVER_2 =
+            "WAREHOUSE_INVENTORY_RISK_TO_DISH_INGREDIENT_COVER_2";
 
     /**
      * PlannerExecutor 独立 mock：固定多步计划 + {@link AiHarnessReplayMode#PLANNER_EXECUTOR_MOCK}，
@@ -1664,6 +1733,15 @@ public final class AiHarnessBuiltinCases {
         if (PURCHASE_ANCHOR_EXECUTION_MATRIX_P1.equals(c)) {
             return new ArrayList<>(messagesPurchaseAnchorExecutionMatrixP1());
         }
+        if (PURCHASE_PERIOD_GOODS_LIST_1.equals(c)) {
+            return new ArrayList<>(messagesPurchasePeriodGoodsList1());
+        }
+        if (PURCHASE_PERIOD_GOODS_LIST_SELF_1.equals(c)) {
+            return new ArrayList<>(messagesPurchasePeriodGoodsListSelf1());
+        }
+        if (PURCHASE_PERIOD_GOODS_LIST_SUPPLIER_1.equals(c)) {
+            return new ArrayList<>(messagesPurchasePeriodGoodsListSupplier1());
+        }
         if (DISH_PROFIT_MATRIX_P1.equals(c)) {
             return new ArrayList<>(messagesDishProfitMatrixP1());
         }
@@ -1679,10 +1757,100 @@ public final class AiHarnessBuiltinCases {
         if (DISH_SALES_MATRIX_P1.equals(c)) {
             return new ArrayList<>(messagesDishSalesMatrixP1());
         }
+        if (DISH_PROFIT_ACTUAL_COST_RANKING_1.equals(c)) {
+            return new ArrayList<>(messagesDishProfitActualCostRanking1());
+        }
+        if (DISH_PROFIT_HIGH_PROFIT_AMOUNT_RANKING_1.equals(c)) {
+            return new ArrayList<>(messagesDishProfitHighProfitAmountRanking1());
+        }
+        if (DISH_SALES_TO_COST_DIMENSION_SWITCH_2.equals(c)) {
+            return new ArrayList<>(messagesDishSalesToCostDimensionSwitch2());
+        }
+        if (DISH_SALES_TO_MARGIN_DIMENSION_SWITCH_2.equals(c)) {
+            return new ArrayList<>(messagesDishSalesToMarginDimensionSwitch2());
+        }
+        if (DISH_PROFIT_COST_TO_SALES_DIMENSION_SWITCH_2.equals(c)) {
+            return new ArrayList<>(messagesDishProfitCostToSalesDimensionSwitch2());
+        }
+        if (DISH_PROFIT_MARGIN_TO_SALES_DIMENSION_SWITCH_2.equals(c)) {
+            return new ArrayList<>(messagesDishProfitMarginToSalesDimensionSwitch2());
+        }
+        if (DISH_SALES_TO_AMOUNT_DIMENSION_SWITCH_2.equals(c)) {
+            return new ArrayList<>(messagesDishSalesToAmountDimensionSwitch2());
+        }
+        if (DISH_INGREDIENT_COVER_SINGLE_1.equals(c)) {
+            return new ArrayList<>(messagesDishIngredientCoverSingle1());
+        }
+        if (GOODS_SUPPORTED_DISH_COVER_SINGLE_1.equals(c)) {
+            return new ArrayList<>(messagesGoodsSupportedDishCoverSingle1());
+        }
+        if (GOODS_SUPPORTED_DISH_COVER_DAYS_PROBE_1.equals(c)) {
+            return new ArrayList<>(messagesGoodsSupportedDishCoverDaysProbe1());
+        }
+        if (WAREHOUSE_INVENTORY_RISK_TO_DISH_INGREDIENT_COVER_2.equals(c)) {
+            return new ArrayList<>(messagesWarehouseInventoryRiskToDishIngredientCover2());
+        }
+        if (DISH_NAMED_DISH_COST_SINGLE_1.equals(c)) {
+            return new ArrayList<>(messagesDishNamedDishCostSingle1());
+        }
         if (BUSINESS_DIAGNOSIS_ANCHOR_EXECUTION_MATRIX_P1.equals(c)) {
             return new ArrayList<>(messagesBusinessDiagnosisSemanticCapabilityMatrixP1());
         }
         return null;
+    }
+
+    /** {@link #DISH_PROFIT_ACTUAL_COST_RANKING_1} 单轮问句。 */
+    public static List<String> messagesDishProfitActualCostRanking1() {
+        return List.of("上个月成本最高的是什么菜？");
+    }
+
+    /** {@link #DISH_PROFIT_HIGH_PROFIT_AMOUNT_RANKING_1} 单轮问句。 */
+    public static List<String> messagesDishProfitHighProfitAmountRanking1() {
+        return List.of("这个月哪个菜最挣钱？");
+    }
+
+    public static List<String> messagesDishSalesToCostDimensionSwitch2() {
+        return List.of("销量高", "成本呢");
+    }
+
+    public static List<String> messagesDishSalesToMarginDimensionSwitch2() {
+        return List.of("销量高", "毛利呢");
+    }
+
+    public static List<String> messagesDishProfitCostToSalesDimensionSwitch2() {
+        return List.of("上个月成本最高的是什么菜？", "销量呢");
+    }
+
+    public static List<String> messagesDishProfitMarginToSalesDimensionSwitch2() {
+        return List.of("上个月毛利最高的是什么菜？", "销量呢");
+    }
+
+    public static List<String> messagesDishSalesToAmountDimensionSwitch2() {
+        return List.of("销量高", "销售额呢");
+    }
+
+    public static List<String> messagesDishNamedDishCostSingle1() {
+        return List.of("酸奶碗成本呢");
+    }
+
+    /** {@link #DISH_INGREDIENT_COVER_SINGLE_1} 单轮问句。 */
+    public static List<String> messagesDishIngredientCoverSingle1() {
+        return List.of("椒麻鸡配料够用几天");
+    }
+
+    /** {@link #GOODS_SUPPORTED_DISH_COVER_SINGLE_1} 单轮问句。 */
+    public static List<String> messagesGoodsSupportedDishCoverSingle1() {
+        return List.of("三黄鸡能做哪些菜？");
+    }
+
+    /** {@link #GOODS_SUPPORTED_DISH_COVER_DAYS_PROBE_1} 单轮问句。 */
+    public static List<String> messagesGoodsSupportedDishCoverDaysProbe1() {
+        return List.of("三黄鸡够卖几天？");
+    }
+
+    /** {@link #WAREHOUSE_INVENTORY_RISK_TO_DISH_INGREDIENT_COVER_2} 两轮问句。 */
+    public static List<String> messagesWarehouseInventoryRiskToDishIngredientCover2() {
+        return List.of("哪些原料库存偏少？", "椒麻鸡配料够用几天？");
     }
 
     /** {@link #BUSINESS_DIAGNOSIS_ANCHOR_EXECUTION_MATRIX_P1} 八轮问句（Matrix P1 契约 BD-A…BD-K）。 */
@@ -1767,7 +1935,21 @@ public final class AiHarnessBuiltinCases {
                 "核桃芽菜西芹毛利怎么样？");
     }
 
-    /** {@link #PURCHASE_ANCHOR_EXECUTION_MATRIX_P1} 四轮问句（与 matrix 契约 §2 / prompt 9d 一致）。 */
+    /** {@link #PURCHASE_PERIOD_GOODS_LIST_1} 单轮问句。 */
+    public static List<String> messagesPurchasePeriodGoodsList1() {
+        return List.of("昨天买了什么？");
+    }
+
+    /** {@link #PURCHASE_PERIOD_GOODS_LIST_SELF_1} 单轮问句。 */
+    public static List<String> messagesPurchasePeriodGoodsListSelf1() {
+        return List.of("昨天自采了什么？");
+    }
+
+    /** {@link #PURCHASE_PERIOD_GOODS_LIST_SUPPLIER_1} 单轮问句。 */
+    public static List<String> messagesPurchasePeriodGoodsListSupplier1() {
+        return List.of("昨天订货了什么？");
+    }
+
     public static List<String> messagesPurchaseAnchorExecutionMatrixP1() {
         return List.of(
                 "这个月采购最多的商品是什么？",
@@ -2143,6 +2325,112 @@ public final class AiHarnessBuiltinCases {
         r3.setMissingAnswerPlansMustBeEmpty(Boolean.TRUE);
         r3.getAnswerPreviewContainsAnyOf().addAll(List.of("营业额", "营收"));
         list.add(r3);
+
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsPurchasePeriodGoodsList1(LocalDateAnchor anchor) {
+        String y0 = anchor.yesterdayDay();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applySingleDomainGraphCoreDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.PURCHASE_OVERVIEW);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW);
+        r1.getEffectiveTimeWindowSourceAnyOf()
+                .addAll(List.of("CURRENT_MESSAGE_EXPLICIT", "SEMANTIC_EXPLICIT"));
+        r1.setStartDate(y0);
+        r1.setEndDate(y0);
+        r1.setScopeType("STORE");
+        r1.getQueryStoreIdsMustContain().add(3);
+        r1.setMentionedStore("汀兰餐厅");
+        r1.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST);
+        r1.setCanonicalStructuredIntentDetailWire(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST);
+        r1.setCheckPurchaseSourceType(Boolean.TRUE);
+        r1.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_ALL);
+        r1.setHarnessReplayPlanSource("purchaseAnswerPlan");
+        r1.setHarnessReplayPurchaseAnswerPlanProbePresent(Boolean.TRUE);
+        r1.setHarnessReplayPurchaseAnswerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL);
+        r1.setSelectedContractIdExpected("purchase.period_goods_list");
+        r1.setExecutionIntentTypeExpected(PurchaseSemanticExecutionIntent.EXEC_PERIOD_GOODS_LIST);
+        r1.getUsedToolsMustContain().add(AiBusinessToolIds.PURCHASE_OVERVIEW);
+        r1.setMasterPurchaseToolResultSuccessExpected(Boolean.TRUE);
+        r1.getConsumedAnswerPlansMustContain().add("PurchaseAnswerPlan");
+        r1.setMissingAnswerPlansMustBeEmpty(Boolean.TRUE);
+        r1.getAnswerPreviewContainsAnyOf().addAll(List.of("原料采购", "采购", "详见下方卡片"));
+        r1.getForbiddenSubstringsInSummaryJson().add("purchase_overview_summary");
+        list.add(r1);
+
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsPurchasePeriodGoodsListSelf1(LocalDateAnchor anchor) {
+        String y0 = anchor.yesterdayDay();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applySingleDomainGraphCoreDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.PURCHASE_OVERVIEW);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW);
+        r1.getEffectiveTimeWindowSourceAnyOf()
+                .addAll(List.of("CURRENT_MESSAGE_EXPLICIT", "SEMANTIC_EXPLICIT"));
+        r1.setStartDate(y0);
+        r1.setEndDate(y0);
+        r1.setScopeType("STORE");
+        r1.getQueryStoreIdsMustContain().add(3);
+        r1.setMentionedStore("汀兰餐厅");
+        r1.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST);
+        r1.setCanonicalStructuredIntentDetailWire(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST);
+        r1.setCheckPurchaseSourceType(Boolean.TRUE);
+        r1.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE);
+        r1.setHarnessReplayPlanSource("purchaseAnswerPlan");
+        r1.setHarnessReplayPurchaseAnswerPlanProbePresent(Boolean.TRUE);
+        r1.setHarnessReplayPurchaseAnswerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL);
+        r1.setSelectedContractIdExpected("purchase.period_goods_list.self");
+        r1.setExecutionIntentTypeExpected(PurchaseSemanticExecutionIntent.EXEC_PERIOD_GOODS_LIST);
+        r1.getUsedToolsMustContain().add(AiBusinessToolIds.PURCHASE_OVERVIEW);
+        r1.setMasterPurchaseToolResultSuccessExpected(Boolean.TRUE);
+        r1.getConsumedAnswerPlansMustContain().add("PurchaseAnswerPlan");
+        r1.setMissingAnswerPlansMustBeEmpty(Boolean.TRUE);
+        r1.getAnswerPreviewContainsAnyOf().addAll(List.of("自采", "详见下方卡片"));
+        r1.getForbiddenSubstringsInSummaryJson().add("purchase_overview_summary");
+        list.add(r1);
+
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsPurchasePeriodGoodsListSupplier1(
+            LocalDateAnchor anchor) {
+        String y0 = anchor.yesterdayDay();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applySingleDomainGraphCoreDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.PURCHASE_OVERVIEW);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW);
+        r1.getEffectiveTimeWindowSourceAnyOf()
+                .addAll(List.of("CURRENT_MESSAGE_EXPLICIT", "SEMANTIC_EXPLICIT"));
+        r1.setStartDate(y0);
+        r1.setEndDate(y0);
+        r1.setScopeType("STORE");
+        r1.getQueryStoreIdsMustContain().add(3);
+        r1.setMentionedStore("汀兰餐厅");
+        r1.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST);
+        r1.setCanonicalStructuredIntentDetailWire(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST);
+        r1.setCheckPurchaseSourceType(Boolean.TRUE);
+        r1.setPurchaseSourceType(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE);
+        r1.setHarnessReplayPlanSource("purchaseAnswerPlan");
+        r1.setHarnessReplayPurchaseAnswerPlanProbePresent(Boolean.TRUE);
+        r1.setHarnessReplayPurchaseAnswerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL);
+        r1.setSelectedContractIdExpected("purchase.period_goods_list.supplier");
+        r1.setExecutionIntentTypeExpected(PurchaseSemanticExecutionIntent.EXEC_PERIOD_GOODS_LIST);
+        r1.getUsedToolsMustContain().add(AiBusinessToolIds.PURCHASE_OVERVIEW);
+        r1.setMasterPurchaseToolResultSuccessExpected(Boolean.TRUE);
+        r1.getConsumedAnswerPlansMustContain().add("PurchaseAnswerPlan");
+        r1.setMissingAnswerPlansMustBeEmpty(Boolean.TRUE);
+        r1.getAnswerPreviewContainsAnyOf().addAll(List.of("供货商订货", "订货", "详见下方卡片"));
+        r1.getForbiddenSubstringsInSummaryJson().add("purchase_overview_summary");
+        list.add(r1);
 
         return list;
     }
@@ -3265,6 +3553,489 @@ public final class AiHarnessBuiltinCases {
     }
 
     /**
+     * {@link #DISH_PROFIT_ACTUAL_COST_RANKING_1}：未点菜名 + 实际成本最高排行（1 轮 · GRAPH_RUN）。
+     */
+    public static List<AiHarnessReplayExpectedRound> expectationsDishProfitActualCostRanking1(
+            LocalDateAnchor anchor) {
+        LocalDateAnchor a = anchor;
+        String p0 = a.previousMonthFirstDay();
+        String p1 = a.previousMonthLastDay();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applySingleDomainGraphCoreDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_PROFIT);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT);
+        r1.getEffectiveIntentCodeNoneOf().add(AiResolvedQueryIntent.DISH_COST_ANALYSIS);
+        r1.getEffectiveTimeWindowSourceAnyOf().add("CURRENT_MESSAGE_EXPLICIT");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("SEMANTIC_EXPLICIT");
+        r1.setStartDate(p0);
+        r1.setEndDate(p1);
+        r1.setSelectedContractIdExpected("dish_profit.ranking_high_actual_cost");
+        r1.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH);
+        r1.setCanonicalStructuredIntentDetailWire(
+                AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH);
+        r1.setSemanticSlotQueryObject("DISH");
+        r1.setSemanticSlotOperation("RANKING");
+        r1.setSemanticSlotMetric("ACTUAL_COST");
+        r1.setDishProfitMetricType("RANKING_HIGH_ACTUAL_COST");
+        r1.setHarnessReplayPlanSource("dishProfitAnswerPlan");
+        r1.setHarnessReplayDishProfitAnswerPlanType(DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST);
+        r1.setHarnessReplayDishProfitAnswerPlanSortDirection("DESC");
+        r1.getUsedToolsMustContain().add(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        r1.setMasterDishProfitToolResultSuccessExpected(Boolean.TRUE);
+        r1.getConsumedAnswerPlansMustContain().add("DishProfitAnswerPlan");
+        r1.setMissingAnswerPlansMustBeEmpty(Boolean.TRUE);
+        r1.getForbiddenSubstringsInSummaryJson()
+                .addAll(List.of("MISSING_SELECTED_CONTRACT_ID", "dish_cost_analysis_path", "DISH_COST_ANALYSIS"));
+        r1.getAnswerPreviewContainsAnyOf().addAll(List.of("成本", "菜品"));
+        list.add(r1);
+
+        return list;
+    }
+
+    /**
+     * {@link #DISH_PROFIT_HIGH_PROFIT_AMOUNT_RANKING_1}：利润额/最挣钱排行（1 轮 · GRAPH_RUN）。
+     */
+    public static List<AiHarnessReplayExpectedRound> expectationsDishProfitHighProfitAmountRanking1(
+            LocalDateAnchor anchor) {
+        LocalDateAnchor a = anchor;
+        String p0 = a.monthStartInclusive();
+        String p1 = a.monthToDateInclusive();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applySingleDomainGraphCoreDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_PROFIT);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT);
+        r1.getEffectiveTimeWindowSourceAnyOf().add("DEFAULT_MONTH_TO_DATE");
+        r1.setStartDate(p0);
+        r1.setEndDate(p1);
+        r1.setSelectedContractIdExpected("dish_profit.ranking_high_profit_amount");
+        r1.setStructuredIntentDetail(
+                AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT);
+        r1.setCanonicalStructuredIntentDetailWire(
+                AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT);
+        r1.setSemanticSlotQueryObject("DISH");
+        r1.setSemanticSlotOperation("RANKING");
+        r1.setSemanticSlotMetric("GROSS_PROFIT_AMOUNT");
+        r1.setDishProfitMetricType("RANKING_HIGH_PROFIT_AMOUNT");
+        r1.setHarnessReplayPlanSource("dishProfitAnswerPlan");
+        r1.setHarnessReplayDishProfitAnswerPlanType(DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT);
+        r1.setDishProfitAnswerPlanSortKeyExpected("grossProfitAmount");
+        r1.setHarnessReplayDishProfitAnswerPlanSortDirection("DESC");
+        r1.getUsedToolsMustContain().add(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        r1.setMasterDishProfitToolResultSuccessExpected(Boolean.TRUE);
+        r1.getConsumedAnswerPlansMustContain().add("DishProfitAnswerPlan");
+        r1.setMissingAnswerPlansMustBeEmpty(Boolean.TRUE);
+        r1.getForbiddenSubstringsInSummaryJson()
+                .addAll(
+                        List.of(
+                                "dish_profit_ranking_high_margin",
+                                "DISH_HIGHEST_MARGIN",
+                                "ranking_high_margin"));
+        r1.getAnswerPreviewContainsAnyOf().addAll(List.of("利润", "菜品"));
+        list.add(r1);
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsDishSalesToCostDimensionSwitch2(
+            LocalDateAnchor anchor) {
+        LocalDateAnchor a = anchor;
+        String m0 = a.monthStartInclusive();
+        String m1 = a.monthToDateInclusive();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_SALES_QUERY);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_SALES_QUERY);
+        r1.getEffectiveTimeWindowSourceAnyOf().add("DEFAULT_MONTH_TO_DATE");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("SEMANTIC_EXPLICIT");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("CURRENT_MESSAGE_EXPLICIT");
+        r1.setStartDate(m0);
+        r1.setEndDate(m1);
+        r1.setSelectedContractIdExpected("dish_sales.count_ranking_high");
+        r1.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH);
+        r1.setSemanticSlotOperation("RANKING");
+        r1.setMentionedDishNameMustBeAbsent(Boolean.TRUE);
+        list.add(r1);
+
+        AiHarnessReplayExpectedRound r2 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r2);
+        r2.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_PROFIT);
+        r2.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT);
+        r2.getEffectiveIntentCodeNoneOf().add(AiResolvedQueryIntent.DISH_COST_ANALYSIS);
+        r2.setEffectiveTimeWindowSource("INHERITED_PREVIOUS");
+        r2.setStartDate(m0);
+        r2.setEndDate(m1);
+        r2.setQuerySemanticV2TimeActionExpected("INHERIT_PREVIOUS");
+        r2.setSelectedContractIdExpected("dish_profit.ranking_high_actual_cost");
+        r2.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH);
+        r2.setSemanticSlotQueryObject("DISH");
+        r2.setSemanticSlotOperation("RANKING");
+        r2.setSemanticSlotMetric("ACTUAL_COST");
+        r2.setSemanticSlotAnchorPolicy("IGNORE_PREVIOUS_ANCHOR");
+        r2.setMentionedDishNameMustBeAbsent(Boolean.TRUE);
+        r2.getForbiddenSubstringsInSummaryJson()
+                .addAll(List.of("dish_cost.single_dish_analysis", "DISH_COST_ANALYSIS", "dish_cost_analysis"));
+        list.add(r2);
+
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsDishSalesToMarginDimensionSwitch2(
+            LocalDateAnchor anchor) {
+        LocalDateAnchor a = anchor;
+        String m0 = a.monthStartInclusive();
+        String m1 = a.monthToDateInclusive();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_SALES_QUERY);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_SALES_QUERY);
+        r1.getEffectiveTimeWindowSourceAnyOf().add("DEFAULT_MONTH_TO_DATE");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("SEMANTIC_EXPLICIT");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("CURRENT_MESSAGE_EXPLICIT");
+        r1.setStartDate(m0);
+        r1.setEndDate(m1);
+        r1.setSelectedContractIdExpected("dish_sales.count_ranking_high");
+        r1.setMentionedDishNameMustBeAbsent(Boolean.TRUE);
+        list.add(r1);
+
+        AiHarnessReplayExpectedRound r2 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r2);
+        r2.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_PROFIT);
+        r2.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT);
+        r2.getEffectiveIntentCodeNoneOf().add(AiResolvedQueryIntent.DISH_COST_ANALYSIS);
+        r2.setEffectiveTimeWindowSource("INHERITED_PREVIOUS");
+        r2.setStartDate(m0);
+        r2.setEndDate(m1);
+        r2.setQuerySemanticV2TimeActionExpected("INHERIT_PREVIOUS");
+        r2.getStructuredIntentDetailAnyOf()
+                .add(AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN);
+        r2.getStructuredIntentDetailAnyOf()
+                .add(AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN);
+        r2.setSemanticSlotQueryObject("DISH");
+        r2.setSemanticSlotOperation("RANKING");
+        r2.setSemanticSlotMetric("GROSS_MARGIN_RATE");
+        r2.setSemanticSlotAnchorPolicy("IGNORE_PREVIOUS_ANCHOR");
+        r2.setMentionedDishNameMustBeAbsent(Boolean.TRUE);
+        r2.getForbiddenSubstringsInSummaryJson()
+                .addAll(List.of("dish_cost.single_dish_analysis", "DISH_COST_ANALYSIS"));
+        list.add(r2);
+
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsDishProfitCostToSalesDimensionSwitch2(
+            LocalDateAnchor anchor) {
+        LocalDateAnchor a = anchor;
+        String p0 = a.previousMonthFirstDay();
+        String p1 = a.previousMonthLastDay();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_PROFIT);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT);
+        r1.getEffectiveTimeWindowSourceAnyOf().add("CURRENT_MESSAGE_EXPLICIT");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("SEMANTIC_EXPLICIT");
+        r1.setStartDate(p0);
+        r1.setEndDate(p1);
+        r1.setSelectedContractIdExpected("dish_profit.ranking_high_actual_cost");
+        r1.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH);
+        r1.setMentionedDishNameMustBeAbsent(Boolean.TRUE);
+        list.add(r1);
+
+        AiHarnessReplayExpectedRound r2 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r2);
+        r2.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_SALES_QUERY);
+        r2.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_SALES_QUERY);
+        r2.getEffectiveIntentCodeNoneOf().add(AiResolvedQueryIntent.DISH_COST_ANALYSIS);
+        r2.setEffectiveTimeWindowSource("INHERITED_PREVIOUS");
+        r2.setStartDate(p0);
+        r2.setEndDate(p1);
+        r2.setQuerySemanticV2TimeActionExpected("INHERIT_PREVIOUS");
+        r2.setSelectedContractIdExpected("dish_sales.count_ranking_high");
+        r2.getStructuredIntentDetailAnyOf()
+                .add(AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH);
+        r2.getStructuredIntentDetailAnyOf()
+                .add(AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_RANKING_HIGH);
+        r2.setSemanticSlotQueryObject("DISH");
+        r2.setSemanticSlotOperation("RANKING");
+        r2.setSemanticSlotAnchorPolicy("IGNORE_PREVIOUS_ANCHOR");
+        r2.setMentionedDishNameMustBeAbsent(Boolean.TRUE);
+        r2.getForbiddenSubstringsInSummaryJson()
+                .addAll(List.of("dish_cost.single_dish_analysis", "DISH_COST_ANALYSIS"));
+        list.add(r2);
+
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsDishProfitMarginToSalesDimensionSwitch2(
+            LocalDateAnchor anchor) {
+        LocalDateAnchor a = anchor;
+        String p0 = a.previousMonthFirstDay();
+        String p1 = a.previousMonthLastDay();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_PROFIT);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_PROFIT);
+        r1.getEffectiveTimeWindowSourceAnyOf().add("CURRENT_MESSAGE_EXPLICIT");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("SEMANTIC_EXPLICIT");
+        r1.setStartDate(p0);
+        r1.setEndDate(p1);
+        r1.getStructuredIntentDetailAnyOf()
+                .add(AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN);
+        r1.getStructuredIntentDetailAnyOf()
+                .add(AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN);
+        r1.setMentionedDishNameMustBeAbsent(Boolean.TRUE);
+        list.add(r1);
+
+        AiHarnessReplayExpectedRound r2 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r2);
+        r2.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_SALES_QUERY);
+        r2.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_SALES_QUERY);
+        r2.getEffectiveIntentCodeNoneOf().add(AiResolvedQueryIntent.DISH_COST_ANALYSIS);
+        r2.setEffectiveTimeWindowSource("INHERITED_PREVIOUS");
+        r2.setStartDate(p0);
+        r2.setEndDate(p1);
+        r2.setQuerySemanticV2TimeActionExpected("INHERIT_PREVIOUS");
+        r2.setSelectedContractIdExpected("dish_sales.count_ranking_high");
+        r2.setSemanticSlotQueryObject("DISH");
+        r2.setSemanticSlotOperation("RANKING");
+        r2.setSemanticSlotMetric("SOLD_PORTIONS");
+        r2.setSemanticSlotAnchorPolicy("IGNORE_PREVIOUS_ANCHOR");
+        r2.setMentionedDishNameMustBeAbsent(Boolean.TRUE);
+        list.add(r2);
+
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsDishSalesToAmountDimensionSwitch2(
+            LocalDateAnchor anchor) {
+        LocalDateAnchor a = anchor;
+        String m0 = a.monthStartInclusive();
+        String m1 = a.monthToDateInclusive();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_SALES_QUERY);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_SALES_QUERY);
+        r1.getEffectiveTimeWindowSourceAnyOf().add("DEFAULT_MONTH_TO_DATE");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("SEMANTIC_EXPLICIT");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("CURRENT_MESSAGE_EXPLICIT");
+        r1.setStartDate(m0);
+        r1.setEndDate(m1);
+        r1.setSelectedContractIdExpected("dish_sales.count_ranking_high");
+        r1.setMentionedDishNameMustBeAbsent(Boolean.TRUE);
+        list.add(r1);
+
+        AiHarnessReplayExpectedRound r2 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r2);
+        r2.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_SALES_QUERY);
+        r2.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_SALES_QUERY);
+        r2.setEffectiveTimeWindowSource("INHERITED_PREVIOUS");
+        r2.setStartDate(m0);
+        r2.setEndDate(m1);
+        r2.setQuerySemanticV2TimeActionExpected("INHERIT_PREVIOUS");
+        r2.setSelectedContractIdExpected("dish_sales.amount_ranking_high");
+        r2.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH);
+        r2.setSemanticSlotQueryObject("DISH");
+        r2.setSemanticSlotOperation("RANKING");
+        r2.setSemanticSlotMetric("SALES_AMOUNT");
+        r2.setSemanticSlotAnchorPolicy("IGNORE_PREVIOUS_ANCHOR");
+        r2.setMentionedDishNameMustBeAbsent(Boolean.TRUE);
+        list.add(r2);
+
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsDishIngredientCoverSingle1(
+            LocalDateAnchor anchor) {
+        LocalDateAnchor a = anchor;
+        String m0 = a.monthStartInclusive();
+        String m1 = a.monthToDateInclusive();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_COST_ANALYSIS);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS);
+        r1.getEffectiveTimeWindowSourceAnyOf().add("DEFAULT_MONTH_TO_DATE");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("SEMANTIC_EXPLICIT");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("CURRENT_MESSAGE_EXPLICIT");
+        r1.setStartDate(m0);
+        r1.setEndDate(m1);
+        r1.setSelectedContractIdExpected(
+                com.nongxinle.ai.semantic.matrix.DishCostAnalysisSemanticCapabilityMatrix
+                        .CONTRACT_DISH_INGREDIENT_COVER_DAYS);
+        r1.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COVER_DAYS);
+        r1.setMentionedDishName("椒麻鸡");
+        r1.getUsedToolsMustContain().add(AiBusinessToolIds.DISH_COST_ANALYSIS);
+        r1.getConsumedAnswerPlansMustContain().add("DishIngredientCoverAnswerPlan");
+        r1.setDishIngredientCoverAnswerPlanTypeExpected(DishIngredientCoverAnswerPlan.TYPE);
+        r1.getRequiredSubstringsInSummaryJson().add(DishIngredientCoverAnswerPlan.CARD_TYPE);
+        r1.setDishIngredientCoverDishNameExpected("椒麻鸡");
+        r1.setIngredientRowsCountMin(1);
+        r1.getIngredientRowFieldsMustContain()
+                .addAll(
+                        List.of(
+                                "ingredientName",
+                                "recipeUnitPerDish",
+                                "currentStockQty",
+                                "isBottleneck"));
+        r1.setDishIngredientCoverNoRecipeGapExpected(false);
+        r1.getForbiddenSubstringsInSummaryJson()
+                .addAll(
+                        List.of(
+                                WarehouseInventoryShortageSemanticsSupport.CONTRACT_INVENTORY_RISK_LIST,
+                                "WAREHOUSE_INVENTORY_RISK_LIST_CARD",
+                                "暂无法推算"));
+        r1.getAnswerPreviewContainsAnyOf().add("卡片");
+        r1.getAnswerPreviewContainsAnyOf().add("推算");
+        list.add(r1);
+
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsGoodsSupportedDishCoverSingle1(
+            LocalDateAnchor anchor) {
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+        list.add(goodsSupportedDishCoverHarnessRound(anchor));
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsGoodsSupportedDishCoverDaysProbe1(
+            LocalDateAnchor anchor) {
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+        list.add(goodsSupportedDishCoverHarnessRound(anchor));
+        return list;
+    }
+
+    /** WH-H 单轮 Harness 共用期望（库存 + 关联菜一体，禁止库存/菜品二选一澄清）。 */
+    private static AiHarnessReplayExpectedRound goodsSupportedDishCoverHarnessRound(
+            LocalDateAnchor anchor) {
+        String m0 = anchor.monthStartInclusive();
+        String m1 = anchor.monthToDateInclusive();
+
+        AiHarnessReplayExpectedRound r = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r);
+        r.setEffectiveIntentCode(AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW);
+        r.setEffectivePathCode(AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK);
+        r.getEffectiveTimeWindowSourceAnyOf().add("DEFAULT_MONTH_TO_DATE");
+        r.getEffectiveTimeWindowSourceAnyOf().add("SEMANTIC_EXPLICIT");
+        r.getEffectiveTimeWindowSourceAnyOf().add("CURRENT_MESSAGE_EXPLICIT");
+        r.setStartDate(m0);
+        r.setEndDate(m1);
+        r.setSelectedContractIdExpected(
+                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix
+                        .CONTRACT_GOODS_SUPPORTED_DISH_COVER);
+        r.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_GOODS_SUPPORTED_DISH_COVER);
+        r.setSemanticSlotQueryObject("GOODS");
+        r.setSemanticSlotOperation("DETAIL");
+        r.setSemanticSlotMetric("SUPPORTED_DISH_COVER");
+        r.setSemanticSlotAnchorPolicy("IGNORE_PREVIOUS_ANCHOR");
+        r.setMentionedGoodsName("三黄鸡");
+        r.getUsedToolsMustContain().add(AiBusinessToolIds.WAREHOUSE_GOODS_SUPPORTED_DISH_COVER);
+        r.getConsumedAnswerPlansMustContain().add("GoodsSupportedDishCoverAnswerPlan");
+        r.setGoodsSupportedDishCoverAnswerPlanTypeExpected(GoodsSupportedDishCoverAnswerPlan.TYPE);
+        r.getRequiredSubstringsInSummaryJson().add(GoodsSupportedDishCoverAnswerPlan.CARD_TYPE);
+        r.setGoodsSupportedDishCoverGoodsNameExpected("三黄鸡");
+        r.getForbiddenSubstringsInSummaryJson()
+                .addAll(
+                        List.of(
+                                WarehouseInventoryShortageSemanticsSupport.CONTRACT_INVENTORY_RISK_LIST,
+                                "WAREHOUSE_INVENTORY_RISK_LIST_CARD",
+                                "goods_stock_amount_ranking_low",
+                                DishIngredientCoverAnswerPlan.TYPE,
+                                "DISH_INGREDIENT_COVER_DAYS_CARD",
+                                "金额排行"));
+        r.getAnswerPreviewContainsAnyOf().add("卡片");
+        r.getAnswerPreviewContainsAnyOf().add("库存");
+        r.getAnswerPreviewContainsAnyOf().add("明细");
+        return r;
+    }
+
+    /**
+     * {@link #WAREHOUSE_INVENTORY_RISK_TO_DISH_INGREDIENT_COVER_2}：第 1 轮库房风险列表，第 2 轮跨域切配料可支撑天数。
+     */
+    public static List<AiHarnessReplayExpectedRound>
+            expectationsWarehouseInventoryRiskToDishIngredientCover2(LocalDateAnchor anchor) {
+        LocalDateAnchor a = anchor;
+        String m0 = a.monthStartInclusive();
+        String m1 = a.monthToDateInclusive();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        list.add(
+                warehouseInventoryRiskMatrixRound(
+                        m0, m1, null, null, null, List.of("偏少"), false));
+
+        AiHarnessReplayExpectedRound r2 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r2);
+        r2.setNeedSemanticClarificationExpected(Boolean.FALSE);
+        r2.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_COST_ANALYSIS);
+        r2.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS);
+        r2.getEffectiveIntentCodeNoneOf().add(AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW);
+        r2.setEffectiveTimeWindowSource("INHERITED_PREVIOUS");
+        r2.setStartDate(m0);
+        r2.setEndDate(m1);
+        r2.setQuerySemanticV2TimeActionExpected("INHERIT_PREVIOUS");
+        r2.setSelectedContractIdExpected(
+                com.nongxinle.ai.semantic.matrix.DishCostAnalysisSemanticCapabilityMatrix
+                        .CONTRACT_DISH_INGREDIENT_COVER_DAYS);
+        r2.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COVER_DAYS);
+        r2.setCanonicalStructuredIntentDetailWire(AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COVER_DAYS);
+        r2.setMentionedDishName("椒麻鸡");
+        r2.getUsedToolsMustContain().add(AiBusinessToolIds.DISH_COST_ANALYSIS);
+        r2.getConsumedAnswerPlansMustContain().add("DishIngredientCoverAnswerPlan");
+        r2.setDishIngredientCoverAnswerPlanTypeExpected(DishIngredientCoverAnswerPlan.TYPE);
+        r2.getRequiredSubstringsInSummaryJson().add(DishIngredientCoverAnswerPlan.CARD_TYPE);
+        r2.getForbiddenSubstringsInSummaryJson()
+                .addAll(
+                        List.of(
+                                WarehouseInventoryShortageSemanticsSupport.CONTRACT_INVENTORY_RISK_LIST,
+                                "WAREHOUSE_INVENTORY_RISK_LIST_CARD",
+                                "warehouse_stock_low_risk",
+                                "STOCK_DAYS",
+                                AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST));
+        list.add(r2);
+
+        return list;
+    }
+
+    public static List<AiHarnessReplayExpectedRound> expectationsDishNamedDishCostSingle1(
+            LocalDateAnchor anchor) {
+        LocalDateAnchor a = anchor;
+        String m0 = a.monthStartInclusive();
+        String m1 = a.monthToDateInclusive();
+        List<AiHarnessReplayExpectedRound> list = new ArrayList<>();
+
+        AiHarnessReplayExpectedRound r1 = new AiHarnessReplayExpectedRound();
+        applyV2SemanticHarnessDefaults(r1);
+        r1.setEffectiveIntentCode(AiResolvedQueryIntent.DISH_COST_ANALYSIS);
+        r1.setEffectivePathCode(AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS);
+        r1.getEffectiveTimeWindowSourceAnyOf().add("DEFAULT_MONTH_TO_DATE");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("SEMANTIC_EXPLICIT");
+        r1.getEffectiveTimeWindowSourceAnyOf().add("CURRENT_MESSAGE_EXPLICIT");
+        r1.setStartDate(m0);
+        r1.setEndDate(m1);
+        r1.setSelectedContractIdExpected("dish_cost.single_dish_analysis");
+        r1.setStructuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_DISH_COST_ANALYSIS);
+        r1.setMentionedDishName("酸奶碗");
+        r1.getForbiddenSubstringsInSummaryJson()
+                .addAll(List.of("dish_profit.ranking_high_actual_cost", "dish_actual_cost_ranking_high"));
+        list.add(r1);
+
+        return list;
+    }
+
+    /**
      * {@link #DISH_PROFIT_MATRIX_P1}：DISH 锚 4 轮下钻矩阵严格验收（低毛利 → 原料构成 → 高毛利 → 点名单菜）。
      */
     public static List<AiHarnessReplayExpectedRound> expectationsDishProfitMatrixP1(LocalDateAnchor anchor) {
@@ -3645,11 +4416,9 @@ public final class AiHarnessBuiltinCases {
                 null,
                 true));
 
-        list.add(warehouseMatrixRound(
+        list.add(warehouseInventoryRiskMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.OUT_OF_STOCK,
-                List.of("缺货"),
-                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.KNOWN_GAP_OUT_OF_STOCK_STRICT_NOT_SUPPORTED,
+                List.of("偏少", "风险"),
                 true));
 
         list.add(warehouseMatrixRound(
@@ -3806,7 +4575,7 @@ public final class AiHarnessBuiltinCases {
         }
         r.setStructuredIntentDetail(matrixRow.getStructuredIntentDetailWire());
         r.setCanonicalStructuredIntentDetailWire(matrixRow.getStructuredIntentDetailWire());
-        r.setDishSalesMatrixRowIdExpected(matrixRow.getRowId());
+        r.setDishSalesMatrixObservedRowIdExpected(matrixRow.getRowId());
         r.setHarnessReplayPlanSource("dishSalesAnswerPlan");
         r.setHarnessReplayDishSalesAnswerPlanType(matrixRow.getTargetDishSalesPlanType());
         if (knownGapExpected != null) {
@@ -3826,6 +4595,33 @@ public final class AiHarnessBuiltinCases {
         return r;
     }
 
+    private static AiHarnessReplayExpectedRound warehouseInventoryRiskMatrixRound(
+            String startDate,
+            String endDate,
+            String scopeType,
+            Integer visibleStoreRootCountMin,
+            String mentionedStore,
+            List<String> answerPreviewContainsAnyOf,
+            boolean inheritTime) {
+        AiHarnessReplayExpectedRound r =
+                warehouseMatrixRound(
+                        startDate,
+                        endDate,
+                        scopeType,
+                        visibleStoreRootCountMin,
+                        mentionedStore,
+                        com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.INVENTORY_RISK_LIST,
+                        answerPreviewContainsAnyOf,
+                        null,
+                        inheritTime,
+                        AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST);
+        r.setSelectedContractIdExpected(
+                com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport
+                        .CONTRACT_INVENTORY_RISK_LIST);
+        r.getAnswerPreviewMustNotContainAnyOf().add("账面库存金额较低");
+        return r;
+    }
+
     private static AiHarnessReplayExpectedRound warehouseMatrixRound(
             String startDate,
             String endDate,
@@ -3836,6 +4632,30 @@ public final class AiHarnessBuiltinCases {
             List<String> answerPreviewContainsAnyOf,
             String knownGapExpected,
             boolean inheritTime) {
+        return warehouseMatrixRound(
+                startDate,
+                endDate,
+                scopeType,
+                visibleStoreRootCountMin,
+                mentionedStore,
+                matrixRow,
+                answerPreviewContainsAnyOf,
+                knownGapExpected,
+                inheritTime,
+                AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
+    }
+
+    private static AiHarnessReplayExpectedRound warehouseMatrixRound(
+            String startDate,
+            String endDate,
+            String scopeType,
+            Integer visibleStoreRootCountMin,
+            String mentionedStore,
+            com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow matrixRow,
+            List<String> answerPreviewContainsAnyOf,
+            String knownGapExpected,
+            boolean inheritTime,
+            String requiredToolId) {
         AiHarnessReplayExpectedRound r = new AiHarnessReplayExpectedRound();
         applySingleDomainGraphCoreDefaults(r);
         r.setEffectiveIntentCode(AiResolvedQueryIntent.WAREHOUSE_STOCK_OVERVIEW);
@@ -3876,7 +4696,7 @@ public final class AiHarnessBuiltinCases {
         } else {
             r.setWarehouseKnownGapMustBeAbsent(Boolean.TRUE);
         }
-        r.getUsedToolsMustContain().add(AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
+        r.getUsedToolsMustContain().add(requiredToolId);
         r.getConsumedAnswerPlansMustContain().add("WarehouseAnswerPlan");
         r.setMissingAnswerPlansMustBeEmpty(Boolean.TRUE);
         if (answerPreviewContainsAnyOf != null) {

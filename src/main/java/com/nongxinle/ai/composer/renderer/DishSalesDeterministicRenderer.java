@@ -1,6 +1,7 @@
 package com.nongxinle.ai.composer.renderer;
 
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
+import com.nongxinle.ai.graph.business.DishSalesRankingSalesEvidenceSupport;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -17,6 +18,9 @@ public final class DishSalesDeterministicRenderer {
         if (plan == null) {
             return "当前未能读取菜品销售排行计划。";
         }
+        if (DishSalesRankingSalesEvidenceSupport.isNoDataRankingPlan(plan)) {
+            return DishSalesRankingSalesEvidenceSupport.EMPTY_RANKING_MESSAGE;
+        }
         StringBuilder sb = new StringBuilder();
         String scope = DeterministicRendererSupport.nz(plan.getScopeLabel()).trim();
         String time = DeterministicRendererSupport.nz(plan.getTimeLabel()).trim();
@@ -32,6 +36,11 @@ public final class DishSalesDeterministicRenderer {
             sb.append("当前没有可用菜品销售明细。");
             appendLimitations(sb, plan);
             return sb.toString().trim();
+        }
+        if (isRankingPlanType(plan.getPlanType())
+                && !DishSalesRankingSalesEvidenceSupport.hasRankingEvidenceForMetric(
+                        plan.getMetricType(), rows)) {
+            return DishSalesRankingSalesEvidenceSupport.EMPTY_RANKING_MESSAGE;
         }
 
         Map<String, Object> top = rows.get(0);
@@ -141,5 +150,15 @@ public final class DishSalesDeterministicRenderer {
         Object v = row.get("dishName");
         String s = v == null ? "" : v.toString().trim();
         return StringUtils.hasText(s) ? s : "（未命名菜品）";
+    }
+
+    private static boolean isRankingPlanType(String planType) {
+        if (!StringUtils.hasText(planType)) {
+            return false;
+        }
+        String pt = planType.trim();
+        return DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_HIGH.equals(pt)
+                || DishSalesAnswerPlan.TYPE_DISH_SALES_AMOUNT_RANKING_HIGH.equals(pt)
+                || DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_LOW.equals(pt);
     }
 }

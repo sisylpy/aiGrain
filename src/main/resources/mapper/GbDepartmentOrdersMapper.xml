@@ -81,9 +81,7 @@
             <if test="weightId != null">
                 and gb_DO_weight_total_id = #{weightId}
             </if>
-            <if test="equalBuyStatus != null">
-                and gb_DO_buy_status = #{equalBuyStatus}
-            </if>
+
             <if test="buyStatus != null">
                 and gb_DO_buy_status &lt; #{buyStatus}
             </if>

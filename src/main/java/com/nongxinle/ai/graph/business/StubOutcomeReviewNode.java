@@ -5,6 +5,7 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.platform.AiCardPayloadWireSupport;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,10 @@ public class StubOutcomeReviewNode implements AgentNode {
     private final AiSseEventPublisher publisher;
     private final MasterBusinessAgent masterBusinessAgent;
     private final DishProfitAgentNode dishProfitAgentNode;
+    private final MenuOperationAgentNode menuOperationAgentNode;
+    private final DishProfitPrescriptionAgentNode dishProfitPrescriptionAgentNode;
+    private final DishIngredientCoverAgentNode dishIngredientCoverAgentNode;
+    private final GoodsSupportedDishCoverAgentNode goodsSupportedDishCoverAgentNode;
     private final CostDiagnosisAgentNode costDiagnosisAgentNode;
 
     @Override
@@ -41,9 +46,14 @@ public class StubOutcomeReviewNode implements AgentNode {
         if (!shouldSkipDishProfitAggregateOnDiagnosisMultiAgentMainline(state)) {
             dishProfitAgentNode.aggregateIfApplicable(state);
         }
+        menuOperationAgentNode.aggregateIfApplicable(state);
+        dishProfitPrescriptionAgentNode.aggregateIfApplicable(state);
+        dishIngredientCoverAgentNode.aggregateIfApplicable(state);
+        goodsSupportedDishCoverAgentNode.aggregateIfApplicable(state);
         costDiagnosisAgentNode.applyIfApplicable(state);
         masterBusinessAgent.refreshBusinessOverviewMultiAgentPlanIfApplicable(state);
         DiagnosisPlanBuilder.attachIfApplicable(state);
+        AiCardPayloadWireSupport.refreshAllCardPayloads(state);
         publisher.publish(rid, "review_finished", Map.of(
                 "agent", "OutcomeReviewAgent",
                 "displayText", "审核完成",

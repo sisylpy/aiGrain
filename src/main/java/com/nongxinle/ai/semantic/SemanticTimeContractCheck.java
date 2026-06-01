@@ -2,15 +2,18 @@ package com.nongxinle.ai.semantic;
 
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
+import com.nongxinle.ai.semantic.inheritance.StructuredTimeFollowUpSupport;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /**
- * V2 时间输出合同校验：仅做结构自洽检查，不解析用户自然语言时间词。
- * 合同通过时采用 LLM 的 {@code startDate}/{@code endDate}/{@code timeSource}；失败时进入 Resolver 澄清。
+ * V2 时间输出合同校验：仅做结构自洽检查与有限缺字段补齐，不解析用户自然语言、不据 {@code timeType} 重算日期。
+ * <p>合同通过时采用 LLM 的 {@code startDate}/{@code endDate}/{@code timeSource}；失败时进入 Resolver 澄清。
  */
 public final class SemanticTimeContractCheck {
 
@@ -62,10 +65,7 @@ public final class SemanticTimeContractCheck {
     }
 
     /**
-     * Matrix / 结构化短路：V2 未产出 time 块时，从上一轮 turn memory 继承区间并标记 {@link #SOURCE_INHERITED_PREVIOUS}。
-     */
-    /**
-     * Matrix / V2 缺失时：锚定日所在自然月 1 号至锚定日（含），标记 {@link #SOURCE_DEFAULT_MONTH_TO_DATE}。
+     * Matrix / V2 缺失 time 块时的兜底：锚定日所在自然月 1 号至锚定日（含），标记 {@link #SOURCE_DEFAULT_MONTH_TO_DATE}。
      */
     public static Result defaultMonthToDateOnAnchor(LocalDate today) {
         LocalDate anchor = today != null ? today : LocalDate.now();
@@ -93,29 +93,54 @@ public final class SemanticTimeContractCheck {
     }
 
     /**
-     * V2 已表达时间语义但缺 ISO 起止日时，在 {@link #check} 前补齐（不解析用户自然语言）。
-     * <p>典型：LLM 输出 {@code timeType=THIS_MONTH} / {@code timeSource=DEFAULT_MONTH_TO_DATE} 但未填 {@code startDate}/{@code endDate}。
+     * 在 {@link #check} 前仅补齐缺失的起止日（不据 {@code timeType} 重算、不读 {@code time.reason}）：
+     * <ul>
+     *   <li>追问无显式新时间且缺日期 → {@link #SOURCE_INHERITED_PREVIOUS}</li>
+     *   <li>首轮/无 inherit 信号且缺日期 → {@link #SOURCE_DEFAULT_MONTH_TO_DATE}</li>
+     * </ul>
      */
     public static AiQuerySemanticParseResult reconcileTimePartForContract(
             AiQuerySemanticParseResult sem,
             AiConversationTurnMemory previousTurn,
             LocalDate today) {
+        return reconcileTimePartForContract(sem, previousTurn, today, TimeLayerContextSignals.empty());
+    }
+
+    public static AiQuerySemanticParseResult reconcileTimePartForContract(
+            AiQuerySemanticParseResult sem,
+            AiConversationTurnMemory previousTurn,
+            LocalDate today,
+            TimeLayerContextSignals contextSignals) {
         if (sem == null || sem.isParseMissing()) {
             return sem;
         }
+        TimeLayerContextSignals signals =
+                contextSignals != null ? contextSignals : TimeLayerContextSignals.empty();
         LocalDate anchor = today != null ? today : LocalDate.now();
-        AiQuerySemanticParseResult.TimePart tp = sem.getTime();
-        if (tp == null) {
-            AiQuerySemanticParseResult.TimePart inferred = inferTimePartWhenMissing(sem, previousTurn, anchor);
-            return inferred == null ? sem : sem.toBuilder().time(inferred).build();
+        AiQuerySemanticParseResult.TimePart rawTp = sem.getTime();
+        AiQuerySemanticParseResult.TimePart reconciledTp;
+        if (rawTp == null) {
+            reconciledTp = inferTimePartWhenMissing(sem, previousTurn, anchor, signals);
+            if (reconciledTp == null) {
+                return sem;
+            }
+        } else {
+            reconciledTp = fillMissingTimeDates(rawTp, sem, previousTurn, anchor, signals);
+            if (reconciledTp == null) {
+                reconciledTp =
+                        overrideDefaultMonthToDateForInheritedContextFollowUp(
+                                rawTp, sem, previousTurn, signals);
+            }
+            if (reconciledTp == null) {
+                return sem;
+            }
         }
-        LocalDate sd = AiResolvedTimeWindow.parseIsoDateOrNull(tp.getStartDate());
-        LocalDate ed = AiResolvedTimeWindow.parseIsoDateOrNull(tp.getEndDate());
-        if (sd != null && ed != null) {
-            return sem;
-        }
-        AiQuerySemanticParseResult.TimePart filled = fillMissingTimeDates(tp, sem, previousTurn, anchor);
-        return filled == null ? sem : sem.toBuilder().time(filled).build();
+        Map<String, Object> trace =
+                sem.getContractCompletionTrace() != null
+                        ? new LinkedHashMap<>(sem.getContractCompletionTrace())
+                        : new LinkedHashMap<>();
+        trace.put("timeContractReconcile", buildTimeContractReconcileTrace(rawTp, reconciledTp));
+        return sem.toBuilder().time(reconciledTp).contractCompletionTrace(trace).build();
     }
 
     public static Result check(
@@ -205,12 +230,13 @@ public final class SemanticTimeContractCheck {
     private static AiQuerySemanticParseResult.TimePart inferTimePartWhenMissing(
             AiQuerySemanticParseResult sem,
             AiConversationTurnMemory previousTurn,
-            LocalDate anchor) {
-        String timeAction = normalizeAction(sem.getTimeAction());
-        if (("INHERIT_PREVIOUS".equals(timeAction) || "INHERIT".equals(timeAction))
+            LocalDate anchor,
+            TimeLayerContextSignals contextSignals) {
+        if (shouldPreferInheritedPreviousTime(sem, null, contextSignals)
                 && TimeContractPreviousTurnSupport.hasTurnMemoryDates(previousTurn)) {
+            String inheritedLabel = inheritedTimeLabelFromPreviousTurn(previousTurn);
             return AiQuerySemanticParseResult.TimePart.builder()
-                    .timeType(AiResolvedTimeWindow.THIS_MONTH)
+                    .timeType(inheritedLabel)
                     .startDate(previousTurn.getLastStartDate().trim())
                     .endDate(previousTurn.getLastEndDate().trim())
                     .timeSource(SOURCE_INHERITED_PREVIOUS)
@@ -224,37 +250,144 @@ public final class SemanticTimeContractCheck {
             AiQuerySemanticParseResult.TimePart tp,
             AiQuerySemanticParseResult sem,
             AiConversationTurnMemory previousTurn,
-            LocalDate anchor) {
+            LocalDate anchor,
+            TimeLayerContextSignals contextSignals) {
+        LocalDate sdExisting = AiResolvedTimeWindow.parseIsoDateOrNull(tp.getStartDate());
+        LocalDate edExisting = AiResolvedTimeWindow.parseIsoDateOrNull(tp.getEndDate());
+        if (sdExisting != null && edExisting != null) {
+            return null;
+        }
         String src = normalizeProductionTimeSource(tp.getTimeSource());
-        String timeType = AiResolvedTimeWindow.normalizeSemanticTimeTypeLabel(tp.getTimeType());
         String timeAction = normalizeAction(sem.getTimeAction());
         boolean needInherit = Boolean.TRUE.equals(tp.getNeedInheritFromPrevious());
+        boolean inheritAction =
+                "INHERIT_PREVIOUS".equals(timeAction) || "INHERIT".equals(timeAction);
+        boolean hasPrevious = TimeContractPreviousTurnSupport.hasTurnMemoryDates(previousTurn);
 
-        if (SOURCE_INHERITED_PREVIOUS.equals(src)
-                || needInherit
-                || "INHERIT_PREVIOUS".equals(timeAction)
-                || "INHERIT".equals(timeAction)) {
-            if (TimeContractPreviousTurnSupport.hasTurnMemoryDates(previousTurn)) {
-                return copyTimePart(
-                        tp,
-                        previousTurn.getLastStartDate().trim(),
-                        previousTurn.getLastEndDate().trim(),
-                        SOURCE_INHERITED_PREVIOUS,
-                        true);
+        if (SOURCE_CURRENT_MESSAGE_EXPLICIT.equals(src)) {
+            return null;
+        }
+        if ((SOURCE_INHERITED_PREVIOUS.equals(src)
+                        || needInherit
+                        || inheritAction
+                        || shouldPreferInheritedPreviousTime(sem, tp, contextSignals))
+                && hasPrevious) {
+            return copyTimePart(
+                    tp,
+                    previousTurn.getLastStartDate().trim(),
+                    previousTurn.getLastEndDate().trim(),
+                    SOURCE_INHERITED_PREVIOUS,
+                    true,
+                    inheritedTimeLabelFromPreviousTurn(previousTurn));
+        }
+        if (inheritAction || needInherit || SOURCE_INHERITED_PREVIOUS.equals(src)) {
+            return null;
+        }
+        if ((SOURCE_DEFAULT_MONTH_TO_DATE.equals(src) || src == null)
+                && shouldPreferInheritedPreviousTime(sem, tp, contextSignals)
+                && hasPrevious) {
+            return copyTimePart(
+                    tp,
+                    previousTurn.getLastStartDate().trim(),
+                    previousTurn.getLastEndDate().trim(),
+                    SOURCE_INHERITED_PREVIOUS,
+                    true,
+                    inheritedTimeLabelFromPreviousTurn(previousTurn));
+        }
+        if (SOURCE_DEFAULT_MONTH_TO_DATE.equals(src) || src == null) {
+            String label =
+                    tp != null
+                            ? AiResolvedTimeWindow.normalizeSemanticTimeTypeLabel(tp.getTimeType())
+                            : "";
+            if (isExplicitCalendarTimeTypeRequiringLlmDates(label)) {
+                return null;
             }
-        }
-        if (SOURCE_DEFAULT_MONTH_TO_DATE.equals(src)
-                || AiResolvedTimeWindow.THIS_MONTH.equals(timeType)
-                || "THIS_MONTH_TO_DATE".equals(timeType)
-                || "MONTH_TO_DATE".equals(timeType)) {
-            return monthToDateTimePart(
-                    StringUtils.hasText(src) ? src : SOURCE_DEFAULT_MONTH_TO_DATE, anchor, tp);
-        }
-        if (SOURCE_CURRENT_MESSAGE_EXPLICIT.equals(src)
-                && AiResolvedTimeWindow.THIS_MONTH.equals(timeType)) {
-            return monthToDateTimePart(SOURCE_CURRENT_MESSAGE_EXPLICIT, anchor, tp);
+            return monthToDateTimePart(SOURCE_DEFAULT_MONTH_TO_DATE, anchor, tp);
         }
         return null;
+    }
+
+    /**
+     * 上下文追问且当前句无显式时间时，V2 带齐的 {@link #SOURCE_DEFAULT_MONTH_TO_DATE} 不得覆盖上一轮区间。
+     */
+    private static AiQuerySemanticParseResult.TimePart overrideDefaultMonthToDateForInheritedContextFollowUp(
+            AiQuerySemanticParseResult.TimePart tp,
+            AiQuerySemanticParseResult sem,
+            AiConversationTurnMemory previousTurn,
+            TimeLayerContextSignals contextSignals) {
+        if (tp == null || sem == null || !TimeContractPreviousTurnSupport.hasTurnMemoryDates(previousTurn)) {
+            return null;
+        }
+        if (StructuredTimeFollowUpSupport.isStructuredTimeOnlyFollowUp(sem)) {
+            return null;
+        }
+        String timeSource = normalizeProductionTimeSource(tp.getTimeSource());
+        if (SOURCE_CURRENT_MESSAGE_EXPLICIT.equals(timeSource)) {
+            return null;
+        }
+        if (!shouldPreferInheritedPreviousTime(sem, tp, contextSignals)) {
+            return null;
+        }
+        if (SOURCE_INHERITED_PREVIOUS.equals(timeSource)) {
+            return null;
+        }
+        if (timeSource != null && !SOURCE_DEFAULT_MONTH_TO_DATE.equals(timeSource)) {
+            return null;
+        }
+        LocalDate sdExisting = AiResolvedTimeWindow.parseIsoDateOrNull(tp.getStartDate());
+        LocalDate edExisting = AiResolvedTimeWindow.parseIsoDateOrNull(tp.getEndDate());
+        if (sdExisting == null || edExisting == null) {
+            return null;
+        }
+        try {
+            LocalDate ps = LocalDate.parse(previousTurn.getLastStartDate().trim());
+            LocalDate pe = LocalDate.parse(previousTurn.getLastEndDate().trim());
+            if (pe.isBefore(ps)) {
+                return null;
+            }
+            String inheritedLabel = inheritedTimeLabelFromPreviousTurn(previousTurn);
+            return copyTimePart(
+                    tp,
+                    ps.toString(),
+                    pe.toString(),
+                    SOURCE_INHERITED_PREVIOUS,
+                    true,
+                    inheritedLabel);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    static boolean shouldPreferInheritedPreviousTime(
+            AiQuerySemanticParseResult sem,
+            AiQuerySemanticParseResult.TimePart tp,
+            TimeLayerContextSignals contextSignals) {
+        if (sem == null) {
+            return false;
+        }
+        if (StructuredTimeFollowUpSupport.isStructuredTimeOnlyFollowUp(sem)) {
+            return false;
+        }
+        String timeSource = normalizeProductionTimeSource(tp != null ? tp.getTimeSource() : null);
+        if (SOURCE_CURRENT_MESSAGE_EXPLICIT.equals(timeSource)) {
+            return false;
+        }
+        String timeAction = normalizeAction(sem.getTimeAction());
+        if ("INHERIT_PREVIOUS".equals(timeAction) || "INHERIT".equals(timeAction)) {
+            return true;
+        }
+        if (tp != null && Boolean.TRUE.equals(tp.getNeedInheritFromPrevious())) {
+            return true;
+        }
+        if (tp != null && SOURCE_INHERITED_PREVIOUS.equals(timeSource)) {
+            return true;
+        }
+        if (Boolean.TRUE.equals(sem.getFollowUp())) {
+            return true;
+        }
+        TimeLayerContextSignals signals =
+                contextSignals != null ? contextSignals : TimeLayerContextSignals.empty();
+        return signals.contextContinuesFromPreviousTurn();
     }
 
     private static AiQuerySemanticParseResult.TimePart monthToDateTimePart(
@@ -294,7 +427,13 @@ public final class SemanticTimeContractCheck {
                         ? timeTypeOverride
                         : base != null ? base.getTimeType() : null;
         if (!StringUtils.hasText(timeType)) {
-            timeType = AiResolvedTimeWindow.THIS_MONTH;
+            if (SOURCE_INHERITED_PREVIOUS.equals(timeSource)) {
+                timeType = AiResolvedTimeWindow.CUSTOM;
+            } else if (SOURCE_DEFAULT_MONTH_TO_DATE.equals(timeSource)) {
+                timeType = AiResolvedTimeWindow.THIS_MONTH;
+            } else {
+                timeType = AiResolvedTimeWindow.CUSTOM;
+            }
         }
         return AiQuerySemanticParseResult.TimePart.builder()
                 .timeType(timeType)
@@ -385,5 +524,86 @@ public final class SemanticTimeContractCheck {
 
     private static int quarterOf(LocalDate d) {
         return (d.getMonthValue() - 1) / 3;
+    }
+
+    /**
+     * 显式日历 timeType（非 CUSTOM/空/THIS_MONTH 默认语义）：缺起止日时不由 Java 补本月至今，留给 {@link #check} 判
+     * {@link #FAIL_MISSING_TIME_FIELDS}。
+     */
+    static boolean isExplicitCalendarTimeTypeRequiringLlmDates(String normalizedLabel) {
+        if (!StringUtils.hasText(normalizedLabel) || AiResolvedTimeWindow.CUSTOM.equals(normalizedLabel)) {
+            return false;
+        }
+        if (AiResolvedTimeWindow.THIS_MONTH.equals(normalizedLabel)) {
+            return false;
+        }
+        return switch (normalizedLabel) {
+            case "TODAY",
+                    "YESTERDAY",
+                    "THIS_WEEK",
+                    "LAST_MONTH",
+                    "THIS_QUARTER",
+                    "LAST_QUARTER",
+                    "ROLLING_7",
+                    "LAST_YEAR",
+                    "LAST_YEAR_SAME_PERIOD",
+                    "YEAR_TO_DATE" -> true;
+            default -> false;
+        };
+    }
+
+    private static String inheritedTimeLabelFromPreviousTurn(AiConversationTurnMemory previousTurn) {
+        if (previousTurn != null && StringUtils.hasText(previousTurn.getLastTimeLabel())) {
+            String label =
+                    AiResolvedTimeWindow.normalizeSemanticTimeTypeLabel(previousTurn.getLastTimeLabel());
+            if (StringUtils.hasText(label)) {
+                return label;
+            }
+        }
+        return AiResolvedTimeWindow.CUSTOM;
+    }
+
+    private static Map<String, Object> buildTimeContractReconcileTrace(
+            AiQuerySemanticParseResult.TimePart raw, AiQuerySemanticParseResult.TimePart reconciled) {
+        Map<String, Object> trace = new LinkedHashMap<>();
+        if (raw != null) {
+            trace.put("rawTimeType", raw.getTimeType());
+            trace.put("rawStartDate", raw.getStartDate());
+            trace.put("rawEndDate", raw.getEndDate());
+            trace.put("rawTimeSource", raw.getTimeSource());
+        } else {
+            trace.put("rawTimeMissing", true);
+        }
+        if (reconciled != null) {
+            trace.put("reconciledTimeType", reconciled.getTimeType());
+            trace.put("reconciledStartDate", reconciled.getStartDate());
+            trace.put("reconciledEndDate", reconciled.getEndDate());
+            trace.put("reconciledTimeSource", reconciled.getTimeSource());
+        }
+        trace.put(
+                "reconciled",
+                raw == null
+                        || reconciled == null
+                        || !timePartEquivalent(raw, reconciled));
+        return trace;
+    }
+
+    private static boolean timePartEquivalent(
+            AiQuerySemanticParseResult.TimePart a, AiQuerySemanticParseResult.TimePart b) {
+        if (a == b) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        return objectsEqual(a.getTimeType(), b.getTimeType())
+                && objectsEqual(a.getStartDate(), b.getStartDate())
+                && objectsEqual(a.getEndDate(), b.getEndDate())
+                && objectsEqual(a.getTimeSource(), b.getTimeSource())
+                && objectsEqual(a.getNeedInheritFromPrevious(), b.getNeedInheritFromPrevious());
+    }
+
+    private static boolean objectsEqual(Object a, Object b) {
+        return a == null ? b == null : a.equals(b);
     }
 }

@@ -8,6 +8,9 @@ import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.graph.business.execution.EffectiveDishAnchor;
+import com.nongxinle.ai.graph.business.execution.EffectiveDishAnchorSupport;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrixRow;
@@ -28,13 +31,14 @@ import java.util.Map;
 /**
  * 挂载 {@link DishSalesAnswerPlan}：仅 {@link AiResolvedQueryIntent#DISH_SALES_QUERY} /
  * {@link AiResolvedQueryIntent#PATH_DISH_SALES_QUERY}；读 {@link AiBusinessToolIds#DISH_PROFIT_ANALYSIS} 快照中的
- * {@code dishRows}（Phase 1 复用毛利 Tool）。
+ * {@code dishRows}（排行）；单菜走 {@link AiBusinessToolIds#DISH_SALES_ANALYSIS_CARD}（depGeFoodBusiness 口径）。
  */
 public final class DishSalesAnswerPlanBuilder {
 
     private static final Logger log = LoggerFactory.getLogger(DishSalesAnswerPlanBuilder.class);
 
-    private static final String SOURCE_TOOL = "dish_profit_analysis";
+    private static final String SOURCE_TOOL_SALES = "dish_sales_analysis_card";
+    private static final String SOURCE_TOOL_RANKING = "dish_profit_analysis";
 
     private DishSalesAnswerPlanBuilder() {
     }
@@ -60,9 +64,16 @@ public final class DishSalesAnswerPlanBuilder {
 
         List<Map<String, Object>> dishRows = extractDishRows(state);
         int dishRowsCount = dishRows.size();
+        boolean singleDishSalesTool =
+                ToolRequestContractExecutionParamSupport.isDishSalesSingleDishContract(rq);
+        boolean salesToolInPlan = usesDishSalesAnalysisTool(state);
+        String sourceTool = salesToolInPlan ? SOURCE_TOOL_SALES : SOURCE_TOOL_RANKING;
         LinkedHashMap<String, Object> debug = new LinkedHashMap<>();
-        debug.put("sourceTool", SOURCE_TOOL);
-        boolean toolOk = toolEnvelopeSuccess(state);
+        debug.put("sourceTool", sourceTool);
+        boolean toolOk =
+                salesToolInPlan
+                        ? toolEnvelopeSuccess(state, AiBusinessToolIds.DISH_SALES_ANALYSIS_CARD)
+                        : toolEnvelopeSuccess(state, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
         debug.put("toolSuccess", toolOk);
         debug.put("dishRowsCount", dishRowsCount);
         debug.put("rankedRowCount", 0);
@@ -70,7 +81,8 @@ public final class DishSalesAnswerPlanBuilder {
         if (!toolOk) {
             debug.put("earlyReturnReason", "tool_envelope_missing_or_unsuccessful");
             log.warn(
-                    "[DishSalesAnswerPlan] early exit: dish_profit_analysis envelope success=false or missing. runId={}",
+                    "[DishSalesAnswerPlan] early exit: {} envelope success=false or missing. runId={}",
+                    sourceTool,
                     state.getRunId());
             attachEarlyExitPlan(state, overview, debug, List.of("菜品毛利工具未成功返回，无法生成销量/销售额排行计划。"));
             return;
@@ -102,7 +114,7 @@ public final class DishSalesAnswerPlanBuilder {
 
         DishSalesSemanticCapabilityMatrixRow matrixRow =
                 DishSalesSemanticCapabilityMatrix.resolveMatrixRow(
-                        AiResolvedQueryIntent.PATH_DISH_SALES_QUERY, wire, semantic(rq), rq);
+                        AiResolvedQueryIntent.PATH_DISH_SALES_QUERY, wire, semantic(rq));
         String knownGap = DishSalesSemanticCapabilityMatrix.knownGapForResolvedRow(matrixRow);
         if (knownGap != null) {
             debug.put("dishSalesKnownGap", knownGap);
@@ -158,16 +170,28 @@ public final class DishSalesAnswerPlanBuilder {
 
         debug.put("rowCount", dishRowsCount);
         debug.put("structuredIntentDetailWire", wire);
+        debug.put("contractStructuredIntentDetailWire", wire);
         if (sortKey != null) {
             debug.put("sortKey", sortKey);
         }
         if (matrixRow != null) {
-            debug.put("dishSalesMatrixRowId", matrixRow.getRowId());
-            debug.put("dishSalesSalesFacet", matrixRow.getSalesFacet());
+            putMatrixObservedDebug(debug, matrixRow, wire);
         }
 
         List<String> limitations = new ArrayList<>();
         appendKnownGapLimitation(limitations, knownGap);
+
+        if (DishSalesAnswerPlan.TYPE_DISH_SALES_SINGLE_DISH.equals(planType)) {
+            String dishFocus = resolveMentionedDishName(state, rq);
+            if (!StringUtils.hasText(dishFocus)) {
+                debug.put("earlyReturnReason", "missing_dish_anchor");
+                log.warn(
+                        "[DishSalesAnswerPlan] early exit: single-dish contract without DISH anchor. runId={}",
+                        state.getRunId());
+                state.setDishSalesAnswerPlan(null);
+                return;
+            }
+        }
 
         if (knownGap != null) {
             LinkedHashMap<String, Object> cov = new LinkedHashMap<>();
@@ -190,7 +214,7 @@ public final class DishSalesAnswerPlanBuilder {
             return;
         }
 
-        if (dishRows.isEmpty()) {
+        if (dishRows.isEmpty() && !singleDishSalesTool && !salesToolInPlan) {
             limitations.add("本轮菜品行为空，无法在现有数据上生成销量/销售额排行。");
             debug.put("rankedRowCount", 0);
             debug.put("earlyReturnReason", null);
@@ -214,9 +238,33 @@ public final class DishSalesAnswerPlanBuilder {
             return;
         }
 
+        if (DishSalesAnswerPlanCardSupport.isRankingPlanType(planType)) {
+            List<Map<String, Object>> aggregatedForEvidence = aggregateDishRowsByFoodId(dishRows);
+            if (!DishSalesRankingSalesEvidenceSupport.hasRankingEvidenceForMetric(
+                    metricType, aggregatedForEvidence)) {
+                debug.put("rankedRowCount", 0);
+                debug.put("earlyReturnReason", null);
+                DishSalesAnswerPlan noDataPlan =
+                        DishSalesRankingSalesEvidenceSupport.buildNoDataRankingPlan(
+                                planType,
+                                metricType,
+                                scopeLabel,
+                                timeLabel,
+                                debug,
+                                limitations);
+                enrichDishSalesMatrixDebug(noDataPlan.getDebug(), rq, planType, wire);
+                state.setDishSalesAnswerPlan(noDataPlan);
+                return;
+            }
+        }
+
         List<Map<String, Object>> rankingRows;
         if (DishSalesAnswerPlan.TYPE_DISH_SALES_SINGLE_DISH.equals(planType)) {
-            rankingRows = buildSingleDishRows(dishRows, resolveMentionedDishName(state, rq), debug);
+            if (singleDishSalesTool) {
+                rankingRows = buildSingleDishRowsFromSalesTool(state, debug);
+            } else {
+                rankingRows = buildSingleDishRows(dishRows, resolveMentionedDishName(state, rq), debug);
+            }
         } else {
             rankingRows = buildRankingRows(dishRows, metricType, debug);
         }
@@ -262,6 +310,68 @@ public final class DishSalesAnswerPlanBuilder {
         }
     }
 
+    private static List<Map<String, Object>> buildSingleDishRowsFromSalesTool(
+            AiRunState state, LinkedHashMap<String, Object> debug) {
+        Map<String, Object> data = toolEnvelopeData(state, AiBusinessToolIds.DISH_SALES_ANALYSIS_CARD);
+        if (data == null || data.isEmpty()) {
+            debug.put("singleDishMatchNote", "dish_sales_analysis_card_data_missing");
+            return List.of();
+        }
+        String status = stringify(data.get("status"));
+        if ("NEED_CLARIFICATION".equals(status)) {
+            debug.put("singleDishMatchNote", "entity_disambiguation_need_clarification");
+            debug.put("singleDishClarificationKind", "entity_disambiguation");
+            Object candidates = data.get("candidates");
+            if (candidates != null) {
+                debug.put("singleDishClarificationCandidates", candidates);
+            }
+            String msg = stringify(data.get("message"));
+            if (StringUtils.hasText(msg)) {
+                state.setNeedClarification(true);
+                if (!StringUtils.hasText(state.getClarificationQuestion())) {
+                    state.setClarificationQuestion(msg.trim());
+                }
+            }
+            return List.of();
+        }
+        if ("NO_DATA".equals(status)) {
+            debug.put("singleDishMatchNote", "no_data");
+            String msg = stringify(data.get("message"));
+            if (StringUtils.hasText(msg)) {
+                debug.put("noDataMessage", msg.trim());
+            }
+            return List.of();
+        }
+        if (!"SUCCESS".equals(status)) {
+            debug.put("singleDishMatchNote", "dish_sales_analysis_card_not_success");
+            return List.of();
+        }
+        String dishName = stringify(data.get("dishName"));
+        if (!StringUtils.hasText(dishName)) {
+            debug.put("singleDishMatchNote", "missing_dish_name_in_tool_result");
+            return List.of();
+        }
+        LinkedHashMap<String, Object> m = new LinkedHashMap<>();
+        Object rank = data.get("ranking");
+        if (rank == null) {
+            rank = data.get("rank");
+        }
+        m.put("rank", rank != null ? rank : 1);
+        m.put("ranking", rank != null ? rank : 1);
+        m.put("dishName", dishName);
+        m.put("soldPortionsTotal", firstNonBlank(stringify(data.get("soldPortionsTotal")), stringify(data.get("salesPortions"))));
+        m.put("listPriceRevenue", firstNonBlank(stringify(data.get("salesAmount")), stringify(data.get("listPriceRevenue"))));
+        m.put("grossMarginRate", stringify(data.get("grossMarginRate")));
+        Object fid = data.get("dishId");
+        if (fid == null) {
+            fid = data.get("foodId");
+        }
+        if (fid != null && StringUtils.hasText(fid.toString())) {
+            m.put("foodId", fid.toString().trim());
+        }
+        return List.of(m);
+    }
+
     /**
      * TODO：后续单菜匹配应优先精确匹配 dishName == mentionedDishName；
      * 模糊 contains 匹配多条时应标 ambiguous 或澄清；
@@ -297,10 +407,83 @@ public final class DishSalesAnswerPlanBuilder {
         return out;
     }
 
+    /** 同一 foodId 多行（多部门/子口径）合并后再排行，避免 Top 列表重复同一菜品。 */
+    private static List<Map<String, Object>> aggregateDishRowsByFoodId(List<Map<String, Object>> dishRows) {
+        if (dishRows == null || dishRows.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Map<String, Object>> byFoodId = new LinkedHashMap<>();
+        List<Map<String, Object>> withoutFoodId = new ArrayList<>();
+        for (Map<String, Object> row : dishRows) {
+            if (row == null) {
+                continue;
+            }
+            Object foodId = row.get("foodId");
+            if (foodId == null || !StringUtils.hasText(foodId.toString())) {
+                withoutFoodId.add(row);
+                continue;
+            }
+            String key = foodId.toString().trim();
+            Map<String, Object> existing = byFoodId.get(key);
+            if (existing == null) {
+                byFoodId.put(key, new LinkedHashMap<>(row));
+            } else {
+                mergeRankingMetrics(existing, row);
+            }
+        }
+        List<Map<String, Object>> out = new ArrayList<>(byFoodId.values());
+        out.addAll(withoutFoodId);
+        return out;
+    }
+
+    private static void mergeRankingMetrics(Map<String, Object> target, Map<String, Object> addition) {
+        target.put(
+                "soldPortionsTotal",
+                sumMetricStrings(stringify(target.get("soldPortionsTotal")), stringify(addition.get("soldPortionsTotal"))));
+        target.put(
+                "listPriceRevenue",
+                sumMetricStrings(stringify(target.get("listPriceRevenue")), stringify(addition.get("listPriceRevenue"))));
+        if (!StringUtils.hasText(stringify(target.get("dishName")))
+                && StringUtils.hasText(stringify(addition.get("dishName")))) {
+            target.put("dishName", addition.get("dishName"));
+        }
+    }
+
+    private static String sumMetricStrings(String a, String b) {
+        boolean aBlank = !StringUtils.hasText(a);
+        boolean bBlank = !StringUtils.hasText(b);
+        if (aBlank && bBlank) {
+            return "";
+        }
+        if (aBlank) {
+            return b.trim();
+        }
+        if (bBlank) {
+            return a.trim();
+        }
+        BigDecimal av = coerceDecimalNullable(a);
+        BigDecimal bv = coerceDecimalNullable(b);
+        if (av == null && bv == null) {
+            return a.trim();
+        }
+        if (av == null) {
+            return b.trim();
+        }
+        if (bv == null) {
+            return a.trim();
+        }
+        BigDecimal sum = av.add(bv);
+        if (sum.stripTrailingZeros().scale() <= 0) {
+            return sum.toBigInteger().toString();
+        }
+        return sum.stripTrailingZeros().toPlainString();
+    }
+
     private static List<Map<String, Object>> buildRankingRows(
             List<Map<String, Object>> dishRows, String metricType, LinkedHashMap<String, Object> debug) {
-        List<ScoredRow> scored = new ArrayList<>(dishRows.size());
-        for (Map<String, Object> row : dishRows) {
+        List<Map<String, Object>> aggregated = aggregateDishRowsByFoodId(dishRows);
+        List<ScoredRow> scored = new ArrayList<>(aggregated.size());
+        for (Map<String, Object> row : aggregated) {
             if (row == null) {
                 continue;
             }
@@ -394,12 +577,11 @@ public final class DishSalesAnswerPlanBuilder {
     }
 
     private static String resolveMentionedDishName(AiRunState state, AiResolvedQueryContext rq) {
-        if (rq != null && StringUtils.hasText(rq.getMentionedDishName())) {
-            return rq.getMentionedDishName().trim();
-        }
-        AiQuerySemanticParseResult sem = rq == null ? null : rq.getQuerySemanticParse();
-        if (sem != null && StringUtils.hasText(sem.getMentionedDishName())) {
-            return sem.getMentionedDishName().trim();
+        if (rq != null) {
+            EffectiveDishAnchor anchor = EffectiveDishAnchorSupport.resolve(rq);
+            if (StringUtils.hasText(anchor.getDishName())) {
+                return anchor.getDishName().trim();
+            }
         }
         Object env = state.getToolResults() == null ? null : state.getToolResults().get(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
         if (env instanceof Map<?, ?> tm) {
@@ -431,23 +613,40 @@ public final class DishSalesAnswerPlanBuilder {
                 StringUtils.hasText(wire)
                         ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim())
                         : null;
+        if (StringUtils.hasText(canonWire)) {
+            dbg.put("contractStructuredIntentDetailWire", canonWire);
+        }
         DishSalesSemanticCapabilityMatrixRow row =
-                DishSalesSemanticCapabilityMatrix.resolveMatrixRow(path, canonWire, sem, rq);
+                DishSalesSemanticCapabilityMatrix.resolveMatrixRow(path, canonWire, sem);
         if (row != null) {
-            dbg.put("dishSalesMatrixRowId", row.getRowId());
-            dbg.put("dishSalesStructuredIntentDetailWire", row.getStructuredIntentDetailWire());
-            dbg.put("dishSalesSalesFacet", row.getSalesFacet());
+            putMatrixObservedDebug(dbg, row, canonWire);
             String gap = DishSalesSemanticCapabilityMatrix.knownGapForResolvedRow(row);
             if (gap != null) {
                 dbg.put("dishSalesKnownGap", gap);
             }
-        } else if (StringUtils.hasText(canonWire)) {
-            dbg.put("dishSalesStructuredIntentDetailWire", canonWire);
         }
         if (DishSalesSemanticCapabilityMatrix.detectMatrixWireMissing(sem, path, canonWire)) {
             dbg.put("dishSalesMatrixWireMissing", DishSalesSemanticCapabilityMatrix.MATRIX_WIRE_MISSING);
         }
         dbg.put("dishSalesAnswerPlanType", planType);
+    }
+
+    /** Matrix row 观测字段：debug-only，不得当作主链 contract wire。 */
+    private static void putMatrixObservedDebug(
+            Map<String, Object> dbg,
+            DishSalesSemanticCapabilityMatrixRow row,
+            String contractWire) {
+        if (dbg == null || row == null) {
+            return;
+        }
+        dbg.put("matrixObservedDebugOnly", Boolean.TRUE);
+        dbg.put("matrixObservedRowId", row.getRowId());
+        dbg.put("matrixObservedWire", row.getStructuredIntentDetailWire());
+        dbg.put("matrixObservedSalesFacet", row.getSalesFacet());
+        if (StringUtils.hasText(contractWire)
+                && !contractWire.equals(row.getStructuredIntentDetailWire())) {
+            dbg.put("matrixObservedWireDiffersFromContract", Boolean.TRUE);
+        }
     }
 
     private static AiQuerySemanticParseResult semantic(AiResolvedQueryContext rq) {
@@ -509,6 +708,64 @@ public final class DishSalesAnswerPlanBuilder {
 
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> extractDishRows(AiRunState state) {
+        List<Map<String, Object>> fromSales = extractDishRowsFromSalesTool(state);
+        if (!fromSales.isEmpty()) {
+            return fromSales;
+        }
+        return extractDishRowsFromProfitTool(state);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> extractDishRowsFromSalesTool(AiRunState state) {
+        Map<String, Object> data = toolEnvelopeData(state, AiBusinessToolIds.DISH_SALES_ANALYSIS_CARD);
+        if (data == null || data.isEmpty()) {
+            return List.of();
+        }
+        Object raw = data.get("rawSalesRows");
+        if (!(raw instanceof List<?> list) || list.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> rowRaw)) {
+                continue;
+            }
+            Map<String, Object> row = (Map<String, Object>) rowRaw;
+            LinkedHashMap<String, Object> normalized = new LinkedHashMap<>();
+            String dishName = firstNonBlank(stringify(row.get("dishName")), stringify(row.get("foodName")));
+            if (!StringUtils.hasText(dishName)) {
+                continue;
+            }
+            normalized.put("dishName", dishName);
+            putIfPresent(normalized, "soldPortionsTotal", row.get("soldPortionsTotal"));
+            putIfPresent(normalized, "listPriceRevenue", row.get("listPriceRevenue"));
+            putIfPresent(normalized, "listPrice", row.get("listPrice"));
+            putIfPresent(normalized, "foodId", row.get("foodId"));
+            out.add(normalized);
+        }
+        return out;
+    }
+
+    private static void putIfPresent(Map<String, Object> target, String key, Object value) {
+        if (value != null && StringUtils.hasText(value.toString())) {
+            target.put(key, value);
+        }
+    }
+
+    private static boolean usesDishSalesAnalysisTool(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        if (state.getDataPlanTools() != null
+                && state.getDataPlanTools().contains(AiBusinessToolIds.DISH_SALES_ANALYSIS_CARD)) {
+            return true;
+        }
+        return state.getToolResults() != null
+                && state.getToolResults().containsKey(AiBusinessToolIds.DISH_SALES_ANALYSIS_CARD);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> extractDishRowsFromProfitTool(AiRunState state) {
         Object env = state.getToolResults() == null ? null : state.getToolResults().get(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
         if (!(env instanceof Map<?, ?> tm)) {
             return List.of();
@@ -531,11 +788,38 @@ public final class DishSalesAnswerPlanBuilder {
     }
 
     private static boolean toolEnvelopeSuccess(AiRunState state) {
-        Object env = state.getToolResults() == null ? null : state.getToolResults().get(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        return toolEnvelopeSuccess(state, AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+    }
+
+    private static boolean toolEnvelopeSuccess(AiRunState state, String toolId) {
+        Object env = state.getToolResults() == null ? null : state.getToolResults().get(toolId);
         if (!(env instanceof Map<?, ?> m)) {
             return false;
         }
         return Boolean.TRUE.equals(m.get("success"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> toolEnvelopeData(AiRunState state, String toolId) {
+        Object env = state.getToolResults() == null ? null : state.getToolResults().get(toolId);
+        if (!(env instanceof Map<?, ?> tm)) {
+            return Map.of();
+        }
+        Object data = tm.get("data");
+        if (!(data instanceof Map<?, ?> dm)) {
+            return Map.of();
+        }
+        return (Map<String, Object>) dm;
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (StringUtils.hasText(a)) {
+            return a.trim();
+        }
+        if (StringUtils.hasText(b)) {
+            return b.trim();
+        }
+        return "";
     }
 
     private static String scopeLabel(AiDishProfitOverviewResult out) {
@@ -645,7 +929,11 @@ public final class DishSalesAnswerPlanBuilder {
         if (plan == null) {
             return;
         }
-        if (!DishSalesSemanticCapabilityMatrix.planTypeEmitsDishSalesRankingResultAnchor(plan.getPlanType())) {
+        if (DishSalesRankingSalesEvidenceSupport.isNoDataRankingPlan(plan)) {
+            plan.setResultAnchors(new ArrayList<>());
+            return;
+        }
+        if (!DishSalesSemanticCapabilityMatrix.planTypeEmitsDishSalesResultAnchor(plan.getPlanType())) {
             plan.setResultAnchors(new ArrayList<>());
             return;
         }

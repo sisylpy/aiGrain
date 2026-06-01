@@ -5,6 +5,7 @@ import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
 import com.nongxinle.ai.semantic.frame.CurrentSemanticFrame;
 import com.nongxinle.ai.semantic.frame.CurrentSemanticFrameValidatorRegistry;
 import com.nongxinle.ai.semantic.frame.SemanticFrameValidationResult;
@@ -51,6 +52,17 @@ final class BasicDomainContractEntryAdoptionSupport {
             String normalized,
             boolean followUpRewriteApplied,
             DomainContractSelectionResult contractSelection) {
+        return validateBasicDomainContractEntry(
+                sem, previousTurn, normalized, followUpRewriteApplied, contractSelection, null);
+    }
+
+    static SemanticFrameValidationResult validateBasicDomainContractEntry(
+            AiQuerySemanticParseResult sem,
+            AiConversationTurnMemory previousTurn,
+            String normalized,
+            boolean followUpRewriteApplied,
+            DomainContractSelectionResult contractSelection,
+            SemanticIntakeResult semanticIntake) {
         String domain = resolveBasicDomainCode(contractSelection, sem);
         CurrentSemanticFrame frame = CurrentSemanticFrame.buildFrame(sem);
         boolean contractLocked = SemanticContractCompletionEngine.isContractLockedParse(sem);
@@ -63,7 +75,8 @@ final class BasicDomainContractEntryAdoptionSupport {
                         normalized,
                         followUpRewriteApplied,
                         contractSelection,
-                        contractLocked);
+                        contractLocked,
+                        semanticIntake);
         return result != null ? result : SemanticFrameValidationResult.success();
     }
 

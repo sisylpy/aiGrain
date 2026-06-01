@@ -1,6 +1,7 @@
 package com.nongxinle.ai.resolver;
 
 import com.nongxinle.ai.context.AiResolvedOrgScope;
+import com.nongxinle.ai.context.ScopeResolutionTrace;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
@@ -14,8 +15,11 @@ import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.semantic.contract.*;
 import com.nongxinle.ai.semantic.intake.*;
 import com.nongxinle.ai.semantic.intake.llm.LlmSemanticIntakeParser;
+import com.nongxinle.ai.semantic.dimension.BareRankingDimensionSwitchPlan;
+import com.nongxinle.ai.semantic.dimension.BareRankingDimensionSwitchSupport;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
+import com.nongxinle.ai.scope.AiConversationScopeMode;
 import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 import com.nongxinle.ai.semantic.*;
 import com.nongxinle.ai.util.AiUserMessageSanitizer;
@@ -65,8 +69,30 @@ public class AiResolvedQueryContextResolver {
      * @param today 语义解析「今天」锚点；Harness Replay 传入固定日以稳定断言，生产链路请使用 {@link #resolve(Long, AiRunCreateRequest, AiUserContext)}。
      */
     public AiResolvedQueryContext resolve(Long runId, AiRunCreateRequest request, AiUserContext userContext, LocalDate today) {
+        return resolve(runId, request, userContext, null, today);
+    }
+
+    public AiResolvedQueryContext resolve(
+            Long runId,
+            AiRunCreateRequest request,
+            AiUserContext userContext,
+            AiConversationScopeMode conversationScopeMode,
+            LocalDate today) {
         Objects.requireNonNull(today, "today");
         Objects.requireNonNull(userContext, "userContext");
+        AiConversationScopeMode effectiveScopeMode =
+                RequestExplicitGroupScopeSupport.resolveEffectiveScopeMode(request, conversationScopeMode);
+        ScopeResolutionTrace scopeTrace =
+                ScopeResolutionTrace.builder()
+                        .requestScopeMode(request != null ? request.getScopeMode() : null)
+                        .conversationScopeModeParam(
+                                conversationScopeMode != null ? conversationScopeMode.name() : null)
+                        .effectiveScopeModeBeforeResolveOrg(
+                                effectiveScopeMode != null ? effectiveScopeMode.name() : null)
+                        .explicitGroupRequest(
+                                String.valueOf(
+                                        RequestExplicitGroupScopeSupport.isExplicitGroupScopeRequest(request)))
+                        .build();
         String message = request != null ? request.getMessage() : null;
         String normalized = message == null ? "" : AiUserMessageSanitizer.stripLeadingEnumeration(message).trim();
         Long reqDept = request != null ? request.getDepartmentId() : null;
@@ -79,7 +105,14 @@ public class AiResolvedQueryContextResolver {
                 uid != null ? conversationMemoryService.load(uid, convId) : null;
         diagnostics.logResolveStart(runId, convId, uid, normalized, previousTurn);
 
-        AiResolvedOrgScope orgScope = orgScopeAssembler.resolveOrgScope(userContext, effectiveDept, request);
+        AiResolvedOrgScope orgScope =
+                orgScopeAssembler.resolveOrgScope(userContext, effectiveDept, request, effectiveScopeMode);
+        if (RequestExplicitGroupScopeSupport.isExplicitGroupScopeRequest(request)) {
+            orgScope =
+                    RequestExplicitGroupScopeSupport.pinBaselineGroupOrgScope(
+                            orgScopeAssembler, userContext, effectiveDept, request, orgScope);
+        }
+        scopeTrace.snapshotBaseline(orgScope, "resolveOrgScope");
 
         SemanticIntakeInput intakeInput =
                 SemanticIntakeInput.from(message, normalized, today, previousTurn, orgScope);
@@ -89,7 +122,15 @@ public class AiResolvedQueryContextResolver {
 
         boolean intakeClarificationRequired = isIntakeClarificationRequired(semanticIntake);
         SemanticDomainRouteResult semanticDomainRoute = null;
-        if (!intakeClarificationRequired) {
+        if (intakeClarificationRequired
+                && SemanticIntakeStructuredFollowUpDeferralSupport.shouldDeferIntakeClarificationToV2(
+                        semanticIntake, previousTurn)) {
+            intakeClarificationRequired = false;
+            semanticDomainRoute =
+                    SemanticIntakeStructuredFollowUpDeferralSupport.buildDeferredRouteFromPreviousTurn(
+                            previousTurn);
+        }
+        if (!intakeClarificationRequired && semanticDomainRoute == null) {
             semanticDomainRoute = SemanticIntakeRouteAdapter.toRouteResult(semanticIntake);
             if (semanticDomainRoute == null || semanticDomainRoute.isNeedsClarification()) {
                 intakeClarificationRequired = true;
@@ -101,10 +142,20 @@ public class AiResolvedQueryContextResolver {
                         && semanticIntake.getStatus() == SemanticIntakeStatus.READY
                         && semanticIntake.getNormalizationType() == SemanticIntakeNormalizationType.REWRITE;
         String effectiveUserMessage = resolveEffectiveUserMessage(normalized, semanticIntake);
+        // v2 实体抽取以本轮原文为准；intake REWRITE 可能误继承上一轮菜名，不得覆盖 currentUserMessage。
+        String querySemanticV2UserMessage =
+                intakeRewriteApplied ? normalized : effectiveUserMessage;
         AiConversationTurnMemory previousTurnForParser =
                 intakeRewriteApplied
                         ? SemanticParserInputBuilder.reducePreviousTurnForFollowUpRewrite(previousTurn)
                         : previousTurn;
+
+        BareRankingDimensionSwitchPlan bareRankingDimensionSwitchPlan =
+                BareRankingDimensionSwitchSupport.buildPlan(
+                        intakeInput, semanticIntake, previousTurn);
+        semanticDomainRoute =
+                BareRankingDimensionSwitchSupport.routeForPlan(
+                        bareRankingDimensionSwitchPlan, semanticDomainRoute);
 
         Map<String, Object> querySemanticV2InputPreview = null;
         AiQuerySemanticParseResult querySemanticV2Raw = null;
@@ -113,15 +164,22 @@ public class AiResolvedQueryContextResolver {
         SemanticContractStrictDecision semanticContractStrictDecision = null;
         if (!intakeClarificationRequired) {
             domainContractSelection = DomainContractSelector.select(semanticDomainRoute);
+            domainContractSelection =
+                    WarehouseInventoryShortageSemanticsSupport.filterContractSelection(
+                            domainContractSelection, semanticIntake);
+            domainContractSelection =
+                    BareRankingDimensionSwitchSupport.contractSelectionForPlan(
+                            bareRankingDimensionSwitchPlan, domainContractSelection);
             try {
                 var v2In =
                         SemanticParserInputBuilder.build(
-                                effectiveUserMessage,
+                                querySemanticV2UserMessage,
                                 today,
                                 previousTurnForParser,
                                 orgScope,
                                 semanticDomainRoute,
-                                domainContractSelection);
+                                domainContractSelection,
+                                previousTurn);
                 querySemanticV2InputPreview = SemanticParserInputBuilder.toDebugPreview(v2In);
                 querySemanticV2Raw = querySemanticLlmParser.parse(v2In);
             } catch (Exception ex) {
@@ -155,26 +213,67 @@ public class AiResolvedQueryContextResolver {
         boolean frameClarificationRequired = false;
         boolean contractStrictClarificationRequired = false;
         com.nongxinle.ai.semantic.SemanticTimeContractCheck.Result timeContractResult = null;
+        String semanticFailureCode = null;
+        String semanticFailureStage = null;
+        boolean semanticInfrastructureFailure = false;
 
         if (intakeClarificationRequired) {
-            semanticFallbackReason = intakeClarificationReason(semanticIntake);
+            semanticFailureCode = SemanticLlmFailureClassification.classifyIntakeFailure(semanticIntake);
+            if (SemanticLlmFailureClassification.isInfrastructureFailure(semanticFailureCode)) {
+                semanticInfrastructureFailure = true;
+                semanticFailureStage = SemanticLlmFailureClassification.STAGE_SEMANTIC_INTAKE;
+                semanticFallbackReason = semanticFailureCode;
+            } else {
+                semanticFallbackReason = intakeClarificationReason(semanticIntake);
+            }
         } else {
+            String v2FailureCode =
+                    SemanticLlmFailureClassification.classifyV2ParseFailure(querySemanticV2Raw);
+            if (v2FailureCode != null
+                    && SemanticLlmFailureClassification.isInfrastructureFailure(v2FailureCode)) {
+                semanticInfrastructureFailure = true;
+                semanticFailureCode = v2FailureCode;
+                semanticFailureStage = SemanticLlmFailureClassification.STAGE_SEMANTIC_V2;
+                semanticFallbackReason = v2FailureCode;
+            } else {
             AiQuerySemanticParseResult v2ForAdoption =
                     querySemanticV2Raw != null && !querySemanticV2Raw.isParseMissing()
                             ? querySemanticV2Raw
                             : null;
+            String rewriteInheritedAnchorType = null;
+            String rewriteInheritedAnchorName = null;
+            boolean bareRankingDimensionSwitch = bareRankingDimensionSwitchPlan.isActive();
+            if (intakeRewriteApplied
+                    && previousTurnForParser != null
+                    && v2ForAdoption != null
+                    && !bareRankingDimensionSwitch
+                    && !SemanticIntakeMultiDishRankingSupport.suppressRewriteAnchorInjection(
+                            semanticIntake)
+                    && SemanticContractAnchorInheritanceSupport.isUsePreviousAnchorPolicy(
+                            v2ForAdoption)) {
+                String structuredDish =
+                        SemanticContractAnchorInheritanceSupport.resolveStructuredDishAnchor(
+                                previousTurnForParser, null, null);
+                if (StringUtils.hasText(structuredDish)) {
+                    rewriteInheritedAnchorType = AiResultAnchor.ENTITY_TYPE_DISH;
+                    rewriteInheritedAnchorName = structuredDish;
+                }
+            }
             adoption =
                     semanticAdoptionPipeline.tryAdopt(
                             new SemanticAdoptionPipeline.Request(
                                     v2ForAdoption,
-                                    previousTurnForParser,
-                                    effectiveUserMessage,
+                                    previousTurn,
+                                    normalized,
                                     today,
                                     explicitTentative,
                                     intakeRewriteApplied,
                                     domainContractSelection,
-                                    null,
-                                    null));
+                                    semanticIntake,
+                                    bareRankingDimensionSwitchPlan,
+                                    rewriteInheritedAnchorType,
+                                    rewriteInheritedAnchorName,
+                                    TimeLayerContextSignals.fromIntake(semanticIntake)));
             SemanticContractValidationPipeline.Result contractPipeline =
                     SemanticContractValidationPipeline.run(
                             new SemanticContractValidationPipeline.Request(
@@ -182,7 +281,7 @@ public class AiResolvedQueryContextResolver {
                                     domainContractSelection,
                                     adoption,
                                     querySemanticV2Raw,
-                                    previousTurnForParser,
+                                    previousTurn,
                                     intakeRewriteApplied,
                                     semanticDomainRoute,
                                     semanticContractStrictProperties.isEnabled()));
@@ -242,6 +341,7 @@ public class AiResolvedQueryContextResolver {
                     && Boolean.TRUE.equals(adoption.semantic().getPurchaseSemanticFramePrimaryMerge())) {
                 semanticFallbackUsed = Boolean.FALSE;
             }
+            }
         }
 
         boolean adoptionPathUnresolved =
@@ -285,7 +385,10 @@ public class AiResolvedQueryContextResolver {
                         && semanticLlm.isUsableForMerge(querySemanticMinConfidence);
 
         String semanticClarificationQuestion =
-                intakeClarificationRequired
+                semanticInfrastructureFailure
+                        ? SemanticLlmFailureClassification.userMessageForFailureCode(
+                                semanticFailureCode)
+                        : intakeClarificationRequired
                         ? resolveIntakeClarificationQuestion(semanticIntake)
                         : contractStrictClarificationRequired
                                 ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
@@ -311,6 +414,12 @@ public class AiResolvedQueryContextResolver {
                                 semanticLlm,
                                 intakeRewriteApplied);
 
+        if (!clarificationRequired && RequestExplicitGroupScopeSupport.isExplicitGroupScopeRequest(request)) {
+            followUp.setInheritOrgScope(false);
+            followUp.setMergedOrgScope(orgScope);
+            followUp.setEffectiveScopeSource(RequestExplicitGroupScopeSupport.EFFECTIVE_SCOPE_SOURCE_REQUEST);
+        }
+
         AiResolvedQueryIntent queryIntent = followUp.getMergedQueryIntent() != null
                 ? followUp.getMergedQueryIntent()
                 : AiResolvedQueryIntent.builder().build();
@@ -335,12 +444,14 @@ public class AiResolvedQueryContextResolver {
             followUp.setMergedTimeWindow(timeWindow);
             followUp.setEffectiveTimeWindowSource(effectiveTimeSource);
         }
-        return assemblySupport.assemble(
+        AiResolvedQueryContext assembled =
+                assemblySupport.assemble(
                 new AiResolvedQueryContextAssemblySupport.AssembleRequest(
                         runId,
                         convId,
                         uid,
                         userContext,
+                        effectiveDept,
                         request,
                         message,
                         normalized,
@@ -379,7 +490,16 @@ public class AiResolvedQueryContextResolver {
                         effectiveTimeSource,
                         mergedIntentStem,
                         semanticLlm,
-                        applyStructuralLlm));
+                        applyStructuralLlm,
+                        semanticFailureCode,
+                        semanticFailureStage,
+                        scopeTrace,
+                        bareRankingDimensionSwitchPlan));
+        assembled.setConversationScopeMode(effectiveScopeMode);
+        if (assembled.getScopeResolutionTrace() != null && semanticLlm != null) {
+            assembled.getScopeResolutionTrace().setRawScopeAction(semanticLlm.getScopeAction());
+        }
+        return assembled;
     }
 
     private static boolean isIntakeClarificationRequired(SemanticIntakeResult intake) {
@@ -416,11 +536,24 @@ public class AiResolvedQueryContextResolver {
     }
 
     private static String resolveIntakeClarificationQuestion(SemanticIntakeResult intake) {
-        if (intake != null && StringUtils.hasText(intake.getClarificationQuestion())) {
-            return intake.getClarificationQuestion().trim();
+        if (intake != null) {
+            String warehouseRisk =
+                    WarehouseInventoryShortageSemanticsSupport.resolveClarificationQuestion(
+                            intake);
+            if (StringUtils.hasText(warehouseRisk)) {
+                return warehouseRisk;
+            }
+            if (StringUtils.hasText(intake.getClarificationQuestion())) {
+                return intake.getClarificationQuestion().trim();
+            }
         }
         if (intake != null && intake.getStatus() == SemanticIntakeStatus.INVALID) {
-            return "没能理解您的问题，能再具体说一下吗？";
+            String code = SemanticLlmFailureClassification.classifyIntakeFailure(intake);
+            String infrastructureMessage =
+                    SemanticLlmFailureClassification.userMessageForFailureCode(code);
+            if (infrastructureMessage != null) {
+                return infrastructureMessage;
+            }
         }
         return "能再具体说一下您想问的内容吗？";
     }

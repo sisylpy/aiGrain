@@ -16,7 +16,10 @@ import org.springframework.util.StringUtils;
 /**
  * 菜品毛利域 Step 2 小合同只读导出。
  * <p>ACTIVE：Matrix 首轮无 knownGap 行（P2G 主流程：概览 / 排行 / 单菜毛利率）。
- * KNOWN_GAP：扩展排行、诊断、原料构成等复杂下钻。
+ * KNOWN_GAP：扩展排行、诊断、原料构成等（Catalog 观测）。
+ * <p>薄导出器：仅 Matrix → {@link MatrixBackedContractExporterSupport} 结构化字段。
+ * NL 见 {@code semantic_intake.v1.md}、{@code query_semantic_parser.v2.md}、Harness。
+ * 治理见 {@code docs/ai/semantic-contract-exporter-governance.md}。
  */
 public final class DishProfitSemanticCapabilityContractExporter implements SemanticCapabilityContractExporter {
 
@@ -27,8 +30,7 @@ public final class DishProfitSemanticCapabilityContractExporter implements Seman
 
     private static final List<String> DISH_PROFIT_TOOLS = AiBusinessToolIds.DEFAULT_DISH_PROFIT_TOOLS;
 
-    private DishProfitSemanticCapabilityContractExporter() {
-    }
+    private DishProfitSemanticCapabilityContractExporter() {}
 
     @Override
     public String domain() {
@@ -105,8 +107,8 @@ public final class DishProfitSemanticCapabilityContractExporter implements Seman
                 StringUtils.hasText(row.getCapabilityId())
                         ? row.getCapabilityId()
                         : contractIdForRow(row);
-        SemanticCapabilityContract.SemanticCapabilityContractBuilder builder =
-                SemanticCapabilityContract.builder()
+        MatrixBackedContractExporterSupport.MatrixContractExportSpec.MatrixContractExportSpecBuilder b =
+                MatrixBackedContractExporterSupport.MatrixContractExportSpec.builder()
                         .contractId(contractId)
                         .domain(DOMAIN_CODE)
                         .intentCode(AiResolvedQueryIntent.DISH_PROFIT)
@@ -114,7 +116,6 @@ public final class DishProfitSemanticCapabilityContractExporter implements Seman
                         .wire(row.getStructuredIntentDetailWire())
                         .queryObject(row.getQueryObject())
                         .metric(row.getMetric())
-                        .sourceFacet(null)
                         .detailWanted(row.getDetailWanted())
                         .answerPlanType(row.getTargetDishProfitPlanType())
                         .requiresAnchor(requiresAnchor)
@@ -124,11 +125,11 @@ public final class DishProfitSemanticCapabilityContractExporter implements Seman
                         .gapMarker(gapMarker);
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_OVERVIEW.equals(
                 row.getStructuredIntentDetailWire())) {
-            builder.operations(Set.of("OVERVIEW", "SUMMARY"));
+            b.operations(Set.of("OVERVIEW", "SUMMARY"));
         } else {
-            builder.operation(row.getOperation());
+            b.operation(row.getOperation());
         }
-        return builder.build();
+        return MatrixBackedContractExporterSupport.build(b.build());
     }
 
     private static String contractIdForRow(DishProfitSemanticCapabilityMatrixRow row) {
@@ -136,6 +137,8 @@ public final class DishProfitSemanticCapabilityContractExporter implements Seman
             case "DP-R0k" -> "dish_profit.overview";
             case "DP-R0a" -> "dish_profit.ranking_low_margin";
             case "DP-R0b" -> "dish_profit.ranking_high_margin";
+            case "DP-R0n" -> "dish_profit.ranking_low_profit_amount";
+            case "DP-R0p" -> "dish_profit.ranking_high_profit_amount";
             case "DP-R0c" -> "dish_profit.ranking_high_actual_cost";
             case "DP-R0d" -> "dish_profit.ranking_max_cost_gap";
             case "DP-R0e" -> "dish_profit.low_profit_reason";

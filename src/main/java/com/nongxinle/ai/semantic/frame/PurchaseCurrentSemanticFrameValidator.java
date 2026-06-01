@@ -49,6 +49,8 @@ public final class PurchaseCurrentSemanticFrameValidator {
                     AiQuerySemanticLexicon.STRUCTURED_PURCHASE_INVENTORY_OVERSTOCK_RISK,
                     AiQuerySemanticLexicon.STRUCTURED_PURCHASE_FRESHNESS_RISK,
                     AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING,
+                    AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STORE_COMPARE,
+                    AiQuerySemanticLexicon.STRUCTURED_PURCHASE_STORE_PAIR_AMOUNT_COMPARE,
                     AiQuerySemanticLexicon.STRUCTURED_SUPPLIER_AMOUNT_RANKING);
 
     private static final String Q_SLOT_MISSING =

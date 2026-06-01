@@ -106,8 +106,10 @@ final class SemanticCapabilityContractMatcher {
                 && !StringUtils.hasText(slots.operation())) {
             missing.add("operation");
         }
-        if (contract.getMetrics() != null
-                && !contract.getMetrics().isEmpty() && !StringUtils.hasText(slots.metric())) {
+        if (ContractBusinessSlotRequirementSupport.isMetricSemanticallyRequired(contract, slots.operation())
+                && contract.getMetrics() != null
+                && !contract.getMetrics().isEmpty()
+                && !StringUtils.hasText(slots.metric())) {
             missing.add("metric");
         }
         if (StringUtils.hasText(contract.getSourceFacet()) && !StringUtils.hasText(slots.sourceFacet())) {

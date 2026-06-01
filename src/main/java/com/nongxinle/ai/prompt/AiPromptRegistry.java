@@ -27,6 +27,15 @@ public class AiPromptRegistry {
         m.put(AiPromptIds.COMPOSER_DIAGNOSIS_V1, "ai-prompts/composer/diagnosis.v1.md");
         m.put(AiPromptIds.COMPOSER_DIAGNOSIS_STORE_PRIORITY_V1, "ai-prompts/composer/diagnosis_store_priority.v1.md");
         m.put(AiPromptIds.COMPOSER_WAREHOUSE_V1, "ai-prompts/composer/warehouse.v1.md");
+        m.put(
+                AiPromptIds.COMPOSER_MENU_EXPERT_RUNTIME_V1,
+                "ai-prompts/semantic/menu-expert-runtime-prompt.md");
+        m.put(
+                AiPromptIds.BUSINESS_OVERVIEW_DISH_SALES_REASON_AGENT_V1,
+                "ai-prompts/semantic/business-overview-dish-sales-reason-agent.v1.md");
+        m.put(
+                AiPromptIds.BUSINESS_OVERVIEW_DISH_SALES_REASON_AGENT_V2,
+                "ai-prompts/semantic/business-overview-dish-sales-reason-agent.v2.md");
 
         m.put("common.answer_style_rules.v1", "ai-prompts/common/answer_style_rules.v1.md");
         m.put("common.numeric_safety_rules.v1", "ai-prompts/common/numeric_safety_rules.v1.md");

@@ -1,0 +1,37 @@
+---
+description: Semantic Capability Contract Exporter 只做 Matrix→机器合同导出，禁止中文 hint/问法 examples
+alwaysApply: true
+---
+
+# Contract Exporter 治理（全局）
+
+修改 `com.nongxinle.ai.semantic.contract.*SemanticCapabilityContractExporter` 或新增域 Exporter 前，必须先读 `docs/ai/semantic-contract-exporter-governance.md`。
+
+## 允许（Exporter 唯一职责）
+
+从 `*SemanticCapabilityMatrix`（及 Lexicon PLANNED 登记）**只读**导出 `SemanticCapabilityContract` 的**结构化字段**：
+
+`contractId`、`wire`、`queryObject`、`operation`、`metric`、`sourceFacet`、`detailWanted`、`answerPlanType`、`requiresAnchor`、`anchorType`、`selectedTools`、`status`、`gapMarker`、`domain`、`intentCode`、`pathCode`。
+
+优先使用 `MatrixBackedContractExporterSupport.build(...)`，参考 `RevenueSemanticCapabilityContractExporter`、`WarehouseSemanticCapabilityContractExporter`（P0 薄模板）。
+
+## 硬禁止
+
+1. **禁止**在 Exporter 中设置 `description`、`selectionHint`、`negativeHint`、`positiveExamples`、`negativeExamples`（存量逐步删除，**不得新增**）。
+2. **禁止**为某个自然语言问句、老板口语、混淆场景在 Exporter 里加 `switch` 中文说明或 examples。
+3. **禁止** `rawMessage` / `completedUserQuery` / `normalizedMessage` 的 `contains` 或 NL if/else 选合同。
+4. **禁止**在 Exporter 中做运行时业务判断（缺货/临期/金额 vs 数量等语义由 Intake + V2 负责）。
+
+## NL 应放哪里
+
+| 内容 | 位置 |
+|------|------|
+| 老板问法、域内硬规则、合同互斥说明 | `semantic_intake.v1.md`、`query_semantic_parser.v2.md` |
+| 可执行回归问句 | Harness `AiHarnessBuiltinCases` / replay case |
+| 槽位/wire SSOT | `*SemanticCapabilityMatrix` 行 |
+
+## 与其它规则的关系
+
+- 不替代 `.cursor/rules/harness-java-boundary.md`（Java 不得猜语义、contract-owned wire）。
+- 不替代 `.cursor/rules/time-layer-inheritance.mdc`（时间继承）。
+- 本规则专门防止 **合同导出层变成第三套 Prompt**。

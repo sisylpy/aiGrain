@@ -99,6 +99,8 @@ class BusinessToolExecutionPermissionTest {
         RevenueQueryToolExecutor revenueExec = new RevenueQueryToolExecutor(registry, guard, publisher);
         StockReduceQueryToolExecutor stockExec = new StockReduceQueryToolExecutor(registry, guard, publisher);
         DishProfitQueryToolExecutor dishExec = new DishProfitQueryToolExecutor(registry, guard, publisher, revenueSvc);
+        DishCostAnalysisToolRequestSupport dishCostSupport = new DishCostAnalysisToolRequestSupport(revenueSvc);
+        DishSalesAnalysisToolRequestSupport dishSalesSupport = new DishSalesAnalysisToolRequestSupport(revenueSvc);
         BusinessToolExecutionNode node = new BusinessToolExecutionNode(
                 registry,
                 guard,
@@ -108,6 +110,9 @@ class BusinessToolExecutionPermissionTest {
                 revenueExec,
                 stockExec,
                 dishExec,
+                dishCostSupport,
+                dishSalesSupport,
+                mock(WarehouseStockOverviewToolExecutor.class),
                 masterSkipped(),
                 mock(BusinessToolExecutionRequestResolver.class));
         node.run(state);
@@ -160,6 +165,8 @@ class BusinessToolExecutionPermissionTest {
         RevenueQueryToolExecutor revenueExec = new RevenueQueryToolExecutor(registry, guard, publisher);
         StockReduceQueryToolExecutor stockExec = new StockReduceQueryToolExecutor(registry, guard, publisher);
         DishProfitQueryToolExecutor dishExec = new DishProfitQueryToolExecutor(registry, guard, publisher, revenueSvc);
+        DishCostAnalysisToolRequestSupport dishCostSupport = new DishCostAnalysisToolRequestSupport(revenueSvc);
+        DishSalesAnalysisToolRequestSupport dishSalesSupport = new DishSalesAnalysisToolRequestSupport(revenueSvc);
         BusinessToolExecutionNode node = new BusinessToolExecutionNode(
                 registry,
                 guard,
@@ -169,6 +176,9 @@ class BusinessToolExecutionPermissionTest {
                 revenueExec,
                 stockExec,
                 dishExec,
+                dishCostSupport,
+                dishSalesSupport,
+                mock(WarehouseStockOverviewToolExecutor.class),
                 masterSkipped(),
                 mock(BusinessToolExecutionRequestResolver.class));
         node.run(state);

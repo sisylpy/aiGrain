@@ -1,6 +1,7 @@
 package com.nongxinle.ai.tool.business;
 
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.graph.business.MenuPortfolioSalesEvidenceSupport;
 import com.nongxinle.ai.tool.AiTool;
 import com.nongxinle.ai.tool.ToolRequest;
 import com.nongxinle.ai.tool.ToolResult;
@@ -159,6 +160,10 @@ public class DishProfitAnalysisTool implements AiTool {
             data.put("userQuestionHint", hint);
             data.put("dishProfitStructuredDetail", structuredDetail);
             data.put("dishNameFocusHint", dishFocus);
+            Map<String, Object> targetInsightRow = resolveTargetDishInsightRow(dishes, presented, dishFocus);
+            if (targetInsightRow != null && !targetInsightRow.isEmpty()) {
+                data.put("targetDishInsightRow", targetInsightRow);
+            }
             data.put("buildInsightUsed", true);
             data.put("businessInsightSummary", bisRaw);
             String portfolioBlended =
@@ -174,7 +179,7 @@ public class DishProfitAnalysisTool implements AiTool {
             } else {
                 data.put("portfolioGrossMarginRate", "暂无");
             }
-            data.put("salesDishCount", bisRaw == null ? null : bisRaw.get("dishRowCount"));
+            data.put("salesDishCount", MenuPortfolioSalesEvidenceSupport.countSoldDishesFromRows(presented));
             data.put("riskLevel", bisRaw == null ? null : bisRaw.get("insightRiskLevel"));
             data.put("dishProfitStoreCoverage", insight.get("dishProfitStoreCoverage"));
             data.put("scopeOutboundSubtotals", insight.get("scopeOutboundSubtotals"));
@@ -273,6 +278,15 @@ public class DishProfitAnalysisTool implements AiTool {
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(sw)) {
             cmp = Comparator.comparing(DishProfitAnalysisTool::blendedMarginSortKeyAsc,
                     Comparator.nullsLast(Comparator.naturalOrder()));
+        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN.equals(sw)) {
+            cmp = Comparator.comparing(DishProfitAnalysisTool::blendedMarginSortKeyAsc,
+                    Comparator.nullsLast(Comparator.naturalOrder())).reversed();
+        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT.equals(sw)) {
+            cmp = Comparator.comparing(DishProfitAnalysisTool::grossProfitAmountSortKey,
+                    Comparator.nullsLast(Comparator.naturalOrder())).reversed();
+        } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_PROFIT_AMOUNT.equals(sw)) {
+            cmp = Comparator.comparing(DishProfitAnalysisTool::grossProfitAmountSortKey,
+                    Comparator.nullsLast(Comparator.naturalOrder()));
         } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(sw)) {
             cmp = Comparator.comparing((Map<String, Object> m) ->
                     com.nongxinle.ai.graph.business.DishProfitActualCostSemanticsSupport.displayActualCost(m))
@@ -301,6 +315,17 @@ public class DishProfitAnalysisTool implements AiTool {
         return work;
     }
 
+    /** 标价收入 − 展示用实际成本（与 AnswerPlan grossProfitAmount 一致）。 */
+    private static BigDecimal grossProfitAmountSortKey(Map<String, Object> raw) {
+        BigDecimal rev = GbDepartmentGoodsStockReduceSupport.coerceDecimal(raw.get("listPriceRevenue"));
+        BigDecimal actual =
+                com.nongxinle.ai.graph.business.DishProfitActualCostSemanticsSupport.displayActualCost(raw);
+        if (rev == null || actual == null) {
+            return null;
+        }
+        return rev.subtract(actual);
+    }
+
     private static BigDecimal blendedMarginSortKeyAsc(Map<String, Object> raw) {
         String primary = str(raw.get("blendedGrossMarginRateOnListPrice"));
         if (primary.isEmpty()) {
@@ -319,6 +344,44 @@ public class DishProfitAnalysisTool implements AiTool {
     /** 理论 vs 实际成本差额（signed）：displayActualCost − theoryCostAmount */
     private static BigDecimal theoryActualGapSignedAmount(Map<String, Object> raw) {
         return com.nongxinle.ai.graph.business.DishProfitActualCostSemanticsSupport.gapDisplayActualMinusTheory(raw);
+    }
+
+    private static Map<String, Object> resolveTargetDishInsightRow(
+            List<Map<String, Object>> fullDishes, List<Map<String, Object>> presented, String dishFocus) {
+        List<Map<String, Object>> searchPool = fullDishes != null && !fullDishes.isEmpty() ? fullDishes : presented;
+        if (searchPool == null || searchPool.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> raw = null;
+        if (presented != null && presented.size() == 1) {
+            raw = presented.get(0);
+        } else if (StringUtils.hasText(dishFocus)) {
+            String needle = dishFocus.trim();
+            for (Map<String, Object> row : searchPool) {
+                if (row != null && str(row.get("foodName")).contains(needle)) {
+                    raw = row;
+                    break;
+                }
+            }
+        }
+        if (raw == null && searchPool.size() == 1) {
+            raw = searchPool.get(0);
+        }
+        return raw == null ? null : summarizeInsightRow(raw);
+    }
+
+    private static Map<String, Object> summarizeInsightRow(Map<String, Object> raw) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("foodId", raw.get("foodId"));
+        row.put("dishName", raw.getOrDefault("foodName", ""));
+        row.put("listPrice", str(raw.get("listPrice")));
+        row.put("grossMarginStandardTarget", str(raw.get("grossMarginStandardTarget")));
+        row.put("grossMarginStandardBandLower", str(raw.get("grossMarginStandardBandLower")));
+        row.put("grossMarginStandardBandUpper", str(raw.get("grossMarginStandardBandUpper")));
+        row.put("actualCostPerPortion123", raw.get("actualCostPerPortion123"));
+        row.put("blendedGrossMarginRateOnListPrice", raw.get("blendedGrossMarginRateOnListPrice"));
+        row.put("grossMarginLevel", raw.get("grossMarginLevel"));
+        return row;
     }
 
     private static String nzPlain(BigDecimal v) {

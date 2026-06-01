@@ -16,6 +16,7 @@ import com.nongxinle.utils.R;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import static com.nongxinle.utils.DateUtils.formatWhatDay;
 import static com.nongxinle.utils.PinYin4jUtils.hanziToPinyin;
 
 @RestController
@@ -39,6 +40,9 @@ public class GbDistributerFoodGoodsController {
 	public R quickSearchDisGoodsForFoodIngredient(String searchStr, String disId, Integer foodId) {
 		Map<String, Object> map = new HashMap<>();
 		map.put("disId", disId);
+		// 近 30 天库存批次采购单价（gb_dgs_price）均值；无记录时 SQL 返回 0
+		map.put("stockAvgStartDate", formatWhatDay(-29));
+		map.put("stockAvgStopDate", formatWhatDay(0));
 
 		for (int i = 0; i < searchStr.length(); i++) {
 			String str = searchStr.substring(i, i + 1);

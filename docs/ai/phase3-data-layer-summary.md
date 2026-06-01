@@ -167,8 +167,9 @@ Tool Request args → Tool / Service / Mapper / SQL → Tool payload → AnswerP
 | 编号 | 描述 |
 |------|------|
 | PU-GAP-1 | 单商品采购概览 / 商品锚点查询需后续 contract entry + `disGoodsId` 支持 |
-| PU-GAP-2 | 门店采购金额排行（`store_amount_ranking`） |
-| PU-GAP-3 | 采购-出库不匹配风险（`stock_reduce_mismatch`） |
+| PU-GAP-2 | 门店采购对比（`store_compare`） |
+| PU-GAP-3 | 两店并排采购金额对比（`store_pair_amount_compare`） |
+| PU-GAP-4 | 采购-出库不匹配风险（`stock_reduce_mismatch`） |
 
 ### 6.4 Warehouse
 

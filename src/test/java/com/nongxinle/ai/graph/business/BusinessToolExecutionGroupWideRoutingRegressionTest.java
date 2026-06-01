@@ -7,6 +7,7 @@ import com.nongxinle.ai.context.AiUserContextResolver;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
 import com.nongxinle.ai.security.AiRoleCodes;
+import com.nongxinle.ai.scope.AiConversationScopeMode;
 import com.nongxinle.ai.scope.AiQueryScope;
 import com.nongxinle.utils.GbConstants;
 import org.junit.jupiter.api.Test;
@@ -69,6 +70,25 @@ class BusinessToolExecutionGroupWideRoutingRegressionTest {
 
         assertThat(st.getAiUserContext().getSourceAdminRole()).isEqualTo(GbConstants.DepartmentUserRole.GROUP_MANAGER_APP);
         assertThat(BusinessToolExecutionNode.shouldRouteGroupWideBusinessOverview(st)).isTrue();
+    }
+
+    @Test
+    void groupManagerApp_storeConversationMode_doesNotRouteWideDishInsight() {
+        AiUserContextResolver ur = AiDepartmentUserTestRows.resolverReturning(
+                AiDepartmentUserTestRows.groupManager(703, 1, 99));
+        AiRunCreateRequest rq = new AiRunCreateRequest();
+        rq.setUserId(703L);
+        rq.setDepartmentId(100L);
+        rq.setDistributerId(99L);
+
+        AiRunState st = sampleState(ur, rq, AiResolvedOrgScope.SCOPE_STORE);
+        st.setResolvedQueryContext(
+                AiResolvedQueryContext.builder()
+                        .orgScope(st.getResolvedQueryContext().getOrgScope())
+                        .conversationScopeMode(AiConversationScopeMode.STORE)
+                        .build());
+
+        assertThat(BusinessToolExecutionNode.shouldRouteGroupWideDishInsight(st)).isFalse();
     }
 
     @Test

@@ -64,7 +64,7 @@ public final class SemanticParserInputBuilder {
             LocalDate today,
             AiConversationTurnMemory previousTurn,
             AiResolvedOrgScope orgScope) {
-        return build(normalizedUserMessage, today, previousTurn, orgScope, null, null);
+        return build(normalizedUserMessage, today, previousTurn, orgScope, null, null, null);
     }
 
     public static SemanticParserInput build(
@@ -74,6 +74,21 @@ public final class SemanticParserInputBuilder {
             AiResolvedOrgScope orgScope,
             SemanticDomainRouteResult domainRoute,
             DomainContractSelectionResult contractSelection) {
+        return build(
+                normalizedUserMessage, today, previousTurn, orgScope, domainRoute, contractSelection, null);
+    }
+
+    /**
+     * @param contractHintPreviousTurn 保留 API 兼容；V2 边界见 Prompt，不再由此参数注入 Java 中文 hints。
+     */
+    public static SemanticParserInput build(
+            String normalizedUserMessage,
+            LocalDate today,
+            AiConversationTurnMemory previousTurn,
+            AiResolvedOrgScope orgScope,
+            SemanticDomainRouteResult domainRoute,
+            DomainContractSelectionResult contractSelection,
+            AiConversationTurnMemory contractHintPreviousTurn) {
         if (today == null) {
             throw new IllegalArgumentException("today must not be null");
         }
@@ -91,6 +106,10 @@ public final class SemanticParserInputBuilder {
             b.allowedOutputContract(contractSelection.getParserAllowedOutputContract());
         }
         return b.build();
+    }
+
+    private static String blank(String s) {
+        return StringUtils.hasText(s) ? s.trim() : null;
     }
 
     /**
@@ -127,6 +146,7 @@ public final class SemanticParserInputBuilder {
                 ss.put("metric", blankDbg(ssv.getMetric()));
                 ss.put("sourceFacet", blankDbg(ssv.getSourceFacet()));
                 ss.put("anchorPolicy", blankDbg(ssv.getAnchorPolicy()));
+                ss.put("mentionedDishName", blankDbg(ssv.getMentionedDishName()));
                 p.put("semanticSlots", ss);
             } else {
                 p.put("semanticSlots", null);
@@ -190,11 +210,37 @@ public final class SemanticParserInputBuilder {
                 row.put("requiresAnchor", e.getRequiresAnchor());
                 row.put("anchorType", e.getAnchorType());
                 row.put("selectedTools", e.getSelectedTools());
-                row.put("description", e.getDescription());
-                row.put("examples", e.getExamples());
+                row.put("selectionHint", e.getSelectionHint());
+                row.put("negativeHint", e.getNegativeHint());
+                if (e.getPositiveExamples() != null && !e.getPositiveExamples().isEmpty()) {
+                    row.put("positiveExamples", e.getPositiveExamples());
+                }
+                if (e.getNegativeExamples() != null && !e.getNegativeExamples().isEmpty()) {
+                    row.put("negativeExamples", e.getNegativeExamples());
+                }
+                if (StringUtils.hasText(e.getCapabilityStatus())) {
+                    row.put("capabilityStatus", e.getCapabilityStatus());
+                }
+                if (StringUtils.hasText(e.getGapMarker())) {
+                    row.put("gapMarker", e.getGapMarker());
+                }
                 entries.add(row);
             }
             m.put("allowedContracts", entries);
+        }
+        if (contract.getKnownGapContracts() != null && !contract.getKnownGapContracts().isEmpty()) {
+            List<LinkedHashMap<String, Object>> gapRows = new ArrayList<>();
+            for (SemanticParserAllowedOutputContract.AllowedContractEntry e : contract.getKnownGapContracts()) {
+                if (e == null) {
+                    continue;
+                }
+                gapRows.add(mapContractEntryRow(e));
+            }
+            m.put("knownGapContracts", gapRows);
+        }
+        if (contract.getContractSelectionBoundaryHints() != null
+                && !contract.getContractSelectionBoundaryHints().isEmpty()) {
+            m.put("contractSelectionBoundaryHints", contract.getContractSelectionBoundaryHints());
         }
         m.put("allowedWires", contract.getAllowedWires());
         m.put("allowedQueryObjects", contract.getAllowedQueryObjects());
@@ -204,6 +250,33 @@ public final class SemanticParserInputBuilder {
         m.put("allowedDetailWanted", contract.getAllowedDetailWanted());
         m.put("allowedAnswerPlanTypes", contract.getAllowedAnswerPlanTypes());
         return m;
+    }
+
+    private static LinkedHashMap<String, Object> mapContractEntryRow(
+            SemanticParserAllowedOutputContract.AllowedContractEntry e) {
+        LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+        row.put("contractId", e.getContractId());
+        row.put("wire", e.getWire());
+        row.put("metric", e.getMetric());
+        row.put("metrics", e.getMetrics());
+        row.put("operation", e.getOperation());
+        row.put("operations", e.getOperations());
+        row.put("queryObject", e.getQueryObject());
+        row.put("selectionHint", e.getSelectionHint());
+        row.put("negativeHint", e.getNegativeHint());
+        if (e.getPositiveExamples() != null && !e.getPositiveExamples().isEmpty()) {
+            row.put("positiveExamples", e.getPositiveExamples());
+        }
+        if (e.getNegativeExamples() != null && !e.getNegativeExamples().isEmpty()) {
+            row.put("negativeExamples", e.getNegativeExamples());
+        }
+        if (StringUtils.hasText(e.getCapabilityStatus())) {
+            row.put("capabilityStatus", e.getCapabilityStatus());
+        }
+        if (StringUtils.hasText(e.getGapMarker())) {
+            row.put("gapMarker", e.getGapMarker());
+        }
+        return row;
     }
 
     private static SemanticParserIntakeRouteInput mapSemanticRoute(SemanticDomainRouteResult route) {
@@ -235,6 +308,7 @@ public final class SemanticParserInputBuilder {
                 .mentionedStoreName(mentionedStore)
                 .mentionedStoreNames(null)
                 .mentionedDishName(trimToNull(mem.getLastMentionedDishName()))
+                .mentionedGoodsName(resolvePreviousMentionedGoodsName(mem))
                 .semanticSlots(mem.getLastSemanticSlots())
                 .resultAnchorsSummary(summarizeResultAnchorsForSemanticParser(mem.getLastResultAnchors()))
                 .build();
@@ -242,6 +316,29 @@ public final class SemanticParserInputBuilder {
 
     private static String blankDbg(String s) {
         return StringUtils.hasText(s) ? s.trim() : null;
+    }
+
+    private static String resolvePreviousMentionedGoodsName(AiConversationTurnMemory mem) {
+        if (mem == null) {
+            return null;
+        }
+        if (mem.getLastSemanticSlots() != null
+                && StringUtils.hasText(mem.getLastSemanticSlots().getMentionedGoodsName())) {
+            return trimToNull(mem.getLastSemanticSlots().getMentionedGoodsName());
+        }
+        if (mem.getLastResultAnchors() != null) {
+            for (var a : mem.getLastResultAnchors()) {
+                if (a == null || !StringUtils.hasText(a.getEntityType())) {
+                    continue;
+                }
+                if (!com.nongxinle.ai.dto.business.AiResultAnchor.ENTITY_TYPE_GOODS.equalsIgnoreCase(
+                        a.getEntityType().trim())) {
+                    continue;
+                }
+                return trimToNull(a.getEntityName());
+            }
+        }
+        return null;
     }
 
     private static String summarizeResultAnchorsForSemanticParser(List<AiResultAnchor> anchors) {

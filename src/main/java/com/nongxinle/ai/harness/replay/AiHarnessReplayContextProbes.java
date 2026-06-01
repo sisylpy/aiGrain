@@ -55,8 +55,13 @@ public final class AiHarnessReplayContextProbes {
         out.put(
                 "harnessReplayDishProfitAnswerPlanSortDirection",
                 DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN.equals(dishPlan)
+                                || DishProfitAnswerPlan.TYPE_DISH_LOWEST_PROFIT_AMOUNT.equals(dishPlan)
                         ? "ASC"
-                        : DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN.equals(dishPlan) ? "DESC" : null);
+                        : DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN.equals(dishPlan)
+                                || DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT.equals(dishPlan)
+                                || DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST.equals(dishPlan)
+                        ? "DESC"
+                        : null);
 
         boolean purchaseProbePath =
                 AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(path)
@@ -210,6 +215,15 @@ public final class AiHarnessReplayContextProbes {
         }
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN.equals(wire)) {
             return DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN;
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT.equals(wire)) {
+            return DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT;
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_PROFIT_AMOUNT.equals(wire)) {
+            return DishProfitAnswerPlan.TYPE_DISH_LOWEST_PROFIT_AMOUNT;
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(wire)) {
+            return DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST;
         }
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(wire)) {
             return DishProfitAnswerPlan.TYPE_DISH_PROFIT_RATE;

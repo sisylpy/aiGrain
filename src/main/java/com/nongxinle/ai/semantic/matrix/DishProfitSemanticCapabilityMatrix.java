@@ -62,6 +62,8 @@ public final class DishProfitSemanticCapabilityMatrix {
             Set.of(
                     DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN,
                     DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN,
+                    DishProfitAnswerPlan.TYPE_DISH_LOWEST_PROFIT_AMOUNT,
+                    DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT,
                     DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST,
                     DishProfitAnswerPlan.TYPE_DISH_COST_GAP,
                     DishProfitAnswerPlan.TYPE_DISH_PROFIT_REASON,
@@ -99,6 +101,26 @@ public final class DishProfitSemanticCapabilityMatrix {
                     "GROSS_MARGIN_RATE",
                     true);
 
+    public static final DishProfitSemanticCapabilityMatrixRow RANKING_LOW_PROFIT_AMOUNT =
+            firstTurnRow(
+                    "DP-R0n",
+                    AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_PROFIT_AMOUNT,
+                    DishProfitAnswerPlan.TYPE_DISH_LOWEST_PROFIT_AMOUNT,
+                    "DISH",
+                    "RANKING",
+                    "GROSS_PROFIT_AMOUNT",
+                    true);
+
+    public static final DishProfitSemanticCapabilityMatrixRow RANKING_HIGH_PROFIT_AMOUNT =
+            firstTurnRow(
+                    "DP-R0p",
+                    AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT,
+                    DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT,
+                    "DISH",
+                    "RANKING",
+                    "GROSS_PROFIT_AMOUNT",
+                    true);
+
     public static final DishProfitSemanticCapabilityMatrixRow RANKING_HIGH_ACTUAL_COST =
             firstTurnRow(
                     "DP-R0c",
@@ -107,8 +129,7 @@ public final class DishProfitSemanticCapabilityMatrix {
                     "DISH",
                     "RANKING",
                     "ACTUAL_COST",
-                    true,
-                    KNOWN_GAP_EXTENDED_RANKINGS_NOT_IN_P2G);
+                    true);
 
     public static final DishProfitSemanticCapabilityMatrixRow RANKING_MAX_COST_GAP =
             firstTurnRow(
@@ -218,6 +239,8 @@ public final class DishProfitSemanticCapabilityMatrix {
                 OVERVIEW,
                 RANKING_LOW_MARGIN,
                 RANKING_HIGH_MARGIN,
+                RANKING_LOW_PROFIT_AMOUNT,
+                RANKING_HIGH_PROFIT_AMOUNT,
                 RANKING_HIGH_ACTUAL_COST,
                 RANKING_MAX_COST_GAP,
                 LOW_PROFIT_REASON,
@@ -331,6 +354,25 @@ public final class DishProfitSemanticCapabilityMatrix {
     public static String targetPlanTypeForWire(String wire) {
         DishProfitSemanticCapabilityMatrixRow row = findFirstTurnRowByWire(wire);
         return row == null ? null : row.getTargetDishProfitPlanType();
+    }
+
+    public static boolean isRankingTargetPlanType(String planType) {
+        if (!StringUtils.hasText(planType)) {
+            return false;
+        }
+        return switch (planType.trim()) {
+            case DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN,
+                    DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN,
+                    DishProfitAnswerPlan.TYPE_DISH_LOWEST_PROFIT_AMOUNT,
+                    DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT,
+                    DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST,
+                    DishProfitAnswerPlan.TYPE_DISH_COST_GAP -> true;
+            default -> false;
+        };
+    }
+
+    public static boolean isRankingStructuredWire(String wire) {
+        return isRankingTargetPlanType(targetPlanTypeForWire(wire));
     }
 
     public static String capabilityIdForDishAnchorFollowUp(String detailWanted) {

@@ -78,10 +78,21 @@ public final class DataPlannerContractToolsSupport {
             return new ArrayList<>(pathDefaultTools);
         }
         String path = effectivePathCode.trim();
+        if (AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(path)) {
+            LinkedHashSet<String> allowed = new LinkedHashSet<>(pathDefaultTools);
+            allowed.add(AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST);
+            allowed.add(AiBusinessToolIds.WAREHOUSE_GOODS_SUPPORTED_DISH_COVER);
+            return new ArrayList<>(allowed);
+        }
         if (AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(path)
-                || AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(path)) {
+                || AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(path)
+                || AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS.equals(path)
+                || AiResolvedQueryIntent.PATH_MENU_OPERATION.equals(path)) {
             LinkedHashSet<String> allowed = new LinkedHashSet<>(pathDefaultTools);
             allowed.add(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN);
+            allowed.add(AiBusinessToolIds.DISH_COST_ANALYSIS);
+            allowed.add(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+            allowed.add(AiBusinessToolIds.DISH_SALES_ANALYSIS_CARD);
             return new ArrayList<>(allowed);
         }
         return new ArrayList<>(pathDefaultTools);

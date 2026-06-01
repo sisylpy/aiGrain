@@ -29,6 +29,12 @@ public class GbDistributerFoodGoodsEntity implements Serializable {
     private String gbDfgGoodsStandardname;
     private Integer gbDfgStatus;
 
+    /**
+     * 近 30 日库存批次采购单价（gb_department_goods_stock.gb_dgs_price）均值；无有效记录为 "0"。
+     */
+    @TableField(exist = false)
+    private String gbDfgGoodsAveragePrice;
+
     @TableField(exist = false)
     private GbDistributerGoodsEntity gbDistributerGoodsEntity;
 

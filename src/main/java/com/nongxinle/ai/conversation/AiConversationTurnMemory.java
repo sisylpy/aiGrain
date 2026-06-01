@@ -8,8 +8,10 @@ import com.alibaba.fastjson2.JSON;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
+import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
+import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -156,7 +158,13 @@ public class AiConversationTurnMemory {
                 }
             }
         }
-        if (!StringUtils.hasText(dishForMemory) && state.getDishSalesAnswerPlan() != null) {
+        String dishSalesStructuredWire =
+                structured != null
+                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(structured.trim())
+                        : null;
+        if (!StringUtils.hasText(dishForMemory)
+                && state.getDishSalesAnswerPlan() != null
+                && !AiQuerySemanticLexicon.isDishSalesRankingStructuredDetail(dishSalesStructuredWire)) {
             List<AiResultAnchor> das = state.getDishSalesAnswerPlan().getResultAnchors();
             if (das != null) {
                 for (AiResultAnchor a : das) {
@@ -170,12 +178,20 @@ public class AiConversationTurnMemory {
                 }
             }
         }
+        if (!StringUtils.hasText(dishForMemory) && state.isDishCostAnalysisPath()) {
+            dishForMemory = trimSummary(extractDishNameFromDishCostTool(state));
+        }
+
+        String goodsForMemory = trimSummary(resolveGoodsNameForTurnMemory(ctx, state));
 
         AiQuerySemanticParseResult.SemanticSlotsPart lastSlots = null;
         if (ctx != null && ctx.getQuerySemanticParse() != null) {
             lastSlots = ctx.getQuerySemanticParse().getSemanticSlots();
         }
         lastSlots = AiQuerySemanticSlotMerge.alignSemanticSlotsForTurnMemoryPersistence(lastSlots, structured);
+        if (StringUtils.hasText(goodsForMemory)) {
+            lastSlots = mergeMentionedGoodsNameIntoSlots(lastSlots, goodsForMemory);
+        }
 
         return AiConversationTurnMemory.builder()
                 .conversationId(state.getConversationId())
@@ -310,7 +326,120 @@ public class AiConversationTurnMemory {
                 }
             }
         }
+        appendDishCostToolResultAnchor(state, merged);
+        appendGoodsSupportedDishCoverResultAnchor(state, merged);
         return merged.isEmpty() ? null : merged;
+    }
+
+    private static String resolveGoodsNameForTurnMemory(AiResolvedQueryContext ctx, AiRunState state) {
+        if (ctx != null && ctx.getQuerySemanticParse() != null) {
+            String fromParse = ctx.getQuerySemanticParse().effectiveMentionedGoodsName();
+            if (StringUtils.hasText(fromParse)) {
+                return trimSummary(fromParse);
+            }
+        }
+        if (state != null && state.getGoodsSupportedDishCoverAnswerPlan() != null) {
+            String fromPlan = state.getGoodsSupportedDishCoverAnswerPlan().getGoodsName();
+            if (StringUtils.hasText(fromPlan)) {
+                return trimSummary(fromPlan);
+            }
+        }
+        return null;
+    }
+
+    private static AiQuerySemanticParseResult.SemanticSlotsPart mergeMentionedGoodsNameIntoSlots(
+            AiQuerySemanticParseResult.SemanticSlotsPart slots, String goodsName) {
+        if (!StringUtils.hasText(goodsName)) {
+            return slots;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart base =
+                slots != null ? slots : AiQuerySemanticParseResult.SemanticSlotsPart.builder().build();
+        return AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                .selectedContractId(base.getSelectedContractId())
+                .queryObject(base.getQueryObject())
+                .operation(base.getOperation())
+                .metric(base.getMetric())
+                .sourceFacet(base.getSourceFacet())
+                .anchorPolicy(base.getAnchorPolicy())
+                .detailWanted(base.getDetailWanted())
+                .structuredIntentDetailWire(base.getStructuredIntentDetailWire())
+                .answerPlanType(base.getAnswerPlanType())
+                .mentionedDishName(base.getMentionedDishName())
+                .mentionedGoodsName(goodsName.trim())
+                .requestedTargetGrossMarginRate(base.getRequestedTargetGrossMarginRate())
+                .build();
+    }
+
+    private static void appendGoodsSupportedDishCoverResultAnchor(
+            AiRunState state, List<AiResultAnchor> merged) {
+        if (state == null || state.getGoodsSupportedDishCoverAnswerPlan() == null) {
+            return;
+        }
+        GoodsSupportedDishCoverAnswerPlan plan = state.getGoodsSupportedDishCoverAnswerPlan();
+        if (!StringUtils.hasText(plan.getGoodsName())) {
+            return;
+        }
+        String entityId =
+                plan.getDisGoodsId() != null ? String.valueOf(plan.getDisGoodsId()) : null;
+        merged.add(
+                AiResultAnchor.builder()
+                        .entityType(AiResultAnchor.ENTITY_TYPE_GOODS)
+                        .entityName(plan.getGoodsName().trim())
+                        .entityId(entityId)
+                        .build());
+    }
+
+    private static void appendDishCostToolResultAnchor(AiRunState state, List<AiResultAnchor> merged) {
+        if (state == null || !state.isDishCostAnalysisPath()) {
+            return;
+        }
+        Map<String, Object> data = extractDishCostToolDataMap(state);
+        if (data == null) {
+            return;
+        }
+        Object dishNameObj = data.get("dishName");
+        if (dishNameObj == null || !StringUtils.hasText(dishNameObj.toString())) {
+            return;
+        }
+        String dishName = dishNameObj.toString().trim();
+        Object dishIdObj = data.get("dishId");
+        String entityId = dishIdObj != null && StringUtils.hasText(dishIdObj.toString())
+                ? dishIdObj.toString().trim()
+                : null;
+        merged.add(
+                AiResultAnchor.builder()
+                        .entityType(AiResultAnchor.ENTITY_TYPE_DISH)
+                        .entityId(entityId)
+                        .entityName(dishName)
+                        .sourcePlanType("DISH_COST_ANALYSIS")
+                        .build());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractDishCostToolDataMap(AiRunState state) {
+        if (state == null || state.getToolResults() == null) {
+            return null;
+        }
+        Object raw = state.getToolResults().get(AiBusinessToolIds.DISH_COST_ANALYSIS);
+        if (!(raw instanceof Map<?, ?> envelope)) {
+            return null;
+        }
+        Object dataObj = ((Map<String, Object>) envelope).get("data");
+        if (dataObj instanceof Map<?, ?> dataMap) {
+            return (Map<String, Object>) dataMap;
+        }
+        return null;
+    }
+
+    private static String extractDishNameFromDishCostTool(AiRunState state) {
+        Map<String, Object> data = extractDishCostToolDataMap(state);
+        if (data == null) {
+            return null;
+        }
+        Object dishNameObj = data.get("dishName");
+        return dishNameObj != null && StringUtils.hasText(dishNameObj.toString())
+                ? dishNameObj.toString().trim()
+                : null;
     }
 
     private static String resolveHarnessMentioned(AiResolvedQueryContext ctx) {
@@ -609,6 +738,9 @@ public class AiConversationTurnMemory {
         if (state.isPurchaseOverviewPath()) {
             return com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW;
         }
+        if (state.isDishCostAnalysisPath()) {
+            return com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS;
+        }
         if (state.isCostInsightPath() || state.isPurchaseCostInsightPath()) {
             return com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_COST_DIAGNOSIS;
         }
@@ -634,6 +766,8 @@ public class AiConversationTurnMemory {
                     com.nongxinle.ai.context.AiResolvedQueryIntent.REVENUE_OVERVIEW;
             case com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW ->
                     com.nongxinle.ai.context.AiResolvedQueryIntent.PURCHASE_OVERVIEW;
+            case com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS ->
+                    com.nongxinle.ai.context.AiResolvedQueryIntent.DISH_COST_ANALYSIS;
             case com.nongxinle.ai.context.AiResolvedQueryIntent.PATH_COST_DIAGNOSIS ->
                     com.nongxinle.ai.context.AiResolvedQueryIntent.COST_DIAGNOSIS;
             default -> null;

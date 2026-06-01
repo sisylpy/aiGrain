@@ -85,6 +85,14 @@ public interface GbDistributerPurchaseGoodsMapper extends BaseMapper<GbDistribut
 
     List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopPriceFluctuation(Map<String, Object> map);
 
+    List<Map<String, Object>> queryGbPurchaseGoodsUnitPriceChangedVsPrevious(Map<String, Object> map);
+
+    /**
+     * 本期平均采购单价 vs 对比期平均采购单价；条件同 {@link #queryGbPurchaseGoodsCount}。
+     * map 须含 {@code compareStartDate}、{@code compareStopDate}。
+     */
+    List<Map<String, Object>> queryGbPurchaseGoodsUnitPriceChangedPeriodAvgVsCompare(Map<String, Object> map);
+
     Integer queryGbDisGoodsTreeCount(Map<String, Object> map);
 
     List<GbDistributerGoodsEntity> queryDisTreeGoodsWithPurList(Map<String, Object> map);

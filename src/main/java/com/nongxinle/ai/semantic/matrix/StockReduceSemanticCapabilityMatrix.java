@@ -30,6 +30,16 @@ public final class StockReduceSemanticCapabilityMatrix {
     public static final String KNOWN_GAP_GOODS_WASTE_TYPE2_SQL_NOT_FILTERED =
             "GOODS_WASTE_RANKING_TYPE2_SQL_NOT_FILTERED";
 
+    /** P1：出库/核销异常检测合同未开放；Parser 须 needClarification，禁止用 waste/loss/overview 凑合。 */
+    public static final String KNOWN_GAP_OUTBOUND_ANOMALY_NOT_IN_P1 = "OUTBOUND_ANOMALY_NOT_IN_P1";
+
+    /**
+     * P1：商品出库数量/次数排行未开放；问「出库最多/用得最多/耗用最多」且未提金额时须 needClarification，
+     * 禁止误选 {@code stock_reduce.goods_amount_ranking}。
+     */
+    public static final String KNOWN_GAP_OUTBOUND_GOODS_COUNT_RANKING_NOT_IN_P1 =
+            "OUTBOUND_GOODS_COUNT_RANKING_NOT_IN_P1";
+
     private static final Set<String> OVERVIEW_PRIOR_PLAN_TYPES =
             Set.of(
                     StockReduceAnswerPlan.TYPE_STOCK_REDUCE_OVERVIEW,

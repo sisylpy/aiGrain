@@ -33,6 +33,8 @@
 |------------------------|--------------------------|
 | `dish_gross_profit_rate_ranking_low` | `dish_profit_ranking_low_margin` |
 | `dish_gross_profit_rate_ranking_high` | `dish_profit_ranking_high_margin` |
+| `dish_profit_ranking_high_profit_amount` | `dish_profit_ranking_high_profit_amount` |
+| `dish_profit_ranking_low_profit_amount` | `dish_profit_ranking_low_profit_amount` |
 | `dish_actual_cost_ranking_high`（及别名） | `dish_actual_cost_ranking_high` |
 | `dish_actual_cost_ranking_low` | `dish_actual_cost_ranking_low` |
 | `dish_theoretical_cost_ranking_high` / `_low` | 同名字面量 |
@@ -62,7 +64,8 @@
 |------------------|--------------|------|
 | **上个月哪个菜毛利率最低？** | `intent=DISH_PROFIT`；时间 `LAST_MONTH`（或等价起止）；排行：`metric.rankingType=dish_gross_profit_rate_ranking_low`。 | v2 **「菜品毛利」专节表格**明确该行映射；canonical → `dish_profit_ranking_low_margin`。 |
 | **核桃芽菜西芹毛利怎么样？** | `intent=DISH_PROFIT`；`mentionedDishName` 填菜名；**不要**输出 `dish_actual_cost_ranking_*`；`metric.rankingType=null`。 | v2：服务端落 `dish_gross_margin_query` 类单菜口径；承接排行榜后点菜名时**强制** `metricAction=OVERRIDE` 且 `rankingType=null`。 |
-| **哪个菜利润最高？** | v2 表格将 **「毛利最高 / 利润率最高 / 综合毛利率最高」** 与 `dish_gross_profit_rate_ranking_high` 对齐。 | **产品缺口**：用户若指 **绝对毛利金额**（非毛利率 %），v2 专节**未**单独枚举「按毛利额排行」的 `rankingType`；需后续语义扩展或与营业额域区分。 |
+| **哪个菜利润最高 / 最挣钱 / 挣的钱最多？** | Intake/V2 选 **`dish_profit.ranking_high_profit_amount`** → wire **`dish_profit_ranking_high_profit_amount`** → **`GROSS_PROFIT_AMOUNT`** → AnswerPlan **`DISH_HIGHEST_PROFIT_AMOUNT`**，`sortKey=grossProfitAmount`（元）。 | **与毛利率排行互斥**；勿选 `ranking_high_margin`。 |
+| **哪个菜毛利率最高 / 利润率最高？** | **`dish_profit.ranking_high_margin`** → **`dish_profit_ranking_high_margin`** → **`GROSS_MARGIN`** → **`DISH_HIGHEST_MARGIN`**，`sortKey=blendedGrossMarginRateOnListPrice`（%）。 | **保留**；合同 selectionHints 明确 **拒绝** 利润/最挣钱类问法。 |
 | **哪个菜成本最高？** | v1：**DISH_PROFIT** + `dish_actual_cost_ranking_high`（勿标 `COST_DIAGNOSIS`）；v2 表格「实际成本最高」。 | 与门店/部门成本诊断（`COST_DIAGNOSIS`）区分。 |
 | **哪个菜销量最高？** | 走 **`DISH_SALES_QUERY` / `dish_sales_query_path`** + **`DishSalesAnswerPlan`**（数据 **`dish_profit_analysis`**）。 | v2 须在 **`semanticSlots.structuredIntentDetailWire`** 给出销量排行 wire；**不**依赖服务端读 `metric.rankingType` 定 planType。 |
 | **哪个菜毛利异常？** | v1 `metric` 枚举中列出 `dish_low_profit_reason`；**无**单独「anomaly」字面 wire。 | 运行态：`DishProfitAgentNode` 对 `abnormalDishes` 有启发式筛选；**全域「异常排行榜」**无与采购异常同级的封闭 `rankingType` 专节。 |

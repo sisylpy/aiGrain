@@ -1,5 +1,6 @@
 package com.nongxinle.ai.core;
 
+import com.nongxinle.ai.composer.menu.MenuExpertPresentationPlan;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.security.AiPermissionDenied;
@@ -11,6 +12,8 @@ import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
+import com.nongxinle.ai.dto.business.DishProfitPrescriptionAnswerPlan;
+import com.nongxinle.ai.dto.business.MenuOperationAnswerPlan;
 import com.nongxinle.ai.dto.cost.AiCostDiagnosisResult;
 import com.nongxinle.ai.planner.BusinessDiagnosisCompositeExecutionResult;
 import com.nongxinle.ai.planner.BusinessDiagnosisCompositeGateResult;
@@ -22,6 +25,7 @@ import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -46,6 +50,9 @@ public class AiRunState {
 
     private Long departmentId;
     private Long distributerId;
+
+    /** 与 {@link com.nongxinle.ai.platform.dto.AiRunCreateRequest#getScopeMode()} 对齐；异步 resolve 时回灌请求。 */
+    private String scopeMode;
 
     private String rawUserInput;
     private String normalizedUserInput;
@@ -80,6 +87,17 @@ public class AiRunState {
     private List<String> selectedAgents = new ArrayList<>();
 
     private String finalAnswerText;
+
+    /**
+     * 前端 context bar 结构化字段（store/time/scope 短标签）；不含 Composer 长段边界说明。
+     */
+    @Builder.Default
+    private Map<String, Object> answerContextSummary = new LinkedHashMap<>();
+
+    /**
+     * Harness：Composer 曾拼接的完整上下文前言（boundary / scope / intent / permission）。
+     */
+    private String answerContextPreambleDebug;
 
     /** Harness：AnswerComposer LLM system prompt 所使用的 promptId；未调用 Composer LLM 时为 null。 */
     private String composerPromptRegistryId;
@@ -172,6 +190,16 @@ public class AiRunState {
     @Builder.Default
     private boolean dishProfitPath = false;
 
+    /** 单菜菜品成本+销售分析（{@code dish_cost_analysis_path}；不启用 {@link #dishProfitPath}）。 */
+    @Builder.Default
+    private boolean dishCostAnalysisPath = false;
+
+    /**
+     * 菜单经营顾问专线（{@code menu_operation_path}；独立于 {@link #dishProfitPath}）。
+     */
+    @Builder.Default
+    private boolean menuOperationPath = false;
+
     /**
      * 经营诊断编排链（采购概览 + 出库/核销 + 菜品毛利透视；独立 path，不启用 {@link #dishProfitPath}）。
      */
@@ -197,6 +225,26 @@ public class AiRunState {
      * 菜品销量/销售额排行：本轮 AnswerPlan（Harness / Debug；Phase 1 数据来自 {@link com.nongxinle.ai.tool.business.AiBusinessToolIds#DISH_PROFIT_ANALYSIS} 快照）。
      */
     private DishSalesAnswerPlan dishSalesAnswerPlan;
+
+    /**
+     * 菜单经营顾问：本轮 AnswerPlan（Harness / Composer 只读；独立于 {@link DishProfitAnswerPlan}）。
+     */
+    private MenuOperationAnswerPlan menuOperationAnswerPlan;
+
+    /**
+     * 单菜利润处方卡：contract {@code dish.profit.prescription.v1}；Harness / Composer / cards[] 只读。
+     */
+    private DishProfitPrescriptionAnswerPlan dishProfitPrescriptionAnswerPlan;
+
+    /**
+     * 单菜配料可支撑天数：contract {@code dish.ingredient_cover_days.v1}；Harness / Composer / cards[] 只读。
+     */
+    private com.nongxinle.ai.dto.business.DishIngredientCoverAnswerPlan dishIngredientCoverAnswerPlan;
+
+    /**
+     * 原料 → 受影响菜品可支撑：contract {@code warehouse.goods_supported_dish_cover.v1}；Harness / Composer / cards[] 只读。
+     */
+    private com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan goodsSupportedDishCoverAnswerPlan;
 
     /**
      * 采购概览：本轮 AnswerPlan（{@link com.nongxinle.ai.graph.business.PurchaseOverviewTool} 结果衍生；Composer 后续只读）。
@@ -227,8 +275,44 @@ public class AiRunState {
     /** 采购概览结构化摘要（供 {@code answer_delta.data.purchaseOverview}）。 */
     private Map<String, Object> purchaseOverview;
 
+    /**
+     * Tool 产出的结构化卡片（如 {@code DISH_COST_ANALYSIS_CARD}）；供 SSE / 历史消息 hydrated。
+     */
+    private Map<String, Object> cardPayload;
+
+    /** 兼容小程序 {@code cards[0]} 读取路径；通常与 {@link #cardPayload} 同源。 */
+    @Builder.Default
+    private List<Map<String, Object>> cards = new ArrayList<>();
+
+    /** Run 终态是否已有可下发卡片（Harness / SSE / 历史消息 hydrated）。 */
+    public boolean isCardPayloadPresent() {
+        return cardPayload != null && !cardPayload.isEmpty();
+    }
+
+    /** Run 终态是否已有 {@code cards[0]} 兼容列表。 */
+    public boolean isCardsPresent() {
+        return cards != null && !cards.isEmpty();
+    }
+
     /** 审核节点占位输出（如 passed/score）；供 Composer 汇入最终提示。 */
     private Map<String, Object> outcomeReviewStub;
+
+    /** Harness：菜单专家 LLM 本轮实际 prompt/input 快照（仅 MENU_ACTION_RECOMMENDATION）。 */
+    private Map<String, Object> menuExpertPromptPreview;
+
+    /** Harness：菜单专家 LLM 原始/归一化输出快照。 */
+    private Map<String, Object> menuExpertLlmOutputPreview;
+
+    /** Harness：菜单专家 Composer 采用/拒绝决策。 */
+    private Map<String, Object> menuExpertComposerDecision;
+
+    /** Harness：营业额卡菜品销量原因 Agent 输入/输出/终稿观测（仅 debug 下发）。 */
+    private Map<String, Object> dishSalesReasonAgentHarnessDebug;
+
+    /**
+     * 菜单专家 LLM 展示计划（仅 {@code MENU_ACTION_RECOMMENDATION} 且 Guard 通过时写入）。
+     */
+    private MenuExpertPresentationPlan menuExpertPresentationPlan;
 
     /**
      * MasterBusinessAgent 编排调试摘要（扁平字段见 {@link com.nongxinle.ai.harness.AiHarnessResolvedContextSummarizer}）。

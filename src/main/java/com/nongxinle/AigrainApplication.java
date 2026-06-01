@@ -5,7 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-@MapperScan({"com.nongxinle.mapper", "com.nongxinle.dao"})
+@MapperScan("com.nongxinle.mapper")
 public class AigrainApplication {
 
     public static void main(String[] args) {

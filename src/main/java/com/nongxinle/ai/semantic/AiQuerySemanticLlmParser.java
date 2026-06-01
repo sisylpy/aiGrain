@@ -2,6 +2,7 @@ package com.nongxinle.ai.semantic;
 
 import com.alibaba.fastjson2.JSON;
 import com.nongxinle.ai.gateway.LlmGateway;
+import com.nongxinle.ai.gateway.LlmGatewayFailureMarker;
 import com.nongxinle.ai.prompt.AiPromptIds;
 import com.nongxinle.ai.prompt.AiPromptService;
 import lombok.RequiredArgsConstructor;
@@ -156,7 +157,12 @@ public class AiQuerySemanticLlmParser {
                         normalizedRaw);
             }
             AiQuerySemanticParseResult success =
-                    markRepaired(repaired, repairReason, true, null);
+                    markRepaired(
+                            AiQuerySemanticParseResult.mergeDishAnchorIfAbsent(
+                                    normalizedParsed, repaired),
+                            repairReason,
+                            true,
+                            null);
             if (repairedNorm.relocate().changed()) {
                 String relocateSuffix =
                         "java_protocol_relocate:" + String.join(";", repairedNorm.relocate().moves());
@@ -218,8 +224,7 @@ public class AiQuerySemanticLlmParser {
         }
         String err =
                 parsed.isParseMissing()
-                        ? AiQuerySemanticParseResultJsonParser.describeParseFailureReason(
-                                attempt.observationRaw())
+                        ? resolveParseMissingError(attempt.observationRaw())
                         : null;
         AiQuerySemanticParseResult out =
                 parsed.toBuilder()
@@ -229,6 +234,13 @@ public class AiQuerySemanticLlmParser {
                         .build();
         logSemanticInvocation("v2", pid, attempt.observationRaw(), out, null);
         return out;
+    }
+
+    private static String resolveParseMissingError(String raw) {
+        if (LlmGatewayFailureMarker.isMarked(raw)) {
+            return SemanticLlmFailureClassification.CODE_LLM_SERVICE_UNAVAILABLE;
+        }
+        return AiQuerySemanticParseResultJsonParser.describeParseFailureReason(raw);
     }
 
     private static String truncateSemanticObservationRaw(String r) {

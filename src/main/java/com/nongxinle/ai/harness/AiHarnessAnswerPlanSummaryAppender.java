@@ -11,8 +11,12 @@ import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
+import com.nongxinle.ai.dto.business.DishIngredientCoverAnswerPlan;
+import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
+import com.nongxinle.ai.dto.business.DishProfitPrescriptionAnswerPlan;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
+import com.nongxinle.ai.dto.business.MenuOperationAnswerPlan;
 import com.nongxinle.ai.harness.replay.AiHarnessReplayContextProbes;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.alibaba.fastjson2.JSON;
@@ -73,10 +77,20 @@ final class AiHarnessAnswerPlanSummaryAppender {
         out.put("dishSalesAnswerPlan", null);
         out.put("dishSalesAnswerPlanPresent", false);
         out.put("dishSalesAnswerPlanType", null);
-        out.put("dishSalesMatrixRowId", null);
+        out.put("dishSalesMatrixObservedRowId", null);
+        out.put("dishSalesMatrixObservedWire", null);
+        out.put("dishSalesMatrixObservedDebugOnly", null);
         out.put("dishSalesMatrixWireMissing", null);
-        out.put("dishSalesStructuredIntentDetailWire", null);
         out.put("dishSalesKnownGap", null);
+        out.put("menuOperationAnswerPlan", null);
+        out.put("menuOperationAnswerPlanPresent", false);
+        out.put("menuOperationAnswerPlanType", null);
+        out.put("menuOperationFocusDishCount", null);
+        out.put("menuOperationRiskDishCount", null);
+        out.put("menuOperationRecommendedActionCount", null);
+        out.put("dishProfitPrescriptionAnswerPlan", null);
+        out.put("dishProfitPrescriptionAnswerPlanPresent", false);
+        out.put("dishProfitPrescriptionAnswerPlanType", null);
         out.put("purchaseAnswerPlan", null);
         out.put("purchaseAnswerPlanPresent", false);
         out.put("purchaseAnswerPlanType", null);
@@ -195,6 +209,10 @@ final class AiHarnessAnswerPlanSummaryAppender {
         }
         appendDishProfitAnswerPlan(out, state);
         appendDishSalesAnswerPlan(out, state);
+        appendMenuOperationAnswerPlan(out, state);
+        appendDishProfitPrescriptionAnswerPlan(out, state);
+        appendDishIngredientCoverAnswerPlan(out, state);
+        appendGoodsSupportedDishCoverAnswerPlan(out, state);
         appendPurchaseAnswerPlan(out, state);
         appendStockReduceAnswerPlan(out, state);
         appendRevenueAnswerPlan(out, state);
@@ -236,6 +254,12 @@ final class AiHarnessAnswerPlanSummaryAppender {
                 out.put("dishProfitAnswerPlan", JSON.parseObject(JSON.toJSONString(dppFlat)));
                 out.put("dishProfitAnswerPlanPresent", true);
                 out.put("dishProfitAnswerPlanType", summarizeDishProfitAnswerPlanTypeLabel(dppFlat.getPlanType()));
+                out.put(
+                        "dishProfitAnswerPlanSortKey",
+                        AiHarnessSummaryUtils.blankToNull(dppFlat.getSortKey()));
+                out.put(
+                        "dishProfitAnswerPlanSortDirection",
+                        AiHarnessSummaryUtils.blankToNull(dppFlat.getSortDirection()));
                 List<?> dra = dppFlat.getResultAnchors();
                 out.put(
                         "dishProfitAnswerPlanResultAnchorsCount",
@@ -268,6 +292,8 @@ final class AiHarnessAnswerPlanSummaryAppender {
                 out.put("dishProfitAnswerPlanWarning", "serialize_failed");
                 out.put("dishProfitAnswerPlanPresent", false);
                 out.put("dishProfitAnswerPlanType", null);
+                out.put("dishProfitAnswerPlanSortKey", null);
+                out.put("dishProfitAnswerPlanSortDirection", null);
                 out.put("dishProfitAnswerPlanResultAnchorsCount", null);
                 out.put("dishProfitAnswerPlanResultAnchorTypes", null);
                 out.put("ingredientBreakdownAvailable", null);
@@ -280,6 +306,8 @@ final class AiHarnessAnswerPlanSummaryAppender {
             out.put("dishProfitAnswerPlan", null);
             out.put("dishProfitAnswerPlanPresent", false);
             out.put("dishProfitAnswerPlanType", null);
+            out.put("dishProfitAnswerPlanSortKey", null);
+            out.put("dishProfitAnswerPlanSortDirection", null);
             out.put("dishProfitAnswerPlanResultAnchorsCount", null);
             out.put("dishProfitAnswerPlanResultAnchorTypes", null);
             out.put("ingredientBreakdownAvailable", null);
@@ -317,9 +345,10 @@ final class AiHarnessAnswerPlanSummaryAppender {
         if (out == null) {
             return;
         }
-        out.put("dishSalesMatrixRowId", null);
+        out.put("dishSalesMatrixObservedRowId", null);
+        out.put("dishSalesMatrixObservedWire", null);
+        out.put("dishSalesMatrixObservedDebugOnly", null);
         out.put("dishSalesMatrixWireMissing", null);
-        out.put("dishSalesStructuredIntentDetailWire", null);
         out.put("dishSalesKnownGap", null);
     }
 
@@ -334,12 +363,140 @@ final class AiHarnessAnswerPlanSummaryAppender {
             putDishSalesMatrixHarnessTopDefaults(out);
             return;
         }
-        copyDebugString(out, dbg, "dishSalesMatrixRowId");
+        copyDebugString(out, dbg, "matrixObservedRowId", "dishSalesMatrixObservedRowId");
+        copyDebugString(out, dbg, "matrixObservedWire", "dishSalesMatrixObservedWire");
+        copyDebugBoolean(out, dbg, "matrixObservedDebugOnly", "dishSalesMatrixObservedDebugOnly");
         copyDebugString(out, dbg, "dishSalesMatrixWireMissing");
-        copyDebugString(out, dbg, "dishSalesStructuredIntentDetailWire");
         copyDebugString(out, dbg, "dishSalesKnownGap");
         if (dbg.get("dishSalesAnswerPlanType") != null) {
             out.put("dishSalesAnswerPlanType", dbg.get("dishSalesAnswerPlanType").toString().trim());
+        }
+    }
+
+    private static void appendMenuOperationAnswerPlan(LinkedHashMap<String, Object> out, AiRunState state) {
+        MenuOperationAnswerPlan mop = state.getMenuOperationAnswerPlan();
+        if (mop != null) {
+            try {
+                out.put("menuOperationAnswerPlan", JSON.parseObject(JSON.toJSONString(mop)));
+                out.put("menuOperationAnswerPlanPresent", true);
+                out.put("menuOperationAnswerPlanType", mop.getPlanType());
+                out.put(
+                        "menuOperationFocusDishCount",
+                        mop.getFocusDishes() == null ? 0 : mop.getFocusDishes().size());
+                out.put(
+                        "menuOperationRiskDishCount",
+                        mop.getRiskDishes() == null ? 0 : mop.getRiskDishes().size());
+                out.put(
+                        "menuOperationRecommendedActionCount",
+                        mop.getRecommendedActions() == null ? 0 : mop.getRecommendedActions().size());
+            } catch (Exception ex) {
+                out.put("menuOperationAnswerPlan", null);
+                out.put("menuOperationAnswerPlanWarning", "serialize_failed");
+                out.put("menuOperationAnswerPlanPresent", false);
+                out.put("menuOperationAnswerPlanType", null);
+                out.put("menuOperationFocusDishCount", null);
+                out.put("menuOperationRiskDishCount", null);
+                out.put("menuOperationRecommendedActionCount", null);
+            }
+        } else {
+            out.put("menuOperationAnswerPlan", null);
+            out.put("menuOperationAnswerPlanPresent", false);
+            out.put("menuOperationAnswerPlanType", null);
+            out.put("menuOperationFocusDishCount", null);
+            out.put("menuOperationRiskDishCount", null);
+            out.put("menuOperationRecommendedActionCount", null);
+        }
+    }
+
+    /** 配料可支撑天数卡片行字段探针（与 {@link DishIngredientCoverAnswerPlan} enriched 行一致）。 */
+    private static final String[] HARNESS_DISH_INGREDIENT_COVER_ROW_PROBE_KEYS = {
+            "ingredientName",
+            "recipeUnitPerDish",
+            "currentStockQty",
+            "dailyExpectedUsageQty",
+            "coverDays",
+            "isBottleneck",
+    };
+
+    private static void appendDishIngredientCoverAnswerPlan(LinkedHashMap<String, Object> out, AiRunState state) {
+        DishIngredientCoverAnswerPlan plan = state.getDishIngredientCoverAnswerPlan();
+        if (plan != null) {
+            try {
+                out.put("dishIngredientCoverAnswerPlan", JSON.parseObject(JSON.toJSONString(plan)));
+                out.put("dishIngredientCoverAnswerPlanPresent", true);
+                out.put("dishIngredientCoverAnswerPlanType", plan.getPlanType());
+                out.put("dishIngredientCoverAnswerPlanStatus", plan.getStatus());
+                out.put("dishIngredientCoverDays", plan.getDishCoverDays());
+                out.put("dishIngredientCoverBottleneck", plan.getBottleneckIngredientName());
+                out.put("dishIngredientCoverDishName", plan.getDishName());
+                List<Map<String, Object>> coverRows = plan.getIngredientRows();
+                int coverRowCount = coverRows == null ? 0 : coverRows.size();
+                out.put("ingredientRowsCount", coverRowCount > 0 ? coverRowCount : null);
+                out.put(
+                        "ingredientRowFieldsPresent",
+                        computeHarnessIngredientRowFieldsPresent(coverRows, HARNESS_DISH_INGREDIENT_COVER_ROW_PROBE_KEYS));
+                boolean noRecipeGap =
+                        plan.getKnownGaps() != null && plan.getKnownGaps().contains("no_recipe_for_dish");
+                if (!noRecipeGap
+                        && plan.getDebug() != null
+                        && plan.getDebug().get("dishIngredientCoverNoRecipeGap") instanceof Boolean b) {
+                    noRecipeGap = b;
+                }
+                out.put("dishIngredientCoverNoRecipeGap", noRecipeGap);
+            } catch (Exception ex) {
+                out.put("dishIngredientCoverAnswerPlanPresent", false);
+            }
+        } else {
+            out.put("dishIngredientCoverAnswerPlan", null);
+            out.put("dishIngredientCoverAnswerPlanPresent", false);
+        }
+    }
+
+    private static void appendGoodsSupportedDishCoverAnswerPlan(
+            LinkedHashMap<String, Object> out, AiRunState state) {
+        GoodsSupportedDishCoverAnswerPlan plan = state.getGoodsSupportedDishCoverAnswerPlan();
+        if (plan != null) {
+            try {
+                out.put("goodsSupportedDishCoverAnswerPlan", JSON.parseObject(JSON.toJSONString(plan)));
+                out.put("goodsSupportedDishCoverAnswerPlanPresent", true);
+                out.put("goodsSupportedDishCoverAnswerPlanType", plan.getPlanType());
+                out.put("goodsSupportedDishCoverAnswerPlanStatus", plan.getStatus());
+                out.put("goodsSupportedDishCoverGoodsName", plan.getGoodsName());
+                List<Map<String, Object>> dishRows = plan.getDishRows();
+                int rowCount = dishRows == null ? 0 : dishRows.size();
+                out.put("goodsSupportedDishCoverDishRowsCount", rowCount > 0 ? rowCount : null);
+            } catch (Exception ex) {
+                out.put("goodsSupportedDishCoverAnswerPlanPresent", false);
+            }
+        } else {
+            out.put("goodsSupportedDishCoverAnswerPlan", null);
+            out.put("goodsSupportedDishCoverAnswerPlanPresent", false);
+        }
+    }
+
+    private static void appendDishProfitPrescriptionAnswerPlan(LinkedHashMap<String, Object> out, AiRunState state) {
+        DishProfitPrescriptionAnswerPlan plan = state.getDishProfitPrescriptionAnswerPlan();
+        if (plan != null) {
+            try {
+                out.put("dishProfitPrescriptionAnswerPlan", JSON.parseObject(JSON.toJSONString(plan)));
+                out.put("dishProfitPrescriptionAnswerPlanPresent", true);
+                out.put("dishProfitPrescriptionAnswerPlanType", plan.getPlanType());
+                out.put("dishProfitPrescriptionAnswerPlanStatus", plan.getStatus());
+                out.put("dishProfitPrescriptionKnownGaps", plan.getKnownGaps());
+            } catch (Exception ex) {
+                out.put("dishProfitPrescriptionAnswerPlan", null);
+                out.put("dishProfitPrescriptionAnswerPlanWarning", "serialize_failed");
+                out.put("dishProfitPrescriptionAnswerPlanPresent", false);
+                out.put("dishProfitPrescriptionAnswerPlanType", null);
+                out.put("dishProfitPrescriptionAnswerPlanStatus", null);
+                out.put("dishProfitPrescriptionKnownGaps", null);
+            }
+        } else {
+            out.put("dishProfitPrescriptionAnswerPlan", null);
+            out.put("dishProfitPrescriptionAnswerPlanPresent", false);
+            out.put("dishProfitPrescriptionAnswerPlanType", null);
+            out.put("dishProfitPrescriptionAnswerPlanStatus", null);
+            out.put("dishProfitPrescriptionKnownGaps", null);
         }
     }
 
@@ -355,6 +512,7 @@ final class AiHarnessAnswerPlanSummaryAppender {
                     out.put("purchaseAnswerPlanSortKey", dbg.get("sortKey"));
                     out.put("purchaseAnswerPlanSortDirection", dbg.get("sortDirection"));
                     out.put("purchaseAnswerPlanDebug", new LinkedHashMap<>(dbg));
+                    flattenPurchasePeriodGoodsDetailHarnessFields(out, pap.getPlanType(), dbg);
                 } else {
                     out.put("purchaseAnswerPlanSortKey", null);
                     out.put("purchaseAnswerPlanSortDirection", null);
@@ -493,8 +651,25 @@ final class AiHarnessAnswerPlanSummaryAppender {
 
     private static void copyDebugString(
             LinkedHashMap<String, Object> out, Map<String, Object> dbg, String key) {
-        Object v = dbg.get(key);
-        out.put(key, v == null || v.toString().isBlank() ? null : v.toString().trim());
+        copyDebugString(out, dbg, key, key);
+    }
+
+    private static void copyDebugString(
+            LinkedHashMap<String, Object> out, Map<String, Object> dbg, String dbgKey, String outKey) {
+        Object v = dbg.get(dbgKey);
+        out.put(outKey, v == null || v.toString().isBlank() ? null : v.toString().trim());
+    }
+
+    private static void copyDebugBoolean(
+            LinkedHashMap<String, Object> out, Map<String, Object> dbg, String dbgKey, String outKey) {
+        Object v = dbg.get(dbgKey);
+        if (v instanceof Boolean b) {
+            out.put(outKey, b);
+        } else if (v != null && StringUtils.hasText(v.toString())) {
+            out.put(outKey, Boolean.parseBoolean(v.toString().trim()));
+        } else {
+            out.put(outKey, null);
+        }
     }
 
     private static void appendWarehouseAnswerPlan(LinkedHashMap<String, Object> out, AiRunState state) {
@@ -676,10 +851,24 @@ final class AiHarnessAnswerPlanSummaryAppender {
         }
         if (AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(pathEff)
                 || state.isWarehouseStockOverviewPath()) {
+            if (state.getGoodsSupportedDishCoverAnswerPlan() != null) {
+                return "goodsSupportedDishCoverAnswerPlan";
+            }
             return state.getWarehouseAnswerPlan() != null ? "warehouseAnswerPlan" : "WarehouseStockAgent";
         }
         if (AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(pathEff)) {
             return "dishSalesAnswerPlan";
+        }
+        if (AiResolvedQueryIntent.PATH_MENU_OPERATION.equals(pathEff)) {
+            return "menuOperationAnswerPlan";
+        }
+        if (AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS.equals(pathEff)
+                && state.getDishIngredientCoverAnswerPlan() != null) {
+            return "dishIngredientCoverAnswerPlan";
+        }
+        if (AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS.equals(pathEff)
+                && state.getDishProfitPrescriptionAnswerPlan() != null) {
+            return "dishProfitPrescriptionAnswerPlan";
         }
         if (AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(pathEff)) {
             return "dishProfitAnswerPlan";
@@ -1075,7 +1264,13 @@ final class AiHarnessAnswerPlanSummaryAppender {
             return "低毛利排行";
         }
         if (DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN.equals(t)) {
-            return "高毛利排行";
+            return "高毛利率排行";
+        }
+        if (DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT.equals(t)) {
+            return "高利润额排行";
+        }
+        if (DishProfitAnswerPlan.TYPE_DISH_LOWEST_PROFIT_AMOUNT.equals(t)) {
+            return "低利润额排行";
         }
         if (DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN.equals(t)) {
             return "原料成本构成";
@@ -1099,7 +1294,12 @@ final class AiHarnessAnswerPlanSummaryAppender {
     }
 
     private static List<String> computeHarnessIngredientRowFieldsPresent(List<Map<String, Object>> rows) {
-        if (rows == null || rows.isEmpty()) {
+        return computeHarnessIngredientRowFieldsPresent(rows, HARNESS_INGREDIENT_ROW_COLUMN_PROBE_KEYS);
+    }
+
+    private static List<String> computeHarnessIngredientRowFieldsPresent(
+            List<Map<String, Object>> rows, String[] probeKeys) {
+        if (rows == null || rows.isEmpty() || probeKeys == null || probeKeys.length == 0) {
             return null;
         }
         LinkedHashSet<String> present = new LinkedHashSet<>();
@@ -1107,8 +1307,11 @@ final class AiHarnessAnswerPlanSummaryAppender {
             if (r == null || r.isEmpty()) {
                 continue;
             }
-            for (String k : HARNESS_INGREDIENT_ROW_COLUMN_PROBE_KEYS) {
+            for (String k : probeKeys) {
                 if (AiHarnessSummaryUtils.harnessNonBlankish(r.get(k))) {
+                    present.add(k);
+                }
+                if ("isBottleneck".equals(k) && r.get(k) instanceof Boolean) {
                     present.add(k);
                 }
             }
@@ -1147,5 +1350,17 @@ final class AiHarnessAnswerPlanSummaryAppender {
                 || AiHarnessSummaryUtils.harnessNonBlankish(r.get("costPerDish"))
                 || AiHarnessSummaryUtils.harnessNonBlankish(r.get("totalCost"))
                 || AiHarnessSummaryUtils.harnessNonBlankish(r.get("costRatio"));
+    }
+
+    private static void flattenPurchasePeriodGoodsDetailHarnessFields(
+            LinkedHashMap<String, Object> out, String planType, Map<String, Object> dbg) {
+        if (!PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL.equals(planType) || dbg == null) {
+            return;
+        }
+        out.put("purchasePeriodGoodsDetailActive", dbg.get("purchasePeriodGoodsDetailActive"));
+        out.put("purchasePeriodGoodsDetailQueryMethod", dbg.get("purchasePeriodGoodsDetailQueryMethod"));
+        out.put("purchasePeriodGoodsDetailRowsCount", dbg.get("purchasePeriodGoodsDetailRowsCount"));
+        out.put("purchasePeriodGoodsDetailNoDataReason", dbg.get("purchasePeriodGoodsDetailNoDataReason"));
+        out.put("periodGoodsDetailFocusRowsSize", dbg.get("periodGoodsDetailFocusRowsSize"));
     }
 }

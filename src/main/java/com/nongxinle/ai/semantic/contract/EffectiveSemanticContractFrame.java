@@ -77,6 +77,9 @@ public class EffectiveSemanticContractFrame {
     }
 
     private boolean hasGoodsAnchorEvidence() {
+        if (parse != null && StringUtils.hasText(parse.effectiveMentionedGoodsName())) {
+            return true;
+        }
         if (hasResultAnchorOfType(AiResultAnchor.ENTITY_TYPE_GOODS)) {
             return true;
         }
@@ -91,7 +94,11 @@ public class EffectiveSemanticContractFrame {
     }
 
     private boolean hasDishAnchorEvidence() {
-        if (parse != null && StringUtils.hasText(parse.getMentionedDishName())) {
+        if (parse != null && StringUtils.hasText(parse.effectiveMentionedDishName())) {
+            return true;
+        }
+        if (SemanticContractAnchorInheritanceSupport.hasStructuredDishAnchorEvidenceWhenUsePrevious(
+                parse, previousTurn, rewriteInheritedAnchorType, rewriteInheritedAnchorName)) {
             return true;
         }
         if (hasResultAnchorOfType(AiResultAnchor.ENTITY_TYPE_DISH)) {

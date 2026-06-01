@@ -4,6 +4,9 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.nongxinle.ai.history.AiConversationHistoryService;
 import com.nongxinle.ai.history.dto.*;
+import com.nongxinle.ai.composer.AiAnswerContextSummarySupport;
+import com.nongxinle.ai.platform.AiCardPayloadWireSupport;
+import com.nongxinle.ai.trace.AiRunSessionRegistry;
 import com.nongxinle.entity.*;
 import com.nongxinle.mapper.*;
 import com.nongxinle.ai.conversation.AiConversationCoreService;
@@ -40,6 +43,7 @@ public class AiConversationHistoryServiceImpl implements AiConversationHistorySe
     private final AiConversationCoreService conversationCoreService;
     private final GbAiWorkPinService gbAiWorkPinService;
     private final GbAiWorkNoteService gbAiWorkNoteService;
+    private final AiRunSessionRegistry runSessionRegistry;
 
     @Override
     public AiConversationListResponseDTO listConversations(Long userId,
@@ -200,6 +204,12 @@ public class AiConversationHistoryServiceImpl implements AiConversationHistorySe
                 gbAiWorkNoteService.mapActiveNoteIdsForMessages(userId, conversationId, messageIds);
 
         List<AiConversationMessageDTO> out = new ArrayList<>(rows.size());
+        Map<Long, GbAiMessageEntity> rowById = new HashMap<>(rows.size());
+        for (GbAiMessageEntity m : rows) {
+            if (m.getGbAiMessageId() != null) {
+                rowById.put(m.getGbAiMessageId(), m);
+            }
+        }
         for (GbAiMessageEntity m : rows) {
             Long mid = m.getGbAiMessageId();
             Long pinId = pinByMessageId.get(mid);
@@ -222,7 +232,29 @@ public class AiConversationHistoryServiceImpl implements AiConversationHistorySe
                             pinned,
                             pinId,
                             noted,
-                            noteId));
+                            noteId,
+                            null,
+                            null,
+                            null));
+        }
+        for (AiConversationMessageDTO dto : out) {
+            if ("assistant".equalsIgnoreCase(dto.getRole())) {
+                GbAiMessageEntity row = rowById.get(dto.getMessageId());
+                if (row != null) {
+                    AiAnswerContextSummarySupport.hydrateMessageFromPersistence(
+                            dto, row.getGbAiMessageContextSummaryJson());
+                    AiCardPayloadWireSupport.hydrateMessageCardsFromPersistence(
+                            dto, row.getGbAiMessageCardsJson());
+                }
+                if (dto.getContextSummary() == null || dto.getContextSummary().isEmpty()) {
+                    AiAnswerContextSummarySupport.hydrateMessageFromRunSession(
+                            dto, runSessionRegistry, dto.getRunId());
+                }
+                if (dto.getCards() == null || dto.getCards().isEmpty()) {
+                    AiCardPayloadWireSupport.hydrateMessageCardFromRunSession(
+                            dto, runSessionRegistry, dto.getRunId());
+                }
+            }
         }
         return new AiConversationMessagesResponseDTO(conversationId, out);
     }

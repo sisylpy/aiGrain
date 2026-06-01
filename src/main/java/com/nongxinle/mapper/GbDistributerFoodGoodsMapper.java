@@ -27,7 +27,9 @@ public interface GbDistributerFoodGoodsMapper extends BaseMapper<GbDistributerFo
 
     List<GbDistributerFoodGoodsEntity> queryFoodGoodsByParams(Map<String, Object> map);
 
-    List<GbDistributerFoodGoodsEntity> queryFoodGoodsByFoodId(Integer gbDfgFoodId);
+    List<GbDistributerFoodGoodsEntity> queryFoodGoodsByFoodId(@Param("gbDfgFoodId") Integer gbDfgFoodId,
+            @Param("stockAvgStartDate") String stockAvgStartDate,
+            @Param("stockAvgStopDate") String stockAvgStopDate);
 
     List<GbDistributerFoodGoodsEntity> queryFoodGoodsByDisGoodsId(@Param("disGoodsId") Integer disGoodsId,
             @Param("disId") Integer disId);

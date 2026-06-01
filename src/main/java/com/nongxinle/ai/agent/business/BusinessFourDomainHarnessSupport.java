@@ -16,8 +16,8 @@ public final class BusinessFourDomainHarnessSupport {
     }
 
     public static void populateHarnessContract(
-            BusinessAgentRequest.BusinessAgentRequestBuilder builder, AiRunState state, AiResolvedQueryContext rq) {
-        if (builder == null) {
+            BusinessAgentRequest request, AiRunState state, AiResolvedQueryContext rq) {
+        if (request == null) {
             return;
         }
         boolean diagnosisSurface = state != null && state.isBusinessDiagnosisPath();
@@ -40,12 +40,12 @@ public final class BusinessFourDomainHarnessSupport {
             purposeIntent = null;
         }
 
-        builder.orchestratedSurfaceIntentCode(surfaceIntent)
-                .orchestratedSurfacePathCode(surfacePath)
-                .orchestratedPurposeIntentCode(purposeIntent);
+        request.setOrchestratedSurfaceIntentCode(surfaceIntent);
+        request.setOrchestratedSurfacePathCode(surfacePath);
+        request.setOrchestratedPurposeIntentCode(purposeIntent);
         if (rq != null) {
-            builder.orchestratedOriginalIntentCode(rq.getEffectiveIntentCode())
-                    .orchestratedOriginalPathCode(rq.getEffectivePathCode());
+            request.setOrchestratedOriginalIntentCode(rq.getEffectiveIntentCode());
+            request.setOrchestratedOriginalPathCode(rq.getEffectivePathCode());
         }
     }
 

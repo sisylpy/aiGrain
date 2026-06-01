@@ -25,6 +25,8 @@
 			gb_ai_message_token_count,
 			gb_ai_message_run_id,
 			gb_ai_message_status,
+			gb_ai_message_cards_json,
+			gb_ai_message_context_summary_json,
 			gb_ai_message_create_time,
 			gb_ai_message_update_time
 		) VALUES (
@@ -35,12 +37,16 @@
 			0,
 			#{runId},
 			#{status},
+			#{cardsJson},
+			#{contextSummaryJson},
 			#{createTime},
 			#{updateTime}
 		)
 		ON DUPLICATE KEY UPDATE
 			gb_ai_message_content = VALUES(gb_ai_message_content),
 			gb_ai_message_status = VALUES(gb_ai_message_status),
+			gb_ai_message_cards_json = VALUES(gb_ai_message_cards_json),
+			gb_ai_message_context_summary_json = VALUES(gb_ai_message_context_summary_json),
 			gb_ai_message_update_time = VALUES(gb_ai_message_update_time)
 	</insert>
 

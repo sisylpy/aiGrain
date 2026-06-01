@@ -4,6 +4,7 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
+import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.frame.CurrentSemanticFrame;
@@ -69,12 +70,61 @@ public final class PurchaseSemanticExecutionIntentResolver {
         if (!StringUtils.hasText(contractId)) {
             return null;
         }
-        PurchaseSemanticCapabilityMatrixRow row = matrixRowForContractId(contractId.trim());
-        if (row == null) {
+        String trimmed = contractId.trim();
+        PurchaseSemanticCapabilityMatrixRow row = matrixRowForContractId(trimmed);
+        if (row != null) {
+            return withResolutionSource(
+                    buildGoodsAnchorIntent(row, frame, rq, trimmed), RESOLUTION_SOURCE_CONTRACT_ENTRY);
+        }
+        PurchaseSemanticExecutionIntent catalog = fromCatalogContract(trimmed, frame);
+        if (catalog != null) {
+            return withResolutionSource(catalog, RESOLUTION_SOURCE_CONTRACT_ENTRY);
+        }
+        return null;
+    }
+
+    private static PurchaseSemanticExecutionIntent fromCatalogContract(
+            String contractId, CurrentSemanticFrame frame) {
+        if (!isPeriodGoodsListContractId(contractId)) {
             return null;
         }
-        return withResolutionSource(
-                buildGoodsAnchorIntent(row, frame, rq, contractId.trim()), RESOLUTION_SOURCE_CONTRACT_ENTRY);
+        String defaultFacet = defaultSourceFacetForPeriodGoodsListContract(contractId);
+        String sourceFacet =
+                frame != null && StringUtils.hasText(frame.getSourceFacet())
+                        ? frame.getSourceFacet().trim()
+                        : defaultFacet;
+        return PurchaseSemanticExecutionIntent.builder()
+                .matchedContractId(contractId)
+                .wire(frame != null ? frame.getStructuredIntentDetailWire() : null)
+                .queryObject(frame != null ? frame.getQueryObject() : "GOODS")
+                .operation(frame != null ? frame.getOperation() : "DETAIL")
+                .detailWanted(frame != null ? frame.getDetailWanted() : null)
+                .sourceFacet(sourceFacet)
+                .answerPlanType(PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL)
+                .anchorResolved(false)
+                .executionIntentType(PurchaseSemanticExecutionIntent.EXEC_PERIOD_GOODS_LIST)
+                .toolDetailWantedKey("PERIOD_GOODS_LIST")
+                .build();
+    }
+
+    public static boolean isPeriodGoodsListContractId(String contractId) {
+        if (!StringUtils.hasText(contractId)) {
+            return false;
+        }
+        return switch (contractId.trim()) {
+            case "purchase.period_goods_list",
+                    "purchase.period_goods_list.self",
+                    "purchase.period_goods_list.supplier" -> true;
+            default -> false;
+        };
+    }
+
+    private static String defaultSourceFacetForPeriodGoodsListContract(String contractId) {
+        return switch (contractId.trim()) {
+            case "purchase.period_goods_list.self" -> AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE;
+            case "purchase.period_goods_list.supplier" -> AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE;
+            default -> AiQuerySemanticLexicon.SOURCE_ALL;
+        };
     }
 
     private static PurchaseSemanticExecutionIntent withResolutionSource(

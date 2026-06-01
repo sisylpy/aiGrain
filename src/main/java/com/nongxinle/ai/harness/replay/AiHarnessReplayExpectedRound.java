@@ -112,6 +112,12 @@ public class AiHarnessReplayExpectedRound {
     /** 非空：与摘要 {@code mentionedDishName} 精确匹配（trim 后）。 */
     private String mentionedDishName;
 
+    /** 非空：与摘要 {@code mentionedGoodsName} 精确匹配（trim 后）。 */
+    private String mentionedGoodsName;
+
+    /** 非空：与摘要顶层 {@code selectedContractId} 精确匹配（trim 后）。 */
+    private String selectedContractIdExpected;
+
     /** 非空：与摘要 {@code dishProfitMetricType} 精确匹配。 */
     private String dishProfitMetricType;
 
@@ -162,6 +168,9 @@ public class AiHarnessReplayExpectedRound {
      * 非空：将摘要整体 JSON 序列化后不得包含其中任一字串（防 v2_no_routable_path / Placeholder 等）。
      */
     private List<String> forbiddenSubstringsInSummaryJson = new ArrayList<>();
+
+    /** 非空：摘要 JSON 序列化后须包含其中任一字串（如 {@code DISH_INGREDIENT_COVER_DAYS_CARD}）。 */
+    private List<String> requiredSubstringsInSummaryJson = new ArrayList<>();
 
     /**
      * 若为 {@link Boolean#TRUE}：在 {@code querySemanticV2} 与 {@code querySemanticV2InputPreview} 树内不得出现键
@@ -222,8 +231,8 @@ public class AiHarnessReplayExpectedRound {
 
     private String harnessReplayWarehouseAnswerPlanType;
 
-    /** 非空：与摘要 {@code dishSalesMatrixRowId} 完全一致。 */
-    private String dishSalesMatrixRowIdExpected;
+    /** 非空：与摘要 {@code dishSalesMatrixObservedRowId} 完全一致（debug-only 观测，非主链 wire）。 */
+    private String dishSalesMatrixObservedRowIdExpected;
 
     /** 非空：与摘要 {@code dishSalesKnownGap} 完全一致。 */
     private String dishSalesKnownGapExpected;
@@ -305,6 +314,9 @@ public class AiHarnessReplayExpectedRound {
      */
     private String dishProfitAnswerPlanHumanTypeExpected;
 
+    /** 非空：摘要 {@code dishProfitAnswerPlanSortKey} 须完全一致（如 {@code grossProfitAmount}）。 */
+    private String dishProfitAnswerPlanSortKeyExpected;
+
     /** 非 null：摘要 {@code dishProfitAnswerPlanResultAnchorsCount} 须 ≥ 该值。 */
     private Integer dishProfitAnswerPlanResultAnchorsCountMin;
 
@@ -320,6 +332,25 @@ public class AiHarnessReplayExpectedRound {
      * {@code ingredientBreakdownAvailable} + 非空 {@code ingredientRows} 推导；其它场景回退工具信封。
      */
     private Boolean dishIngredientCostBreakdownToolSuccessExpected;
+
+    /**
+     * 非空：摘要 {@code dishIngredientCoverAnswerPlanType} 须完全一致（如 {@code DISH_INGREDIENT_COVER_DAYS}）。
+     */
+    private String dishIngredientCoverAnswerPlanTypeExpected;
+
+    /** 非空：摘要 {@code dishIngredientCoverDishName} 须完全一致（如合同槽位 {@code mentionedDishName}）。 */
+    private String dishIngredientCoverDishNameExpected;
+
+    /** 非 null：摘要 {@code dishIngredientCoverNoRecipeGap} 须与该布尔一致。 */
+    private Boolean dishIngredientCoverNoRecipeGapExpected;
+
+    /**
+     * 非空：摘要 {@code goodsSupportedDishCoverAnswerPlanType} 须完全一致（如 {@code GOODS_SUPPORTED_DISH_COVER}）。
+     */
+    private String goodsSupportedDishCoverAnswerPlanTypeExpected;
+
+    /** 非空：摘要 {@code goodsSupportedDishCoverGoodsName} 须完全一致。 */
+    private String goodsSupportedDishCoverGoodsNameExpected;
 
     /** 非 null：摘要 {@code ingredientRowsCount} 须 ≥ 该值（有原料行时）。 */
     private Integer ingredientRowsCountMin;

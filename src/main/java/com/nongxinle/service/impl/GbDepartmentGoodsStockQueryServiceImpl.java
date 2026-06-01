@@ -88,9 +88,8 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
     @Override
     public List<GbDepartmentGoodsStockEntity> queryDisGoodsBusiness(Integer disGoodsId, String startDate, String stopDate) {
         Map<String, Object> mapMain = new HashMap<>();
-        mapMain.put("depGoodsId", disGoodsId);
+        mapMain.put("disGoodsId", disGoodsId);
         mapMain.put("dayuStatus", -1);
-        mapMain.put("restWeight", 0);
         if (startDate != null && !startDate.isEmpty()) {
             mapMain.put("startDate", startDate);
         }
@@ -101,7 +100,7 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
         List<GbDepartmentGoodsStockEntity> withRest = gbDepGoodsStockService.queryGoodsStockByParams(mapMain);
 
         Map<String, Object> mapToday = new HashMap<>();
-        mapToday.put("depGoodsId", disGoodsId);
+        mapToday.put("disGoodsId", disGoodsId);
         mapToday.put("dayuStatus", -1);
         mapToday.put("date", DateUtils.formatWhatDay(0));
         mapToday.put("equalRestWeight", 0);

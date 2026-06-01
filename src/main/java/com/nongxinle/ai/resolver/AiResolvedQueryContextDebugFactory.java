@@ -34,6 +34,9 @@ public final class AiResolvedQueryContextDebugFactory {
         if (StringUtils.hasText(r.getMentionedDishName())) {
             keys.add("mentionedDishName");
         }
+        if (r.getSemanticSlots() != null && StringUtils.hasText(r.getSemanticSlots().getMentionedDishName())) {
+            keys.add("semanticSlots.mentionedDishName");
+        }
         if (r.getConfidence() != null) {
             keys.add("confidence");
         }
@@ -117,6 +120,14 @@ public final class AiResolvedQueryContextDebugFactory {
         }
         List<String> e = r.effectiveMentionedStoreNames();
         return e == null || e.isEmpty() ? null : new ArrayList<>(e);
+    }
+
+    /** V2 观测：顶层或 semanticSlots 合并后的口述菜名。 */
+    public static String querySemanticV2EffectiveMentionedDishName(AiQuerySemanticParseResult r) {
+        if (r == null) {
+            return null;
+        }
+        return blankToNullSemantic(r.effectiveMentionedDishName());
     }
 
     private static String normalizeRouteParserDomain(String domain) {

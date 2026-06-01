@@ -40,4 +40,31 @@ public class SemanticCapabilityContract {
      * 例如 {@code first_turn_purchase_goods_amount_ranking_missing_contract}。
      */
     String gapMarker;
+    /**
+     * @deprecated 勿在 Exporter 新增；NL 放 Intake/V2/Harness。存量域 P2–P3 瘦身删除。
+     */
+    @Deprecated
+    String description;
+    /**
+     * @deprecated 勿在 Exporter 新增；NL 放 Intake/V2/Harness。存量域 P2–P3 瘦身删除。
+     */
+    @Deprecated
+    String selectionHint;
+    /**
+     * @deprecated 勿在 Exporter 新增；NL 放 Intake/V2/Harness。存量域 P2–P3 瘦身删除。
+     */
+    @Deprecated
+    String negativeHint;
+    /**
+     * @deprecated 勿在 Exporter 新增；回归问句放 Harness。存量域 P2–P3 瘦身删除。
+     */
+    @Deprecated
+    @Singular("positiveExample")
+    List<String> positiveExamples;
+    /**
+     * @deprecated 勿在 Exporter 新增；互斥用 contractId 指针放 V2。存量域 P2–P3 瘦身删除。
+     */
+    @Deprecated
+    @Singular("negativeExample")
+    List<String> negativeExamples;
 }

@@ -47,6 +47,8 @@ public class AiRunMessagePersistenceService {
                     content,
                     runId,
                     STATUS_COMPLETED,
+                    null,
+                    null,
                     now,
                     now);
         } catch (Exception e) {
@@ -68,7 +70,9 @@ public class AiRunMessagePersistenceService {
             Long userId,
             long runId,
             String content,
-            String status) {
+            String status,
+            String cardsJson,
+            String contextSummaryJson) {
         if (conversationId == null || userId == null) {
             return null;
         }
@@ -83,6 +87,8 @@ public class AiRunMessagePersistenceService {
                     effectiveContent,
                     runId,
                     effectiveStatus,
+                    cardsJson,
+                    contextSummaryJson,
                     now,
                     now);
         } catch (Exception e) {

@@ -26,6 +26,8 @@ public final class AiQuerySemanticLexicon {
             AiSemanticWireConstants.STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY;
     public static final String STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY =
             AiSemanticWireConstants.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY;
+    public static final String STRUCTURED_PURCHASE_PERIOD_GOODS_LIST =
+            AiSemanticWireConstants.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST;
     public static final String STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING =
             AiSemanticWireConstants.STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING;
     public static final String STRUCTURED_PURCHASE_GOODS_COUNT_RANKING =
@@ -50,6 +52,10 @@ public final class AiQuerySemanticLexicon {
             AiSemanticWireConstants.STRUCTURED_PURCHASE_FRESHNESS_RISK;
     public static final String STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING =
             AiSemanticWireConstants.STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING;
+    public static final String STRUCTURED_PURCHASE_STORE_COMPARE =
+            AiSemanticWireConstants.STRUCTURED_PURCHASE_STORE_COMPARE;
+    public static final String STRUCTURED_PURCHASE_STORE_PAIR_AMOUNT_COMPARE =
+            AiSemanticWireConstants.STRUCTURED_PURCHASE_STORE_PAIR_AMOUNT_COMPARE;
     public static final String STRUCTURED_SUPPLIER_AMOUNT_RANKING =
             AiSemanticWireConstants.STRUCTURED_SUPPLIER_AMOUNT_RANKING;
     public static final String STRUCTURED_SUPPLIER_RANKING = AiSemanticWireConstants.STRUCTURED_SUPPLIER_RANKING;
@@ -92,6 +98,10 @@ public final class AiQuerySemanticLexicon {
             AiSemanticWireConstants.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN;
     public static final String STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN =
             AiSemanticWireConstants.STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN;
+    public static final String STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT =
+            AiSemanticWireConstants.STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT;
+    public static final String STRUCTURED_DISH_PROFIT_RANKING_LOW_PROFIT_AMOUNT =
+            AiSemanticWireConstants.STRUCTURED_DISH_PROFIT_RANKING_LOW_PROFIT_AMOUNT;
     public static final String STRUCTURED_DISH_LOW_PROFIT_REASON =
             AiSemanticWireConstants.STRUCTURED_DISH_LOW_PROFIT_REASON;
     public static final String STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH =
@@ -125,6 +135,18 @@ public final class AiQuerySemanticLexicon {
     public static final String STRUCTURED_DISH_SALES_TREND = AiSemanticWireConstants.STRUCTURED_DISH_SALES_TREND;
     public static final String STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN =
             AiSemanticWireConstants.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN;
+    public static final String STRUCTURED_DISH_COST_ANALYSIS =
+            AiSemanticWireConstants.STRUCTURED_DISH_COST_ANALYSIS;
+    public static final String STRUCTURED_DISH_PROFIT_PRESCRIPTION =
+            AiSemanticWireConstants.STRUCTURED_DISH_PROFIT_PRESCRIPTION;
+    public static final String STRUCTURED_DISH_INGREDIENT_COVER_DAYS =
+            AiSemanticWireConstants.STRUCTURED_DISH_INGREDIENT_COVER_DAYS;
+    public static final String STRUCTURED_MENU_OPERATION_OVERVIEW =
+            AiSemanticWireConstants.STRUCTURED_MENU_OPERATION_OVERVIEW;
+    public static final String STRUCTURED_MENU_DISH_HIGH_SALES_LOW_PROFIT =
+            AiSemanticWireConstants.STRUCTURED_MENU_DISH_HIGH_SALES_LOW_PROFIT;
+    public static final String STRUCTURED_MENU_ACTION_RECOMMENDATION =
+            AiSemanticWireConstants.STRUCTURED_MENU_ACTION_RECOMMENDATION;
 
     public static final String STRUCTURED_REVENUE_OVERVIEW_SUMMARY =
             AiSemanticWireConstants.STRUCTURED_REVENUE_OVERVIEW_SUMMARY;
@@ -205,11 +227,22 @@ public final class AiQuerySemanticLexicon {
             AiSemanticWireConstants.STRUCTURED_WAREHOUSE_STOCK_ITEM_COUNT_RANKING;
     public static final String STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW =
             AiSemanticWireConstants.STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW;
+    public static final String STRUCTURED_GOODS_SUPPORTED_DISH_COVER =
+            AiSemanticWireConstants.STRUCTURED_GOODS_SUPPORTED_DISH_COVER;
     public static final String STRUCTURED_WAREHOUSE_NEAR_EXPIRY =
             AiSemanticWireConstants.STRUCTURED_WAREHOUSE_NEAR_EXPIRY;
 
     public static boolean isPurchaseOverviewDomainCanonicalWire(String canonicalWire) {
         return AiSemanticWireConstants.isPurchaseOverviewDomainCanonicalWire(canonicalWire);
+    }
+
+    /** 时段采购商品清单 wire（{@code purchase_period_goods_list}）。 */
+    public static boolean isPurchasePeriodGoodsListStructuredDetail(String structuredIntentDetail) {
+        if (!StringUtils.hasText(structuredIntentDetail)) {
+            return false;
+        }
+        return STRUCTURED_PURCHASE_PERIOD_GOODS_LIST.equals(
+                canonicalStructuredIntentDetailWire(structuredIntentDetail.trim()));
     }
 
     public static boolean isPurchaseAnomalyDetectionWire(String canonicalWire) {
@@ -388,6 +421,8 @@ public final class AiQuerySemanticLexicon {
                 || STRUCTURED_DISH_COST_GAP.equals(t) || STRUCTURED_DISH_GROSS_MARGIN_QUERY.equals(t)
                 || STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(t)
                 || STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN.equals(t)
+                || STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT.equals(t)
+                || STRUCTURED_DISH_PROFIT_RANKING_LOW_PROFIT_AMOUNT.equals(t)
                 || STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(t) || STRUCTURED_DISH_ACTUAL_COST_RANKING_LOW.equals(t)
                 || STRUCTURED_DISH_THEORETICAL_COST_RANKING_HIGH.equals(t)
                 || STRUCTURED_DISH_THEORETICAL_COST_RANKING_LOW.equals(t)
@@ -407,6 +442,7 @@ public final class AiQuerySemanticLexicon {
                 || STRUCTURED_WAREHOUSE_STOCK_OVERSTOCK_RISK.equals(t)
                 || STRUCTURED_WAREHOUSE_NEAR_EXPIRY.equals(t)
                 || STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW.equals(t)
+                || STRUCTURED_GOODS_SUPPORTED_DISH_COVER.equals(t)
                 || isStructuredWarehouseStockRankingDetail(t);
     }
 
@@ -439,10 +475,69 @@ public final class AiQuerySemanticLexicon {
                 || STRUCTURED_DISH_SALES_TREND.equals(t);
     }
 
+    /** 菜品销量单菜（含门店单菜）structured wire。 */
+    public static boolean isDishSalesSingleDishStructuredDetail(String structuredIntentDetail) {
+        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
+            return false;
+        }
+        String t = canonicalStructuredIntentDetailWire(structuredIntentDetail.trim());
+        return STRUCTURED_DISH_SALES_SINGLE_DISH.equals(t)
+                || STRUCTURED_DISH_SALES_STORE_SINGLE_DISH.equals(t);
+    }
+
+    /** 菜品销量排行/概览（非单菜）structured wire。 */
+    public static boolean isDishSalesRankingStructuredDetail(String structuredIntentDetail) {
+        return isStructuredDishSalesDetail(structuredIntentDetail)
+                && !isDishSalesSingleDishStructuredDetail(structuredIntentDetail);
+    }
+
+    public static boolean isStructuredDishCostAnalysisDetail(String structuredIntentDetail) {
+        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
+            return false;
+        }
+        return STRUCTURED_DISH_COST_ANALYSIS.equals(
+                canonicalStructuredIntentDetailWire(structuredIntentDetail.trim()));
+    }
+
+    public static boolean isStructuredDishProfitPrescriptionDetail(String structuredIntentDetail) {
+        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
+            return false;
+        }
+        return STRUCTURED_DISH_PROFIT_PRESCRIPTION.equals(
+                canonicalStructuredIntentDetailWire(structuredIntentDetail.trim()));
+    }
+
+    public static boolean isStructuredDishIngredientCoverDaysDetail(String structuredIntentDetail) {
+        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
+            return false;
+        }
+        return STRUCTURED_DISH_INGREDIENT_COVER_DAYS.equals(
+                canonicalStructuredIntentDetailWire(structuredIntentDetail.trim()));
+    }
+
+    /** {@code dish_cost_analysis_path} 下 contract-locked wire（成本卡、处方卡或配料可支撑天数）。 */
+    public static boolean isDishCostPathStructuredDetail(String structuredIntentDetail) {
+        return isStructuredDishCostAnalysisDetail(structuredIntentDetail)
+                || isStructuredDishProfitPrescriptionDetail(structuredIntentDetail)
+                || isStructuredDishIngredientCoverDaysDetail(structuredIntentDetail);
+    }
+
+    public static boolean isStructuredMenuOperationDetail(String structuredIntentDetail) {
+        if (structuredIntentDetail == null || structuredIntentDetail.isBlank()) {
+            return false;
+        }
+        String t = canonicalStructuredIntentDetailWire(structuredIntentDetail.trim());
+        return STRUCTURED_MENU_OPERATION_OVERVIEW.equals(t)
+                || STRUCTURED_MENU_DISH_HIGH_SALES_LOW_PROFIT.equals(t)
+                || STRUCTURED_MENU_ACTION_RECOMMENDATION.equals(t);
+    }
+
     public static boolean isDishProfitRankingStructuredDetail(String structuredIntentDetail) {
         String t = canonicalStructuredIntentDetailWire(structuredIntentDetail);
         return STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(t)
                 || STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN.equals(t)
+                || STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT.equals(t)
+                || STRUCTURED_DISH_PROFIT_RANKING_LOW_PROFIT_AMOUNT.equals(t)
                 || STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(t)
                 || STRUCTURED_DISH_ACTUAL_COST_RANKING_LOW.equals(t)
                 || STRUCTURED_DISH_THEORETICAL_COST_RANKING_HIGH.equals(t)
@@ -529,6 +624,8 @@ public final class AiQuerySemanticLexicon {
             case STRUCTURED_DISH_GROSS_MARGIN_QUERY -> "GROSS_MARGIN";
             case STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN -> "RANKING_LOW_MARGIN";
             case STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN -> "RANKING_HIGH_MARGIN";
+            case STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT -> "RANKING_HIGH_PROFIT_AMOUNT";
+            case STRUCTURED_DISH_PROFIT_RANKING_LOW_PROFIT_AMOUNT -> "RANKING_LOW_PROFIT_AMOUNT";
             case STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH -> "RANKING_HIGH_ACTUAL_COST";
             case STRUCTURED_DISH_GAP_RANKING_MAX -> "RANKING_MAX_GAP";
             case STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH -> "RANKING_SALES";

@@ -39,6 +39,12 @@ public class PurchaseAnswerPlan {
     /** 多店范围内：按门店采购金额对比/排序（数据来自采购 Tool 的门店覆盖行，不重跑 SQL）。 */
     public static final String TYPE_PURCHASE_STORE_AMOUNT_RANKING = "PURCHASE_STORE_AMOUNT_RANKING";
 
+    /** 时间窗内采购原料/商品明细清单（无锚点；数据来自 {@code queryDisTreeGoodsWithPurList}）。 */
+    public static final String TYPE_PURCHASE_PERIOD_GOODS_DETAIL = "PURCHASE_PERIOD_GOODS_DETAIL";
+
+    /** 原料采购清单卡（单域采购「买了什么」问法）。 */
+    public static final String CARD_TYPE_PURCHASE_GOODS_DETAIL = "PURCHASE_GOODS_DETAIL_CARD";
+
     /**
      * Phase2-A：单一 {@code disGoodsId} + 时间窗 + 权限范围下，按采购记录行 legacy 桶拆自采/供货商/其它（ALL 口径）。
      */

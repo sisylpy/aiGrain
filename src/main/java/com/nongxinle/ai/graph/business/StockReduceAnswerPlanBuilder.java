@@ -69,7 +69,9 @@ public final class StockReduceAnswerPlanBuilder {
         // contract-locked but no completed wire → early exit
         String completedWire = resolveWire(rq);
         baseDiag.put("completedWire", completedWire.isEmpty() ? null : completedWire);
-        if (completedWire.isEmpty()) {
+        boolean overviewFourDomainAttach =
+                BusinessOverviewSubPlanAttachSupport.isFourDomainSubPlanAttach(state, rq);
+        if (!overviewFourDomainAttach && completedWire.isEmpty()) {
             baseDiag.put("earlyReturnReason", "missing_contract_completed_wire");
             baseDiag.put("failureReason", "missing_contract_completed_wire");
             baseDiag.put("failureDetail",
@@ -82,7 +84,8 @@ public final class StockReduceAnswerPlanBuilder {
         // wire not in StockReduce accepted canonical wire set → early exit
         String canon = completedWire.isEmpty() ? null
                 : AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(completedWire.trim());
-        if (canon == null || !AiQuerySemanticLexicon.isStructuredStockReduceDetail(canon)) {
+        if (!overviewFourDomainAttach
+                && (canon == null || !AiQuerySemanticLexicon.isStructuredStockReduceDetail(canon))) {
             baseDiag.put("earlyReturnReason", "contract_wire_not_accepted_stock_reduce_matrix");
             baseDiag.put("failureReason", "contract_wire_not_accepted_stock_reduce_matrix");
             baseDiag.put("failureDetail", "contract wire not accepted by StockReduce matrix: " + completedWire);
@@ -90,6 +93,11 @@ public final class StockReduceAnswerPlanBuilder {
             log.info("[StockReduceAnswerPlan] earlyExit runId={} reason=contract_wire_not_accepted", state.getRunId());
             writeEmptyEarlyExitPlan(state, baseDiag);
             return;
+        }
+        if (overviewFourDomainAttach) {
+            baseDiag.put("attachMode", BusinessOverviewSubPlanAttachSupport.ATTACH_MODE);
+            baseDiag.put("orchestrationSubPlanWire",
+                    BusinessOverviewSubPlanAttachSupport.contractCompletedWire(rq));
         }
 
         Object env = state.getToolResults() == null ? null
@@ -177,7 +185,9 @@ public final class StockReduceAnswerPlanBuilder {
     static StockReduceAnswerPlan build(AiRunState state, Map<String, Object> inner, AiResolvedQueryContext rq,
             LinkedHashMap<String, Object> debug) {
         String wire = resolveWire(rq);
-        String planType = resolvePlanType(wire);
+        String planType = BusinessOverviewSubPlanAttachSupport.isFourDomainSubPlanAttach(state, rq)
+                ? StockReduceAnswerPlan.TYPE_STOCK_REDUCE_OVERVIEW
+                : resolvePlanType(wire);
         String reduceType = resolveReduceType(planType);
         String scopeLabel = resolveScopeLabel(inner, rq);
         String timeLabel = resolveTimeLabel(state, rq);

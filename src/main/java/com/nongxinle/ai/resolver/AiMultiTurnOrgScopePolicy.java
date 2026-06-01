@@ -76,7 +76,27 @@ public final class AiMultiTurnOrgScopePolicy {
             String dishProfitReasonDishHint,
             String structuredIntentDetailWire,
             AiQuerySemanticParseResult semanticLlm) {
+        return applyInheritedEffectiveOrgScope(
+                baselineOrg, previousTurn, rawMessage, dishProfitReasonDishHint,
+                structuredIntentDetailWire, semanticLlm, false);
+    }
+
+    /**
+     * @param explicitGroupScopeRequest Run 请求体显式 {@code scopeMode=GROUP}；为 true 时禁止 silent 继承上轮单店。
+     */
+    public static OrgScopeApplyOutcome applyInheritedEffectiveOrgScope(
+            AiResolvedOrgScope baselineOrg,
+            AiConversationTurnMemory previousTurn,
+            String rawMessage,
+            String dishProfitReasonDishHint,
+            String structuredIntentDetailWire,
+            AiQuerySemanticParseResult semanticLlm,
+            boolean explicitGroupScopeRequest) {
         if (baselineOrg == null || previousTurn == null) {
+            return new OrgScopeApplyOutcome(baselineOrg, false);
+        }
+        if (explicitGroupScopeRequest
+                && !RequestExplicitGroupScopeSupport.shouldAllowGroupToStoreNarrowing(rawMessage, semanticLlm)) {
             return new OrgScopeApplyOutcome(baselineOrg, false);
         }
         boolean contractLocked =

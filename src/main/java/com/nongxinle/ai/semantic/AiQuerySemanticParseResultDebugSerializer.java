@@ -30,7 +30,7 @@ public final class AiQuerySemanticParseResultDebugSerializer {
         m.put("metricAction", blankToNull(r.getMetricAction()));
         m.put("intent", blankToNull(r.getIntent()));
         m.put("domain", blankToNull(r.getSemanticDomain()));
-        m.put("mentionedDishName", blankToNull(r.getMentionedDishName()));
+        m.put("mentionedDishName", blankToNull(r.effectiveMentionedDishName()));
         m.put("confidence", r.getConfidence());
         if (r.getTime() != null) {
             LinkedHashMap<String, Object> t = new LinkedHashMap<>();
@@ -82,6 +82,8 @@ public final class AiQuerySemanticParseResultDebugSerializer {
             slot.put("detailWanted", blankToNull(ss.getDetailWanted()));
             slot.put("structuredIntentDetailWire", blankToNull(ss.getStructuredIntentDetailWire()));
             slot.put("answerPlanType", blankToNull(ss.getAnswerPlanType()));
+            slot.put("mentionedDishName", blankToNull(ss.getMentionedDishName()));
+            slot.put("requestedTargetGrossMarginRate", blankToNull(ss.getRequestedTargetGrossMarginRate()));
             m.put("semanticSlots", slot);
         } else {
             m.put("semanticSlots", null);

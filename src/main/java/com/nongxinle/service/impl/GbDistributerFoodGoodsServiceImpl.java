@@ -12,6 +12,8 @@ import com.nongxinle.mapper.GbDistributerFoodGoodsMapper;
 import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
 import com.nongxinle.service.GbDistributerFoodGoodsService;
 
+import static com.nongxinle.utils.DateUtils.formatWhatDay;
+
 
 @Service("gbDistributerFoodGoodsService")
 public class GbDistributerFoodGoodsServiceImpl implements GbDistributerFoodGoodsService {
@@ -60,9 +62,8 @@ public class GbDistributerFoodGoodsServiceImpl implements GbDistributerFoodGoods
 
     @Override
     public List<GbDistributerFoodGoodsEntity> queryFoodGoodsByFoodId(Integer foodId) {
-        Map<String, Object> map = new HashMap<>();
-        map.put("foodId", foodId);
-        return gbDistributerFoodGoodsMapper.queryFoodGoodsByParams(map);
+        return gbDistributerFoodGoodsMapper.queryFoodGoodsByFoodId(
+                foodId, formatWhatDay(-29), formatWhatDay(0));
     }
 
     @Override

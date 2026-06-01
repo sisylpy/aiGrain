@@ -4,6 +4,8 @@ import com.nongxinle.ai.context.AiDepartmentScopeDTO;
 import com.nongxinle.ai.context.AiResolvedDataScope;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
+import com.nongxinle.ai.context.ScopeResolutionTrace;
+import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AiRunState;
@@ -136,12 +138,18 @@ public class AiResolvedOrgScopeAssembler {
         }
 
         boolean allStores = AiResolvedOrgScope.SCOPE_GROUP.equals(org.getScopeType());
+        Integer queryDis =
+                allStores && org.getDistributerId() != null
+                        && org.getDistributerId() > 0
+                        && org.getDistributerId() <= Integer.MAX_VALUE
+                        ? org.getDistributerId().intValue()
+                        : null;
         List<Long> rootsCopy = new ArrayList<>(storeRoots);
         return AiResolvedDataScope.builder()
                 .queryScopeKind(AiResolvedDataScope.QUERY_SCOPE_KIND_STORE)
                 .queryStoreIds(new ArrayList<>(storeRootInts))
                 .queryRealDepartmentIds(new ArrayList<>())
-                .queryDistributerId(null)
+                .queryDistributerId(queryDis)
                 .storeToDepartmentIds(rootToChildrenInt)
                 .expandedSqlDepartmentIds(new ArrayList<>(expandedSqlInt))
                 .visibleStoreIds(new ArrayList<>(rootsCopy))
@@ -157,11 +165,26 @@ public class AiResolvedOrgScopeAssembler {
     }
 
     public AiResolvedOrgScope resolveOrgScope(AiUserContext ctx, Long requestDepartmentId, AiRunCreateRequest request) {
+        return resolveOrgScope(ctx, requestDepartmentId, request, null);
+    }
+
+    public AiResolvedOrgScope resolveOrgScope(
+            AiUserContext ctx,
+            Long requestDepartmentId,
+            AiRunCreateRequest request,
+            AiConversationScopeMode conversationScopeMode) {
+        AiResolvedOrgScope explicitGroup = buildBaselineGroupOrgScopeForRequest(ctx, requestDepartmentId, request);
+        if (explicitGroup != null) {
+            return explicitGroup;
+        }
         Integer admin = ctx.getSourceAdminRole();
         if (admin == null) {
             return buildDepartmentLikeScope(ctx, requestDepartmentId, AiResolvedOrgScope.SCOPE_DEPARTMENT, request);
         }
         if (Objects.equals(admin, GbConstants.DepartmentUserRole.GROUP_MANAGER_APP)) {
+            if (conversationScopeMode == AiConversationScopeMode.STORE) {
+                return buildStoreScope(ctx, requestDepartmentId, AiResolvedOrgScope.SCOPE_STORE, request);
+            }
             return buildGroupScope(ctx, requestDepartmentId, request);
         }
         if (Objects.equals(admin, GbConstants.DepartmentUserRole.STORE_MANAGER_APP)) {
@@ -177,6 +200,20 @@ public class AiResolvedOrgScopeAssembler {
     }
 
     /**
+     * 请求显式 {@code scopeMode=GROUP} 且角色具备集团广角权限时，直接展开 distributer 下全部门店。
+     */
+    public AiResolvedOrgScope buildBaselineGroupOrgScopeForRequest(
+            AiUserContext ctx, Long requestDepartmentId, AiRunCreateRequest request) {
+        if (!RequestExplicitGroupScopeSupport.isExplicitGroupScopeRequest(request)) {
+            return null;
+        }
+        if (ctx == null || !com.nongxinle.ai.mapping.AiRoleMapper.isGroupWideOrgScope(ctx.getRoleCode())) {
+            return null;
+        }
+        return buildGroupScope(ctx, requestDepartmentId, request);
+    }
+
+    /**
      * Run 请求体中的 {@code distributerId} 优先于用户表快照，避免集团账号挂靠部门与主体 ID 不一致时只展开一家门店。
      */
     public static Long mergedDistributerId(AiRunCreateRequest request, AiUserContext ctx) {
@@ -184,6 +221,24 @@ public class AiResolvedOrgScopeAssembler {
             return request.getDistributerId();
         }
         return ctx != null ? ctx.getDistributerId() : null;
+    }
+
+    /**
+     * Run 态 distributerId：请求体 → 用户快照 → 已解析 orgScope → 会话持久化值。
+     */
+    public static Long mergedRunDistributerId(
+            AiRunCreateRequest request,
+            AiUserContext ctx,
+            AiResolvedQueryContext resolved,
+            Long conversationDistributerId) {
+        Long dis = mergedDistributerId(request, ctx);
+        if (dis != null) {
+            return dis;
+        }
+        if (resolved != null && resolved.getOrgScope() != null && resolved.getOrgScope().getDistributerId() != null) {
+            return resolved.getOrgScope().getDistributerId();
+        }
+        return conversationDistributerId;
     }
 
     /**
@@ -203,6 +258,28 @@ public class AiResolvedOrgScopeAssembler {
         AiRunCreateRequest syn = new AiRunCreateRequest();
         syn.setDepartmentId(state.getDepartmentId());
         syn.setDistributerId(state.getDistributerId());
+        if (StringUtils.hasText(state.getScopeMode())) {
+            syn.setScopeMode(state.getScopeMode());
+        } else if (rq.getConversationScopeMode() == com.nongxinle.ai.scope.AiConversationScopeMode.GROUP) {
+            syn.setScopeMode("GROUP");
+        }
+
+        if ((rq.getConversationScopeMode() == com.nongxinle.ai.scope.AiConversationScopeMode.GROUP
+                        || RequestExplicitGroupScopeSupport.isExplicitGroupScopeRequest(syn))
+                && !AiResolvedOrgScope.SCOPE_GROUP.equals(org.getScopeType())
+                && !SemanticStoreNarrowingScopeSupport.isSemanticStoreNarrowingActive(rq)) {
+            AiResolvedOrgScope rebuilt =
+                    buildBaselineGroupOrgScopeForRequest(ctx, state.getDepartmentId(), syn);
+            if (rebuilt != null && AiResolvedOrgScope.SCOPE_GROUP.equals(rebuilt.getScopeType())) {
+                rq.setOrgScope(rebuilt);
+                org = rebuilt;
+                ScopeResolutionTrace trace = rq.getScopeResolutionTrace();
+                if (trace != null) {
+                    trace.setPostIntersectOrgScopeType(rebuilt.getScopeType());
+                    trace.setScopeIntersectPath("PATCH_RECOVERED_REQUEST_GROUP");
+                }
+            }
+        }
 
         Long mergedDis = mergedDistributerId(syn, ctx);
         Long prevDis = org.getDistributerId();
@@ -214,7 +291,9 @@ public class AiResolvedOrgScopeAssembler {
 
         if (AiResolvedOrgScope.SCOPE_GROUP.equals(scopeType)) {
             org.setCurrentDepartmentId(ctx.getDepartmentId());
-            if (mergedDis != null && prevDis != null && !Objects.equals(prevDis, mergedDis)) {
+            boolean semanticStoreNarrowing =
+                    SemanticStoreNarrowingScopeSupport.isSemanticStoreNarrowingActive(rq);
+            if (mergedDis != null && prevDis != null && !Objects.equals(prevDis, mergedDis) && !semanticStoreNarrowing) {
                 try {
                     int disPk = Math.toIntExact(mergedDis);
                     List<AiStoreScopeDTO> stores = loadStoreScopeDtosUnderDistributer(disPk);
@@ -282,6 +361,14 @@ public class AiResolvedOrgScopeAssembler {
 
         rq.setDataScope(buildDataScope(org));
         rq.setQueryScopeBanner(org.getQueryScopeBanner());
+        ScopeResolutionTrace trace = rq.getScopeResolutionTrace();
+        if (trace != null) {
+            trace.setPostIntersectOrgScopeType(org.getScopeType());
+            if (trace.getScopeIntersectPath() == null) {
+                trace.setScopeIntersectPath("PATCH_STORE_SUBTREE");
+            }
+            trace.snapshotDataScope(org, rq.getDataScope());
+        }
     }
 
     /**

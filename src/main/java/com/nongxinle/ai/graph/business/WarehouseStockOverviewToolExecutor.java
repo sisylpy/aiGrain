@@ -8,6 +8,11 @@ import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.graph.business.scope.BusinessScopeResolutionSupport;
+import com.nongxinle.ai.graph.business.DishIngredientCoverSalesBaseline;
+import com.nongxinle.ai.graph.business.DishIngredientCoverSalesBaselineSupport;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
+import com.nongxinle.ai.inventory.InventoryPresentationTimeSupport;
+import com.nongxinle.ai.inventory.InventoryQueryTimeKind;
 import com.nongxinle.ai.mapping.AiRoleMapper;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.security.AiPermissionGuard;
@@ -83,7 +88,21 @@ public class WarehouseStockOverviewToolExecutor {
         if (stop != null) {
             m.put(AiBusinessToolIds.ARG_STOP_DATE, stop);
         }
+        if (state != null) {
+            enrichInventorySnapshotToolArgs(m, AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW, state);
+        }
         return m;
+    }
+
+    static void enrichInventorySnapshotToolArgs(Map<String, Object> m, String toolId, AiRunState state) {
+        if (m == null || state == null || toolId == null || toolId.isBlank()) {
+            return;
+        }
+        InventoryQueryTimeKind kind = InventoryPresentationTimeSupport.resolveWarehouseToolKind(toolId);
+        m.put(AiBusinessToolIds.ARG_INVENTORY_QUERY_TIME_KIND, kind.name());
+        m.put(
+                AiBusinessToolIds.ARG_STOCK_AS_OF_DATE,
+                InventoryPresentationTimeSupport.resolveAsOfDateIso(state, state.getResolvedQueryContext()));
     }
 
     /**
@@ -153,6 +172,166 @@ public class WarehouseStockOverviewToolExecutor {
                 "success", executed.isSuccess()
         ));
         return executed;
+    }
+
+    public ToolResult executeWarehouseInventoryRiskList(
+            long rid,
+            AiRunState state,
+            Long deptForScopedTools,
+            Long dis,
+            String start,
+            String stop,
+            Map<String, Object> toolEnvelopes) {
+        String toolId = AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST;
+        ToolRequest req = ToolRequest.builder()
+                .runId(rid)
+                .userId(state.getUserId())
+                .toolName(toolId)
+                .args(buildWarehouseStockOverviewToolArgs(deptForScopedTools, dis, start, stop, state))
+                .resolvedQueryContext(state.getResolvedQueryContext())
+                .build();
+
+        var perm = permissionGuard.evaluateToolInvocation(state, req);
+        if (!perm.isAllowed()) {
+            AiPermissionDenied denial = perm.getDenial();
+            if (denial != null) {
+                state.getPermissionDenials().add(denial);
+            }
+            LinkedHashMap<String, Object> ex = new LinkedHashMap<>();
+            ex.put("tool", toolId);
+            publisher.publishError(rid,
+                    denial != null ? denial.getReason() : "无权调用工具 " + toolId,
+                    "tool permission denied",
+                    "TOOL_PERMISSION_DENIED",
+                    "BusinessError",
+                    ex,
+                    denial);
+            publisher.publish(rid, "tool_finished", Map.of(
+                    "tool", toolId,
+                    "skipped", true,
+                    "permissionDenied", denial != null ? denial.asDataMap() : Map.of(),
+                    "displayText", "无权执行该工具：" + toolId,
+                    "success", false
+            ));
+            return null;
+        }
+
+        publisher.publish(rid, "tool_started", Map.of(
+                "tool", toolId,
+                "displayText", "调用工具：" + toolId
+        ));
+
+        ToolResult executed = toolRegistry.find(toolId)
+                .map(t -> t.execute(req))
+                .orElseGet(() -> ToolResult.builder().success(false).message("unknown_tool").data(Map.of()).build());
+
+        Map<String, Object> payload = unwrapData(executed.getData());
+        state.getToolResults().put(toolId, payload != null ? payload : Map.of());
+        if (toolEnvelopes != null) {
+            toolEnvelopes.put(toolId, state.getToolResults().get(toolId));
+        }
+
+        publisher.publish(rid, "tool_finished", Map.of(
+                "tool", toolId,
+                "displayText", executed.isSuccess() ? "工具已完成：" + toolId : "工具失败：" + toolId,
+                "success", executed.isSuccess()
+        ));
+        return executed;
+    }
+
+    public ToolResult executeWarehouseGoodsSupportedDishCover(
+            long rid,
+            AiRunState state,
+            Long deptForScopedTools,
+            Long dis,
+            Map<String, Object> toolEnvelopes) {
+        String toolId = AiBusinessToolIds.WAREHOUSE_GOODS_SUPPORTED_DISH_COVER;
+        Map<String, Object> args =
+                buildGoodsSupportedDishCoverToolArgs(deptForScopedTools, dis, state);
+        ToolRequest req =
+                ToolRequest.builder()
+                        .runId(rid)
+                        .userId(state.getUserId())
+                        .toolName(toolId)
+                        .args(args)
+                        .resolvedQueryContext(state.getResolvedQueryContext())
+                        .build();
+
+        var perm = permissionGuard.evaluateToolInvocation(state, req);
+        if (!perm.isAllowed()) {
+            AiPermissionDenied denial = perm.getDenial();
+            if (denial != null) {
+                state.getPermissionDenials().add(denial);
+            }
+            publisher.publish(rid, "tool_finished", Map.of(
+                    "tool", toolId,
+                    "skipped", true,
+                    "permissionDenied", denial != null ? denial.asDataMap() : Map.of(),
+                    "displayText", "无权执行该工具：" + toolId,
+                    "success", false));
+            return null;
+        }
+
+        publisher.publish(rid, "tool_started", Map.of("tool", toolId, "displayText", "调用工具：" + toolId));
+
+        ToolResult executed =
+                toolRegistry
+                        .find(toolId)
+                        .map(t -> t.execute(req))
+                        .orElseGet(
+                                () ->
+                                        ToolResult.builder()
+                                                .success(false)
+                                                .message("unknown_tool")
+                                                .data(Map.of())
+                                                .build());
+
+        Map<String, Object> payload = unwrapData(executed.getData());
+        state.getToolResults().put(toolId, payload != null ? payload : Map.of());
+        if (toolEnvelopes != null) {
+            toolEnvelopes.put(toolId, state.getToolResults().get(toolId));
+        }
+
+        publisher.publish(
+                rid,
+                "tool_finished",
+                Map.of(
+                        "tool",
+                        toolId,
+                        "displayText",
+                        executed.isSuccess() ? "工具已完成：" + toolId : "工具失败：" + toolId,
+                        "success",
+                        executed.isSuccess()));
+        return executed;
+    }
+
+    public Map<String, Object> buildGoodsSupportedDishCoverToolArgs(
+            Long dept, Long dis, AiRunState state) {
+        Map<String, Object> m = new HashMap<>(16);
+        if (dept != null) {
+            m.put(AiBusinessToolIds.ARG_DEPARTMENT_FATHER_ID, dept);
+        }
+        if (dis != null) {
+            m.put(AiBusinessToolIds.ARG_DIS_ID, dis);
+        }
+        putWarehouseResolvedScopeArgs(m, state);
+        enrichInventorySnapshotToolArgs(m, AiBusinessToolIds.WAREHOUSE_GOODS_SUPPORTED_DISH_COVER, state);
+        if (state != null && state.getResolvedQueryContext() != null) {
+            var rq = state.getResolvedQueryContext();
+            Integer goodsId = ToolRequestContractExecutionParamSupport.resolveDisGoodsIdFromContract(rq);
+            if (goodsId != null) {
+                m.put(AiBusinessToolIds.ARG_PURCHASE_FOCUS_DIS_GOODS_ID, goodsId);
+            }
+            String goodsName = ToolRequestContractExecutionParamSupport.resolveGoodsNameFocusHint(rq);
+            if (goodsName != null && !goodsName.isBlank()) {
+                m.put(AiBusinessToolIds.ARG_PURCHASE_FOCUS_GOODS_NAME, goodsName);
+            }
+            DishIngredientCoverSalesBaseline baseline =
+                    DishIngredientCoverSalesBaselineSupport.resolve(state, rq);
+            m.put(AiBusinessToolIds.ARG_SALES_BASELINE_START_DATE, baseline.getStartDateIso());
+            m.put(AiBusinessToolIds.ARG_SALES_BASELINE_STOP_DATE, baseline.getStopDateIso());
+        }
+        return m;
     }
 
     private static void putWarehouseResolvedScopeArgs(Map<String, Object> m, AiRunState state) {

@@ -52,7 +52,7 @@ public final class AiFollowUpResolver {
                         && sem != null
                         && Boolean.TRUE.equals(sem.getFollowUp());
 
-        AiFollowUpResolution.AiFollowUpResolutionBuilder b =
+        AiFollowUpResolution resolution =
                 AiFollowUpResolution.builder()
                         .followUp(fu)
                         .followUpType("SEMANTIC_STRUCTURAL_MERGE")
@@ -63,11 +63,12 @@ public final class AiFollowUpResolver {
                         .normalizedInputExpandedAtResolvePhase(false)
                         .mergedQueryIntent(merged)
                         .mergedTimeWindow(mergedTw)
-                        .mergedOrgScope(mergedOrg);
+                        .mergedOrgScope(mergedOrg)
+                        .build();
 
-        b.purchaseStructuredIntent(merged.getStructuredIntentDetail());
-        b.purchaseSourceType(merged.getPurchaseSourceType());
-        return fillSources(b, merged, mergedTw, mergedOrg, previousTurn, norm);
+        resolution.setPurchaseStructuredIntent(merged.getStructuredIntentDetail());
+        resolution.setPurchaseSourceType(merged.getPurchaseSourceType());
+        return fillSources(resolution, merged, mergedTw, mergedOrg, previousTurn, norm);
     }
 
     /**
@@ -79,7 +80,7 @@ public final class AiFollowUpResolver {
 
         AiResolvedQueryIntent empty = AiResolvedQueryIntent.builder().build();
         String norm = normalized == null ? "" : AiUserMessageSanitizer.stripLeadingEnumeration(normalized).trim();
-        AiFollowUpResolution.AiFollowUpResolutionBuilder b =
+        AiFollowUpResolution resolution =
                 AiFollowUpResolution.builder()
                         .followUp(false)
                         .followUpType("NEED_SEMANTIC_CLARIFICATION")
@@ -90,19 +91,19 @@ public final class AiFollowUpResolver {
                         .normalizedInputExpandedAtResolvePhase(false)
                         .mergedQueryIntent(empty)
                         .mergedTimeWindow(explicitTimeOnlyOrNull)
-                        .mergedOrgScope(orgScopeDraft);
+                        .mergedOrgScope(orgScopeDraft)
+                        .build();
 
-        return fillSources(b, empty, explicitTimeOnlyOrNull, orgScopeDraft, null, norm);
+        return fillSources(resolution, empty, explicitTimeOnlyOrNull, orgScopeDraft, null, norm);
     }
 
     private static AiFollowUpResolution fillSources(
-            AiFollowUpResolution.AiFollowUpResolutionBuilder b,
+            AiFollowUpResolution r,
             AiResolvedQueryIntent merged,
             AiResolvedTimeWindow mergedTw,
             AiResolvedOrgScope mergedOrg,
             AiConversationTurnMemory previousTurn,
             String norm) {
-        AiFollowUpResolution r = b.build();
         if (merged != null) {
             if (mergedTw == null) {
                 r.setEffectiveTimeWindowSource("UNRESOLVED");
@@ -227,6 +228,9 @@ public final class AiFollowUpResolver {
         }
         if (AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(pathCode)) {
             return AiResolvedQueryIntent.DISH_SALES_QUERY;
+        }
+        if (AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS.equals(pathCode)) {
+            return AiResolvedQueryIntent.DISH_COST_ANALYSIS;
         }
         if (AiResolvedQueryIntent.PATH_COST_DIAGNOSIS.equals(pathCode)) {
             return AiResolvedQueryIntent.COST_DIAGNOSIS;
@@ -377,7 +381,19 @@ public final class AiFollowUpResolver {
                 .filter(StringUtils::hasText)
                 .reduce((a, b) -> a + "、" + b)
                 .orElse("选定门店");
-        String banner = "多店对比：" + bannerNames + "（" + picks.size() + "）";
+        final String banner;
+        if (picks.size() == 1) {
+            AiStoreScopeDTO only = picks.get(0);
+            String labelRoot =
+                    only != null && StringUtils.hasText(only.getStoreName())
+                            ? only.getStoreName().trim()
+                            : (only != null && only.getStoreDepartmentId() != null
+                                    ? "门店" + only.getStoreDepartmentId()
+                                    : "选定门店");
+            banner = labelRoot + "单店口径";
+        } else {
+            banner = "多店对比：" + bannerNames + "（" + picks.size() + "）";
+        }
         return AiResolvedOrgScope.builder()
                 .scopeType(AiResolvedOrgScope.SCOPE_GROUP)
                 .distributerId(org.getDistributerId())

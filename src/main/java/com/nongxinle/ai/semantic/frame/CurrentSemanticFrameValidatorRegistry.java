@@ -8,6 +8,7 @@ import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
 import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
@@ -73,6 +74,28 @@ public final class CurrentSemanticFrameValidatorRegistry {
             boolean followUpRewriteApplied,
             DomainContractSelectionResult contractSelection,
             boolean contractLocked) {
+        return validate(
+                domainCode,
+                frame,
+                parse,
+                previousTurn,
+                normalizedUserMessage,
+                followUpRewriteApplied,
+                contractSelection,
+                contractLocked,
+                null);
+    }
+
+    public static SemanticFrameValidationResult validate(
+            String domainCode,
+            CurrentSemanticFrame frame,
+            AiQuerySemanticParseResult parse,
+            AiConversationTurnMemory previousTurn,
+            String normalizedUserMessage,
+            boolean followUpRewriteApplied,
+            DomainContractSelectionResult contractSelection,
+            boolean contractLocked,
+            SemanticIntakeResult semanticIntake) {
         String domain = normalizeDomain(domainCode);
         if (!StringUtils.hasText(domain)) {
             return null;
@@ -113,7 +136,8 @@ public final class CurrentSemanticFrameValidatorRegistry {
                             previousTurn,
                             normalizedUserMessage,
                             followUpRewriteApplied,
-                            contractSelection);
+                            contractSelection,
+                            semanticIntake);
             default -> validateGenericContractEntry(domain, frame, parse, contractSelection);
         };
     }
@@ -239,6 +263,7 @@ public final class CurrentSemanticFrameValidatorRegistry {
             case AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW -> "PURCHASE";
             case AiResolvedQueryIntent.PATH_DISH_SALES_QUERY -> "DISH_SALES";
             case AiResolvedQueryIntent.PATH_DISH_PROFIT -> "DISH_PROFIT";
+            case AiResolvedQueryIntent.PATH_MENU_OPERATION -> "MENU_OPERATION";
             case AiResolvedQueryIntent.PATH_REVENUE_OVERVIEW -> "REVENUE";
             case AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY -> "STOCK_REDUCE";
             case AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK -> "WAREHOUSE";

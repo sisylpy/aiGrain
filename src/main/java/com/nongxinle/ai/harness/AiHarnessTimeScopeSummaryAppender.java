@@ -7,6 +7,7 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.context.AiSemanticStoreNarrowingDiagnostics;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
+import com.nongxinle.ai.context.ScopeResolutionTrace;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
@@ -43,7 +44,6 @@ final class AiHarnessTimeScopeSummaryAppender {
         appendTimeMergeDebugFields(out, ctx);
 
         AiResolvedTimeWindow tw = ctx.getTimeWindow();
-        LinkedHashMap<String, Object> timeBlock = new LinkedHashMap<>();
         if (tw != null) {
             out.put("startDate", tw.getStartDate() != null ? tw.getStartDate().toString() : null);
             out.put("endDate", tw.getEndDate() != null ? tw.getEndDate().toString() : null);
@@ -51,16 +51,11 @@ final class AiHarnessTimeScopeSummaryAppender {
             out.put("timeDisplayText", AiHarnessSummaryUtils.blankToNull(tw.getDisplayText()));
             out.put("timeInheritedFromPrevious", tw.isInheritedFromPreviousTurn());
             out.put("timeExplicitInMessage", AiHarnessSummaryUtils.harnessTimeExplicitForSummary(ctx, tw));
-            timeBlock.put("start", tw.getStartDate() != null ? tw.getStartDate().toString() : null);
-            timeBlock.put("end", tw.getEndDate() != null ? tw.getEndDate().toString() : null);
-            timeBlock.put("label", AiHarnessSummaryUtils.blankToNull(tw.getTimeLabel()));
-            timeBlock.put("displayText", AiHarnessSummaryUtils.blankToNull(tw.getDisplayText()));
         } else {
             out.put("startDate", null);
             out.put("endDate", null);
             out.put("timeLabel", null);
         }
-        out.put("time", timeBlock);
 
         AiResolvedOrgScope org = ctx.getOrgScope();
         out.put("scopeType", org != null ? AiHarnessSummaryUtils.blankToNull(org.getScopeType()) : null);
@@ -108,9 +103,7 @@ final class AiHarnessTimeScopeSummaryAppender {
             out.put("storeToDepartmentIds", stringifyStoreToDeptMap(ds.getStoreToDepartmentIds()));
 
             out.put("visibleStoreRootIds", new ArrayList<>(roots));
-            out.put("storeRootDepartmentIds", new ArrayList<>(roots));
             out.put("childDepartmentIds", new ArrayList<>(childOnly));
-            out.put("expandedChildDepartmentIds", new ArrayList<>(childOnly));
             out.put("expandedSqlDepartmentIds", new ArrayList<>(sqlExpanded));
             out.put("revenueSqlDepartmentIds", AiHarnessSummaryUtils.longList(ds.getSqlDepartmentIdsForDomain(AiResolvedDataScope.SQL_DOMAIN_REVENUE)));
             out.put("purchaseSqlDepartmentIds", AiHarnessSummaryUtils.longList(ds.getSqlDepartmentIdsForDomain(AiResolvedDataScope.SQL_DOMAIN_PURCHASE)));
@@ -122,7 +115,6 @@ final class AiHarnessTimeScopeSummaryAppender {
             out.put("visibleWarehouseIds", AiHarnessSummaryUtils.longList(ds.getVisibleWarehouseIds()));
             out.put("explicitChildDepartmentIds", AiHarnessSummaryUtils.longList(ds.getExplicitChildDepartmentIds()));
             out.put("queryScopeMode", qsm);
-            out.put("queryLevel", qsm);
             out.put("storeToChildDepartmentIds", stringifyStoreChildMap(ds.getStoreToChildDepartmentIds()));
             out.put("departmentScopeModelNote",
                     "主查询维度：queryScopeKind=STORE 用 queryStoreIds（门店根）；DEPARTMENT 用 queryRealDepartmentIds（仅真实部门）；"
@@ -131,9 +123,7 @@ final class AiHarnessTimeScopeSummaryAppender {
         } else {
             out.put("visibleStoreIds", null);
             out.put("visibleStoreRootIds", null);
-            out.put("storeRootDepartmentIds", null);
             out.put("childDepartmentIds", null);
-            out.put("expandedChildDepartmentIds", null);
             out.put("queryScopeKind", null);
             out.put("queryStoreIds", null);
             out.put("queryRealDepartmentIds", null);
@@ -148,10 +138,16 @@ final class AiHarnessTimeScopeSummaryAppender {
             out.put("visibleWarehouseIds", null);
             out.put("explicitChildDepartmentIds", null);
             out.put("queryScopeMode", null);
-            out.put("queryLevel", null);
             out.put("storeToChildDepartmentIds", null);
             out.put("departmentScopeModelNote", null);
         }
+
+        if (ctx.getConversationScopeMode() != null) {
+            out.put("conversationScopeMode", ctx.getConversationScopeMode().name());
+        } else {
+            out.put("conversationScopeMode", null);
+        }
+        appendScopeResolutionTrace(out, ctx.getScopeResolutionTrace());
 
         AiResolvedQueryIntent qi = ctx.getQueryIntent();
         String pst = qi != null ? AiHarnessSummaryUtils.blankToNull(qi.getPurchaseSourceType()) : null;
@@ -306,8 +302,15 @@ final class AiHarnessTimeScopeSummaryAppender {
         out.put("dishProfitStructuredDetail", dishProfitStructuredDetailVal);
 
         out.put("mentionedDishName", AiHarnessSummaryUtils.blankToNull(ctx.getMentionedDishName()));
-        out.put("dishName", AiHarnessSummaryUtils.blankToNull(ctx.getMentionedDishName()));
-        out.put("dishProfitMetricType", AiHarnessSummaryUtils.blankToNull(ctx.getDishProfitMetricType()));
+        String dishProfitMetricType = AiHarnessSummaryUtils.blankToNull(ctx.getDishProfitMetricType());
+        if (dishProfitMetricType == null
+                && AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(effectivePath)
+                && StringUtils.hasText(canonStructuredWire)) {
+            dishProfitMetricType =
+                    AiHarnessSummaryUtils.blankToNull(
+                            AiQuerySemanticLexicon.dishProfitMetricTypeFromStructuredWire(canonStructuredWire));
+        }
+        out.put("dishProfitMetricType", dishProfitMetricType);
         if (AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(effectivePath)) {
             boolean wireMissing;
             if (!SemanticContractCompletionEngine.isContractLockedParse(sem)) {
@@ -324,10 +327,15 @@ final class AiHarnessTimeScopeSummaryAppender {
         }
 
         if (AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(effectivePath)) {
-            out.put("dishSalesStructuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(canonStructuredWire));
             DishSalesSemanticCapabilityMatrixRow dishSalesRow =
-                    DishSalesSemanticCapabilityMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem, ctx);
-            out.put("dishSalesMatrixRowId", dishSalesRow == null ? null : dishSalesRow.getRowId());
+                    DishSalesSemanticCapabilityMatrix.resolveMatrixRow(effectivePath, canonStructuredWire, sem);
+            out.put("dishSalesMatrixObservedDebugOnly", Boolean.TRUE);
+            out.put(
+                    "dishSalesMatrixObservedRowId",
+                    dishSalesRow == null ? null : dishSalesRow.getRowId());
+            out.put(
+                    "dishSalesMatrixObservedWire",
+                    dishSalesRow == null ? null : dishSalesRow.getStructuredIntentDetailWire());
             out.put(
                     "dishSalesMatrixWireMissing",
                     DishSalesSemanticCapabilityMatrix.detectMatrixWireMissing(sem, effectivePath, canonStructuredWire)
@@ -337,8 +345,9 @@ final class AiHarnessTimeScopeSummaryAppender {
                     "dishSalesKnownGap",
                     AiHarnessSummaryUtils.blankToNull(DishSalesSemanticCapabilityMatrix.knownGapForResolvedRow(dishSalesRow)));
         } else {
-            out.put("dishSalesStructuredIntentDetailWire", null);
-            out.put("dishSalesMatrixRowId", null);
+            out.put("dishSalesMatrixObservedDebugOnly", null);
+            out.put("dishSalesMatrixObservedRowId", null);
+            out.put("dishSalesMatrixObservedWire", null);
             out.put("dishSalesMatrixWireMissing", null);
             out.put("dishSalesKnownGap", null);
         }
@@ -495,7 +504,6 @@ final class AiHarnessTimeScopeSummaryAppender {
         AiQuerySemanticParseResult sem = ctx.getQuerySemanticParse();
         AiQuerySemanticParseResult.TimePart tp = sem != null ? sem.getTime() : null;
         AiConversationTurnMemory prev = ctx.getPreviousTurn();
-        AiResolvedTimeWindow tw = ctx.getTimeWindow();
 
         out.put("llmTimeAction", sem != null ? AiHarnessSummaryUtils.blankToNull(sem.getTimeAction()) : null);
         out.put("llmTimeType", tp != null ? AiHarnessSummaryUtils.blankToNull(tp.getTimeType()) : null);
@@ -512,16 +520,59 @@ final class AiHarnessTimeScopeSummaryAppender {
         out.put("previousEndDate", prev != null ? AiHarnessSummaryUtils.blankToNull(prev.getLastEndDate()) : null);
         out.put("timeContractValid", ctx.getTimeContractValid());
         out.put("timeContractFailureReason", AiHarnessSummaryUtils.blankToNull(ctx.getTimeContractFailureReason()));
-        out.put("finalTimeSource", AiHarnessSummaryUtils.blankToNull(ctx.getEffectiveTimeWindowSource()));
-        out.put("finalStartDate", tw != null && tw.getStartDate() != null ? tw.getStartDate().toString() : null);
-        out.put("finalEndDate", tw != null && tw.getEndDate() != null ? tw.getEndDate().toString() : null);
-        out.put("needSemanticClarification", ctx.isNeedSemanticClarification());
-        out.put("semanticClarificationQuestion", AiHarnessSummaryUtils.blankToNull(ctx.getSemanticClarificationQuestion()));
+    }
 
-        // 兼容旧 probe 键名
-        out.put("rawTimeAction", sem != null ? AiHarnessSummaryUtils.blankToNull(sem.getTimeAction()) : null);
-        out.put("rawTimeType", tp != null ? AiHarnessSummaryUtils.blankToNull(tp.getTimeType()) : null);
-        out.put("rawTimeSignal", tp != null ? AiHarnessSummaryUtils.blankToNull(tp.getTimeSource()) : null);
-        out.put("effectiveTimeWindowSource", AiHarnessSummaryUtils.blankToNull(ctx.getEffectiveTimeWindowSource()));
+    private static void appendScopeResolutionTrace(LinkedHashMap<String, Object> out, ScopeResolutionTrace trace) {
+        if (trace == null) {
+            out.put("requestScopeMode", null);
+            out.put("rawScopeAction", null);
+            out.put("effectiveScopeModeBeforeResolveOrg", null);
+            out.put("baselineOrgScopeType", null);
+            out.put("baselineVisibleStores", null);
+            out.put("mergedOrgScopeTypeBeforePreparation", null);
+            out.put("mergedOrgScopeTypeAfterPreparation", null);
+            out.put("multiTurnInherited", null);
+            out.put("semanticNarrowingApplied", null);
+            out.put("dataScopeInputScopeType", null);
+            out.put("expandedSqlDepartmentIds", null);
+            out.put("explicitGroupRequest", null);
+            out.put("groupToStoreNarrowingAllowed", null);
+            out.put("baselineOrgSource", null);
+            out.put("postIntersectOrgScopeType", null);
+            out.put("scopeIntersectPath", null);
+            return;
+        }
+        out.put("requestScopeMode", AiHarnessSummaryUtils.blankToNull(trace.getRequestScopeMode()));
+        out.put("rawScopeAction", AiHarnessSummaryUtils.blankToNull(trace.getRawScopeAction()));
+        out.put("effectiveScopeModeBeforeResolveOrg", AiHarnessSummaryUtils.blankToNull(trace.getEffectiveScopeModeBeforeResolveOrg()));
+        out.put("baselineOrgScopeType", AiHarnessSummaryUtils.blankToNull(trace.getBaselineOrgScopeType()));
+        out.put(
+                "baselineVisibleStores",
+                trace.getBaselineVisibleStores() == null || trace.getBaselineVisibleStores().isEmpty()
+                        ? null
+                        : new ArrayList<>(trace.getBaselineVisibleStores()));
+        out.put("mergedOrgScopeTypeBeforePreparation", AiHarnessSummaryUtils.blankToNull(trace.getMergedOrgScopeTypeBeforePreparation()));
+        out.put("mergedOrgScopeTypeAfterPreparation", AiHarnessSummaryUtils.blankToNull(trace.getMergedOrgScopeTypeAfterPreparation()));
+        out.put("multiTurnInherited", trace.getMultiTurnInherited());
+        out.put("semanticNarrowingApplied", trace.getSemanticNarrowingApplied());
+        out.put("dataScopeInputScopeType", AiHarnessSummaryUtils.blankToNull(trace.getDataScopeInputScopeType()));
+        out.put(
+                "queryStoreIds",
+                trace.getQueryStoreIds() == null || trace.getQueryStoreIds().isEmpty()
+                        ? out.get("queryStoreIds")
+                        : new ArrayList<>(trace.getQueryStoreIds()));
+        out.put(
+                "queryDistributerId",
+                trace.getQueryDistributerId() != null ? trace.getQueryDistributerId() : out.get("queryDistributerId"));
+        out.put(
+                "expandedSqlDepartmentIds",
+                trace.getExpandedSqlDepartmentIds() == null || trace.getExpandedSqlDepartmentIds().isEmpty()
+                        ? out.get("expandedSqlDepartmentIds")
+                        : new ArrayList<>(trace.getExpandedSqlDepartmentIds()));
+        out.put("explicitGroupRequest", AiHarnessSummaryUtils.blankToNull(trace.getExplicitGroupRequest()));
+        out.put("groupToStoreNarrowingAllowed", trace.getGroupToStoreNarrowingAllowed());
+        out.put("baselineOrgSource", AiHarnessSummaryUtils.blankToNull(trace.getBaselineOrgSource()));
+        out.put("postIntersectOrgScopeType", AiHarnessSummaryUtils.blankToNull(trace.getPostIntersectOrgScopeType()));
+        out.put("scopeIntersectPath", AiHarnessSummaryUtils.blankToNull(trace.getScopeIntersectPath()));
     }
 }

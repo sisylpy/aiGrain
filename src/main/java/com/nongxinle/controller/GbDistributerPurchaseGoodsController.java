@@ -163,7 +163,8 @@ public class GbDistributerPurchaseGoodsController {
         map1.put("status", 3);
         map1.put("equalBuyStatus", 0);
         map1.put("notEqualOrderType", 9);
-        log.debug("mapp111aaaaaaa" + map1);
+        log.info("mapp111aaaaaaa" + map1);
+        System.out.println("mapp111aaaaaaa" + map1);
 
         int purCount = gbDepartmentOrdersService.queryGbDepartmentOrderAmount(map1);
 

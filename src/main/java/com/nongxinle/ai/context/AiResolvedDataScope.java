@@ -84,7 +84,12 @@ public class AiResolvedDataScope {
     @Builder.Default
     private List<Integer> expandedSqlDepartmentIds = new ArrayList<>();
 
-    /** 技术明细：门店根 + 子部门展开策略等 */
+    /**
+     * SQL 展开策略标识（如 {@link #QUERY_SCOPE_STORE_ROOT_ONLY}、{@link #QUERY_SCOPE_WAREHOUSE_DEPARTMENT}），
+     * 描述解析层对查询做了何种 SQL 展开处理。
+     * <b>注意：</b>此字段描述 SQL 展开方式，与 {@link #queryScopeKind}（业务查询维度：STORE/DEPARTMENT/DISTRIBUTER）
+     * 和 {@link AiConversationScopeMode}（会话层范围：GROUP/STORE）概念不同，不要混淆。
+     */
     private String queryScopeMode;
 
     /**

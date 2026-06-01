@@ -57,6 +57,9 @@ public final class AiQuerySemanticParseResultJsonParser {
         if (o.isEmpty()) {
             return "empty_json_object_after_extract";
         }
+        if (looksLikeEchoedParserInput(o)) {
+            return "echoed_input_contract_catalog";
+        }
         return "parse_missing_unclassified";
     }
 
@@ -85,6 +88,15 @@ public final class AiQuerySemanticParseResultJsonParser {
                     new ProtocolRelocateResult(false, List.of()));
         }
         stripForbiddenKeysRecursive(o);
+        if (looksLikeEchoedParserInput(o)) {
+            return new ProtocolNormalizeResult(
+                    AiQuerySemanticParseResult.builder()
+                            .parseMissing(true)
+                            .rawJsonDigest(digest(trimmed))
+                            .build(),
+                    trimmed,
+                    new ProtocolRelocateResult(false, List.of()));
+        }
         ProtocolRelocateResult relocate = normalizeProtocolFieldPlacement(o);
         String normalizedJson = JSONUtil.toJsonStr(o);
         AiQuerySemanticParseResult parsed = fromJsonObject(o, digest(trimmed));
@@ -116,12 +128,25 @@ public final class AiQuerySemanticParseResultJsonParser {
      * 协议层：将误置于 nested 的 confidence / *Action 搬到顶层；将非协议 enum 的 *Action 收窄为
      * NEW/INHERIT_PREVIOUS/OVERRIDE 或 INVALID（不做业务语义推断）。
      */
+    /** D-13 合同槽位键：可位于 {@code semanticSlots} 内，或误置于 JSON 顶层（由 {@link #promoteTopLevelContractFieldsToSemanticSlots} 搬入 slots）。 */
+    private static final List<String> CONTRACT_SLOT_FIELD_KEYS =
+            List.of(
+                    "selectedContractId",
+                    "queryObject",
+                    "operation",
+                    "sourceFacet",
+                    "anchorPolicy",
+                    "detailWanted",
+                    "structuredIntentDetailWire",
+                    "answerPlanType");
+
     static ProtocolRelocateResult normalizeProtocolFieldPlacement(JSONObject o) {
         List<String> moves = new ArrayList<>();
         if (o == null) {
             return new ProtocolRelocateResult(false, moves);
         }
         normalizeOrchestrationDecisionCandidateShape(o, moves);
+        promoteTopLevelContractFieldsToSemanticSlots(o, moves);
         JSONObject slots = safeGetJSONObject(o, "semanticSlots");
         JSONObject metric = safeGetJSONObject(o, "metric");
         JSONObject orch = safeGetJSONObject(o, "orchestrationDecisionCandidate");
@@ -131,6 +156,8 @@ public final class AiQuerySemanticParseResultJsonParser {
         for (String actionField : List.of("intentAction", "timeAction", "scopeAction", "metricAction")) {
             relocateStringTopLevel(o, actionField, moves, slots, metric);
         }
+
+        promoteSemanticSlotsTimeToTopLevel(o, moves);
 
         JSONObject time = safeGetJSONObject(o, "time");
         if (time != null && time.containsKey("timeAction")) {
@@ -149,6 +176,125 @@ public final class AiQuerySemanticParseResultJsonParser {
         }
 
         return new ProtocolRelocateResult(!moves.isEmpty(), List.copyOf(moves));
+    }
+
+    /**
+     * 协议层：LLM 将 D-13 合同槽位误放在 JSON 顶层时，搬入 {@code semanticSlots}（仅结构化 JSON 键搬迁，不读用户原文）。
+     * <p>顶层 {@code mentionedDishName} 保留（与 schema 并存约定）；若 slots 缺 {@code mentionedDishName} 则复制一份。
+     * 顶层 {@code metric} 仅在为 simple token / metricKey 时搬入 slots；{@code metric.primaryMetric} 对象仍作 MetricPart。
+     */
+    static void promoteTopLevelContractFieldsToSemanticSlots(JSONObject top, List<String> moves) {
+        if (top == null || moves == null) {
+            return;
+        }
+        JSONObject slots = safeGetJSONObject(top, "semanticSlots");
+        if (slots == null && hasTopLevelContractSlotSignal(top)) {
+            slots = new JSONObject();
+            top.set("semanticSlots", slots);
+            moves.add("semanticSlots: created from top-level contract fields");
+        }
+        if (slots == null) {
+            return;
+        }
+        for (String key : CONTRACT_SLOT_FIELD_KEYS) {
+            promoteStringFieldIntoSemanticSlots(top, slots, key, moves);
+        }
+        promoteTopLevelMetricTokenIntoSemanticSlots(top, slots, moves);
+        promoteTopLevelMentionedDishNameIntoSemanticSlots(top, slots, moves);
+        promoteTopLevelMentionedGoodsNameIntoSemanticSlots(top, slots, moves);
+    }
+
+    private static boolean hasTopLevelContractSlotSignal(JSONObject top) {
+        for (String key : CONTRACT_SLOT_FIELD_KEYS) {
+            if (StringUtils.hasText(top.getStr(key))) {
+                return true;
+            }
+        }
+        if (extractSemanticSlotsMetricToken(top.get("metric")) != null) {
+            return true;
+        }
+        return StringUtils.hasText(top.getStr("mentionedDishName"))
+                || StringUtils.hasText(top.getStr("mentionedGoodsName"));
+    }
+
+    private static void promoteStringFieldIntoSemanticSlots(
+            JSONObject top, JSONObject slots, String key, List<String> moves) {
+        String slotVal = trimToNull(slots.getStr(key));
+        if (StringUtils.hasText(slotVal)) {
+            if (StringUtils.hasText(top.getStr(key))) {
+                top.remove(key);
+                moves.add(key + ": removed duplicate top-level (semanticSlots present)");
+            }
+            return;
+        }
+        String topVal = trimToNull(top.getStr(key));
+        if (topVal == null) {
+            return;
+        }
+        slots.set(key, topVal);
+        top.remove(key);
+        moves.add("semanticSlots." + key + ": promoted from top-level");
+    }
+
+    private static void promoteTopLevelMetricTokenIntoSemanticSlots(
+            JSONObject top, JSONObject slots, List<String> moves) {
+        if (StringUtils.hasText(extractSemanticSlotsMetricToken(slots.get("metric")))) {
+            return;
+        }
+        if (!top.containsKey("metric")) {
+            return;
+        }
+        String token = extractSemanticSlotsMetricToken(top.get("metric"));
+        if (token == null) {
+            return;
+        }
+        slots.set("metric", token);
+        top.remove("metric");
+        moves.add("semanticSlots.metric: promoted from top-level metric token");
+    }
+
+    private static void promoteTopLevelMentionedDishNameIntoSemanticSlots(
+            JSONObject top, JSONObject slots, List<String> moves) {
+        if (StringUtils.hasText(trimToNull(slots.getStr("mentionedDishName")))) {
+            return;
+        }
+        String topDish = trimToNull(top.getStr("mentionedDishName"));
+        if (topDish == null) {
+            return;
+        }
+        slots.set("mentionedDishName", topDish);
+        moves.add("semanticSlots.mentionedDishName: copied from top-level mentionedDishName");
+    }
+
+    private static void promoteTopLevelMentionedGoodsNameIntoSemanticSlots(
+            JSONObject top, JSONObject slots, List<String> moves) {
+        if (StringUtils.hasText(trimToNull(slots.getStr("mentionedGoodsName")))) {
+            return;
+        }
+        String topGoods = trimToNull(top.getStr("mentionedGoodsName"));
+        if (topGoods == null) {
+            return;
+        }
+        slots.set("mentionedGoodsName", topGoods);
+        moves.add("semanticSlots.mentionedGoodsName: copied from top-level mentionedGoodsName");
+    }
+
+    /**
+     * semanticSlots.metric 专用 token：simple string 或 metricKey 对象；不含 MetricPart（primaryMetric）对象。
+     */
+    static String extractSemanticSlotsMetricToken(Object metricVal) {
+        String fromObject = extractMetricKeyToken(metricVal);
+        if (fromObject != null) {
+            return fromObject;
+        }
+        if (metricVal == null || metricVal instanceof JSONObject) {
+            return null;
+        }
+        String raw = trimToNull(String.valueOf(metricVal));
+        if (raw == null || raw.startsWith("{")) {
+            return null;
+        }
+        return raw;
     }
 
     /**
@@ -198,6 +344,45 @@ public final class AiQuerySemanticParseResultJsonParser {
         }
         Object val = parent.get(key);
         return val instanceof JSONObject jo ? jo : null;
+    }
+
+    /**
+     * 协议层：LLM 将 time 误放在 {@code semanticSlots.time} 时，在顶层 time 缺失或缺有效 ISO 起止日时提升到顶层。
+     * 仅结构化 JSON 字段搬迁，不读用户原文。
+     */
+    static void promoteSemanticSlotsTimeToTopLevel(JSONObject top, List<String> moves) {
+        if (top == null || moves == null) {
+            return;
+        }
+        JSONObject slots = safeGetJSONObject(top, "semanticSlots");
+        if (slots == null) {
+            return;
+        }
+        JSONObject slotsTime = safeGetJSONObject(slots, "time");
+        if (!hasValidTimeDateRange(slotsTime)) {
+            return;
+        }
+        JSONObject topTime = safeGetJSONObject(top, "time");
+        if (hasValidTimeDateRange(topTime)) {
+            return;
+        }
+        top.set("time", slotsTime);
+        slots.remove("time");
+        moves.add("time: promoted from semanticSlots.time");
+    }
+
+    /** 结构化校验：time 对象含可解析的 ISO {@code startDate} 与 {@code endDate}。 */
+    static boolean hasValidTimeDateRange(JSONObject timeJo) {
+        if (timeJo == null || timeJo.isEmpty()) {
+            return false;
+        }
+        String sd = trimToNull(timeJo.getStr("startDate"));
+        String ed = trimToNull(timeJo.getStr("endDate"));
+        if (sd == null || ed == null) {
+            return false;
+        }
+        return com.nongxinle.ai.context.AiResolvedTimeWindow.parseIsoDateOrNull(sd) != null
+                && com.nongxinle.ai.context.AiResolvedTimeWindow.parseIsoDateOrNull(ed) != null;
     }
 
     /**
@@ -339,6 +524,11 @@ public final class AiQuerySemanticParseResultJsonParser {
             return;
         }
         normalizeOrchestrationDecisionCandidateShape(o, new ArrayList<>());
+        if (looksLikeEchoedParserInput(o)) {
+            errors.add(
+                    "output_echoes_input: must not return allowedOutputContract, allowedContracts, "
+                            + "visibleStores, previousTurn, semanticRoute, currentUserMessage, or today");
+        }
         if (!o.containsKey("confidence")) {
             if (hasMisplacedConfidence(o)) {
                 errors.add(
@@ -387,6 +577,12 @@ public final class AiQuerySemanticParseResultJsonParser {
         sb.append(
                 "- Do NOT change selectedContractId, semanticSlots business fields, domain, or intent "
                         + "unless those fields are listed above as invalid enum values\n");
+        sb.append(
+                "- Do NOT drop top-level mentionedDishName or semanticSlots.mentionedDishName "
+                        + "when fixing protocol errors\n");
+        sb.append(
+                "- Do NOT echo User message input keys (allowedOutputContract, allowedContracts, "
+                        + "visibleStores, previousTurn, semanticRoute, currentUserMessage, today)\n");
         sb.append("\nOriginal output:\n");
         sb.append(originalRaw);
         return sb.toString();
@@ -416,6 +612,8 @@ public final class AiQuerySemanticParseResultJsonParser {
                 codes.add("invalid_scope_action");
             } else if (err.startsWith("metricAction:")) {
                 codes.add("invalid_metric_action");
+            } else if (err.startsWith("output_echoes_input:")) {
+                codes.add("echoed_input_contract_catalog");
             }
         }
         if (codes.isEmpty()) {
@@ -494,6 +692,25 @@ public final class AiQuerySemanticParseResultJsonParser {
         String t = s.replace("\n", " ").trim();
         int max = 2000;
         return t.length() <= max ? t : t.substring(0, max) + "…";
+    }
+
+    /**
+     * 协议层：LLM 误将 User 输入（合同目录等）回显为输出时，视为无效 JSON（非业务推断）。
+     */
+    static boolean looksLikeEchoedParserInput(JSONObject o) {
+        if (o == null || o.isEmpty()) {
+            return false;
+        }
+        if (o.containsKey("allowedOutputContract") || o.containsKey("allowedContracts")) {
+            return true;
+        }
+        if (o.containsKey("currentUserMessage") && o.containsKey("visibleStores")) {
+            return true;
+        }
+        if (o.containsKey("semanticRoute") && o.containsKey("today") && !o.containsKey("semanticSlots")) {
+            return true;
+        }
+        return false;
     }
 
     private static AiQuerySemanticParseResult empty() {
@@ -583,6 +800,7 @@ public final class AiQuerySemanticParseResultJsonParser {
                 .intent(trimToNull(o.getStr("intent")))
                 .semanticDomain(trimToNull(o.getStr("domain")))
                 .mentionedDishName(trimToNull(o.getStr("mentionedDishName")))
+                .mentionedGoodsName(trimToNull(o.getStr("mentionedGoodsName")))
                 .confidence(parseDouble(o.get("confidence")))
                 .followUp(parseNullableBool(o.get("isFollowUp")))
                 .intentAction(trimToNull(o.getStr("intentAction")))
@@ -692,21 +910,26 @@ public final class AiQuerySemanticParseResultJsonParser {
                 .detailWanted(trimToNull(sjo.getStr("detailWanted")))
                 .structuredIntentDetailWire(trimToNull(sjo.getStr("structuredIntentDetailWire")))
                 .answerPlanType(trimToNull(sjo.getStr("answerPlanType")))
+                .mentionedDishName(trimToNull(sjo.getStr("mentionedDishName")))
+                .mentionedGoodsName(trimToNull(sjo.getStr("mentionedGoodsName")))
+                .requestedTargetGrossMarginRate(
+                        parseRequestedTargetGrossMarginRate(sjo.get("requestedTargetGrossMarginRate")))
                 .build();
     }
 
+    /** schema 允许 string|null；LLM 可能输出 number（如 55），统一规范为 trim 后的字符串。 */
+    private static String parseRequestedTargetGrossMarginRate(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Number n) {
+            return trimToNull(String.valueOf(n.intValue() == n.doubleValue() ? n.longValue() : n.doubleValue()));
+        }
+        return trimToNull(String.valueOf(v));
+    }
+
     private static String parseSemanticSlotsMetricToken(Object metricVal) {
-        String fromObject = extractMetricKeyToken(metricVal);
-        if (fromObject != null) {
-            return fromObject;
-        }
-        if (metricVal == null) {
-            return null;
-        }
-        if (metricVal instanceof JSONObject) {
-            return null;
-        }
-        return trimToNull(String.valueOf(metricVal));
+        return extractSemanticSlotsMetricToken(metricVal);
     }
 
     private static JSONObject extractJsonObject(String trimmed) {

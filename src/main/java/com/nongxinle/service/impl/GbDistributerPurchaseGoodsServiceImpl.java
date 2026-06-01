@@ -149,6 +149,16 @@ public class GbDistributerPurchaseGoodsServiceImpl extends ServiceImpl<GbDistrib
             stockEntity.setGbDgsMonth(month);
             stockEntity.setGbDgsYear(year);
             stockEntity.setGbDgsFullTime(fullTime);
+            stockEntity.setGbDgsProduceWeight("0");
+            stockEntity.setGbDgsProduceSubtotal("0");
+            stockEntity.setGbDgsLossWeight("0");
+            stockEntity.setGbDgsLossSubtotal("0");
+            stockEntity.setGbDgsWasteWeight("0");
+            stockEntity.setGbDgsWasteSubtotal("0");
+            stockEntity.setGbDgsProfitWeight("0");
+            stockEntity.setGbDgsProfitSubtotal("0");
+            stockEntity.setGbDgsReturnWeight("0");
+            stockEntity.setGbDgsReturnSubtotal("0");
             stockBatch.add(stockEntity);
         }
 
@@ -308,6 +318,18 @@ public class GbDistributerPurchaseGoodsServiceImpl extends ServiceImpl<GbDistrib
     @Override
     public List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopPriceFluctuation(Map<String, Object> map) {
         return baseMapper.queryGbPurchaseGoodsTopPriceFluctuation(map);
+    }
+
+    @Override
+    public List<Map<String, Object>> queryGbPurchaseGoodsUnitPriceChangedVsPrevious(Map<String, Object> map) {
+        List<Map<String, Object>> list = baseMapper.queryGbPurchaseGoodsUnitPriceChangedVsPrevious(map);
+        return list == null ? List.of() : list;
+    }
+
+    @Override
+    public List<Map<String, Object>> queryGbPurchaseGoodsUnitPriceChangedPeriodAvgVsCompare(Map<String, Object> map) {
+        List<Map<String, Object>> list = baseMapper.queryGbPurchaseGoodsUnitPriceChangedPeriodAvgVsCompare(map);
+        return list == null ? List.of() : list;
     }
 
     @Override

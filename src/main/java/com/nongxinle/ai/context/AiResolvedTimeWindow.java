@@ -65,6 +65,9 @@ public class AiResolvedTimeWindow {
         if ("CURRENT_MONTH".equals(u)) {
             return THIS_MONTH;
         }
+        if ("PREVIOUS_MONTH".equals(u)) {
+            return LAST_MONTH;
+        }
         if ("LAST_YEAR_SAME_PERIOD".equals(u)) {
             return LAST_YEAR_SAME_PERIOD;
         }

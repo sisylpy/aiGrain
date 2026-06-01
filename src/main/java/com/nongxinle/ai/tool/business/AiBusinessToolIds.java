@@ -10,12 +10,26 @@ public final class AiBusinessToolIds {
     public static final String PURCHASE_OVERVIEW = "purchase_overview";
     /** 库房库存概览：聚合库存 + 入库 + 核销分型 + 简易预警列表（{@code warehouse_stock_overview_path}）。 */
     public static final String WAREHOUSE_STOCK_OVERVIEW = "warehouse_stock_overview";
+    /** 库存风险列表：偏少/快缺货/需关注（非账面金额低排行）。 */
+    public static final String WAREHOUSE_INVENTORY_RISK_LIST = "warehouse_inventory_risk_list";
+    /** 原料 → 受影响菜品可支撑分析（{@code warehouse.goods_supported_dish_cover.v1}）。 */
+    public static final String WAREHOUSE_GOODS_SUPPORTED_DISH_COVER = "warehouse_goods_supported_dish_cover";
     public static final String STOCK_REDUCE_QUERY = "stock_reduce_query";
     public static final String DISH_PROFIT_ANALYSIS = "dish_profit_analysis";
     /**
      * 单菜原料成本明细（配方 + 区间出库/损耗摊销），数据源自 {@link com.nongxinle.service.GbDishCostAnalysisService}。
      */
     public static final String DISH_INGREDIENT_COST_BREAKDOWN = "dish_ingredient_cost_breakdown";
+    /**
+     * 菜品成本分析（配料分析口径）：复用 {@code GbDishCostAnalysisService#buildIngredientAnalysisReport}，
+     * 经 {@link com.nongxinle.ai.capability.dish.DishCostAnalysisCapabilityAdapter}。
+     */
+    public static final String DISH_COST_ANALYSIS = "dish_cost_analysis";
+    /**
+     * 单菜销售卡片 Tool（depGeFoodBusiness 口径）：复用 {@code GbDepFoodBusinessInsightService#buildInsight}，
+     * 经 {@link com.nongxinle.ai.capability.dish.DishSalesAnalysisCapabilityAdapter}。
+     */
+    public static final String DISH_SALES_ANALYSIS_CARD = "dish_sales_analysis_card";
 
     /**
      * 成本洞察默认执行顺序（后者可读取前者落库的 toolResults）。
@@ -47,6 +61,37 @@ public final class AiBusinessToolIds {
             DISH_PROFIT_ANALYSIS
     );
 
+    /** 单菜菜品成本+销售分析专用链（{@code dish_cost_analysis_path}）。 */
+    public static final List<String> DEFAULT_DISH_COST_ANALYSIS_TOOLS = List.of(
+            DISH_COST_ANALYSIS
+    );
+
+    /** 单菜配料可支撑天数（{@code dish.ingredient_cover_days.v1}）。 */
+    public static final List<String> DEFAULT_DISH_INGREDIENT_COVER_DAYS_TOOLS = List.of(
+            DISH_COST_ANALYSIS
+    );
+
+    /** 单菜利润处方卡：毛利上下文 + 配料成本明细（{@code dish.profit.prescription.v1}）。 */
+    public static final List<String> DEFAULT_DISH_PROFIT_PRESCRIPTION_TOOLS = List.of(
+            DISH_PROFIT_ANALYSIS,
+            DISH_COST_ANALYSIS
+    );
+
+    /** 菜品销量域（排行/概览/门店排行）默认 Tool。 */
+    public static final List<String> DEFAULT_DISH_SALES_QUERY_TOOLS = List.of(
+            DISH_SALES_ANALYSIS_CARD
+    );
+
+    /** 单菜菜品销售专用链（{@code dish_sales.single_dish} / depGeFoodBusiness 口径）。 */
+    public static final List<String> DEFAULT_DISH_SALES_SINGLE_DISH_TOOLS = List.of(
+            DISH_SALES_ANALYSIS_CARD
+    );
+
+    /** 菜单经营顾问默认 Tool（P1：仅复用 dish_profit_analysis 快照）。 */
+    public static final List<String> DEFAULT_MENU_OPERATION_TOOLS = List.of(
+            DISH_PROFIT_ANALYSIS
+    );
+
     /**
      * 经营诊断 Harness：采购 + 出库/核销 + 菜品毛利（顺序固定；Planner 可按权限子集裁剪）。
      */
@@ -67,7 +112,16 @@ public final class AiBusinessToolIds {
 
     /** 库房端「经营怎么样」收敛：单一聚合 Tool（内含入库与核销分型汇总）。 */
     public static final List<String> DEFAULT_WAREHOUSE_STOCK_OVERVIEW_TOOLS = List.of(
-            WAREHOUSE_STOCK_OVERVIEW
+            WAREHOUSE_STOCK_OVERVIEW,
+            WAREHOUSE_INVENTORY_RISK_LIST
+    );
+
+    public static final List<String> DEFAULT_WAREHOUSE_INVENTORY_RISK_TOOLS = List.of(
+            WAREHOUSE_INVENTORY_RISK_LIST
+    );
+
+    public static final List<String> DEFAULT_WAREHOUSE_GOODS_SUPPORTED_DISH_COVER_TOOLS = List.of(
+            WAREHOUSE_GOODS_SUPPORTED_DISH_COVER
     );
 
     /** ToolRequest.args / payload 共用键（第一版契约）。 */
@@ -77,6 +131,13 @@ public final class AiBusinessToolIds {
     public static final String ARG_DIS_ID = "disId";
     public static final String ARG_START_DATE = "startDate";
     public static final String ARG_STOP_DATE = "stopDate";
+    /** 库存快照锚定日（ISO）；现量查询口径，不等同于流水统计区间。 */
+    public static final String ARG_STOCK_AS_OF_DATE = "stockAsOfDate";
+    /** 销量基线起止（与库存快照分离；默认近 7 天由 Executor 写入）。 */
+    public static final String ARG_SALES_BASELINE_START_DATE = "salesBaselineStartDate";
+    public static final String ARG_SALES_BASELINE_STOP_DATE = "salesBaselineStopDate";
+    /** {@link com.nongxinle.ai.inventory.InventoryQueryTimeKind} 名称。 */
+    public static final String ARG_INVENTORY_QUERY_TIME_KIND = "inventoryQueryTimeKind";
     public static final String ARG_INPUT_SNAPSHOT = "inputs";
     /**
      * 若为 true：`AiRunScopeIntersectService` 对集团广角角色不写回单体门店部门；
@@ -145,6 +206,18 @@ public final class AiBusinessToolIds {
     public static final String ARG_DISH_PROFIT_STRUCTURED_DETAIL = "dishProfitStructuredDetail";
     /** 点名菜名收窄（与 resolvedQueryContext.mentionedDishName 一致）。 */
     public static final String ARG_DISH_NAME_FOCUS_HINT = "dishNameFocusHint";
+    /** {@link #DISH_COST_ANALYSIS}：区间结束日别名（同 {@link #ARG_STOP_DATE}）。 */
+    public static final String ARG_END_DATE = "endDate";
+    /** {@link #DISH_COST_ANALYSIS}：单子部门 scope 字符串。 */
+    public static final String ARG_SEARCH_DEP_ID = "searchDepId";
+    /** {@link #DISH_COST_ANALYSIS}：子部门 ID（与 {@link #ARG_SEARCH_DEP_ID} 二选一）。 */
+    public static final String ARG_SUB_DEP_ID = "subDepId";
+    /** {@link #DISH_COST_ANALYSIS}：salesDishRows 排序字段，默认 sales。 */
+    public static final String ARG_SORT_BY = "sortBy";
+    /** {@link #DISH_COST_ANALYSIS}：排序方向，默认 desc。 */
+    public static final String ARG_SORT_ORDER = "sortOrder";
+    /** {@link #DISH_COST_ANALYSIS}：直接按 foodId / dishId 命中。 */
+    public static final String ARG_DISH_COST_FOOD_ID = "foodId";
 
     /** 与 {@link com.nongxinle.ai.context.AiResolvedDataScope#getQueryScopeKind()} 一致：STORE / DEPARTMENT / DISTRIBUTER。 */
     public static final String ARG_QUERY_SCOPE_KIND = "queryScopeKind";

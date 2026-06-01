@@ -13,6 +13,8 @@ public final class SemanticIntakePrimaryDomain {
     public static final String WAREHOUSE = "WAREHOUSE";
     public static final String DISH_SALES = "DISH_SALES";
     public static final String DISH_PROFIT = "DISH_PROFIT";
+    public static final String DISH_COST = "DISH_COST";
+    public static final String MENU_OPERATION = "MENU_OPERATION";
     public static final String BUSINESS_OVERVIEW = "BUSINESS_OVERVIEW";
     public static final String BUSINESS_DIAGNOSIS = "BUSINESS_DIAGNOSIS";
     public static final String MULTI_DOMAIN = "MULTI_DOMAIN";
@@ -26,6 +28,8 @@ public final class SemanticIntakePrimaryDomain {
                     WAREHOUSE,
                     DISH_SALES,
                     DISH_PROFIT,
+                    DISH_COST,
+                    MENU_OPERATION,
                     BUSINESS_OVERVIEW,
                     BUSINESS_DIAGNOSIS,
                     MULTI_DOMAIN,
@@ -39,6 +43,8 @@ public final class SemanticIntakePrimaryDomain {
                     WAREHOUSE,
                     DISH_SALES,
                     DISH_PROFIT,
+                    DISH_COST,
+                    MENU_OPERATION,
                     BUSINESS_OVERVIEW,
                     BUSINESS_DIAGNOSIS);
 

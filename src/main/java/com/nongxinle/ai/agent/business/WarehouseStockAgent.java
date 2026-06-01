@@ -4,9 +4,11 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
+import com.nongxinle.ai.graph.business.GoodsSupportedDishCoverAnswerPlanBuilder;
 import com.nongxinle.ai.graph.business.ToolDepartmentResolutionSupport;
 import com.nongxinle.ai.graph.business.WarehouseAnswerPlanBuilder;
 import com.nongxinle.ai.graph.business.WarehouseStockOverviewToolExecutor;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import com.nongxinle.ai.tool.ToolResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -82,14 +84,21 @@ public class WarehouseStockAgent implements BusinessSubAgent {
             state.setStatEndDate(stop);
         }
 
-        ToolResult executed = warehouseStockOverviewToolExecutor.executeWarehouseStockOverview(
-                rid,
-                state,
-                deptScoped,
-                dis,
-                start,
-                stop,
-                new LinkedHashMap<>());
+        boolean goodsCover =
+                ToolRequestContractExecutionParamSupport.isGoodsSupportedDishCoverContract(rqCtx);
+        boolean inventoryRisk =
+                !goodsCover
+                        && ToolRequestContractExecutionParamSupport.isWarehouseInventoryRiskListContract(
+                                rqCtx);
+        ToolResult executed =
+                goodsCover
+                        ? warehouseStockOverviewToolExecutor.executeWarehouseGoodsSupportedDishCover(
+                                rid, state, deptScoped, dis, new LinkedHashMap<>())
+                        : inventoryRisk
+                                ? warehouseStockOverviewToolExecutor.executeWarehouseInventoryRiskList(
+                                        rid, state, deptScoped, dis, start, stop, new LinkedHashMap<>())
+                                : warehouseStockOverviewToolExecutor.executeWarehouseStockOverview(
+                                        rid, state, deptScoped, dis, start, stop, new LinkedHashMap<>());
         if (executed == null) {
             return AgentResultEnvelope.builder()
                     .agentName(agentName())
@@ -104,15 +113,23 @@ public class WarehouseStockAgent implements BusinessSubAgent {
 
         WarehouseAnswerPlan plan = null;
         if (executed.isSuccess()) {
-            WarehouseAnswerPlanBuilder.attachIfApplicable(state);
-            plan = state.getWarehouseAnswerPlan();
+            if (goodsCover) {
+                GoodsSupportedDishCoverAnswerPlanBuilder.attachIfApplicable(state);
+            } else {
+                WarehouseAnswerPlanBuilder.attachIfApplicable(state);
+                plan = state.getWarehouseAnswerPlan();
+            }
         }
 
         AgentResultStatus st = executed.isSuccess() ? AgentResultStatus.SUCCESS : AgentResultStatus.FAILED;
+        String resultType =
+                goodsCover && state.getGoodsSupportedDishCoverAnswerPlan() != null
+                        ? state.getGoodsSupportedDishCoverAnswerPlan().getPlanType()
+                        : (plan != null ? plan.getPlanType() : null);
         return AgentResultEnvelope.builder()
                 .agentName(agentName())
                 .status(st)
-                .resultType(plan != null ? plan.getPlanType() : null)
+                .resultType(resultType)
                 .answerPlan(plan)
                 .warnings(new ArrayList<>())
                 .errors(executed.isSuccess() ? new ArrayList<>() : List.of(

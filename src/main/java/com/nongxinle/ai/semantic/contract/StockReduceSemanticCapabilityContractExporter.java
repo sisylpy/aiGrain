@@ -14,7 +14,10 @@ import java.util.Set;
 /**
  * 出库/核销域 Step 2 小合同只读导出。
  * <p>ACTIVE：Matrix {@link StockReduceSemanticCapabilityMatrix#firstTurnRows()} 无 knownGap 行。
- * KNOWN_GAP：Matrix 缺口行；PLANNED：PlanBuilder 已挂载但 Matrix 首轮未登记。
+ * KNOWN_GAP：Matrix 缺口行 + Catalog 观测；PLANNED：PlanBuilder 已挂载但 Matrix 首轮未登记。
+ * <p>薄导出器：仅 Matrix / Lexicon 登记行 → {@link MatrixBackedContractExporterSupport} 结构化字段。
+ * NL 见 {@code semantic_intake.v1.md}、{@code query_semantic_parser.v2.md}、Harness。
+ * 治理见 {@code docs/ai/semantic-contract-exporter-governance.md}。
  */
 public final class StockReduceSemanticCapabilityContractExporter implements SemanticCapabilityContractExporter {
 
@@ -37,7 +40,9 @@ public final class StockReduceSemanticCapabilityContractExporter implements Sema
     public List<SemanticCapabilityContract> exportActiveContracts() {
         List<SemanticCapabilityContract> out = new ArrayList<>();
         for (StockReduceSemanticCapabilityMatrixRow row : StockReduceSemanticCapabilityMatrix.firstTurnRows()) {
-            out.add(fromMatrixRow(row, SemanticCapabilityContractStatus.ACTIVE, null));
+            if (row.getKnownGapCode() == null) {
+                out.add(fromMatrixRow(row, SemanticCapabilityContractStatus.ACTIVE, null));
+            }
         }
         return List.copyOf(out);
     }
@@ -52,24 +57,31 @@ public final class StockReduceSemanticCapabilityContractExporter implements Sema
                         "ALL",
                         Set.of("SUMMARY"),
                         Set.of("PRODUCTION_OUTPUT"),
-                        StockReduceAnswerPlan.REDUCE_TYPE_TYPE1,
-                        "produce_output_not_in_matrix_first_turn"),
-                plannedContract(
-                        "stock_reduce.goods_count_ranking",
-                        AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_COUNT_RANKING,
-                        StockReduceAnswerPlan.TYPE_STOCK_REDUCE_GOODS_COUNT_RANKING,
-                        "GOODS",
-                        Set.of("RANKING"),
-                        Set.of("OUTBOUND_COUNT"),
-                        "RANKING",
-                        "goods_outbound_count_ranking_not_in_matrix_first_turn"));
+                        "produce_output_not_in_matrix_first_turn"));
     }
 
     @Override
     public List<SemanticCapabilityContract> exportKnownGapContracts() {
         StockReduceSemanticCapabilityMatrixRow row = StockReduceSemanticCapabilityMatrix.GOODS_WASTE_AMOUNT_RANKING;
         return List.of(
-                fromMatrixRow(row, SemanticCapabilityContractStatus.KNOWN_GAP, row.getKnownGapCode()));
+                fromMatrixRow(row, SemanticCapabilityContractStatus.KNOWN_GAP, row.getKnownGapCode()),
+                gapContract(
+                        "stock_reduce.goods_count_ranking",
+                        AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_COUNT_RANKING,
+                        StockReduceAnswerPlan.TYPE_STOCK_REDUCE_GOODS_COUNT_RANKING,
+                        "GOODS",
+                        Set.of("RANKING"),
+                        Set.of("OUTBOUND_COUNT"),
+                        StockReduceSemanticCapabilityMatrix
+                                .KNOWN_GAP_OUTBOUND_GOODS_COUNT_RANKING_NOT_IN_P1),
+                gapContract(
+                        "stock_reduce.anomaly.outbound",
+                        null,
+                        null,
+                        "ALL",
+                        Set.of("ANOMALY"),
+                        Set.of("OUTBOUND_AMOUNT"),
+                        StockReduceSemanticCapabilityMatrix.KNOWN_GAP_OUTBOUND_ANOMALY_NOT_IN_P1));
     }
 
     @Override
@@ -97,31 +109,91 @@ public final class StockReduceSemanticCapabilityContractExporter implements Sema
             StockReduceSemanticCapabilityMatrixRow row,
             SemanticCapabilityContractStatus status,
             String gapMarker) {
-        return SemanticCapabilityContract.builder()
-                .contractId(contractIdForRow(row))
-                .domain(DOMAIN_CODE)
-                .intentCode(AiResolvedQueryIntent.STOCK_REDUCE_QUERY)
-                .pathCode(AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY)
-                .wire(row.getStructuredIntentDetailWire())
-                .queryObject(row.getQueryObject())
-                .operation(row.getOperation())
-                .metric(row.getMetric())
-                .sourceFacet(semanticSourceFacet(row))
-                .detailWanted(null)
-                .answerPlanType(row.getTargetStockReducePlanType())
-                .requiresAnchor(false)
-                .anchorType(null)
-                .selectedTools(STOCK_REDUCE_TOOLS)
-                .status(status)
-                .gapMarker(gapMarker)
-                .build();
+        return MatrixBackedContractExporterSupport.build(
+                MatrixBackedContractExporterSupport.MatrixContractExportSpec.builder()
+                        .contractId(contractIdForRow(row))
+                        .domain(DOMAIN_CODE)
+                        .intentCode(AiResolvedQueryIntent.STOCK_REDUCE_QUERY)
+                        .pathCode(AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY)
+                        .wire(row.getStructuredIntentDetailWire())
+                        .queryObject(row.getQueryObject())
+                        .operation(row.getOperation())
+                        .metric(row.getMetric())
+                        .answerPlanType(row.getTargetStockReducePlanType())
+                        .selectedTools(STOCK_REDUCE_TOOLS)
+                        .status(status)
+                        .gapMarker(gapMarker)
+                        .build());
     }
 
-    /**
-     * 出库域 v2 semanticSlots 不使用 {@code sourceFacet}；Matrix {@code reduceTypeLabel} 仅用于 Plan 层。
-     */
-    private static String semanticSourceFacet(StockReduceSemanticCapabilityMatrixRow row) {
-        return null;
+    private static SemanticCapabilityContract gapContract(
+            String contractId,
+            String wire,
+            String answerPlanType,
+            String queryObject,
+            Set<String> operations,
+            Set<String> metrics,
+            String gapMarker) {
+        return catalogContract(
+                contractId,
+                wire,
+                answerPlanType,
+                queryObject,
+                operations,
+                metrics,
+                SemanticCapabilityContractStatus.KNOWN_GAP,
+                gapMarker);
+    }
+
+    private static SemanticCapabilityContract plannedContract(
+            String contractId,
+            String wire,
+            String answerPlanType,
+            String queryObject,
+            Set<String> operations,
+            Set<String> metrics,
+            String gapMarker) {
+        return catalogContract(
+                contractId,
+                wire,
+                answerPlanType,
+                queryObject,
+                operations,
+                metrics,
+                SemanticCapabilityContractStatus.PLANNED,
+                gapMarker);
+    }
+
+    private static SemanticCapabilityContract catalogContract(
+            String contractId,
+            String wire,
+            String answerPlanType,
+            String queryObject,
+            Set<String> operations,
+            Set<String> metrics,
+            SemanticCapabilityContractStatus status,
+            String gapMarker) {
+        MatrixBackedContractExporterSupport.MatrixContractExportSpec.MatrixContractExportSpecBuilder b =
+                MatrixBackedContractExporterSupport.MatrixContractExportSpec.builder()
+                        .contractId(contractId)
+                        .domain(DOMAIN_CODE)
+                        .intentCode(AiResolvedQueryIntent.STOCK_REDUCE_QUERY)
+                        .pathCode(AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY)
+                        .wire(wire)
+                        .answerPlanType(answerPlanType)
+                        .selectedTools(STOCK_REDUCE_TOOLS)
+                        .status(status)
+                        .gapMarker(gapMarker);
+        if (queryObject != null) {
+            b.queryObject(queryObject);
+        }
+        if (operations != null) {
+            b.operations(operations);
+        }
+        if (metrics != null) {
+            b.metrics(metrics);
+        }
+        return MatrixBackedContractExporterSupport.build(b.build());
     }
 
     private static String contractIdForRow(StockReduceSemanticCapabilityMatrixRow row) {
@@ -136,34 +208,5 @@ public final class StockReduceSemanticCapabilityContractExporter implements Sema
             case "SR-GW" -> "stock_reduce.goods_waste_ranking";
             default -> "stock_reduce." + row.getRowId().toLowerCase();
         };
-    }
-
-    private static SemanticCapabilityContract plannedContract(
-            String contractId,
-            String wire,
-            String answerPlanType,
-            String queryObject,
-            Set<String> operations,
-            Set<String> metrics,
-            String reduceTypeLabel,
-            String gapMarker) {
-        return SemanticCapabilityContract.builder()
-                .contractId(contractId)
-                .domain(DOMAIN_CODE)
-                .intentCode(AiResolvedQueryIntent.STOCK_REDUCE_QUERY)
-                .pathCode(AiResolvedQueryIntent.PATH_STOCK_REDUCE_QUERY)
-                .wire(wire)
-                .queryObject(queryObject)
-                .operations(operations)
-                .metrics(metrics)
-                .sourceFacet(null)
-                .detailWanted(null)
-                .answerPlanType(answerPlanType)
-                .requiresAnchor(false)
-                .anchorType(null)
-                .selectedTools(STOCK_REDUCE_TOOLS)
-                .status(SemanticCapabilityContractStatus.PLANNED)
-                .gapMarker(gapMarker)
-                .build();
     }
 }

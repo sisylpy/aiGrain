@@ -21,6 +21,7 @@ public class AiHarnessReplayRoundResult {
     private long runId;
     private long conversationId;
 
+    @Builder.Default
     private Map<String, Object> resolvedQueryContextSummary = new LinkedHashMap<>();
 
     /**
@@ -30,5 +31,6 @@ public class AiHarnessReplayRoundResult {
 
     private boolean pass;
 
+    @Builder.Default
     private List<AiHarnessMismatch> failedFields = new ArrayList<>();
 }

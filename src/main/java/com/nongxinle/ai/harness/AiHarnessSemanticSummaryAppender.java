@@ -10,6 +10,7 @@ import com.nongxinle.ai.semantic.AiQuerySemanticLlmMergeHelper;
 import com.nongxinle.ai.semantic.SemanticTimeContractCheck;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCatalog;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictBlockerCatalog;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
@@ -52,6 +53,8 @@ final class AiHarnessSemanticSummaryAppender {
         out.put("semanticPrimaryVersion", AiHarnessSummaryUtils.blankToNull(ctx.getSemanticPrimaryVersion()));
         out.put("semanticFallbackUsed", ctx.getSemanticFallbackUsed());
         out.put("semanticFallbackReason", AiHarnessSummaryUtils.blankToNull(ctx.getSemanticFallbackReason()));
+        out.put("semanticFailureCode", AiHarnessSummaryUtils.blankToNull(ctx.getSemanticFailureCode()));
+        out.put("semanticFailureStage", AiHarnessSummaryUtils.blankToNull(ctx.getSemanticFailureStage()));
         out.put("semanticAdoptedFrom", AiHarnessSummaryUtils.blankToNull(ctx.getSemanticAdoptedFrom()));
         out.put("purchaseSemanticFramePrimaryMerge", ctx.getPurchaseSemanticFramePrimaryMerge());
         List<String> adoptedFields = ctx.getSemanticAdoptedFields();
@@ -79,7 +82,7 @@ final class AiHarnessSemanticSummaryAppender {
         if (v2NormNotes != null && v2NormNotes.containsKey("degradedBusinessCompareByRevenue")) {
             out.put("degradedBusinessCompareByRevenue", v2NormNotes.get("degradedBusinessCompareByRevenue"));
         }
-        out.put("querySemanticV2InputPreview", AiHarnessSummaryUtils.jsonDeepCopyMap(ctx.getQuerySemanticV2InputPreview()));
+        out.put("querySemanticV2InputPreview", AiHarnessSummaryUtils.compactQuerySemanticV2InputPreview(ctx.getQuerySemanticV2InputPreview()));
         out.put("querySemanticV2", AiHarnessSummaryUtils.jsonDeepCopyMap(ctx.getQuerySemanticV2()));
         out.put("querySemanticV2ParseMissing", ctx.getQuerySemanticV2ParseMissing());
         out.put("querySemanticV2Confidence", ctx.getQuerySemanticV2Confidence());
@@ -91,6 +94,9 @@ final class AiHarnessSemanticSummaryAppender {
         out.put(
                 "followUpRewriteDebug",
                 AiHarnessSummaryUtils.jsonDeepCopyMap(ctx.getFollowUpRewriteDebug()));
+        out.put(
+                "bareRankingDimensionSwitchDebug",
+                AiHarnessSummaryUtils.jsonDeepCopyMap(ctx.getBareRankingDimensionSwitchDebug()));
         out.put("rewriteInheritedTime", ctx.getRewriteInheritedTime());
         out.put("rewriteInheritedScope", ctx.getRewriteInheritedScope());
         out.put("rewriteInheritedAnchorType", AiHarnessSummaryUtils.blankToNull(ctx.getRewriteInheritedAnchorType()));
@@ -122,7 +128,7 @@ final class AiHarnessSemanticSummaryAppender {
         appendScopeMergeDebugFields(out, ctx);
         appendSemanticIntakeDebug(out, ctx);
         appendSemanticDomainRoutingDebug(out, ctx);
-        appendSemanticContractCatalogDebug(out);
+        appendSemanticContractCatalogSummary(out);
     }
 
     private static void appendSemanticIntakeDebug(LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx) {
@@ -141,6 +147,10 @@ final class AiHarnessSemanticSummaryAppender {
             out.put("intakeNeedClarification", null);
             out.put("intakeClarificationQuestion", null);
             out.put("intakeReason", null);
+            out.put("intakeParseError", null);
+            out.put("intakeLlmRawText", null);
+            out.put("intakeFailureCode", null);
+            out.put("intakeFailureStage", null);
             out.put("intakeSubQuestionsCount", null);
             return;
         }
@@ -168,6 +178,10 @@ final class AiHarnessSemanticSummaryAppender {
                 "intakeClarificationQuestion",
                 AiHarnessSummaryUtils.blankToNull(intake.getClarificationQuestion()));
         out.put("intakeReason", AiHarnessSummaryUtils.blankToNull(intake.getReason()));
+        out.put("intakeParseError", AiHarnessSummaryUtils.blankToNull(intake.getParseError()));
+        out.put("intakeLlmRawText", AiHarnessSummaryUtils.blankToNull(intake.getLlmRawText()));
+        out.put("intakeFailureCode", AiHarnessSummaryUtils.blankToNull(intake.getFailureCode()));
+        out.put("intakeFailureStage", AiHarnessSummaryUtils.blankToNull(intake.getFailureStage()));
         List<SemanticIntakeSubQuestion> subs = intake.getSubQuestions();
         out.put("intakeSubQuestionsCount", subs == null ? null : subs.size());
     }
@@ -298,10 +312,18 @@ final class AiHarnessSemanticSummaryAppender {
         return m;
     }
 
-    /** P1：只读两段式合同 Catalog 快照。 */
-    private static void appendSemanticContractCatalogDebug(LinkedHashMap<String, Object> out) {
-        out.put("semanticContractCatalog", SemanticContractCatalog.dump());
-        out.put("semanticContractStrictBlockers", SemanticContractStrictBlockerCatalog.dump());
+    /** 静态合同目录计数（不含全量合同列表；域路由见 {@code semanticDomainRoute} / {@code domainContractSelection}）。 */
+    private static void appendSemanticContractCatalogSummary(LinkedHashMap<String, Object> out) {
+        Map<String, Object> catalog = SemanticContractCatalog.dump();
+        Map<String, Object> blockers = SemanticContractStrictBlockerCatalog.dump();
+        LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
+        summary.put("domainRoutingContractCount", catalog.get("domainRoutingContractCount"));
+        summary.put("totalCapabilityContractCount", catalog.get("totalCapabilityContractCount"));
+        summary.put("activeCapabilityCountByDomain", catalog.get("activeCapabilityCountByDomain"));
+        summary.put("knownGapCapabilityCountByDomain", catalog.get("knownGapCapabilityCountByDomain"));
+        summary.put("strictBlockerCount", blockers.get("blockerCount"));
+        summary.put("activeStrictBlockerCount", blockers.get("activeBlockerCount"));
+        out.put("semanticContractCatalogSummary", summary);
     }
 
     private static void appendMultiTurnInheritanceDebug(
@@ -343,11 +365,6 @@ final class AiHarnessSemanticSummaryAppender {
             out.put("inheritedFromPreviousIntent", ctx.getQueryIntent().isInheritedFromPreviousTurn());
         } else {
             out.put("inheritedFromPreviousIntent", null);
-        }
-        if (ctx.getTimeWindow() != null) {
-            out.put("inheritedFromPreviousTimeWindow", ctx.getTimeWindow().isInheritedFromPreviousTurn());
-        } else {
-            out.put("inheritedFromPreviousTimeWindow", null);
         }
     }
 
@@ -392,7 +409,7 @@ final class AiHarnessSemanticSummaryAppender {
         }
     }
 
-    /** P1-B：Purchase 小合同计数（兼容字段）；详见 {@code semanticContractCatalog}。 */
+    /** P1-B：Purchase 小合同计数（兼容字段）；详见 {@code semanticContractCatalogSummary}。 */
     private static void appendPurchaseContractExportDebug(LinkedHashMap<String, Object> out) {
         Map<String, Object> catalog = SemanticContractCatalog.dump();
         out.put("exportedPurchaseContractCount", catalog.get("purchaseCapabilityContractCount"));
@@ -422,6 +439,44 @@ final class AiHarnessSemanticSummaryAppender {
         m.put("isFollowUp", r.getFollowUp());
         m.put("purchaseSemanticFramePrimaryMerge", r.getPurchaseSemanticFramePrimaryMerge());
         m.put("confidence", r.getConfidence());
+        m.put("mentionedDishName", AiHarnessSummaryUtils.blankToNull(r.effectiveMentionedDishName()));
+        m.put("mentionedGoodsName", AiHarnessSummaryUtils.blankToNull(r.effectiveMentionedGoodsName()));
+        if (Boolean.TRUE.equals(r.getQuerySemanticV2RepairAttempted())) {
+            m.put("querySemanticV2RepairAttempted", true);
+            m.put("querySemanticV2RepairSuccess", Boolean.TRUE.equals(r.getQuerySemanticV2RepairSuccess()));
+            m.put(
+                    "querySemanticV2RepairReason",
+                    AiHarnessSummaryUtils.blankToNull(r.getQuerySemanticV2RepairReason()));
+            m.put(
+                    "querySemanticV2ProtocolRelocateApplied",
+                    r.getQuerySemanticV2RepairReason() != null
+                            && r.getQuerySemanticV2RepairReason().contains("java_protocol_relocate"));
+        }
+        if (r.getContractCompletionTrace() != null && !r.getContractCompletionTrace().isEmpty()) {
+            Map<String, Object> trace = new LinkedHashMap<>(r.getContractCompletionTrace());
+            m.put("contractCompletionTrace", trace);
+            m.put("contractEntryValidated", trace.get(SemanticContractCompletionEngine.TRACE_CONTRACT_ENTRY_VALIDATED));
+            Object failureReason = trace.get("contractCompletionFailureReason");
+            if (failureReason == null) {
+                failureReason = trace.get("violationReason");
+            }
+            m.put("contractCompletionFailureReason", failureReason);
+            Object slotMismatch = trace.get("slotMismatchFields");
+            if (slotMismatch == null) {
+                slotMismatch = trace.get("missingSlots");
+            }
+            m.put("slotMismatchFields", slotMismatch);
+            m.put("mappedIntentCode", trace.get("intentCode"));
+            m.put("mappedPathCode", trace.get("pathCode"));
+            m.put("mappedPlanType", trace.get("answerPlanType"));
+        }
+        com.nongxinle.ai.semantic.contract.ContractExecutionMappingSupport.Mapping executionMapping =
+                com.nongxinle.ai.semantic.contract.ContractExecutionMappingSupport.resolve(r);
+        if (executionMapping != null && executionMapping.hasRoutableExecution()) {
+            m.put("mappedIntentCode", executionMapping.getIntentCode());
+            m.put("mappedPathCode", executionMapping.getPathCode());
+            m.put("mappedPlanType", executionMapping.getAnswerPlanType());
+        }
         if (r.getTime() != null) {
             LinkedHashMap<String, Object> t = new LinkedHashMap<>();
             t.put("timeType", AiHarnessSummaryUtils.blankToNull(r.getTime().getTimeType()));
@@ -476,9 +531,16 @@ final class AiHarnessSemanticSummaryAppender {
             slots.put("detailWanted", AiHarnessSummaryUtils.blankToNull(s.getDetailWanted()));
             slots.put("structuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(s.getStructuredIntentDetailWire()));
             slots.put("answerPlanType", AiHarnessSummaryUtils.blankToNull(s.getAnswerPlanType()));
+            slots.put("mentionedDishName", AiHarnessSummaryUtils.blankToNull(s.getMentionedDishName()));
+            slots.put("mentionedGoodsName", AiHarnessSummaryUtils.blankToNull(s.getMentionedGoodsName()));
+            slots.put(
+                    "requestedTargetGrossMarginRate",
+                    AiHarnessSummaryUtils.blankToNull(s.getRequestedTargetGrossMarginRate()));
             m.put("semanticSlots", slots);
+            m.put("selectedContractId", AiHarnessSummaryUtils.blankToNull(s.getSelectedContractId()));
         } else {
             m.put("semanticSlots", null);
+            m.put("selectedContractId", null);
         }
         return m;
     }
@@ -510,9 +572,6 @@ final class AiHarnessSemanticSummaryAppender {
             }
         }
         out.put("rawStructuredIntentDetail", AiHarnessSummaryUtils.blankToNull(rawStructuredIntentDetail));
-
-        // rawTimeAction：LLM 原始 timeAction
-        out.put("rawTimeAction", sem != null ? AiHarnessSummaryUtils.blankToNull(sem.getTimeAction()) : null);
 
         // rawScopeAction：LLM 原始 scopeAction
         out.put("rawScopeAction", sem != null ? AiHarnessSummaryUtils.blankToNull(sem.getScopeAction()) : null);
@@ -574,6 +633,7 @@ final class AiHarnessSemanticSummaryAppender {
             case "STOCK_REDUCE_QUERY", "STOCK_OUT", "WRITE_OFF" -> "PATH_STOCK_REDUCE_QUERY";
             case "DISH_PROFIT", "DISH_MARGIN" -> "PATH_DISH_PROFIT";
             case "DISH_SALES_QUERY" -> "PATH_DISH_SALES_QUERY";
+            case "MENU_OPERATION" -> "PATH_MENU_OPERATION";
             case "COST_DIAGNOSIS", "COST_DIAG" -> "PATH_COST_DIAGNOSIS";
             case "BUSINESS_DIAGNOSIS" -> "PATH_BUSINESS_DIAGNOSIS";
             default -> null;

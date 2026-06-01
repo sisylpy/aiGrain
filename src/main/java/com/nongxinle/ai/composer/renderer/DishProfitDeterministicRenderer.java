@@ -1,6 +1,7 @@
 package com.nongxinle.ai.composer.renderer;
 
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
+import com.nongxinle.ai.graph.business.DishProfitRankingSalesEvidenceSupport;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -26,14 +27,21 @@ public final class DishProfitDeterministicRenderer {
      * 不读取工具 summary、不排序、不算术。
      */
     private static String composeDishProfitDeterministicFromAnswerPlan(DishProfitAnswerPlan plan) {
-        if (plan == null || plan.getFocusRows() == null || plan.getFocusRows().isEmpty()) {
+        if (plan == null) {
+            return null;
+        }
+        String type = plan.getPlanType() != null ? plan.getPlanType().trim() : "";
+        if (DishProfitAnswerPlan.TYPE_DISH_PROFIT_RANKING_NO_DATA.equals(type)
+                || DishProfitRankingSalesEvidenceSupport.isNoDataRankingPlan(plan)) {
+            return DishProfitRankingSalesEvidenceSupport.EMPTY_RANKING_MESSAGE;
+        }
+        if (plan.getFocusRows() == null || plan.getFocusRows().isEmpty()) {
             return null;
         }
         Map<String, Object> row = plan.getFocusRows().get(0);
         if (row == null) {
             return null;
         }
-        String type = plan.getPlanType() != null ? plan.getPlanType().trim() : "";
         if (DishProfitAnswerPlan.TYPE_DISH_INGREDIENT_COST_BREAKDOWN.equals(type)) {
             if (plan.getIngredientBreakdownAvailable() != null && plan.getIngredientBreakdownAvailable()) {
                 return composeIngredientBreakdownAvailableFromAnswerPlan(plan);

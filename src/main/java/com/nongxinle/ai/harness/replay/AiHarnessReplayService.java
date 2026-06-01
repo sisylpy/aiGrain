@@ -5,6 +5,7 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiConversationMemoryService;
 import com.nongxinle.ai.harness.AiHarnessResolvedContextSummarizer;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.platform.AiCardPayloadWireSupport;
 import com.nongxinle.ai.platform.AiRunService;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
 import com.nongxinle.ai.planner.DishProfitPlannerRealReadBridge;
@@ -142,6 +143,8 @@ public class AiHarnessReplayService {
                         toolRequestOnly);
                 summary = new LinkedHashMap<>(AiHarnessResolvedContextSummarizer.summarize(
                         ended.getResolvedQueryContext(), conversationId, ended));
+                AiCardPayloadWireSupport.refreshAllCardPayloads(ended);
+                AiCardPayloadWireSupport.enrichHarnessSummaryWithCardFields(summary, ended);
                 summary.put("harnessReplayTurnMemorySource", "fromCompletedState");
             } else {
                 var uc = userContextResolver.resolve(runReq);
@@ -257,6 +260,10 @@ public class AiHarnessReplayService {
                                 req.getCaseId().trim())
                         || AiHarnessBuiltinCases.PURCHASE_SUPPLIER_ANCHOR_THEN_SOURCE_AMOUNT_SUMMARY_2.equals(
                                 req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.PURCHASE_PERIOD_GOODS_LIST_1.equals(req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.PURCHASE_PERIOD_GOODS_LIST_SELF_1.equals(req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.PURCHASE_PERIOD_GOODS_LIST_SUPPLIER_1.equals(
+                                req.getCaseId().trim())
                         || AiHarnessBuiltinCases.BUSINESS_STORE_PRIORITY_REASON_EXPLANATION_3.equals(
                                 req.getCaseId().trim())
                         || AiHarnessBuiltinCases.BUSINESS_DIAGNOSIS_ANCHOR_EXECUTION_MATRIX_P1.equals(
@@ -267,6 +274,24 @@ public class AiHarnessReplayService {
                         || AiHarnessBuiltinCases.WAREHOUSE_MATRIX_P1.equals(req.getCaseId().trim())
                         || AiHarnessBuiltinCases.DISH_SALES_MATRIX_P1.equals(req.getCaseId().trim())
                         || AiHarnessBuiltinCases.DISH_PROFIT_AGENT_GRAPH_CORE.equals(req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.DISH_PROFIT_ACTUAL_COST_RANKING_1.equals(req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.DISH_PROFIT_HIGH_PROFIT_AMOUNT_RANKING_1.equals(
+                                req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.DISH_SALES_TO_COST_DIMENSION_SWITCH_2.equals(req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.DISH_SALES_TO_MARGIN_DIMENSION_SWITCH_2.equals(req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.DISH_PROFIT_COST_TO_SALES_DIMENSION_SWITCH_2.equals(
+                                req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.DISH_PROFIT_MARGIN_TO_SALES_DIMENSION_SWITCH_2.equals(
+                                req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.DISH_SALES_TO_AMOUNT_DIMENSION_SWITCH_2.equals(
+                                req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.DISH_NAMED_DISH_COST_SINGLE_1.equals(req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.DISH_INGREDIENT_COVER_SINGLE_1.equals(req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.GOODS_SUPPORTED_DISH_COVER_SINGLE_1.equals(req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.GOODS_SUPPORTED_DISH_COVER_DAYS_PROBE_1.equals(
+                                req.getCaseId().trim())
+                        || AiHarnessBuiltinCases.WAREHOUSE_INVENTORY_RISK_TO_DISH_INGREDIENT_COVER_2.equals(
+                                req.getCaseId().trim())
                         || AiHarnessBuiltinCases.DISH_LOW_MARGIN_ANCHOR_EXECUTION_INGREDIENT_COST_2.equals(
                                 req.getCaseId().trim()))) {
             return AiHarnessReplayMode.GRAPH_RUN;
@@ -615,6 +640,42 @@ public class AiHarnessReplayService {
             }
             return AiHarnessBuiltinCases.expectationsPurchaseSupplierAnchorThenSourceAmountSummary2(anchor);
         }
+        if (AiHarnessBuiltinCases.PURCHASE_PERIOD_GOODS_LIST_1.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            int n = AiHarnessBuiltinCases.expectationsPurchasePeriodGoodsList1(anchor).size();
+            if (req.getMessages().size() < n) {
+                log.warn(
+                        "[AiHarnessReplay] case={} expects {} rounds, got {}",
+                        req.getCaseId(),
+                        n,
+                        req.getMessages().size());
+            }
+            return AiHarnessBuiltinCases.expectationsPurchasePeriodGoodsList1(anchor);
+        }
+        if (AiHarnessBuiltinCases.PURCHASE_PERIOD_GOODS_LIST_SELF_1.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            int n = AiHarnessBuiltinCases.expectationsPurchasePeriodGoodsListSelf1(anchor).size();
+            if (req.getMessages().size() < n) {
+                log.warn(
+                        "[AiHarnessReplay] case={} expects {} rounds, got {}",
+                        req.getCaseId(),
+                        n,
+                        req.getMessages().size());
+            }
+            return AiHarnessBuiltinCases.expectationsPurchasePeriodGoodsListSelf1(anchor);
+        }
+        if (AiHarnessBuiltinCases.PURCHASE_PERIOD_GOODS_LIST_SUPPLIER_1.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            int n = AiHarnessBuiltinCases.expectationsPurchasePeriodGoodsListSupplier1(anchor).size();
+            if (req.getMessages().size() < n) {
+                log.warn(
+                        "[AiHarnessReplay] case={} expects {} rounds, got {}",
+                        req.getCaseId(),
+                        n,
+                        req.getMessages().size());
+            }
+            return AiHarnessBuiltinCases.expectationsPurchasePeriodGoodsListSupplier1(anchor);
+        }
         if (AiHarnessBuiltinCases.BUSINESS_STORE_PRIORITY_REASON_EXPLANATION_3.equals(req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
             int n = AiHarnessBuiltinCases.expectationsBusinessStorePriorityReasonExplanation3(anchor).size();
@@ -662,6 +723,75 @@ public class AiHarnessReplayService {
                         req.getMessages().size());
             }
             return AiHarnessBuiltinCases.expectationsDishProfitAgentGraphCore(anchor);
+        }
+        if (AiHarnessBuiltinCases.DISH_PROFIT_ACTUAL_COST_RANKING_1.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            int n = AiHarnessBuiltinCases.expectationsDishProfitActualCostRanking1(anchor).size();
+            if (req.getMessages().size() < n) {
+                log.warn(
+                        "[AiHarnessReplay] case={} expects {} rounds, got {}",
+                        req.getCaseId(),
+                        n,
+                        req.getMessages().size());
+            }
+            return AiHarnessBuiltinCases.expectationsDishProfitActualCostRanking1(anchor);
+        }
+        if (AiHarnessBuiltinCases.DISH_PROFIT_HIGH_PROFIT_AMOUNT_RANKING_1.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            return AiHarnessBuiltinCases.expectationsDishProfitHighProfitAmountRanking1(anchor);
+        }
+        if (AiHarnessBuiltinCases.DISH_SALES_TO_COST_DIMENSION_SWITCH_2.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            return AiHarnessBuiltinCases.expectationsDishSalesToCostDimensionSwitch2(anchor);
+        }
+        if (AiHarnessBuiltinCases.DISH_SALES_TO_MARGIN_DIMENSION_SWITCH_2.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            return AiHarnessBuiltinCases.expectationsDishSalesToMarginDimensionSwitch2(anchor);
+        }
+        if (AiHarnessBuiltinCases.DISH_PROFIT_COST_TO_SALES_DIMENSION_SWITCH_2.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            return AiHarnessBuiltinCases.expectationsDishProfitCostToSalesDimensionSwitch2(anchor);
+        }
+        if (AiHarnessBuiltinCases.DISH_PROFIT_MARGIN_TO_SALES_DIMENSION_SWITCH_2.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            return AiHarnessBuiltinCases.expectationsDishProfitMarginToSalesDimensionSwitch2(anchor);
+        }
+        if (AiHarnessBuiltinCases.DISH_SALES_TO_AMOUNT_DIMENSION_SWITCH_2.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            return AiHarnessBuiltinCases.expectationsDishSalesToAmountDimensionSwitch2(anchor);
+        }
+        if (AiHarnessBuiltinCases.DISH_NAMED_DISH_COST_SINGLE_1.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            return AiHarnessBuiltinCases.expectationsDishNamedDishCostSingle1(anchor);
+        }
+        if (AiHarnessBuiltinCases.DISH_INGREDIENT_COVER_SINGLE_1.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            return AiHarnessBuiltinCases.expectationsDishIngredientCoverSingle1(anchor);
+        }
+        if (AiHarnessBuiltinCases.GOODS_SUPPORTED_DISH_COVER_SINGLE_1.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            return AiHarnessBuiltinCases.expectationsGoodsSupportedDishCoverSingle1(anchor);
+        }
+        if (AiHarnessBuiltinCases.GOODS_SUPPORTED_DISH_COVER_DAYS_PROBE_1.equals(req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            return AiHarnessBuiltinCases.expectationsGoodsSupportedDishCoverDaysProbe1(anchor);
+        }
+        if (AiHarnessBuiltinCases.WAREHOUSE_INVENTORY_RISK_TO_DISH_INGREDIENT_COVER_2.equals(
+                req.getCaseId().trim())) {
+            var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);
+            int n =
+                    AiHarnessBuiltinCases.expectationsWarehouseInventoryRiskToDishIngredientCover2(
+                                    anchor)
+                            .size();
+            if (req.getMessages().size() < n) {
+                log.warn(
+                        "[AiHarnessReplay] case={} expects {} rounds, got {}",
+                        req.getCaseId(),
+                        n,
+                        req.getMessages().size());
+            }
+            return AiHarnessBuiltinCases.expectationsWarehouseInventoryRiskToDishIngredientCover2(
+                    anchor);
         }
         if (AiHarnessBuiltinCases.DISH_LOW_MARGIN_ANCHOR_EXECUTION_INGREDIENT_COST_2.equals(req.getCaseId().trim())) {
             var anchor = AiHarnessBuiltinCases.LocalDateAnchor.frozenClock(today);

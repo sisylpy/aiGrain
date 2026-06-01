@@ -124,6 +124,41 @@ public class AiQuerySemanticParseResult {
          * 与 {@code structuredIntentDetailWire} 等同一条 entry。
          */
         private String selectedContractId;
+        /**
+         * 单菜 / DISH anchor 合同：用户在原文中点到的一道菜名称（口述，非 ID）。
+         * 与顶层 {@link AiQuerySemanticParseResult#mentionedDishName} 二选一或并存；服务端合并读取。
+         */
+        private String mentionedDishName;
+        /**
+         * 原料 / GOODS anchor 合同：用户在原文中点到的原料名称（口述，非 ID）。
+         * 与顶层 {@link AiQuerySemanticParseResult#mentionedGoodsName} 二选一或并存；服务端合并读取。
+         */
+        private String mentionedGoodsName;
+        /**
+         * 用户显式给出的目标毛利率（百分数，如 "55"）；仅 LLM 输出，Java 不得从原文 parse。
+         */
+        private String requestedTargetGrossMarginRate;
+
+        /** 拷贝全部槽位字段（含 {@code mentionedDishName} / {@code mentionedGoodsName}）；normalizer / contract completion 复用。 */
+        public static SemanticSlotsPart copyOf(SemanticSlotsPart from) {
+            if (from == null) {
+                return null;
+            }
+            return SemanticSlotsPart.builder()
+                    .selectedContractId(from.getSelectedContractId())
+                    .queryObject(from.getQueryObject())
+                    .operation(from.getOperation())
+                    .metric(from.getMetric())
+                    .sourceFacet(from.getSourceFacet())
+                    .anchorPolicy(from.getAnchorPolicy())
+                    .detailWanted(from.getDetailWanted())
+                    .structuredIntentDetailWire(from.getStructuredIntentDetailWire())
+                    .answerPlanType(from.getAnswerPlanType())
+                    .mentionedDishName(from.getMentionedDishName())
+                    .mentionedGoodsName(from.getMentionedGoodsName())
+                    .requestedTargetGrossMarginRate(from.getRequestedTargetGrossMarginRate())
+                    .build();
+        }
     }
 
     private String intent;
@@ -133,6 +168,8 @@ public class AiQuerySemanticParseResult {
     private String semanticDomain;
     /** DISH_PROFIT/BUSINESS_DIAGNOSIS 等：用户在原文中点到的一道菜名称（口述，非 ID）。 */
     private String mentionedDishName;
+    /** WAREHOUSE 原料锚：用户在原文中点到的原料名称（口述，非 ID）。 */
+    private String mentionedGoodsName;
     private Double confidence;
     /** 是否与上一轮同一对话主线（语义判断，不设 ID） */
     private Boolean followUp;
@@ -283,6 +320,82 @@ public class AiQuerySemanticParseResult {
             }
         }
         return new ArrayList<>(dedup);
+    }
+
+    /**
+     * 合并顶层 {@link #mentionedDishName} 与 {@code semanticSlots.mentionedDishName}（顶层优先）。
+     * 不读 rawUserMessage；仅结构化 LLM 字段。
+     */
+    public String effectiveMentionedDishName() {
+        if (StringUtils.hasText(mentionedDishName)) {
+            return mentionedDishName.trim();
+        }
+        SemanticSlotsPart ss = semanticSlots;
+        if (ss != null && StringUtils.hasText(ss.getMentionedDishName())) {
+            return ss.getMentionedDishName().trim();
+        }
+        return null;
+    }
+
+    /**
+     * 合并顶层 {@link #mentionedGoodsName} 与 {@code semanticSlots.mentionedGoodsName}（顶层优先）。
+     * 不读 rawUserMessage；仅结构化 LLM 字段。
+     */
+    public String effectiveMentionedGoodsName() {
+        if (StringUtils.hasText(mentionedGoodsName)) {
+            return mentionedGoodsName.trim();
+        }
+        SemanticSlotsPart ss = semanticSlots;
+        if (ss != null && StringUtils.hasText(ss.getMentionedGoodsName())) {
+            return ss.getMentionedGoodsName().trim();
+        }
+        return null;
+    }
+
+    /** 仅读 semanticSlots.requestedTargetGrossMarginRate；Java 不得从原文 parse。 */
+    public String effectiveRequestedTargetGrossMarginRate() {
+        SemanticSlotsPart ss = semanticSlots;
+        if (ss != null && StringUtils.hasText(ss.getRequestedTargetGrossMarginRate())) {
+            return ss.getRequestedTargetGrossMarginRate().trim();
+        }
+        return null;
+    }
+
+    /**
+     * v2 协议 repair 仅修正 schema 时，从 repair 前 parse 回填 DISH anchor（不读 rawMessage）。
+     */
+    public static AiQuerySemanticParseResult mergeDishAnchorIfAbsent(
+            AiQuerySemanticParseResult beforeRepair, AiQuerySemanticParseResult afterRepair) {
+        if (beforeRepair == null || afterRepair == null || afterRepair.isParseMissing()) {
+            return afterRepair;
+        }
+        if (StringUtils.hasText(afterRepair.effectiveMentionedDishName())) {
+            return afterRepair;
+        }
+        String dish = beforeRepair.effectiveMentionedDishName();
+        if (!StringUtils.hasText(dish)) {
+            return afterRepair;
+        }
+        var b = afterRepair.toBuilder();
+        SemanticSlotsPart slots = afterRepair.getSemanticSlots();
+        if (slots != null) {
+            b.semanticSlots(
+                    SemanticSlotsPart.builder()
+                            .selectedContractId(slots.getSelectedContractId())
+                            .queryObject(slots.getQueryObject())
+                            .operation(slots.getOperation())
+                            .metric(slots.getMetric())
+                            .sourceFacet(slots.getSourceFacet())
+                            .anchorPolicy(slots.getAnchorPolicy())
+                            .detailWanted(slots.getDetailWanted())
+                            .structuredIntentDetailWire(slots.getStructuredIntentDetailWire())
+                            .answerPlanType(slots.getAnswerPlanType())
+                            .mentionedDishName(dish)
+                            .build());
+        } else if (!StringUtils.hasText(afterRepair.getMentionedDishName())) {
+            b.mentionedDishName(dish);
+        }
+        return b.build();
     }
 
     /** 口述店名：排除 null、空白、字面量 {@code "null"}（JSON/LLM 噪点）；不解析用户原文。 */

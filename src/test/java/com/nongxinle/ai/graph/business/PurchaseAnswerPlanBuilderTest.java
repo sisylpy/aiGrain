@@ -4,6 +4,7 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
@@ -61,6 +62,70 @@ class PurchaseAnswerPlanBuilderTest {
     }
 
     @Test
+    void resolvePlanType_periodGoodsListWire() {
+        assertEquals(PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL,
+                PurchaseAnswerPlanBuilder.resolvePlanType(
+                        AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST,
+                        AiQuerySemanticLexicon.SOURCE_ALL));
+    }
+
+    @Test
+    void build_periodGoodsDetail_emitsItemRowsFromToolPayload() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("goodsName", "去皮核桃仁");
+        row.put("quantity", "12.0");
+        row.put("unit", "斤");
+        row.put("unitPrice", "32.5");
+        row.put("amount", "390.0");
+        Map<String, Object> overview = new LinkedHashMap<>();
+        overview.put("totalPurchaseAmount", 1000);
+        overview.put("purchaseOrderCount", 28);
+        overview.put("purchasePeriodGoodsDetailRows", List.of(row));
+        AiResolvedQueryIntent qi =
+                AiResolvedQueryIntent.builder()
+                        .structuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST)
+                        .purchaseSourceType(AiQuerySemanticLexicon.SOURCE_ALL)
+                        .build();
+        AiResolvedQueryContext rq = purchasePeriodGoodsListContractRq(qi);
+        AiRunState state = AiRunState.builder().resolvedQueryContext(rq).build();
+        PurchaseAnswerPlan plan = PurchaseAnswerPlanBuilder.build(state, overview, rq);
+        assertEquals(PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL, plan.getPlanType());
+        assertEquals(1, plan.getFocusRows().size());
+        assertEquals("去皮核桃仁", plan.getFocusRows().get(0).get("goodsName"));
+        Map<String, Object> card = PurchaseGoodsDetailCardSupport.buildCard(plan);
+        assertNotNull(card);
+        assertEquals(PurchaseAnswerPlan.CARD_TYPE_PURCHASE_GOODS_DETAIL, card.get("cardType"));
+    }
+
+    @Test
+    void build_periodGoodsDetail_emptyRows_emitsEmptyStatusCard() {
+        Map<String, Object> overview = new LinkedHashMap<>();
+        overview.put("totalPurchaseAmount", 0);
+        overview.put("purchaseOrderCount", 0);
+        overview.put("purchasePeriodGoodsDetailRows", List.of());
+        overview.put("purchasePeriodGoodsDetailRowsCount", 0);
+        overview.put("purchasePeriodGoodsDetailNoDataReason", "NO_PURCHASE_RECORD_FOR_SCOPE");
+        AiResolvedQueryIntent qi =
+                AiResolvedQueryIntent.builder()
+                        .structuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST)
+                        .purchaseSourceType(AiQuerySemanticLexicon.SOURCE_ALL)
+                        .build();
+        AiResolvedQueryContext rq = purchasePeriodGoodsListContractRq(qi);
+        AiRunState state = AiRunState.builder().resolvedQueryContext(rq).build();
+        PurchaseAnswerPlan plan = PurchaseAnswerPlanBuilder.build(state, overview, rq);
+        assertEquals(PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL, plan.getPlanType());
+        assertTrue(plan.getFocusRows().isEmpty());
+        assertEquals("NO_PURCHASE_RECORD_FOR_SCOPE", plan.getDebug().get("purchasePeriodGoodsDetailNoDataReason"));
+        Map<String, Object> card = PurchaseGoodsDetailCardSupport.buildCard(plan);
+        assertNotNull(card);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) card.get("payload");
+        assertEquals(BusinessStatusCardShellSupport.STATUS_EMPTY, payload.get("status"));
+        assertEquals("该时间范围内暂无采购记录", payload.get("emptyReason"));
+        assertTrue(((List<?>) payload.get("items")).isEmpty());
+    }
+
+    @Test
     void build_goodsAmountRanking_emitsGoodsResultAnchorFromFocusRow() {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("goodsName", "TestGoods");
@@ -95,6 +160,53 @@ class PurchaseAnswerPlanBuilderTest {
                 PurchaseAnswerPlanBuilder.resolvePlanType(
                         AiQuerySemanticLexicon.STRUCTURED_PURCHASE_OVERVIEW_SUMMARY,
                         AiQuerySemanticLexicon.SOURCE_ALL));
+    }
+
+    @Test
+    void attachIfApplicable_businessOverviewSummaryWire_buildsPurchaseOverview() {
+        AiResolvedQueryContext rq = BusinessOverviewSubPlanAttachSupportTest.businessOverviewContext(
+                AiQuerySemanticLexicon.STRUCTURED_BUSINESS_OVERVIEW_SUMMARY);
+        AiRunState state = AiRunState.builder()
+                .runId(220L)
+                .businessOverviewPath(true)
+                .resolvedQueryContext(rq)
+                .dataPlanTools(List.of(AiBusinessToolIds.PURCHASE_OVERVIEW))
+                .rawUserInput("这个月经营怎么样？")
+                .build();
+
+        Map<String, Object> overview = new LinkedHashMap<>();
+        overview.put("totalPurchaseAmount", 500);
+        overview.put("purchaseOrderCount", 10);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("purchaseOverview", overview);
+        Map<String, Object> env = new LinkedHashMap<>();
+        env.put("success", true);
+        env.put("data", data);
+        state.getToolResults().put(AiBusinessToolIds.PURCHASE_OVERVIEW, env);
+
+        PurchaseAnswerPlanBuilder.attachIfApplicable(state);
+        assertNotNull(state.getPurchaseAnswerPlan());
+        assertEquals(PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW, state.getPurchaseAnswerPlan().getPlanType());
+        assertFalse(state.getPurchaseAnswerPlan().getFocusRows().isEmpty());
+        assertEquals(BusinessOverviewSubPlanAttachSupport.ATTACH_MODE,
+                state.getPurchaseAnswerPlan().getDebug().get("attachMode"));
+    }
+
+    @Test
+    void build_businessOverviewSummaryWire_rejectsWithoutOverviewAttachBypass() {
+        Map<String, Object> overview = new LinkedHashMap<>();
+        overview.put("totalPurchaseAmount", 100);
+        overview.put("purchaseOrderCount", 3);
+        AiResolvedQueryContext rq = BusinessOverviewSubPlanAttachSupportTest.businessOverviewContext(
+                AiQuerySemanticLexicon.STRUCTURED_BUSINESS_OVERVIEW_SUMMARY);
+        AiRunState state = AiRunState.builder()
+                .runId(221L)
+                .businessOverviewPath(false)
+                .resolvedQueryContext(rq)
+                .build();
+        PurchaseAnswerPlan plan = PurchaseAnswerPlanBuilder.build(state, overview, rq);
+        assertEquals("contract_wire_not_accepted_purchase_matrix", plan.getDebug().get("earlyReturnReason"));
+        assertTrue(plan.getFocusRows().isEmpty());
     }
 
     @Test
@@ -480,6 +592,31 @@ class PurchaseAnswerPlanBuilderTest {
                 AiQuerySemanticLexicon.STRUCTURED_GOODS_OUTBOUND_RANKING));
         assertFalse(AiQuerySemanticLexicon.isNonOverviewStockReduceStructuredDetail(
                 AiQuerySemanticLexicon.STRUCTURED_STOCK_REDUCE_OVERVIEW_SUMMARY));
+    }
+
+    private static AiResolvedQueryContext purchasePeriodGoodsListContractRq(AiResolvedQueryIntent qi) {
+        LinkedHashMap<String, Object> trace = new LinkedHashMap<>();
+        trace.put(SemanticContractCompletionEngine.TRACE_CONTRACT_ENTRY_VALIDATED, true);
+        AiQuerySemanticParseResult parse =
+                AiQuerySemanticParseResult.builder()
+                        .semanticSlots(
+                                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                                        .selectedContractId("purchase.period_goods_list")
+                                        .queryObject("GOODS")
+                                        .operation("DETAIL")
+                                        .structuredIntentDetailWire(
+                                                AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST)
+                                        .build())
+                        .contractCompletionTrace(trace)
+                        .build();
+        return AiResolvedQueryContext.builder()
+                .queryIntent(qi)
+                .querySemanticParse(parse)
+                .semanticContractValidation(
+                        SemanticContractValidationDebug.builder()
+                                .matchedContractId("purchase.period_goods_list")
+                                .build())
+                .build();
     }
 
     private static AiResolvedQueryContext purchaseGoodsAnchorRq(

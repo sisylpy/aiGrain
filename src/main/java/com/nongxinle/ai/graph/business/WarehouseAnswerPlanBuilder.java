@@ -7,11 +7,14 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
-import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
-import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
+import com.nongxinle.ai.inventory.InventoryPresentationTimeSupport;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
+import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
+import com.nongxinle.ai.tool.business.WarehouseInventoryRiskListTool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 
@@ -37,11 +40,11 @@ public final class WarehouseAnswerPlanBuilder {
         if (!state.isWarehouseStockOverviewPath()) {
             return;
         }
-        boolean planned = state.getDataPlanTools() != null
-                && state.getDataPlanTools().contains(AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
-        boolean hasToolEnvelope = state.getToolResults() != null
-                && state.getToolResults().containsKey(AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
-        if (!planned && !hasToolEnvelope) {
+        AiResolvedQueryContext rqEarly = state.getResolvedQueryContext();
+        if (ToolRequestContractExecutionParamSupport.isGoodsSupportedDishCoverContract(rqEarly)) {
+            return;
+        }
+        if (!warehouseToolPlannedOrExecuted(state)) {
             return;
         }
 
@@ -71,16 +74,21 @@ public final class WarehouseAnswerPlanBuilder {
             return;
         }
 
+        String planType = resolvePlanType(contractWire);
+        String expectedTool =
+                WarehouseAnswerPlan.TYPE_WAREHOUSE_LOW_STOCK_RISK.equals(planType)
+                        ? AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST
+                        : AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW;
+
         LinkedHashMap<String, Object> baseDiag = new LinkedHashMap<>();
         baseDiag.put("attachAttempted", true);
-        baseDiag.put("expectedToolKey", AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
-        baseDiag.put("source", "WarehouseStockOverviewTool");
-        baseDiag.put("sourceToolKey", AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
+        baseDiag.put("expectedToolKey", expectedTool);
+        baseDiag.put("source", expectedTool);
+        baseDiag.put("sourceToolKey", expectedTool);
         baseDiag.put("contractLocked", true);
         baseDiag.put("contractWire", contractWire);
 
-        Object env = state.getToolResults() == null ? null
-                : state.getToolResults().get(AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
+        Object env = state.getToolResults() == null ? null : state.getToolResults().get(expectedTool);
         if (!(env instanceof Map<?, ?> envMapRaw)) {
             attachFailure(state, baseDiag, "missing_or_invalid_tool_envelope", "tool result missing");
             return;
@@ -94,14 +102,23 @@ public final class WarehouseAnswerPlanBuilder {
         }
 
         Object dataObj = unwrapDataMaybeJsonString(envMap.get("data"));
-        Map<String, Object> wo = extractWarehouseOverview(dataObj, baseDiag);
-        if (wo.isEmpty()) {
-            attachFailure(state, baseDiag, "empty_warehouse_overview", "warehouseOverview missing");
-            return;
+        Map<String, Object> payload;
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_LOW_STOCK_RISK.equals(planType)) {
+            payload = extractWarehouseInventoryRisk(dataObj, baseDiag);
+            if (payload.isEmpty()) {
+                attachFailure(state, baseDiag, "empty_warehouse_inventory_risk", "warehouseInventoryRisk missing");
+                return;
+            }
+        } else {
+            payload = extractWarehouseOverview(dataObj, baseDiag);
+            if (payload.isEmpty()) {
+                attachFailure(state, baseDiag, "empty_warehouse_overview", "warehouseOverview missing");
+                return;
+            }
         }
 
         try {
-            WarehouseAnswerPlan plan = build(state, wo, rq, baseDiag);
+            WarehouseAnswerPlan plan = build(state, payload, rq, baseDiag);
             state.setWarehouseAnswerPlan(plan);
             log.info("[WarehouseAnswerPlan] attached runId={} type={} focusSize={}",
                     state.getRunId(),
@@ -121,15 +138,15 @@ public final class WarehouseAnswerPlanBuilder {
         AiResolvedQueryContext rq = state.getResolvedQueryContext();
         String wire = resolveWire(rq);
         String planType = resolvePlanType(wire);
-        WarehouseAnswerPlan plan = WarehouseAnswerPlan.builder()
+        WarehouseAnswerPlan.WarehouseAnswerPlanBuilder planBuilder = WarehouseAnswerPlan.builder()
                 .planType(planType)
                 .scopeLabel(resolveScopeLabel(Map.of(), rq))
-                .timeLabel(resolveTimeLabel(state, rq))
                 .summary(new LinkedHashMap<>())
                 .focusRows(new ArrayList<>())
                 .secondaryRows(new ArrayList<>())
-                .debug(new LinkedHashMap<>(diag))
-                .build();
+                .debug(new LinkedHashMap<>(diag));
+        InventoryPresentationTimeSupport.applyToWarehousePlanBuilder(planBuilder, planType, state, rq);
+        WarehouseAnswerPlan plan = planBuilder.build();
         enrichWarehouseMatrixDebug(plan.getDebug(), rq, planType, wire);
         state.setWarehouseAnswerPlan(plan);
     }
@@ -154,15 +171,28 @@ public final class WarehouseAnswerPlanBuilder {
         }
 
         LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
+        List<Map<String, Object>> focus = new ArrayList<>();
+        List<Map<String, Object>> secondary = new ArrayList<>();
+
+        if (WarehouseSemanticCapabilityMatrix.KNOWN_GAP_OUT_OF_STOCK_STRICT_NOT_SUPPORTED.equals(knownGap)) {
+            summary.put(
+                    "gapMessage",
+                    "系统暂不支持严格缺货清单；不能用账面偏低启发式或库存总览代替正式缺货结论。");
+            return finishWarehousePlan(state, rq, planType, wo, summary, focus, secondary, dbg);
+        }
+        if (WarehouseSemanticCapabilityMatrix.KNOWN_GAP_NEAR_EXPIRY_NOT_IN_TOOL.equals(knownGap)) {
+            summary.put(
+                    "gapMessage",
+                    "系统暂不支持临期/保质期专链；当前库存数据不能给出临期商品清单。");
+            return finishWarehousePlan(state, rq, planType, wo, summary, focus, secondary, dbg);
+        }
+
         Object summaryText = wo.get("summary");
         if (summaryText != null) {
             summary.put("narrative", summaryText.toString());
         }
         summary.put("totalStockAmount", wo.get("totalStockAmount"));
         summary.put("stockItemCount", wo.get("stockItemCount"));
-
-        List<Map<String, Object>> focus = new ArrayList<>();
-        List<Map<String, Object>> secondary = new ArrayList<>();
 
         if (WarehouseAnswerPlan.TYPE_WAREHOUSE_STORE_AMOUNT_RANKING.equals(planType)) {
             copyRankingRows(focus, secondary, wo.get("storeStockAmountRanking"), 5);
@@ -171,8 +201,13 @@ public final class WarehouseAnswerPlanBuilder {
         } else if (WarehouseAnswerPlan.TYPE_WAREHOUSE_GOODS_AMOUNT_RANKING_LOW.equals(planType)) {
             copyRankingRows(focus, secondary, wo.get("goodsStockAmountRankingAsc"), 5);
         } else if (WarehouseAnswerPlan.TYPE_WAREHOUSE_LOW_STOCK_RISK.equals(planType)) {
-            copyListRows(focus, wo.get("lowStockItems"), 5);
-            summary.put("riskNote", "账面偏低启发式清单，非严格缺货口径");
+            summary.put("windowDays", wo.get("windowDays"));
+            summary.put("dataSources", wo.get("dataSources"));
+            summary.put("knownGaps", wo.get("knownGaps"));
+            copyListRows(focus, wo.get("riskItems"), 15);
+            if (focus.isEmpty()) {
+                summary.put("emptyRiskList", true);
+            }
         } else {
             LinkedHashMap<String, Object> row = new LinkedHashMap<>();
             row.put("totalStockAmount", wo.get("totalStockAmount"));
@@ -181,15 +216,28 @@ public final class WarehouseAnswerPlanBuilder {
             copyListRows(secondary, wo.get("recommendations"), 3);
         }
 
-        WarehouseAnswerPlan plan = WarehouseAnswerPlan.builder()
+        return finishWarehousePlan(state, rq, planType, wo, summary, focus, secondary, dbg);
+    }
+
+    private static WarehouseAnswerPlan finishWarehousePlan(
+            AiRunState state,
+            AiResolvedQueryContext rq,
+            String planType,
+            Map<String, Object> wo,
+            LinkedHashMap<String, Object> summary,
+            List<Map<String, Object>> focus,
+            List<Map<String, Object>> secondary,
+            LinkedHashMap<String, Object> dbg) {
+        String wire = resolveWire(rq);
+        WarehouseAnswerPlan.WarehouseAnswerPlanBuilder planBuilder = WarehouseAnswerPlan.builder()
                 .planType(planType)
                 .scopeLabel(resolveScopeLabel(wo, rq))
-                .timeLabel(resolveTimeLabel(state, rq))
                 .summary(summary)
                 .focusRows(focus)
                 .secondaryRows(secondary)
-                .debug(dbg)
-                .build();
+                .debug(dbg);
+        InventoryPresentationTimeSupport.applyToWarehousePlanBuilder(planBuilder, planType, state, rq);
+        WarehouseAnswerPlan plan = planBuilder.build();
         enrichWarehouseMatrixDebug(plan.getDebug(), rq, planType, wire);
         return plan;
     }
@@ -284,14 +332,22 @@ public final class WarehouseAnswerPlanBuilder {
         return "当前范围";
     }
 
-    private static String resolveTimeLabel(AiRunState state, AiResolvedQueryContext rq) {
-        if (rq != null && rq.getTimeWindowLabel() != null && !rq.getTimeWindowLabel().isBlank()) {
-            return rq.getTimeWindowLabel().trim();
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractWarehouseInventoryRisk(Object dataObj, Map<String, Object> diag) {
+        if (!(dataObj instanceof Map<?, ?> raw)) {
+            return Map.of();
         }
-        if (state != null && state.getStatStartDate() != null && state.getStatEndDate() != null) {
-            return state.getStatStartDate() + " 至 " + state.getStatEndDate();
+        Map<String, Object> data = (Map<String, Object>) raw;
+        Object inner = data.get("data");
+        if (inner instanceof Map<?, ?> nested) {
+            data = (Map<String, Object>) nested;
         }
-        return "";
+        Object risk = data.get(WarehouseInventoryRiskListTool.PAYLOAD_KEY);
+        if (risk instanceof Map<?, ?> rm) {
+            diag.put("foundDataPath", "envelope.data." + WarehouseInventoryRiskListTool.PAYLOAD_KEY);
+            return new LinkedHashMap<>((Map<String, Object>) rm);
+        }
+        return Map.of();
     }
 
     @SuppressWarnings("unchecked")
@@ -367,5 +423,26 @@ public final class WarehouseAnswerPlanBuilder {
             }
         }
         return data;
+    }
+
+    /** {@code warehouse.inventory_risk_list} 仅规划/执行风险 Tool 时亦须挂载 AnswerPlan。 */
+    private static boolean warehouseToolPlannedOrExecuted(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        List<String> plan = state.getDataPlanTools();
+        Map<String, Object> results = state.getToolResults();
+        return containsTool(plan, AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW)
+                || containsTool(results, AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW)
+                || containsTool(plan, AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST)
+                || containsTool(results, AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST);
+    }
+
+    private static boolean containsTool(List<String> plan, String toolId) {
+        return plan != null && plan.contains(toolId);
+    }
+
+    private static boolean containsTool(Map<String, Object> results, String toolId) {
+        return results != null && results.containsKey(toolId);
     }
 }

@@ -6,6 +6,7 @@ import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
+import com.nongxinle.ai.scope.AiConversationScopeMode;
 import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
 import lombok.AllArgsConstructor;
@@ -35,6 +36,10 @@ public class AiResolvedQueryContext {
     private Long userId;
 
     private AiUserContext userContext;
+    /** 会话统计范围：仅 GROUP 枚举 distributer 下全部门店；STORE 单店。 */
+    private AiConversationScopeMode conversationScopeMode;
+    /** Resolve / ScopePreparation / ScopeIntersect 全链路观测（Harness debug）。 */
+    private ScopeResolutionTrace scopeResolutionTrace;
     private AiResolvedOrgScope orgScope;
     private AiResolvedTimeWindow timeWindow;
     private AiResolvedQueryIntent queryIntent;
@@ -228,7 +233,15 @@ public class AiResolvedQueryContext {
     /** mismatch 原因摘要（观测）。 */
     private String routeParserDomainMismatchReason;
 
+    /** 语义基础设施失败码：LLM_SERVICE_UNAVAILABLE / SEMANTIC_INTAKE_PARSE_FAILED / SEMANTIC_V2_PARSE_FAILED。 */
+    private String semanticFailureCode;
+    /** 失败阶段：SEMANTIC_INTAKE / SEMANTIC_V2。 */
+    private String semanticFailureStage;
+
     // ── SemanticIntake LLM（主链 Step 1） ──
 
     private SemanticIntakeResult semanticIntake;
+
+    /** 裸排行维度切换 plan 观测（Harness debug）。 */
+    private Map<String, Object> bareRankingDimensionSwitchDebug;
 }

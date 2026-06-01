@@ -199,7 +199,9 @@ public final class ContractExecutionMappingSupport {
             case "STOCK_REDUCE" -> "出库/核销查询";
             case "WAREHOUSE" -> "库存概览";
             case "DISH_PROFIT" -> "菜品毛利/利润";
+            case "MENU_OPERATION" -> "菜单经营顾问";
             case "DISH_SALES" -> "菜品销量/销售额";
+            case "DISH_COST" -> "菜品成本分析";
             case "BUSINESS_DIAGNOSIS" -> "经营诊断";
             case "BUSINESS_OVERVIEW", "OPERATIONS_OVERVIEW" -> "经营概览";
             default -> domain.trim().toLowerCase(Locale.ROOT);

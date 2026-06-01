@@ -55,4 +55,18 @@ public interface GbDepFoodBusinessInsightService {
 
     void enrichFoodGoodsOutboundStats(List<GbDistributerFoodGoodsEntity> recipeLines, Integer disId, Integer depFatherId,
             Integer subDepId, String startDate, String stopDate);
+
+    /**
+     * 单菜在统计周期内按星期几聚合的销量/收入（与 {@code buildInsight} 同源 scope 与 {@code gb_dfs_revenue_weekday} 口径）。
+     * <p>返回 {@code weekdaySalesDistribution}、峰值字段 {@code peakWeekdayName} 等；非近 7 天趋势。</p>
+     *
+     * @param dishCostContext 可选，含 {@code actualCostPerPortion}（单份 type1+2+3）、{@code listPrice}，用于分星期毛利估算
+     */
+    Map<String, Object> buildWeekdaySalesDistributionForFood(
+            Integer disId,
+            Integer depFatherId,
+            Integer foodId,
+            String startDate,
+            String stopDate,
+            Map<String, Object> dishCostContext);
 }

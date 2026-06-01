@@ -96,8 +96,11 @@ public final class PurchaseAnswerPlanBuilder {
                     .build();
         }
 
+        boolean overviewFourDomainAttach =
+                BusinessOverviewSubPlanAttachSupport.isFourDomainSubPlanAttach(state, rq);
+
         String wire = resolveStructuredWireForPlan(rq);
-        if (!StringUtils.hasText(wire)) {
+        if (!overviewFourDomainAttach && !StringUtils.hasText(wire)) {
             debug.put("earlyReturnReason", "missing_contract_completed_wire");
             return PurchaseAnswerPlan.builder()
                     .planType("")
@@ -111,7 +114,7 @@ public final class PurchaseAnswerPlanBuilder {
                     .resultAnchors(List.of())
                     .build();
         }
-        if (!AiQuerySemanticLexicon.isPurchaseOverviewDomainCanonicalWire(wire)) {
+        if (!overviewFourDomainAttach && !AiQuerySemanticLexicon.isPurchaseOverviewDomainCanonicalWire(wire)) {
             debug.put("earlyReturnReason", "contract_wire_not_accepted_purchase_matrix");
             debug.put("rejectedWire", wire);
             return PurchaseAnswerPlan.builder()
@@ -126,6 +129,11 @@ public final class PurchaseAnswerPlanBuilder {
                     .resultAnchors(List.of())
                     .build();
         }
+        if (overviewFourDomainAttach) {
+            debug.put("attachMode", BusinessOverviewSubPlanAttachSupport.ATTACH_MODE);
+            debug.put("orchestrationSubPlanWire",
+                    BusinessOverviewSubPlanAttachSupport.contractCompletedWire(rq));
+        }
 
         String pst = AiQuerySemanticLexicon.SOURCE_ALL;
         if (rq != null && rq.getQueryIntent() != null) {
@@ -138,7 +146,9 @@ public final class PurchaseAnswerPlanBuilder {
             pst = executionIntent.getSourceFacet().trim();
         }
 
-        String planType = resolvePlanType(wire, pst);
+        String planType = overviewFourDomainAttach
+                ? PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW
+                : resolvePlanType(wire, pst);
         if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING.equals(planType)) {
             if (pst == null
                     || pst.isBlank()
@@ -198,6 +208,11 @@ public final class PurchaseAnswerPlanBuilder {
         } else if (isUnifiedPurchaseGoodsDetailPlan(planType)) {
             debug.put("sortKey", "supplierPurchaseAmount");
             debug.put("sortDirection", "DESC");
+        } else if (PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL.equals(planType)) {
+            debug.put("sortKey", "amount");
+            debug.put("sortDirection", "DESC");
+            debug.put("periodGoodsDetailFocusRowsSize", focusRows.size());
+            mirrorPeriodGoodsDetailOverviewToDebug(overview, debug);
         }
 
         mergePurchaseAnchorExecutionObservationIfPresent(overview, debug, planType);
@@ -319,6 +334,9 @@ public final class PurchaseAnswerPlanBuilder {
         }
         if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_COUNT_RANKING.equals(wire)) {
             return PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_COUNT_RANKING;
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST.equals(wire)) {
+            return PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL;
         }
 
         boolean self = AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE.equals(pst);
@@ -596,6 +614,11 @@ public final class PurchaseAnswerPlanBuilder {
                     focusRows.add(copyRowShallow(typed));
                 }
             }
+            case PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL -> {
+                List<Map<String, Object>> detailRows =
+                        castRowList(overview.get("purchasePeriodGoodsDetailRows"));
+                appendAllRows(detailRows, focusRows);
+            }
             default -> {
                 LinkedHashMap<String, Object> core = new LinkedHashMap<>();
                 core.put("totalPurchaseAmount", overview.get("totalPurchaseAmount"));
@@ -631,6 +654,22 @@ public final class PurchaseAnswerPlanBuilder {
             }
         }
         mirrorOverviewExecutionPayloadToDebug(overview, debug);
+    }
+
+    private static void mirrorPeriodGoodsDetailOverviewToDebug(
+            Map<String, Object> overview, LinkedHashMap<String, Object> debug) {
+        if (overview == null || debug == null) {
+            return;
+        }
+        String[] keys = {
+            "purchasePeriodGoodsDetailActive",
+            "purchasePeriodGoodsDetailQueryMethod",
+            "purchasePeriodGoodsDetailRowsCount",
+            "purchasePeriodGoodsDetailNoDataReason"
+        };
+        for (String key : keys) {
+            debug.put(key, overview.get(key));
+        }
     }
 
     private static void mirrorOverviewExecutionPayloadToDebug(
@@ -1031,6 +1070,17 @@ public final class PurchaseAnswerPlanBuilder {
         }
     }
 
+    private static void appendAllRows(List<Map<String, Object>> ordered, List<Map<String, Object>> focusRows) {
+        if (ordered == null || ordered.isEmpty()) {
+            return;
+        }
+        for (Map<String, Object> row : ordered) {
+            if (row != null && !row.isEmpty()) {
+                focusRows.add(copyRowShallow(row));
+            }
+        }
+    }
+
     private static Map<String, Object> buildSummary(Map<String, Object> overview) {
         LinkedHashMap<String, Object> m = new LinkedHashMap<>();
         m.put("totalAmount", parseDoubleLoose(overview.get("totalPurchaseAmount")));
@@ -1188,6 +1238,15 @@ public final class PurchaseAnswerPlanBuilder {
     }
 
     @SuppressWarnings("unchecked")
+    /** Card 投影层读取 purchaseOverview（与 AnswerPlan Builder 同源）。 */
+    public static Map<String, Object> purchaseOverviewFromRunState(AiRunState state) {
+        if (state == null || state.getToolResults() == null || state.getToolResults().isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> overview = extractPurchaseOverviewPayload(state);
+        return overview == null || overview.isEmpty() ? Map.of() : overview;
+    }
+
     private static Map<String, Object> extractPurchaseOverviewPayload(AiRunState state) {
         Object env = state.getToolResults().get(AiBusinessToolIds.PURCHASE_OVERVIEW);
         if (!(env instanceof Map)) {

@@ -4,6 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+import java.util.Map;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -41,4 +44,16 @@ public class AiConversationMessageDTO {
 
     /** 活跃笔记主键；未保存时为 null */
     private Long noteId;
+
+    /**
+     * 轻量上下文（contextBar / store / time / scope）；assistant 消息持久化，
+     * 与 Run/SSE {@code result.contextSummary} 字段一致。
+     */
+    private Map<String, Object> contextSummary;
+
+    /** 结构化卡片（如 {@code DISH_COST_ANALYSIS_CARD}）；Run Session 仍驻内存时可回填 */
+    private Map<String, Object> cardPayload;
+
+    /** 兼容 {@code cards[0]} 读取路径 */
+    private List<Map<String, Object>> cards;
 }

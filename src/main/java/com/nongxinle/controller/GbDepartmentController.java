@@ -122,6 +122,7 @@ public class GbDepartmentController {
     public R getSubDepartmentsGb(@PathVariable Integer depId) {
         System.out.println(depId);
         List<GbDepartmentEntity> departmentEntities = gbDepartmentService.querySubDepartments(depId);
+
         return R.ok().put("data", departmentEntities);
     }
 

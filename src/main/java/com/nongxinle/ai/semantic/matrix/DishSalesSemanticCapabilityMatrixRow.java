@@ -24,4 +24,10 @@ public class DishSalesSemanticCapabilityMatrixRow {
     String targetDishSalesPlanType;
 
     String knownGapCode;
+
+    /** 单菜销量合同须携带 DISH 锚点（菜名 / foodId / 上一轮 DISH anchor）。 */
+    boolean requiresAnchor;
+
+    /** {@link DishSalesSemanticCapabilityMatrix#ANCHOR_STRATEGY_DISH} 等；requiresAnchor 为 true 时非空。 */
+    String anchorType;
 }

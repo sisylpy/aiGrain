@@ -2,12 +2,13 @@ package com.nongxinle.ai.graph.business.execution;
 
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.dto.business.AiResultAnchor;
+import com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport;
+import com.nongxinle.ai.semantic.matrix.DishCostAnalysisSemanticCapabilityMatrix;
+import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import org.springframework.util.StringUtils;
 
-import java.util.List;
 import java.util.Locale;
 
 /**
@@ -58,8 +59,7 @@ public final class ToolRequestContractExecutionParamSupport {
     }
 
     /**
-     * 菜品 focus hint：contract locked 且非排行类 wire 时，来自 completed parse / 结构化 anchor。
-     * 未 locked 或无法确定时返回 null。
+     * 菜品 focus hint：contract locked 时来自 {@link EffectiveDishAnchorSupport} 统一 anchor。
      */
     public static String resolveDishNameFocusHint(AiResolvedQueryContext ctx) {
         if (!isContractLocked(ctx)) {
@@ -69,30 +69,121 @@ public final class ToolRequestContractExecutionParamSupport {
         if (StringUtils.hasText(wire) && AiQuerySemanticLexicon.isDishProfitRankingStructuredDetail(wire)) {
             return null;
         }
-        AiQuerySemanticParseResult sem = ctx.getQuerySemanticParse();
-        if (sem != null && StringUtils.hasText(sem.getMentionedDishName())) {
-            String fromParse =
-                    AiQuerySemanticLexicon.finalizeMentionedDishNameForDishProfit(sem.getMentionedDishName().trim());
-            if (StringUtils.hasText(fromParse)) {
-                return fromParse;
-            }
+        EffectiveDishAnchor anchor = EffectiveDishAnchorSupport.resolve(ctx);
+        return StringUtils.hasText(anchor.getDishName()) ? anchor.getDishName().trim() : null;
+    }
+
+    /**
+     * contract locked 时 foodId：来自 {@link EffectiveDishAnchorSupport}；当前轮显式菜名时不带上一轮 foodId。
+     */
+    public static Integer resolveDishFoodIdFromContract(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return null;
         }
-        String fromAnchor = dishNameFromStructuredDishAnchors(ctx);
-        if (StringUtils.hasText(fromAnchor)) {
-            return fromAnchor;
+        return EffectiveDishAnchorSupport.resolve(ctx).getFoodId();
+    }
+
+    /** contract locked 且 wire 为 {@code dish_cost_analysis} 或 {@code dish_profit_prescription} 时，是否已有菜名或 foodId。 */
+    public static boolean hasDishCostAnalysisSelector(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
         }
-        if (StringUtils.hasText(ctx.getRewriteInheritedAnchorName())) {
-            String inherited =
-                    AiQuerySemanticLexicon.finalizeMentionedDishNameForDishProfit(
-                            ctx.getRewriteInheritedAnchorName().trim());
-            if (StringUtils.hasText(inherited)) {
-                return inherited;
-            }
+        String wire = resolveContractStructuredIntentDetailWire(ctx);
+        if (!AiQuerySemanticLexicon.isDishCostPathStructuredDetail(wire)) {
+            return false;
         }
-        if (StringUtils.hasText(ctx.getMentionedDishName())) {
-            return ctx.getMentionedDishName().trim();
+        if (StringUtils.hasText(resolveDishNameFocusHint(ctx))) {
+            return true;
         }
-        return null;
+        return resolveDishFoodIdFromContract(ctx) != null;
+    }
+
+    /** contract locked 且 {@code selectedContractId=warehouse.inventory_risk_list}。 */
+    public static boolean isWarehouseInventoryRiskListContract(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
+        }
+        return WarehouseInventoryShortageSemanticsSupport.CONTRACT_INVENTORY_RISK_LIST.equals(
+                selectedContractId(ctx));
+    }
+
+    /** contract locked 且 {@code selectedContractId=warehouse.goods_supported_dish_cover.v1}。 */
+    public static boolean isGoodsSupportedDishCoverContract(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
+        }
+        return WarehouseSemanticCapabilityMatrix.CONTRACT_GOODS_SUPPORTED_DISH_COVER.equals(
+                selectedContractId(ctx));
+    }
+
+    /** contract locked 且 GOODS 锚：商品名 hint（读 {@link EffectiveGoodsAnchorSupport}）。 */
+    public static String resolveGoodsNameFocusHint(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return null;
+        }
+        EffectiveGoodsAnchor anchor = EffectiveGoodsAnchorSupport.resolve(ctx);
+        return anchor.hasGoodsName() ? anchor.getGoodsName().trim() : null;
+    }
+
+    public static Integer resolveDisGoodsIdFromContract(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return null;
+        }
+        EffectiveGoodsAnchor anchor = EffectiveGoodsAnchorSupport.resolve(ctx);
+        return anchor.hasDisGoodsId() ? anchor.getDisGoodsId() : null;
+    }
+
+    /** contract locked 且 {@code selectedContractId=dish.ingredient_cover_days.v1}。 */
+    public static boolean isDishIngredientCoverDaysContract(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
+        }
+        return DishCostAnalysisSemanticCapabilityMatrix.CONTRACT_DISH_INGREDIENT_COVER_DAYS.equals(
+                selectedContractId(ctx));
+    }
+
+    /** contract locked 且 {@code selectedContractId=dish.profit.prescription.v1}。 */
+    public static boolean isDishProfitPrescriptionContract(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
+        }
+        String contractId = selectedContractId(ctx);
+        return DishCostAnalysisSemanticCapabilityMatrix.CONTRACT_DISH_PROFIT_PRESCRIPTION.equals(contractId);
+    }
+
+    private static String selectedContractId(AiResolvedQueryContext ctx) {
+        if (ctx == null || ctx.getQuerySemanticParse() == null) {
+            return null;
+        }
+        var slots = ctx.getQuerySemanticParse().getSemanticSlots();
+        if (slots == null || !StringUtils.hasText(slots.getSelectedContractId())) {
+            return null;
+        }
+        return slots.getSelectedContractId().trim();
+    }
+
+    /** contract locked 且 wire 为菜品销量单菜合同时，是否已有菜名或 foodId / DISH anchor。 */
+    public static boolean hasDishSalesSingleDishSelector(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
+        }
+        String wire = resolveContractStructuredIntentDetailWire(ctx);
+        if (!AiQuerySemanticLexicon.isDishSalesSingleDishStructuredDetail(wire)) {
+            return false;
+        }
+        if (StringUtils.hasText(resolveDishNameFocusHint(ctx))) {
+            return true;
+        }
+        return resolveDishFoodIdFromContract(ctx) != null;
+    }
+
+    /** contract locked 且 wire 为菜品销量单菜（含门店单菜）合同。 */
+    public static boolean isDishSalesSingleDishContract(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
+        }
+        return AiQuerySemanticLexicon.isDishSalesSingleDishStructuredDetail(
+                resolveContractStructuredIntentDetailWire(ctx));
     }
 
     /**
@@ -105,28 +196,6 @@ public final class ToolRequestContractExecutionParamSupport {
         }
         return com.nongxinle.ai.conversation.AiQuerySemanticLexicon.dishProfitMetricTypeFromStructuredWire(
                 resolveDishProfitStructuredDetailWire(ctx));
-    }
-
-    private static String dishNameFromStructuredDishAnchors(AiResolvedQueryContext ctx) {
-        if (ctx == null || ctx.getPreviousTurn() == null) {
-            return null;
-        }
-        List<AiResultAnchor> anchors = ctx.getPreviousTurn().getLastResultAnchors();
-        if (anchors == null || anchors.isEmpty()) {
-            return null;
-        }
-        for (AiResultAnchor a : anchors) {
-            if (a == null || !StringUtils.hasText(a.getEntityType())) {
-                continue;
-            }
-            if (!AiResultAnchor.ENTITY_TYPE_DISH.equalsIgnoreCase(a.getEntityType().trim())) {
-                continue;
-            }
-            if (StringUtils.hasText(a.getEntityName())) {
-                return AiQuerySemanticLexicon.finalizeMentionedDishNameForDishProfit(a.getEntityName().trim());
-            }
-        }
-        return null;
     }
 
     private static boolean isContractLocked(AiResolvedQueryContext ctx) {

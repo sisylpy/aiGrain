@@ -500,6 +500,26 @@
             <include refid="purGoodsWhereLegacyPurchaseMethodFocus"/>
     </sql>
 
+    <!-- 与 purGoodsWhereJoinBatchAsGbCount 同口径，但不限制入库完成日（供 LAG 取「上一次采购入库价」） -->
+    <sql id="purGoodsWhereJoinBatchAsGbCountExceptStockFinishDate">
+            <if test="disId != null">
+                AND gdpg.gb_DPG_distributer_id = #{disId}
+            </if>
+            <if test="purDepId != null">
+                AND gdpg.gb_DPG_purchase_department_id = #{purDepId}
+            </if>
+            <if test="purUserId != null">
+                AND gdpg.gb_DPG_pur_user_id = #{purUserId}
+            </if>
+            <if test="finishAmount != null">
+                AND gdpg.gb_DPG_orders_finish_amount &gt; #{finishAmount}
+            </if>
+            <include refid="purGoodsWhereGbSupplierBuySupplierId"/>
+            <include refid="purGoodsWhereGbDisGoodsHierarchy"/>
+            <include refid="purGoodsWhereGbPurchaseCountJoinTail"/>
+            <include refid="purGoodsWhereLegacyPurchaseMethodFocus"/>
+    </sql>
+
     <select id="queryGbPurchaseGoodsCount" resultType="java.lang.Integer">
         SELECT COUNT(*)
         FROM gb_distributer_purchase_goods AS gdpg
@@ -911,6 +931,7 @@
             <if test="batchId != null">
                 AND gdpg.gb_DPG_batch_id = #{batchId}
             </if>
+            <include refid="purGoodsWhereLegacyPurchaseMethodFocus"/>
         </where>
         GROUP BY gdpg.gb_DPG_dis_goods_id, dg.gb_dg_goods_name
         <choose>
@@ -1070,6 +1091,122 @@
                       ON g.gb_distributer_goods_id = t.goods_id
         ORDER BY t.price_fluctuation DESC
         LIMIT 10
+    </select>
+
+    <!--
+      本期入库采购：本次 gb_DPG_buy_price 与同 gb_DPG_dis_goods_id 上一次入库采购价对比（非订货价）。
+      与 queryGbPurchaseGoodsCount 同 scope；窗口在全历史 LAG，外层再筛本期 stock_finish_date。
+    -->
+    <select id="queryGbPurchaseGoodsUnitPriceChangedVsPrevious" resultType="java.util.LinkedHashMap">
+        SELECT t.dis_goods_id                                              AS disGoodsId,
+               t.goods_name                                                AS goodsName,
+               t.standard_name                                             AS standardName,
+               CAST(ROUND(t.current_unit_price, 2) AS CHAR)               AS currentUnitPrice,
+               CAST(ROUND(t.previous_unit_price, 2) AS CHAR)               AS previousUnitPrice,
+               CAST(ROUND(
+                       (t.current_unit_price - t.previous_unit_price)
+                           / NULLIF(t.previous_unit_price, 0) * 100, 1) AS CHAR) AS priceChangePercent,
+               t.stock_finish_date                                         AS stockFinishDate
+        FROM (
+                 SELECT x.*,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY x.dis_goods_id
+                            ORDER BY ABS(x.current_unit_price - x.previous_unit_price) DESC,
+                                     x.stock_finish_date DESC,
+                                     x.purchase_goods_id DESC
+                            ) AS rn
+                 FROM (
+                          SELECT gdpg.gb_DPG_dis_goods_id                              AS dis_goods_id,
+                                 gdpg.gb_distributer_purchase_goods_id                 AS purchase_goods_id,
+                                 gdpg.gb_DPG_stock_finish_date                           AS stock_finish_date,
+                                 TRIM(IFNULL(dg.gb_dg_goods_name, ''))                   AS goods_name,
+                                 TRIM(IFNULL(dg.gb_dg_goods_standardname, ''))           AS standard_name,
+                                 CAST(TRIM(gdpg.gb_DPG_buy_price) AS DECIMAL(18, 4))     AS current_unit_price,
+                                 LAG(CAST(TRIM(gdpg.gb_DPG_buy_price) AS DECIMAL(18, 4))) OVER (
+                                     PARTITION BY gdpg.gb_DPG_dis_goods_id
+                                     ORDER BY gdpg.gb_DPG_stock_finish_date,
+                                              gdpg.gb_distributer_purchase_goods_id
+                                     )                                                   AS previous_unit_price
+                          FROM gb_distributer_purchase_goods AS gdpg
+                                   LEFT JOIN gb_distributer_purchase_batch AS gdpb
+                                             ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+                                   LEFT JOIN gb_distributer_goods dg
+                                             ON dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
+                          <where>
+                              <include refid="purGoodsWhereJoinBatchAsGbCountExceptStockFinishDate"/>
+                              AND gdpg.gb_DPG_buy_price IS NOT NULL
+                              AND TRIM(gdpg.gb_DPG_buy_price) &lt;&gt; ''
+                          </where>
+                      ) x
+                 WHERE x.stock_finish_date &gt;= #{startDate}
+                   AND x.stock_finish_date &lt;= #{stopDate}
+                   AND x.previous_unit_price IS NOT NULL
+                   AND ABS(x.current_unit_price - x.previous_unit_price) &gt; 0.0001
+             ) t
+        WHERE t.rn = 1
+        ORDER BY ABS(t.current_unit_price - t.previous_unit_price) DESC
+        LIMIT #{limit,jdbcType=INTEGER}
+    </select>
+
+    <!--
+      多日周期：本期商品平均采购单价 vs 对比期商品平均采购单价（均按入库完成日筛选）。
+      map：startDate/stopDate 为本期；compareStartDate/compareStopDate 为对比期；scope 同 queryGbPurchaseGoodsCount。
+    -->
+    <select id="queryGbPurchaseGoodsUnitPriceChangedPeriodAvgVsCompare" resultType="java.util.LinkedHashMap">
+        SELECT t.dis_goods_id                                              AS disGoodsId,
+               t.goods_name                                                AS goodsName,
+               t.standard_name                                             AS standardName,
+               CAST(ROUND(t.period_avg_unit_price, 2) AS CHAR)             AS currentUnitPrice,
+               CAST(ROUND(t.compare_avg_unit_price, 2) AS CHAR)            AS previousUnitPrice,
+               CAST(ROUND(
+                       (t.period_avg_unit_price - t.compare_avg_unit_price)
+                           / NULLIF(t.compare_avg_unit_price, 0) * 100, 1) AS CHAR) AS priceChangePercent
+        FROM (
+                 SELECT p.dis_goods_id,
+                        p.goods_name,
+                        p.standard_name,
+                        p.period_avg_unit_price,
+                        c.compare_avg_unit_price
+                 FROM (
+                          SELECT gdpg.gb_DPG_dis_goods_id                              AS dis_goods_id,
+                                 TRIM(IFNULL(dg.gb_dg_goods_name, ''))                   AS goods_name,
+                                 TRIM(IFNULL(dg.gb_dg_goods_standardname, ''))           AS standard_name,
+                                 AVG(CAST(TRIM(gdpg.gb_DPG_buy_price) AS DECIMAL(18, 4))) AS period_avg_unit_price
+                          FROM gb_distributer_purchase_goods AS gdpg
+                                   LEFT JOIN gb_distributer_purchase_batch AS gdpb
+                                             ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+                                   LEFT JOIN gb_distributer_goods dg
+                                             ON dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
+                          <where>
+                              <include refid="purGoodsWhereJoinBatchAsGbCountExceptStockFinishDate"/>
+                              AND gdpg.gb_DPG_stock_finish_date &gt;= #{startDate}
+                              AND gdpg.gb_DPG_stock_finish_date &lt;= #{stopDate}
+                              AND gdpg.gb_DPG_buy_price IS NOT NULL
+                              AND TRIM(gdpg.gb_DPG_buy_price) &lt;&gt; ''
+                          </where>
+                          GROUP BY gdpg.gb_DPG_dis_goods_id,
+                                   TRIM(IFNULL(dg.gb_dg_goods_name, '')),
+                                   TRIM(IFNULL(dg.gb_dg_goods_standardname, ''))
+                      ) p
+                          INNER JOIN (
+                     SELECT gdpg.gb_DPG_dis_goods_id                              AS dis_goods_id,
+                            AVG(CAST(TRIM(gdpg.gb_DPG_buy_price) AS DECIMAL(18, 4))) AS compare_avg_unit_price
+                     FROM gb_distributer_purchase_goods AS gdpg
+                              LEFT JOIN gb_distributer_purchase_batch AS gdpb
+                                        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+                     <where>
+                         <include refid="purGoodsWhereJoinBatchAsGbCountExceptStockFinishDate"/>
+                         AND gdpg.gb_DPG_stock_finish_date &gt;= #{compareStartDate}
+                         AND gdpg.gb_DPG_stock_finish_date &lt;= #{compareStopDate}
+                         AND gdpg.gb_DPG_buy_price IS NOT NULL
+                         AND TRIM(gdpg.gb_DPG_buy_price) &lt;&gt; ''
+                     </where>
+                     GROUP BY gdpg.gb_DPG_dis_goods_id
+                 ) c ON p.dis_goods_id = c.dis_goods_id
+                 WHERE ABS(p.period_avg_unit_price - c.compare_avg_unit_price) &gt; 0.0001
+             ) t
+        ORDER BY ABS(t.period_avg_unit_price - t.compare_avg_unit_price) DESC
+        LIMIT #{limit,jdbcType=INTEGER}
     </select>
 
     <!-- 采购概览：按供货商汇总采购金额 TopN（与 queryGbPurchaseGoodsCount 同 join 条件） -->

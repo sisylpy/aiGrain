@@ -22,4 +22,15 @@ public final class AiPromptIds {
     public static final String COMPOSER_DIAGNOSIS_V1 = "composer.diagnosis.v1";
     public static final String COMPOSER_DIAGNOSIS_STORE_PRIORITY_V1 = "composer.diagnosis_store_priority.v1";
     public static final String COMPOSER_WAREHOUSE_V1 = "composer.warehouse.v1";
+
+    /** 菜单经营专家表达层：只读 AnswerPlan / card payload，不读 toolResults。 */
+    public static final String COMPOSER_MENU_EXPERT_RUNTIME_V1 = "composer.menu_expert.runtime.v1";
+
+    /** 经营概览营业额卡：菜品销量原因 Agent（只读 fact pack）。 */
+    public static final String BUSINESS_OVERVIEW_DISH_SALES_REASON_AGENT_V1 =
+            "business-overview-dish-sales-reason-agent.v1";
+
+    /** v2：本期 vs 约 30 天基线，解释营业额高/低原因。 */
+    public static final String BUSINESS_OVERVIEW_DISH_SALES_REASON_AGENT_V2 =
+            "business-overview-dish-sales-reason-agent.v2";
 }

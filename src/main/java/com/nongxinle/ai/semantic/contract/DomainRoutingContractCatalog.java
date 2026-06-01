@@ -77,7 +77,6 @@ public final class DomainRoutingContractCatalog {
                     .businessObject("报损")
                     .businessObject("废弃")
                     .businessObject("退货")
-                    .businessObject("库存消耗")
                     .supportedTaskType("OVERVIEW")
                     .supportedTaskType("RANKING")
                     .supportedTaskType("DETAIL")
@@ -90,6 +89,7 @@ public final class DomainRoutingContractCatalog {
                     .crossDomainHint("freshness_risk")
                     .routeExample("本月出库金额排行")
                     .routeExample("这个月出库情况怎么样")
+                    .routeExample("这个月退货金额是多少")
                     .routeExample("哪些商品报损最多")
                     .status(DomainRoutingContractStatus.ACTIVE)
                     .build();
@@ -145,6 +145,7 @@ public final class DomainRoutingContractCatalog {
                     .anchorType("STORE")
                     .crossDomainHint("dish_profit")
                     .crossDomainHint("business_diagnosis")
+                    .crossDomainHint("menu_operation")
                     .routeExample("销量最高的菜品")
                     .routeExample("这个月菜品销量怎么样")
                     .routeExample("哪个菜卖得最好")
@@ -171,11 +172,71 @@ public final class DomainRoutingContractCatalog {
                     .anchorType("STORE")
                     .crossDomainHint("dish_sales")
                     .crossDomainHint("business_diagnosis")
+                    .crossDomainHint("menu_operation")
                     .routeExample("毛利最高的菜品")
                     .routeExample("这个月菜品毛利怎么样")
                     .routeExample("哪个菜毛利率最低")
                     .routeExample("哪个菜毛利最高")
                     .routeExample("这道菜毛利率多少")
+                    .routeExample("香煎青鱼毛利率是多少")
+                    .status(DomainRoutingContractStatus.ACTIVE)
+                    .build();
+
+    public static final DomainRoutingContract DISH_COST =
+            DomainRoutingContract.builder()
+                    .domainCode("DISH_COST")
+                    .domainName("菜品成本分析")
+                    .businessObject("菜品成本")
+                    .businessObject("成本分析")
+                    .businessObject("配料")
+                    .businessObject("用料")
+                    .businessObject("实际成本")
+                    .businessObject("理论成本")
+                    .businessObject("成本偏差")
+                    .supportedTaskType("DETAIL")
+                    .anchorType("DISH")
+                    .anchorType("STORE")
+                    .crossDomainHint("dish_profit")
+                    .crossDomainHint("dish_sales")
+                    .routeExample("这道菜成本怎么样")
+                    .routeExample("某菜配料分析")
+                    .routeExample("某菜用料情况")
+                    .routeExample("香煎青鱼价格和配方怎么优化")
+                    .routeExample("香煎青鱼按55%目标毛利率应该卖多少钱")
+                    .routeExample("某菜价格合适吗")
+                    .routeExample("某菜配料够用几天")
+                    .routeExample("某菜还能卖几天")
+                    .status(DomainRoutingContractStatus.ACTIVE)
+                    .build();
+
+    public static final DomainRoutingContract MENU_OPERATION =
+            DomainRoutingContract.builder()
+                    .domainCode("MENU_OPERATION")
+                    .domainName("菜单经营顾问")
+                    .businessObject("菜单")
+                    .businessObject("菜单经营")
+                    .businessObject("菜单优化")
+                    .businessObject("菜单结构")
+                    .businessObject("经营建议")
+                    .businessObject("拖后腿")
+                    .businessObject("需要调整")
+                    .businessObject("拖累菜单")
+                    .businessObject("爆品")
+                    .businessObject("高销量低利润")
+                    .businessObject("卖得多但不赚钱")
+                    .supportedTaskType("OVERVIEW")
+                    .supportedTaskType("ANALYSIS")
+                    .anchorType("STORE")
+                    .crossDomainHint("dish_profit")
+                    .crossDomainHint("dish_sales")
+                    .crossDomainHint("business_overview")
+                    .routeExample("这个月菜单经营怎么样")
+                    .routeExample("菜单怎么优化")
+                    .routeExample("哪些菜在拖后腿")
+                    .routeExample("哪些菜拖累菜单利润")
+                    .routeExample("有哪些菜需要调整")
+                    .routeExample("卖得火但不赚钱的菜有哪些")
+                    .routeExample("卖得多但不赚钱的菜")
                     .status(DomainRoutingContractStatus.ACTIVE)
                     .build();
 
@@ -193,6 +254,7 @@ public final class DomainRoutingContractCatalog {
                     .crossDomainHint("business_diagnosis")
                     .crossDomainHint("revenue")
                     .crossDomainHint("purchase")
+                    .crossDomainHint("menu_operation")
                     .routeExample("这个月经营情况怎么样")
                     .routeExample("整体经营概况")
                     .status(DomainRoutingContractStatus.ACTIVE)
@@ -235,6 +297,8 @@ public final class DomainRoutingContractCatalog {
                     WAREHOUSE,
                     DISH_SALES,
                     DISH_PROFIT,
+                    DISH_COST,
+                    MENU_OPERATION,
                     BUSINESS_OVERVIEW,
                     BUSINESS_DIAGNOSIS);
 

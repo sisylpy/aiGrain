@@ -10,17 +10,18 @@ import com.nongxinle.entity.*;
 import com.nongxinle.service.GbDepFoodSalesService;
 import com.nongxinle.service.GbDepFoodService;
 import com.nongxinle.service.GbDepartmentService;
-import com.nongxinle.service.GbDistributerFoodGoodsService;
 import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.ImagePaths;
 import com.nongxinle.utils.UploadFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.support.ManagedMap;
 import org.springframework.web.bind.annotation.*;
 
 import com.nongxinle.service.GbDistributerFoodService;
+import com.nongxinle.service.GbMenuCategoryBusinessOverviewService;
+import com.nongxinle.service.GbMenuCategoryFoodBusinessListService;
+import com.nongxinle.service.GbMenuFoodBusinessDetailService;
 import com.nongxinle.utils.R;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -39,9 +40,147 @@ public class GbDistributerFoodController {
 	private GbDepartmentService gbDepartmentService;
 	@Autowired
 	private GbDepFoodSalesService gbDepFoodSalesService;
+	@Autowired
+	private GbMenuCategoryBusinessOverviewService gbMenuCategoryBusinessOverviewService;
+	@Autowired
+	private GbMenuCategoryFoodBusinessListService gbMenuCategoryFoodBusinessListService;
+	@Autowired
+	private GbMenuFoodBusinessDetailService gbMenuFoodBusinessDetailService;
 
 
 
+
+	/**
+	 * 菜单类别经营概览：分类层销量/成本/毛利与四象限数量（当前周期 vs 前 N 天对比周期）。
+	 */
+	@GetMapping("/menu-category-business-overview")
+	@ResponseBody
+	public R menuCategoryBusinessOverview(
+			@RequestParam Integer distributerId,
+			@RequestParam String scopeMode,
+			@RequestParam(required = false) Integer departmentId,
+			@RequestParam(required = false, defaultValue = "30") Integer days) {
+		if (distributerId == null) {
+			return R.error(-1, "distributerId 必填");
+		}
+		if (scopeMode == null || scopeMode.isBlank()) {
+			return R.error(-1, "scopeMode 必填，取值 GROUP 或 STORE");
+		}
+		String mode = scopeMode.trim().toUpperCase();
+		if (!"GROUP".equals(mode) && !"STORE".equals(mode)) {
+			return R.error(-1, "scopeMode 仅支持 GROUP 或 STORE");
+		}
+		if ("STORE".equals(mode) && departmentId == null) {
+			return R.error(-1, "scopeMode=STORE 时 departmentId 必填");
+		}
+		int effectiveDays = days != null && days > 0 ? days : 30;
+		try {
+			Map<String, Object> data =
+					gbMenuCategoryBusinessOverviewService.buildOverview(
+							distributerId, mode, departmentId, effectiveDays);
+			return R.ok().put("data", data);
+		} catch (IllegalArgumentException ex) {
+			return R.error(-1, ex.getMessage());
+		}
+	}
+
+	/**
+	 * 菜单类别下菜品经营列表：点击分类后查看该分类内各菜品经营明细（当前周期 vs 上周期）。
+	 */
+	@GetMapping("/menu-category-food-business-list")
+	@ResponseBody
+	public R menuCategoryFoodBusinessList(
+			@RequestParam Integer distributerId,
+			@RequestParam String scopeMode,
+			@RequestParam(required = false) Integer departmentId,
+			@RequestParam Integer categoryId,
+			@RequestParam(required = false, defaultValue = "30") Integer days,
+			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String roleFilter,
+			@RequestParam(required = false, defaultValue = "salesCount") String sortBy,
+			@RequestParam(required = false, defaultValue = "DESC") String sortOrder) {
+		if (distributerId == null) {
+			return R.error(-1, "distributerId 必填");
+		}
+		if (scopeMode == null || scopeMode.isBlank()) {
+			return R.error(-1, "scopeMode 必填，取值 GROUP 或 STORE");
+		}
+		String mode = scopeMode.trim().toUpperCase();
+		if (!"GROUP".equals(mode) && !"STORE".equals(mode)) {
+			return R.error(-1, "scopeMode 仅支持 GROUP 或 STORE");
+		}
+		if ("STORE".equals(mode) && departmentId == null) {
+			return R.error(-1, "scopeMode=STORE 时 departmentId 必填");
+		}
+		if (categoryId == null) {
+			return R.error(-1, "categoryId 必填");
+		}
+		int effectiveDays = days != null && days > 0 ? days : 30;
+		try {
+			Map<String, Object> data =
+					gbMenuCategoryFoodBusinessListService.buildFoodList(
+							distributerId,
+							mode,
+							departmentId,
+							categoryId,
+							effectiveDays,
+							keyword,
+							roleFilter,
+							sortBy,
+							sortOrder);
+			return R.ok().put("data", data);
+		} catch (IllegalArgumentException ex) {
+			return R.error(-1, ex.getMessage());
+		}
+	}
+
+	/**
+	 * 单菜经营详情：经营事实、配料成本行、周期内按星期几聚合的销量分布（非近7天趋势）；角色由列表页透传。
+	 */
+	@GetMapping("/menu-food-business-detail")
+	@ResponseBody
+	public R menuFoodBusinessDetail(
+			@RequestParam Integer distributerId,
+			@RequestParam String scopeMode,
+			@RequestParam(required = false) Integer departmentId,
+			@RequestParam Integer foodId,
+			@RequestParam(required = false, defaultValue = "30") Integer days,
+			@RequestParam(required = false) String startDate,
+			@RequestParam(required = false) String stopDate,
+			@RequestParam(required = false) Integer categoryId) {
+		if (distributerId == null) {
+			return R.error(-1, "distributerId 必填");
+		}
+		if (foodId == null) {
+			return R.error(-1, "foodId 必填");
+		}
+		if (scopeMode == null || scopeMode.isBlank()) {
+			return R.error(-1, "scopeMode 必填，取值 GROUP 或 STORE");
+		}
+		int effectiveDays = days != null && days > 0 ? days : 30;
+		try {
+			Map<String, Object> data =
+					gbMenuFoodBusinessDetailService.buildDetail(
+							distributerId,
+							scopeMode,
+							departmentId,
+							foodId,
+							effectiveDays,
+							startDate,
+							stopDate,
+							categoryId);
+			return R.ok().put("data", data);
+		} catch (IllegalArgumentException ex) {
+			return R.error(-1, ex.getMessage());
+		}
+	}
+
+	@RequestMapping(value = "/getFoodByFoodId/{foodId}")
+	@ResponseBody
+	public R getFoodByFoodId(@PathVariable Integer foodId) {
+		GbDistributerFoodEntity gbDistributerFoodEntity = gbDistributerFoodService.queryObject(foodId);
+		return R.ok().put("data", gbDistributerFoodEntity);
+	}
 
 
 	@RequestMapping(value = "/getDisAllFood/{disId}")
@@ -52,6 +191,7 @@ public class GbDistributerFoodController {
 		List<GbDistributerFoodEntity> foodEntities = gbDistributerFoodService.queryDisAllFood(map);
 		return R.ok().put("data", foodEntities);
 	}
+
 
 
 	@RequestMapping(value = "/getFoodList/{fatherId}")
@@ -148,6 +288,19 @@ public class GbDistributerFoodController {
 			gbDistributerFoodService.update(food);
 			return R.ok();
 		}
+	}
+
+
+	@RequestMapping(value = "/updateGrossMargin", method = RequestMethod.POST)
+	@ResponseBody
+	public R updateGrossMargin (@RequestBody GbDistributerFoodEntity food) {
+		Integer gbDistributerFoodId = food.getGbDistributerFoodId();
+		GbDistributerFoodEntity gbDistributerFoodEntity = gbDistributerFoodService.queryObject(gbDistributerFoodId);
+		gbDistributerFoodEntity.setGbDfGrossMarginFloatAbs(food.getGbDfGrossMarginFloatAbs());
+		gbDistributerFoodEntity.setGbDfTargetGrossMarginRate(food.getGbDfTargetGrossMarginRate());
+		gbDistributerFoodService.update(gbDistributerFoodEntity);
+
+		return R.ok();
 	}
 
 	@RequestMapping(value = "/updateFoodWithFile", method = RequestMethod.POST)

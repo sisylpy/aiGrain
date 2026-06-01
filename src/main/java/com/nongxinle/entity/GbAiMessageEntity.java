@@ -48,6 +48,12 @@ public class GbAiMessageEntity implements Serializable {
 	/** PENDING / RUNNING / COMPLETED / FAILED / CANCELLED（Run 历史落库） */
 	private String gbAiMessageStatus;
 
+	/** assistant 统一 {@code cards[]} JSON 快照；user 行为 NULL */
+	private String gbAiMessageCardsJson;
+
+	/** assistant 轻量 {@code contextSummary} JSON 快照；user 行为 NULL */
+	private String gbAiMessageContextSummaryJson;
+
 	/**
 	 *  创建时间
 	 */

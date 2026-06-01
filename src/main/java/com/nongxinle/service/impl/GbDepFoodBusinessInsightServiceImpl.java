@@ -15,6 +15,7 @@ import com.nongxinle.service.GbDepFoodService;
 import com.nongxinle.service.GbDepartmentGoodsStockReduceService;
 import com.nongxinle.service.GbDepartmentService;
 import com.nongxinle.service.GbDishCostAnalysisService;
+import com.nongxinle.utils.GbDateTimeUtils;
 import com.nongxinle.utils.GbDepartmentGoodsStockReduceSupport;
 import com.nongxinle.utils.GrossMarginStandardDisplay;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -567,6 +569,27 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
             return applyScopeDepartmentAllowFilter(Collections.singletonList(Integer.valueOf(searchDepId)),
                     scopeDepartmentIdsAllowFilter);
         }
+        if (!AiInsightDishProfitScope.isGroupWideMendianAggregateUnderDis(depFatherId) && depFatherId != null) {
+            LinkedHashMap<Integer, Boolean> singleStoreUniq = new LinkedHashMap<>();
+            List<GbDepartmentEntity> subs = gbDepartmentService.querySubDepartments(depFatherId);
+            if (subs != null) {
+                for (GbDepartmentEntity sub : subs) {
+                    if (sub.getGbDepartmentId() != null) {
+                        singleStoreUniq.put(sub.getGbDepartmentId(), Boolean.TRUE);
+                    }
+                }
+            }
+            if (scopeDepartmentIdsAllowFilter != null) {
+                for (Integer allowed : scopeDepartmentIdsAllowFilter) {
+                    if (allowed != null && allowed.equals(depFatherId)) {
+                        singleStoreUniq.put(depFatherId, Boolean.TRUE);
+                        break;
+                    }
+                }
+            }
+            return applyScopeDepartmentAllowFilter(new ArrayList<>(singleStoreUniq.keySet()),
+                    scopeDepartmentIdsAllowFilter);
+        }
         Map<String, Object> q = new HashMap<>();
         q.put("disId", disId);
         q.put("depType", getGbDepartmentTypeMendian());
@@ -963,5 +986,216 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
             return "0";
         }
         return v.setScale(scale, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+    }
+
+    @Override
+    public Map<String, Object> buildWeekdaySalesDistributionForFood(
+            Integer disId,
+            Integer depFatherId,
+            Integer foodId,
+            String startDate,
+            String stopDate,
+            Map<String, Object> dishCostContext) {
+        if (disId == null || depFatherId == null || foodId == null) {
+            throw new IllegalArgumentException("disId、depFatherId、foodId 不能为空");
+        }
+        if (startDate == null || startDate.trim().isEmpty() || stopDate == null || stopDate.trim().isEmpty()) {
+            throw new IllegalArgumentException("startDate、stopDate 不能为空");
+        }
+        String sd = startDate.trim();
+        String ed = stopDate.trim();
+        List<Integer> scopeDepIds = resolveScopeDepIds(disId, null, depFatherId, null);
+        BigDecimal costPerPortion = resolveActualCostPerPortionForWeekdayProfit(dishCostContext);
+        BigDecimal listPrice = resolveListPriceForWeekdayRevenue(dishCostContext);
+
+        WeekdayBucketAgg[] buckets = new WeekdayBucketAgg[7];
+        for (int i = 0; i < 7; i++) {
+            buckets[i] = new WeekdayBucketAgg();
+        }
+        BigDecimal unassignedQty = BigDecimal.ZERO;
+        BigDecimal unassignedRevenue = BigDecimal.ZERO;
+        int unassignedOrders = 0;
+
+        if (!scopeDepIds.isEmpty()) {
+            LambdaQueryWrapper<GbDepFoodSalesEntity> w = new LambdaQueryWrapper<>();
+            w.eq(GbDepFoodSalesEntity::getGbDfsDistributerId, disId)
+                    .eq(GbDepFoodSalesEntity::getGbDfsFoodId, foodId)
+                    .ge(GbDepFoodSalesEntity::getGbDfsFullDate, sd)
+                    .le(GbDepFoodSalesEntity::getGbDfsFullDate, ed);
+            if (scopeDepIds.size() == 1) {
+                w.eq(GbDepFoodSalesEntity::getGbDfsDepId, scopeDepIds.get(0));
+            } else {
+                w.in(GbDepFoodSalesEntity::getGbDfsDepId, scopeDepIds);
+            }
+            List<GbDepFoodSalesEntity> rows = gbDepFoodSalesService.list(w);
+            if (rows != null) {
+                for (GbDepFoodSalesEntity row : rows) {
+                    BigDecimal qty = GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.getGbDfsAmount());
+                    if (qty.compareTo(BigDecimal.ZERO) <= 0) {
+                        continue;
+                    }
+                    BigDecimal revenue = resolveSalesRowRevenue(row, qty, listPrice);
+                    int storageWd = resolveStorageWeekday(row);
+                    if (storageWd < 0 || storageWd > 6) {
+                        unassignedQty = unassignedQty.add(qty);
+                        unassignedRevenue = unassignedRevenue.add(revenue);
+                        unassignedOrders++;
+                        continue;
+                    }
+                    WeekdayBucketAgg bucket = buckets[storageWd];
+                    bucket.qty = bucket.qty.add(qty);
+                    bucket.revenue = bucket.revenue.add(revenue);
+                    bucket.orderCount++;
+                }
+            }
+        }
+
+        List<Map<String, Object>> distribution = new ArrayList<>();
+        for (int displayCode = 1; displayCode <= 7; displayCode++) {
+            int storageWd = displayWeekdayCodeToStorage(displayCode);
+            WeekdayBucketAgg bucket = buckets[storageWd];
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("weekdayCode", displayCode);
+            item.put("weekdayName", weekdayNameForDisplayCode(displayCode));
+            item.put("salesCount", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(bucket.qty));
+            item.put("soldPortionsTotal", item.get("salesCount"));
+            item.put("salesAmount", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(bucket.revenue));
+            item.put("listPriceRevenue", item.get("salesAmount"));
+            BigDecimal profit = bucket.revenue.subtract(bucket.qty.multiply(costPerPortion));
+            item.put("actualProfitAmount", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(profit));
+            item.put("orderCount", bucket.orderCount);
+            distribution.add(item);
+        }
+
+        assignWeekdayRanksAndPeakFlags(distribution);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("weekdaySalesDistribution", distribution);
+        Map<String, Object> peak = findPeakWeekday(distribution);
+        out.putAll(peak);
+        if (unassignedQty.compareTo(BigDecimal.ZERO) > 0) {
+            out.put("unassignedSalesCount", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(unassignedQty));
+            out.put("unassignedSalesAmount", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(unassignedRevenue));
+            out.put("unassignedOrderCount", unassignedOrders);
+        }
+        return out;
+    }
+
+    private static BigDecimal resolveActualCostPerPortionForWeekdayProfit(Map<String, Object> dishCostContext) {
+        if (dishCostContext == null) {
+            return BigDecimal.ZERO;
+        }
+        Object v = dishCostContext.get("actualCostPerPortion");
+        if (v == null) {
+            v = dishCostContext.get("actualCostPerPortion123");
+        }
+        return GbDepartmentGoodsStockReduceSupport.coerceDecimal(v);
+    }
+
+    private static BigDecimal resolveListPriceForWeekdayRevenue(Map<String, Object> dishCostContext) {
+        if (dishCostContext == null) {
+            return BigDecimal.ZERO;
+        }
+        Object lp = dishCostContext.get("listPrice");
+        if (lp == null) {
+            return BigDecimal.ZERO;
+        }
+        return GbDepartmentGoodsStockReduceSupport.coerceDecimal(String.valueOf(lp));
+    }
+
+    private static BigDecimal resolveSalesRowRevenue(GbDepFoodSalesEntity row, BigDecimal qty, BigDecimal listPrice) {
+        BigDecimal subtotal = GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.getGbDfsSubtotal());
+        if (subtotal.compareTo(BigDecimal.ZERO) > 0) {
+            return subtotal;
+        }
+        if (listPrice.compareTo(BigDecimal.ZERO) > 0) {
+            return qty.multiply(listPrice).setScale(2, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private static int resolveStorageWeekday(GbDepFoodSalesEntity row) {
+        Integer wd = row.getGbDfsRevenueWeekday();
+        if (wd != null && wd >= 0 && wd <= 6) {
+            return wd;
+        }
+        String fullDate = row.getGbDfsFullDate();
+        if (fullDate != null && !fullDate.trim().isEmpty()) {
+            Date d = GbDateTimeUtils.parseDay(fullDate.trim());
+            if (d != null) {
+                return GbDateTimeUtils.weekdayForAiDailyRevenue(d);
+            }
+        }
+        return -1;
+    }
+
+    /** 展示码 1=周一 … 7=周日；存储码 0=周日，1=周一，…，6=周六。 */
+    private static int displayWeekdayCodeToStorage(int displayCode) {
+        if (displayCode == 7) {
+            return 0;
+        }
+        return displayCode;
+    }
+
+    private static String weekdayNameForDisplayCode(int displayCode) {
+        int storage = displayWeekdayCodeToStorage(displayCode);
+        return weekdayLegendZh().get(String.valueOf(storage));
+    }
+
+    private static void assignWeekdayRanksAndPeakFlags(List<Map<String, Object>> distribution) {
+        List<Map<String, Object>> byQty = new ArrayList<>(distribution);
+        byQty.sort(
+                (a, b) ->
+                        GbDepartmentGoodsStockReduceSupport.coerceDecimal(b.get("salesCount"))
+                                .compareTo(
+                                        GbDepartmentGoodsStockReduceSupport.coerceDecimal(a.get("salesCount"))));
+        int rank = 1;
+        BigDecimal topQty = BigDecimal.ZERO;
+        for (int i = 0; i < byQty.size(); i++) {
+            Map<String, Object> row = byQty.get(i);
+            BigDecimal qty = GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.get("salesCount"));
+            if (i == 0) {
+                topQty = qty;
+            }
+            int assignedRank = qty.compareTo(BigDecimal.ZERO) > 0 ? rank++ : 0;
+            row.put("rank", assignedRank);
+            row.put("isPeakDay", assignedRank == 1 && topQty.compareTo(BigDecimal.ZERO) > 0);
+        }
+        for (Map<String, Object> row : distribution) {
+            if (GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.get("salesCount")).compareTo(BigDecimal.ZERO) <= 0) {
+                row.put("rank", 0);
+                row.put("isPeakDay", false);
+            }
+        }
+    }
+
+    private static Map<String, Object> findPeakWeekday(List<Map<String, Object>> distribution) {
+        Map<String, Object> peak = new LinkedHashMap<>();
+        Map<String, Object> best = null;
+        BigDecimal bestQty = BigDecimal.ZERO;
+        for (Map<String, Object> row : distribution) {
+            BigDecimal qty = GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.get("salesCount"));
+            if (qty.compareTo(bestQty) > 0) {
+                bestQty = qty;
+                best = row;
+            }
+        }
+        if (best == null || bestQty.compareTo(BigDecimal.ZERO) <= 0) {
+            peak.put("peakWeekdayName", null);
+            peak.put("peakWeekdaySalesCount", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(BigDecimal.ZERO));
+            peak.put("peakWeekdaySalesAmount", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(BigDecimal.ZERO));
+            return peak;
+        }
+        peak.put("peakWeekdayName", best.get("weekdayName"));
+        peak.put("peakWeekdaySalesCount", best.get("salesCount"));
+        peak.put("peakWeekdaySalesAmount", best.get("salesAmount"));
+        peak.put("peakWeekdayCode", best.get("weekdayCode"));
+        return peak;
+    }
+
+    private static final class WeekdayBucketAgg {
+        BigDecimal qty = BigDecimal.ZERO;
+        BigDecimal revenue = BigDecimal.ZERO;
+        int orderCount;
     }
 }

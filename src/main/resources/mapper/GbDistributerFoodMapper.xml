@@ -3,6 +3,21 @@
 
 <mapper namespace="com.nongxinle.mapper.GbDistributerFoodMapper">
 
+
+    <resultMap id="dep" type="com.nongxinle.entity.GbDepartmentEntity">
+        <id property="gbDepartmentId" column="gb_department_id"/>
+        <result property="gbDepartmentName" column="gb_department_name"/>
+        <result property="gbDepartmentFatherId" column="gb_department_father_id"/>
+    </resultMap>
+    <resultMap id="depFoodList" type="com.nongxinle.entity.GbDepFoodEntity">
+        <id property="gbDepFoodId" column="gb_dep_food_id"/>
+        <result property="gbDfFoodId" column="gb_df_food_id"/>
+        <result property="gbDfDepId" column="gb_df_dep_id"/>
+        <result property="gbDfDepFatherId" column="gb_df_dep_father_id"/>
+        <result property="gbDfFoodPrice" column="gb_df_food_price"/>
+        <association property="gbDepartmentEntity" resultMap="dep"/>
+    </resultMap>
+
     <!-- 菜品关联商品的结果映射（使用 JOIN） -->
     <resultMap id="foodWithGoods" type="com.nongxinle.entity.GbDistributerFoodEntity">
         <id property="gbDistributerFoodId" column="gb_distributer_food_id"/>
@@ -23,6 +38,8 @@
         <result property="gbDfGrossMarginFloatAbs" column="gb_df_gross_margin_float_abs"/>
         <!-- 关联菜品的成分商品 -->
         <collection property="gbdisFoodGoodsEntities" resultMap="foodGoodsResult"/>
+<!--    部门商品列表    -->
+        <collection property="gbDepFoodEntities" resultMap="depFoodList" notNullColumn="gb_dep_food_id"/>
     </resultMap>
 
     <!-- 菜品成分的结果映射（包含关联商品详情） -->
@@ -91,10 +108,14 @@
                dg.gb_dg_nx_goods_id, dg.gb_dg_nx_father_img, dg.gb_dg_nx_father_img_large,
                dg.gb_dg_nx_distributer_goods_price,
                dg.gb_dg_gb_department_id, dg.gb_dg_goods_is_weight, dg.gb_dg_pull_off,
-               dg.gb_dg_goods_sons_sort, dg.gb_dg_selling_price
+               dg.gb_dg_goods_sons_sort, dg.gb_dg_selling_price,
+               df.* ,
+              dep.*
         FROM gb_distributer_food f
         LEFT JOIN gb_distributer_food_goods fg ON fg.gb_dfg_food_id = f.gb_distributer_food_id
         LEFT JOIN gb_distributer_goods dg ON dg.gb_distributer_goods_id = fg.gb_dfg_dis_goods_id
+        LEFT JOIN gb_dep_food as df on df.gb_DF_food_id = f.gb_distributer_food_id
+        LEFT JOIN gb_department as dep on dep.gb_department_id = df.gb_DF_dep_id
         <where>
             <if test="fatherId != null">
                 and f.gb_df_food_father_id = #{fatherId}

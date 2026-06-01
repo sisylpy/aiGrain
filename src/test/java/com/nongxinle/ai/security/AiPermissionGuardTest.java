@@ -37,6 +37,56 @@ class AiPermissionGuardTest {
     }
 
     @Test
+    void dishProfitTool_storeManager_allowsWhenRunScopedToStoreRoot() {
+        AiUserContext uc = AiUserContext.builder()
+                .userId((long) AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK)
+                .roleCode(AiRoleCodes.STORE_MANAGER)
+                .departmentId(105L)
+                .storeId(100L)
+                .distributerId(2L)
+                .allowedStoreIds(java.util.List.of(100L))
+                .permissions(java.util.List.of(
+                        AiPermissions.VIEW_REVENUE,
+                        AiPermissions.VIEW_COST,
+                        AiPermissions.VIEW_DISH_SALES,
+                        AiPermissions.ACCESS_BUSINESS_WORKSPACE))
+                .build();
+        AiRunState st = baseState(uc, 100L, 2L);
+        ToolRequest tr = ToolRequest.builder()
+                .runId(9501L)
+                .userId(uc.getUserId())
+                .toolName(AiBusinessToolIds.DISH_PROFIT_ANALYSIS)
+                .args(Map.of())
+                .build();
+        assertThat(guard.evaluateToolInvocation(st, tr).isAllowed()).isTrue();
+    }
+
+    @Test
+    void dishCostTool_storeManager_allowsWhenRunScopedToStoreRoot() {
+        AiUserContext uc = AiUserContext.builder()
+                .userId((long) AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK)
+                .roleCode(AiRoleCodes.STORE_MANAGER)
+                .departmentId(105L)
+                .storeId(100L)
+                .distributerId(2L)
+                .allowedStoreIds(java.util.List.of(100L))
+                .permissions(java.util.List.of(
+                        AiPermissions.VIEW_REVENUE,
+                        AiPermissions.VIEW_COST,
+                        AiPermissions.VIEW_DISH_SALES,
+                        AiPermissions.ACCESS_BUSINESS_WORKSPACE))
+                .build();
+        AiRunState st = baseState(uc, 100L, 2L);
+        ToolRequest tr = ToolRequest.builder()
+                .runId(9502L)
+                .userId(uc.getUserId())
+                .toolName(AiBusinessToolIds.DISH_COST_ANALYSIS)
+                .args(Map.of())
+                .build();
+        assertThat(guard.evaluateToolInvocation(st, tr).isAllowed()).isTrue();
+    }
+
+    @Test
     void scopedStoreManager_deniesWhenDepartmentMismatch() {
         GbDepartmentUserEntity row = AiDepartmentUserTestRows.storeManager(
                 AiDepartmentUserTestRows.STORE_MANAGER_TEST_USER_PK, 100, 2);

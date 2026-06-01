@@ -53,6 +53,23 @@ final class AiHarnessReplayProbeSummaryAppender {
         out.put("missingAnswerPlans", missing == null || missing.isEmpty() ? null : missing);
     }
 
+    static void appendAnswerContextHarnessFields(LinkedHashMap<String, Object> out, AiRunState state) {
+        if (state == null) {
+            out.put("answerContextPreambleDebug", null);
+            out.put("answerContextSummary", null);
+            return;
+        }
+        out.put(
+                "answerContextPreambleDebug",
+                AiHarnessSummaryUtils.blankToNull(state.getAnswerContextPreambleDebug()));
+        Map<String, Object> summary = state.getAnswerContextSummary();
+        if (summary == null || summary.isEmpty()) {
+            out.put("answerContextSummary", null);
+        } else {
+            out.put("answerContextSummary", new LinkedHashMap<>(summary));
+        }
+    }
+
     private static void synthesizeConsumedAnswerPlansFromWireAnswerPlans(
             LinkedHashMap<String, Object> out, AiRunState state) {
         if (state == null) {
@@ -85,6 +102,15 @@ final class AiHarnessReplayProbeSummaryAppender {
         }
         if (warehouseStockOverviewEligibleForConsumedProbe(state)) {
             acc.add("WarehouseStockOverview");
+        }
+        if (state.getDishProfitPrescriptionAnswerPlan() != null) {
+            acc.add("DishProfitPrescriptionAnswerPlan");
+        }
+        if (state.getDishIngredientCoverAnswerPlan() != null) {
+            acc.add("DishIngredientCoverAnswerPlan");
+        }
+        if (state.getGoodsSupportedDishCoverAnswerPlan() != null) {
+            acc.add("GoodsSupportedDishCoverAnswerPlan");
         }
         if (acc.isEmpty()) {
             out.put("consumedAnswerPlans", null);
@@ -220,10 +246,20 @@ final class AiHarnessReplayProbeSummaryAppender {
             if (dpp != null && StringUtils.hasText(dpp.getPlanType())) {
                 String dpt = dpp.getPlanType().trim();
                 out.putIfAbsent("harnessReplayDishProfitAnswerPlanType", dpt);
-                if (DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN.equals(dpt)) {
+                if (DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN.equals(dpt)
+                        || DishProfitAnswerPlan.TYPE_DISH_LOWEST_PROFIT_AMOUNT.equals(dpt)) {
                     out.putIfAbsent("harnessReplayDishProfitAnswerPlanSortDirection", "ASC");
-                } else if (DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN.equals(dpt)) {
+                } else if (DishProfitAnswerPlan.TYPE_DISH_HIGHEST_MARGIN.equals(dpt)
+                        || DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT.equals(dpt)
+                        || DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST.equals(dpt)) {
                     out.putIfAbsent("harnessReplayDishProfitAnswerPlanSortDirection", "DESC");
+                }
+                if (StringUtils.hasText(dpp.getSortKey())) {
+                    out.putIfAbsent("dishProfitAnswerPlanSortKey", dpp.getSortKey().trim());
+                } else if (DishProfitAnswerPlan.TYPE_DISH_HIGHEST_ACTUAL_COST.equals(dpt)) {
+                    out.putIfAbsent("dishProfitAnswerPlanSortKey", "totalActualCostAmount123");
+                } else if (DishProfitAnswerPlan.TYPE_DISH_HIGHEST_PROFIT_AMOUNT.equals(dpt)) {
+                    out.putIfAbsent("dishProfitAnswerPlanSortKey", "grossProfitAmount");
                 }
             }
         }
@@ -303,6 +339,7 @@ final class AiHarnessReplayProbeSummaryAppender {
         out.put("groupPurchaseOverview", null);
         out.put("groupStockReduceQuery", null);
         out.put("costInsightPath", null);
+        out.put("dishCostAnalysisPath", null);
         out.put("permissionDenials", null);
         out.put("finalAnswerTextBlank", null);
         out.put("couponCostInsightBlocked", null);
@@ -330,6 +367,7 @@ final class AiHarnessReplayProbeSummaryAppender {
         out.put("groupPurchaseOverview", Boolean.valueOf(state.isGroupPurchaseOverview()));
         out.put("groupStockReduceQuery", Boolean.valueOf(state.isGroupStockReduceQuery()));
         out.put("costInsightPath", Boolean.valueOf(state.isCostInsightPath()));
+        out.put("dishCostAnalysisPath", Boolean.valueOf(state.isDishCostAnalysisPath()));
 
         List<AiPermissionDenied> denials = state.getPermissionDenials();
         if (denials == null || denials.isEmpty()) {
@@ -374,5 +412,37 @@ final class AiHarnessReplayProbeSummaryAppender {
             }
             out.put("plannedToolArgsByToolId", copy.isEmpty() ? null : copy);
         }
+    }
+
+    static void appendMenuExpertPromptPreview(LinkedHashMap<String, Object> out, AiRunState state) {
+        appendMenuExpertComposerDebug(out, state);
+    }
+
+    static void appendMenuExpertComposerDebug(LinkedHashMap<String, Object> out, AiRunState state) {
+        if (state == null) {
+            out.put("menuExpertPromptPreview", null);
+            out.put("menuExpertLlmOutputPreview", null);
+            out.put("menuExpertComposerDecision", null);
+            return;
+        }
+        out.put(
+                "menuExpertPromptPreview",
+                state.getMenuExpertPromptPreview() == null || state.getMenuExpertPromptPreview().isEmpty()
+                        ? null
+                        : new LinkedHashMap<>(state.getMenuExpertPromptPreview()));
+        out.put(
+                "menuExpertLlmOutputPreview",
+                state.getMenuExpertLlmOutputPreview() == null || state.getMenuExpertLlmOutputPreview().isEmpty()
+                        ? null
+                        : new LinkedHashMap<>(state.getMenuExpertLlmOutputPreview()));
+        out.put(
+                "menuExpertComposerDecision",
+                state.getMenuExpertComposerDecision() == null || state.getMenuExpertComposerDecision().isEmpty()
+                        ? null
+                        : new LinkedHashMap<>(state.getMenuExpertComposerDecision()));
+    }
+
+    static void appendDishSalesReasonAgentHarnessFields(LinkedHashMap<String, Object> out, AiRunState state) {
+        BusinessOverviewDishSalesReasonAgentHarnessSupport.appendFlatHarnessFields(out, state);
     }
 }

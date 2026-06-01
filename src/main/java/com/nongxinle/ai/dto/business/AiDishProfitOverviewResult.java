@@ -47,10 +47,13 @@ public class AiDishProfitOverviewResult {
     /** true 时 {@link #grossProfitRate} 为粗算参考值，非最终可审计毛利结论。 */
     private boolean grossProfitRateUncertain;
 
+    @Builder.Default
     private int visibleStoreCount = 0;
 
+    @Builder.Default
     private int dataAvailableStoreCount = 0;
 
+    @Builder.Default
     private int dataMissingStoreCount = 0;
 
     @Builder.Default

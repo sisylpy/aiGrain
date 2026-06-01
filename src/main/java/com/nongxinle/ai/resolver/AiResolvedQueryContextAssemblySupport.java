@@ -14,6 +14,8 @@ import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
 import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
+import com.nongxinle.ai.context.ScopeResolutionTrace;
+import com.nongxinle.ai.semantic.dimension.BareRankingDimensionSwitchPlan;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -37,6 +39,7 @@ public class AiResolvedQueryContextAssemblySupport {
             Long convId,
             Long uid,
             AiUserContext userContext,
+            Long effectiveDepartmentId,
             AiRunCreateRequest request,
             String message,
             String normalized,
@@ -75,7 +78,11 @@ public class AiResolvedQueryContextAssemblySupport {
             String effectiveTimeSource,
             AiResolvedQueryIntent mergedIntentStem,
             AiQuerySemanticParseResult semanticLlm,
-            boolean applyStructuralLlm) {}
+            boolean applyStructuralLlm,
+            String semanticFailureCode,
+            String semanticFailureStage,
+            ScopeResolutionTrace scopeResolutionTrace,
+            BareRankingDimensionSwitchPlan bareRankingDimensionSwitchPlan) {}
 
     public AiResolvedQueryContext assemble(AssembleRequest req) {
         ResolvedQueryContextScopePreparation.ScopePrepareResult scope =
@@ -89,13 +96,16 @@ public class AiResolvedQueryContextAssemblySupport {
                                 req.applyStructuralLlm(),
                                 req.querySemanticMinConfidence(),
                                 req.previousTurn(),
+                                req.userContext(),
+                                req.effectiveDepartmentId(),
                                 req.orgScope(),
                                 req.followUp(),
                                 req.queryIntent(),
                                 req.mergedIntentStem(),
                                 req.semanticLlm(),
                                 req.timeWindow(),
-                                req.effectiveTimeSource()));
+                                req.effectiveTimeSource(),
+                                req.scopeResolutionTrace()));
 
         SemanticOrchestrationDecisionReconciler.OrchestrationPipelineResult orchestration =
                 SemanticOrchestrationDecisionReconciler.extractReconcileAndApplyClarificationGate(
@@ -167,7 +177,11 @@ public class AiResolvedQueryContextAssemblySupport {
                                 req.domainContractSelection(),
                                 req.semanticContractValidation(),
                                 req.semanticContractStrictDecision(),
-                                req.querySemanticV2Raw()));
+                                req.querySemanticV2Raw(),
+                                req.semanticFailureCode(),
+                                req.semanticFailureStage(),
+                                req.scopeResolutionTrace(),
+                                req.bareRankingDimensionSwitchPlan()));
 
         diagnostics.logIntentResolutionDiagnostics(
                 req.runId(),

@@ -1,6 +1,7 @@
 package com.nongxinle.ai.scope;
 
 import com.nongxinle.ai.context.AiDepartmentUserTestRows;
+import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.context.AiUserContextResolver;
 import com.nongxinle.ai.core.AiRunState;
@@ -22,6 +23,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -44,7 +47,16 @@ class AiRunScopeIntersectServiceTest {
     @Test
     void groupBoss_doesNotChangeRequestedDepartmentFather() {
         AiUserContext ctx = AiUserContext.builder().roleCode(AiRoleCodes.GROUP_MANAGER).departmentId(1L).build();
-        AiRunState st = AiRunState.builder().userId(1L).departmentId(88L).distributerId(2L).aiUserContext(ctx).build();
+        AiRunState st = AiRunState.builder()
+                .userId(1L)
+                .departmentId(88L)
+                .distributerId(2L)
+                .aiUserContext(ctx)
+                .resolvedQueryContext(
+                        AiResolvedQueryContext.builder()
+                                .conversationScopeMode(AiConversationScopeMode.GROUP)
+                                .build())
+                .build();
 
         when(scopeResolver.listStoreDepartmentIdsUnderDistributer(anyInt())).thenReturn(List.of(10, 11));
         when(scopeResolver.collectSubtreeDepartmentIds(10, null)).thenReturn(List.of(10, 101));
@@ -56,6 +68,29 @@ class AiRunScopeIntersectServiceTest {
         assertThat(st.getScope()).isNotNull();
         assertThat(st.getScope().getResolvedDepartmentIds()).containsExactly(10, 11, 101, 102);
         assertThat(st.getScope().getParentStoreCount()).isEqualTo(2);
+    }
+
+    @Test
+    void groupBoss_storeConversationMode_skipsWideStoreEnumeration() {
+        AiUserContext ctx = AiUserContext.builder().roleCode(AiRoleCodes.GROUP_MANAGER).departmentId(100L).build();
+        AiRunState st = AiRunState.builder()
+                .userId(1L)
+                .departmentId(100L)
+                .distributerId(2L)
+                .aiUserContext(ctx)
+                .resolvedQueryContext(
+                        AiResolvedQueryContext.builder()
+                                .conversationScopeMode(AiConversationScopeMode.STORE)
+                                .build())
+                .build();
+
+        when(scopeResolver.collectSubtreeDepartmentIds(100, null)).thenReturn(List.of(100, 101));
+
+        sut.applyIntersection(st, null);
+
+        verify(scopeResolver, never()).listStoreDepartmentIdsUnderDistributer(anyInt());
+        assertThat(st.getScope()).isNotNull();
+        assertThat(st.getScope().getResolvedDepartmentIds()).containsExactly(100, 101);
     }
 
     @Test

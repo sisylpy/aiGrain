@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nongxinle.mapper.GbAiWorkflowSuggestedQuestionMapper">
+
+    <select id="selectVisibleByAdvisorId" resultType="com.nongxinle.ai.advisor.capability.dto.AdvisorSuggestedQuestionRowDTO">
+        SELECT
+            w.gb_ai_workflow_id AS workflowId,
+            sq.gb_ai_wsq_workflow_code AS workflowCode,
+            w.gb_ai_workflow_enabled AS workflowEnabled,
+            sq.gb_ai_wsq_topic_id AS topicId,
+            sq.gb_ai_wsq_topic_title AS topicTitle,
+            sq.gb_ai_wsq_topic_description AS topicDescription,
+            sq.gb_ai_wsq_topic_sort AS topicSort,
+            sq.gb_ai_wsq_question_code AS questionCode,
+            sq.gb_ai_wsq_question_text AS questionText,
+            sq.gb_ai_wsq_enabled AS enabled,
+            sq.gb_ai_wsq_status AS status,
+            sq.gb_ai_wsq_scene AS scene,
+            sq.gb_ai_wsq_sort AS sort,
+            sq.gb_ai_wsq_intent_hint AS intentHint,
+            sq.gb_ai_wsq_contract_hint AS contractHint
+        FROM gb_ai_workflow_suggested_question sq
+        INNER JOIN gb_ai_workflow w ON w.gb_ai_workflow_id = sq.gb_ai_wsq_workflow_id
+        INNER JOIN gb_ai_advisor_workflow aw
+            ON aw.gb_ai_aw_workflow_id = w.gb_ai_workflow_id
+           AND aw.gb_ai_aw_advisor_id = #{advisorId}
+        WHERE sq.gb_ai_wsq_enabled = 1
+          AND sq.gb_ai_wsq_status &lt;&gt; 'DISABLED'
+          AND (
+              (sq.gb_ai_wsq_status = 'ACTIVE' AND w.gb_ai_workflow_enabled = 1)
+              OR sq.gb_ai_wsq_status = 'COMING_SOON'
+          )
+        <if test="questionCodePrefix != null and questionCodePrefix != ''">
+          AND sq.gb_ai_wsq_question_code LIKE CONCAT(#{questionCodePrefix}, '%')
+        </if>
+        <choose>
+            <when test="sceneFilter == 'MINIAPP'">
+                AND sq.gb_ai_wsq_scene IN ('BOTH', 'MINIAPP')
+            </when>
+            <when test="sceneFilter == 'DESKTOP'">
+                AND sq.gb_ai_wsq_scene IN ('BOTH', 'DESKTOP')
+            </when>
+            <otherwise>
+                AND sq.gb_ai_wsq_scene = 'BOTH'
+            </otherwise>
+        </choose>
+        ORDER BY sq.gb_ai_wsq_topic_sort ASC, sq.gb_ai_wsq_topic_id ASC, sq.gb_ai_wsq_sort ASC
+    </select>
+</mapper>

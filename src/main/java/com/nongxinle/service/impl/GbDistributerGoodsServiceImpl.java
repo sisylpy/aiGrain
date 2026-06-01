@@ -85,7 +85,6 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
         cgnGoods.setGbDgNxGoodsId(nxGoodsEntity.getNxGoodsId());
         cgnGoods.setGbDgNxFatherId(nxGoodsEntity.getNxGoodsFatherId());
         cgnGoods.setGbDgNxFatherName(nxGoodsEntity.getFatherGoods().getNxGoodsName());
-        cgnGoods.setGbDgNxFatherImg(nxGoodsEntity.getFatherGoods().getNxGoodsFile());
         cgnGoods.setGbDgNxGrandName(nxGoodsEntity.getGrandGoods().getNxGoodsName());
         cgnGoods.setGbDgNxGrandId(nxGoodsEntity.getGrandGoods().getNxGoodsId());
         cgnGoods.setGbDgNxGreatGrandName(nxGoodsEntity.getGreatGrandGoods().getNxGoodsName());
@@ -102,6 +101,7 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
         cgnGoods.setGbDgGoodsInventoryType(1);
         cgnGoods.setGbDgIsFranchisePrice(0);
         cgnGoods.setGbDgIsSelfControl(0);
+        cgnGoods.setGbDgQuantityDays(nxGoodsEntity.getNxGoodsQuantityDays());
 
         GbDistributerGoodsEntity disGoods = persistDistributerGoodsWithFatherHierarchy(cgnGoods);
 
@@ -293,36 +293,6 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
     private GbDistributerGoodsEntity persistDistributerGoodsWithFatherHierarchy(GbDistributerGoodsEntity goods) {
         Integer nxGoodsId = goods.getGbDgNxGoodsId();
         NxGoodsEntity nxGoodsEntity = nxGoodsService.queryObject(nxGoodsId);
-
-//        goods.setGbDgGoodsName(nxGoodsEntity.getNxGoodsName());
-//        goods.setGbDgNxFatherImg(nxGoodsEntity.getNxGoodsFile());
-//        goods.setGbDgGoodsStandardname(nxGoodsEntity.getNxGoodsStandardname());
-//        goods.setGbDgGoodsDetail(nxGoodsEntity.getNxGoodsDetail());
-//        goods.setGbDgGoodsPlace(nxGoodsEntity.getNxGoodsPlace());
-//        goods.setGbDgGoodsBrand(nxGoodsEntity.getNxGoodsBrand());
-//        goods.setGbDgGoodsStandardWeight(nxGoodsEntity.getNxGoodsStandardWeight());
-//        goods.setGbDgGoodsPinyin(nxGoodsEntity.getNxGoodsPinyin());
-//        goods.setGbDgGoodsPy(nxGoodsEntity.getNxGoodsPy());
-//        goods.setGbDgNxFatherId(nxGoodsEntity.getNxGoodsFatherId());
-//        goods.setGbDgGoodsSort(nxGoodsEntity.getNxGoodsSort());
-//        goods.setGbDgGoodsSonsSort(nxGoodsEntity.getNxGoodsSonsSort());
-//        goods.setGbDgQuantityDays(nxGoodsEntity.getNxGoodsQuantityDays());
-//
-//        goods.setGbDgGoodsIsHidden(0);
-//        goods.setGbDgGoodsIsWeight(0);
-//        goods.setGbDgControlPrice(0);
-//        goods.setGbDgControlFresh(0);
-//        goods.setGbDgPullOff(0);
-//        goods.setGbDgGoodsStatus(1);
-//        goods.setGbDgGoodsType(2);
-//        goods.setGbDgIsFranchisePrice(0);
-//        goods.setGbDgIsSelfControl(0);
-//        goods.setGbDgGoodsInventoryType(1);
-//        goods.setGbDgGbSupplierId(-1);
-//        goods.setGbDgNxDistributerId(-1);
-//        goods.setGbDgNxDistributerGoodsId(-1);
-//        goods.setGbDgNxDistributerGoodsPrice("0.1");
-
         Integer GbDgDistributerId = goods.getGbDgDistributerId();
         Integer GbDgNxFatherId = goods.getGbDgNxFatherId();
 

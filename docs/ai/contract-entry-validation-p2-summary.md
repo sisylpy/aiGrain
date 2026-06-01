@@ -142,8 +142,10 @@ Matrix contract-locked guard：已覆盖 `resolveStructuredIntentDetailWire` / `
 | **ACTIVE** | `dish_profit.overview` |
 | **ACTIVE** | `dish_profit.ranking_low_margin` |
 | **ACTIVE** | `dish_profit.ranking_high_margin` |
+| **ACTIVE** | `dish_profit.ranking_high_profit_amount` |
+| **ACTIVE** | `dish_profit.ranking_low_profit_amount` |
 | **ACTIVE** | `dish_profit.gross_margin_rate` |
-| **KNOWN_GAP** | `dish_profit.ranking_high_actual_cost` |
+| **ACTIVE** | `dish_profit.ranking_high_actual_cost` |
 | **KNOWN_GAP** | `dish_profit.ranking_max_cost_gap` |
 | **KNOWN_GAP** | `dish_profit.low_profit_reason` |
 | **KNOWN_GAP** | `dish_profit.theoretical_cost` |
@@ -165,11 +167,13 @@ Matrix contract-locked guard：已覆盖 `resolveStructuredIntentDetailWire` / `
 | **ACTIVE** | `purchase.goods_amount_ranking` |
 | **ACTIVE** | `purchase.goods_count_ranking` |
 | **ACTIVE** | `purchase.supplier_amount_ranking` |
+| **ACTIVE** | `purchase.store_amount_ranking` |
 | **ACTIVE** | `purchase.anomaly.price` |
 | **ACTIVE** | `purchase.anomaly.frequency` |
 | **ACTIVE** | `purchase.anomaly.quantity` |
 | **ACTIVE** | `purchase.anomaly.amount_spike` |
-| **KNOWN_GAP** | `purchase.store_amount_ranking` |
+| **KNOWN_GAP** | `purchase.store_compare` |
+| **KNOWN_GAP** | `purchase.store_pair_amount_compare` |
 | **KNOWN_GAP** | `purchase.risk.stock_reduce_mismatch` |
 | **Catalog 观测** | `goods_anchor_supplier_breakdown_missing_contract`（summary marker，非独立合同行） |
 
@@ -208,7 +212,7 @@ Matrix contract-locked guard：已覆盖 `resolveStructuredIntentDetailWire` / `
 |------|------------|
 | **ACTIVE** | `warehouse.overview` |
 | **ACTIVE** | `warehouse.goods_amount_ranking_high` |
-| **ACTIVE** | `warehouse.goods_amount_ranking_low` |
+| **ACTIVE** | `warehouse.goods_amount_ranking_low`（仅账面剩余金额升序排行；≠ 库存偏少/报警） |
 | **ACTIVE** | `warehouse.store_amount_ranking` |
 | **ACTIVE** | `warehouse.single_store_overview` |
 | **KNOWN_GAP** | `warehouse.out_of_stock` |
@@ -251,6 +255,7 @@ P2 **未做**：Tool/SQL/AnswerPlan/Composer 改造；FollowUpRewrite 删除后�
 
 ### 8.1 主链一致性 / 技术债（仅记录，P2 未改代码）
 
+- [ ] **Intake schema v2 — `followUpIntent`**：将裸维度切换 `_to_*_ranking` 等 wire token 从 `reason` 迁至独立字段（`targetMetric` / `targetDomain` / `targetContractId`）；Java 停止 parse `reason` 字符串。见 [`semantic-intake-schema-evolution.md`](semantic-intake-schema-evolution.md)。
 - [ ] **BUSINESS_OVERVIEW Matrix 内部 guard**：`BusinessOverviewSemanticCapabilityMatrix.resolveStructuredIntentDetailWire` 与其他域对齐，首行 `isContractLockedParse` → abstain。
 - [ ] **移除问句 contains 推导**：`RevenueSemanticCapabilityMatrix.inferMatrixWireFromNormalizedQuestion`、`DishSalesSemanticCapabilityMatrix.inferMatrixWireFromNormalizedQuestion`、`BusinessDiagnosisSemanticCapabilityMatrix.resolveRowFromMessage` — 仅保留 Harness legacy 或删除。
 - [ ] **移除 rankingType 路由**：`AiQuerySemanticLlmMergeHelper.warehouseStructuredWireFromMetricRankingType`（已有 P4 TODO 注释）。

@@ -74,9 +74,13 @@ public class BusinessDataPlannerNode implements AgentNode {
                 inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(effPath);
         boolean resolvedDishProfit =
                 inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(effPath);
-        /** D-8 Phase 1：菜品销量/销售额专线；底层工具仍复用 {@link AiBusinessToolIds#DISH_PROFIT_ANALYSIS}。 */
+        /** D-8 Phase 1：菜品销量/销售额专线；单菜走 {@link AiBusinessToolIds#DISH_SALES_ANALYSIS_CARD}（depGeFoodBusiness），排行仍复用 dish_profit_analysis。 */
         boolean resolvedDishSalesQuery =
                 inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(effPath);
+        boolean resolvedDishCostAnalysis =
+                inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS.equals(effPath);
+        boolean resolvedMenuOperation =
+                inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_MENU_OPERATION.equals(effPath);
         boolean resolvedBusinessOverview =
                 inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(effPath);
         boolean resolvedWarehouse =
@@ -100,6 +104,9 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setGroupPurchaseOverview(false);
             state.setBusinessOverviewPath(false);
             state.setDishProfitPath(false);
+            state.setDishCostAnalysisPath(false);
+            state.setMenuOperationPath(false);
+            state.setMenuOperationAnswerPlan(null);
             state.setStockReduceQueryPath(false);
             state.setGroupStockReduceQuery(false);
             state.setBusinessDiagnosisPath(false);
@@ -121,17 +128,24 @@ public class BusinessDataPlannerNode implements AgentNode {
                 inBusinessChat && !semanticClarifies && AiResolvedQueryIntent.PATH_COST_DIAGNOSIS.equals(effPath);
 
         boolean dishProfitIntent = resolvedDishProfit || resolvedDishSalesQuery;
+        boolean dishCostAnalysisIntent = resolvedDishCostAnalysis;
+        boolean menuOperationIntent = resolvedMenuOperation;
         boolean businessDiagnosisIntent = resolvedBusinessDiagnosis;
         boolean stockReduceStandaloneIntent =
-                !dishProfitIntent && !businessDiagnosisIntent && inBusinessChat && resolvedStockReduce;
+                !dishProfitIntent && !dishCostAnalysisIntent && !menuOperationIntent && !businessDiagnosisIntent
+                        && inBusinessChat && resolvedStockReduce;
         boolean revenueStandaloneIntent =
                 !dishProfitIntent
+                        && !dishCostAnalysisIntent
+                        && !menuOperationIntent
                         && !businessDiagnosisIntent
                         && !stockReduceStandaloneIntent
                         && inBusinessChat
                         && resolvedRevenueOverview;
         boolean purchaseOverviewOnlyIntent =
                 !dishProfitIntent
+                        && !dishCostAnalysisIntent
+                        && !menuOperationIntent
                         && !businessDiagnosisIntent
                         && !stockReduceStandaloneIntent
                         && !revenueStandaloneIntent
@@ -139,6 +153,8 @@ public class BusinessDataPlannerNode implements AgentNode {
                         && resolvedPurchaseOverview;
         boolean rawCostIntent =
                 !dishProfitIntent
+                        && !dishCostAnalysisIntent
+                        && !menuOperationIntent
                         && !businessDiagnosisIntent
                         && !stockReduceStandaloneIntent
                         && !revenueStandaloneIntent
@@ -147,6 +163,8 @@ public class BusinessDataPlannerNode implements AgentNode {
                         && resolvedCostDiagnosis;
         boolean stockOverviewIntent =
                 !dishProfitIntent
+                        && !dishCostAnalysisIntent
+                        && !menuOperationIntent
                         && !businessDiagnosisIntent
                         && !stockReduceStandaloneIntent
                         && !revenueStandaloneIntent
@@ -156,6 +174,8 @@ public class BusinessDataPlannerNode implements AgentNode {
                         && resolvedWarehouse;
         boolean overviewIntent =
                 !dishProfitIntent
+                        && !dishCostAnalysisIntent
+                        && !menuOperationIntent
                         && !businessDiagnosisIntent
                         && !stockReduceStandaloneIntent
                         && !rawCostIntent
@@ -176,6 +196,7 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setGroupPurchaseOverview(false);
             state.setBusinessOverviewPath(false);
             state.setDishProfitPath(false);
+            state.setDishCostAnalysisPath(false);
             state.setStockReduceQueryPath(false);
             state.setGroupStockReduceQuery(false);
             state.setBusinessDiagnosisPath(false);
@@ -188,6 +209,12 @@ public class BusinessDataPlannerNode implements AgentNode {
             if (state.isBusinessDiagnosisPath()) {
                 syncResolvedQueryContextToBusinessDiagnosis(state);
             }
+            plan = state.getDataPlanTools();
+        } else if (menuOperationIntent) {
+            applyMenuOperationBranch(state);
+            plan = state.getDataPlanTools();
+        } else if (dishCostAnalysisIntent) {
+            applyDishCostAnalysisBranch(state, rCtx);
             plan = state.getDataPlanTools();
         } else if (dishProfitIntent) {
             state.setCostInsightPath(false);
@@ -203,15 +230,35 @@ public class BusinessDataPlannerNode implements AgentNode {
             state.setBusinessOverviewPath(false);
             state.setRevenueOverviewPath(false);
             state.setRevenueAnswerPlan(null);
-            state.setDishProfitPath(true);
-            plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_DISH_PROFIT_TOOLS);
-            String ingWire = resolveDishIngredientBreakdownWire(rCtx, rqi);
-            if (StringUtils.hasText(ingWire)
-                    && AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(ingWire)
-                    && !plan.contains(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN)) {
-                plan.add(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN);
+            state.setDishCostAnalysisPath(false);
+            if (resolvedDishSalesQuery
+                    && ToolRequestContractExecutionParamSupport.isDishSalesSingleDishContract(rCtx)
+                    && !ToolRequestContractExecutionParamSupport.hasDishSalesSingleDishSelector(rCtx)) {
+                state.setDishProfitPath(false);
+                state.setNeedClarification(true);
+                if (state.getClarificationQuestion() == null || state.getClarificationQuestion().isBlank()) {
+                    state.setClarificationQuestion("请说明要查询的具体菜品名称。");
+                }
+                state.setDataPlanTools(new ArrayList<>());
+                plan = List.of();
+            } else {
+                state.setDishProfitPath(true);
+                if (resolvedDishSalesQuery
+                        && ToolRequestContractExecutionParamSupport.isDishSalesSingleDishContract(rCtx)) {
+                    plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_DISH_SALES_SINGLE_DISH_TOOLS);
+                } else if (resolvedDishSalesQuery) {
+                    plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_DISH_SALES_QUERY_TOOLS);
+                } else {
+                    plan = new ArrayList<>(AiBusinessToolIds.DEFAULT_DISH_PROFIT_TOOLS);
+                    String ingWire = resolveDishIngredientBreakdownWire(rCtx, rqi);
+                    if (StringUtils.hasText(ingWire)
+                            && AiQuerySemanticLexicon.STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN.equals(ingWire)
+                            && !plan.contains(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN)) {
+                        plan.add(AiBusinessToolIds.DISH_INGREDIENT_COST_BREAKDOWN);
+                    }
+                }
+                state.setDataPlanTools(plan);
             }
-            state.setDataPlanTools(plan);
         } else if (stockReduceStandaloneIntent) {
             applyStockReduceQuestionBranch(state);
             plan = state.getDataPlanTools();
@@ -282,6 +329,8 @@ public class BusinessDataPlannerNode implements AgentNode {
         payload.put("couponCostInsightBlocked", state.isCouponCostInsightBlocked());
         payload.put("businessOverviewPath", overview);
         payload.put("dishProfitPath", state.isDishProfitPath());
+        payload.put("dishCostAnalysisPath", state.isDishCostAnalysisPath());
+        payload.put("menuOperationPath", state.isMenuOperationPath());
         payload.put("businessDiagnosisPath", state.isBusinessDiagnosisPath());
         payload.put("stockReduceQueryPath", state.isStockReduceQueryPath());
         payload.put("groupStockReduceQuery", state.isGroupStockReduceQuery());
@@ -314,6 +363,8 @@ public class BusinessDataPlannerNode implements AgentNode {
             displayText = "成本分析对该账号不可用，已跳过数据拉取";
         } else if (state.isBusinessDiagnosisPath()) {
             displayText = "已编排「经营诊断」链路 " + plan.size() + " 个数据来源（采购·出库/核销·菜品毛利）";
+        } else if (state.isDishCostAnalysisPath()) {
+            displayText = "已编排「菜品成本分析」链路 " + plan.size() + " 个数据来源";
         } else if (state.isDishProfitPath()) {
             displayText = "已编排「菜品毛利透视」链路 " + plan.size() + " 个数据来源";
         } else if (state.isWarehouseStockOverviewPath()) {
@@ -428,9 +479,64 @@ public class BusinessDataPlannerNode implements AgentNode {
         state.setPurchaseOverviewPath(false);
         state.setGroupPurchaseOverview(false);
         state.setDishProfitPath(false);
+        state.setDishCostAnalysisPath(false);
+        state.setMenuOperationPath(false);
+        state.setMenuOperationAnswerPlan(null);
         state.setBusinessDiagnosisPath(false);
         state.setRevenueOverviewPath(false);
         state.setRevenueAnswerPlan(null);
+    }
+
+    /** 单菜菜品成本+销售分析：仅 {@link AiBusinessToolIds#DISH_COST_ANALYSIS}；缺菜名/foodId 时澄清，不查全量。 */
+    private static void applyDishCostAnalysisBranch(AiRunState state, AiResolvedQueryContext rCtx) {
+        state.setCostInsightPath(false);
+        state.setPurchaseCostInsightPath(false);
+        state.setWarehouseStockOverviewPath(false);
+        state.setGroupWarehouseStockOverview(false);
+        state.setPurchaseOverviewPath(false);
+        state.setGroupPurchaseOverview(false);
+        state.setStockReduceQueryPath(false);
+        state.setGroupStockReduceQuery(false);
+        state.setBusinessDiagnosisPath(false);
+        state.setCouponCostInsightBlocked(false);
+        state.setBusinessOverviewPath(false);
+        state.setRevenueOverviewPath(false);
+        state.setRevenueAnswerPlan(null);
+        state.setDishProfitPath(false);
+        state.setDishCostAnalysisPath(true);
+
+        if (!ToolRequestContractExecutionParamSupport.hasDishCostAnalysisSelector(rCtx)) {
+            state.setNeedClarification(true);
+            if (state.getClarificationQuestion() == null || state.getClarificationQuestion().isBlank()) {
+                state.setClarificationQuestion("请说明要分析的具体菜品名称。");
+            }
+            state.setDataPlanTools(new ArrayList<>());
+            return;
+        }
+        state.setDataPlanTools(new ArrayList<>(AiBusinessToolIds.DEFAULT_DISH_COST_ANALYSIS_TOOLS));
+    }
+
+    /** 菜单经营顾问：仅 {@link AiBusinessToolIds#DISH_PROFIT_ANALYSIS}；不启用 {@link #dishProfitPath}。 */
+    private static void applyMenuOperationBranch(AiRunState state) {
+        state.setCostInsightPath(false);
+        state.setPurchaseCostInsightPath(false);
+        state.setWarehouseStockOverviewPath(false);
+        state.setGroupWarehouseStockOverview(false);
+        state.setPurchaseOverviewPath(false);
+        state.setGroupPurchaseOverview(false);
+        state.setStockReduceQueryPath(false);
+        state.setGroupStockReduceQuery(false);
+        state.setBusinessDiagnosisPath(false);
+        state.setCouponCostInsightBlocked(false);
+        state.setBusinessOverviewPath(false);
+        state.setRevenueOverviewPath(false);
+        state.setRevenueAnswerPlan(null);
+        state.setDishProfitPath(false);
+        state.setDishCostAnalysisPath(false);
+        state.setDishProfitAnswerPlan(null);
+        state.setMenuOperationPath(true);
+        state.setMenuOperationAnswerPlan(null);
+        state.setDataPlanTools(new ArrayList<>(AiBusinessToolIds.DEFAULT_MENU_OPERATION_TOOLS));
     }
 
     /**
@@ -442,6 +548,7 @@ public class BusinessDataPlannerNode implements AgentNode {
         state.setCostInsightPath(false);
         state.setBusinessOverviewPath(false);
         state.setDishProfitPath(false);
+        state.setDishCostAnalysisPath(false);
         state.setCouponCostInsightBlocked(false);
         state.setWarehouseStockOverviewPath(false);
         state.setGroupWarehouseStockOverview(false);

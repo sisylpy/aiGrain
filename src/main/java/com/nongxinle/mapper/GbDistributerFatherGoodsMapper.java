@@ -11,7 +11,7 @@ import java.util.Map;
 @Mapper
 public interface GbDistributerFatherGoodsMapper extends BaseMapper<GbDistributerFatherGoodsEntity> {
 
-    GbDistributerFatherGoodsEntity queryObject(@Param("gbDistributerFatherGoodsId") Integer gbDistributerFatherGoodsId);
+    GbDistributerFatherGoodsEntity queryObject(Integer gbDistributerFatherGoodsId);
 
     List<GbDistributerFatherGoodsEntity> queryList(Map<String, Object> map);
 
@@ -21,11 +21,11 @@ public interface GbDistributerFatherGoodsMapper extends BaseMapper<GbDistributer
 
     void update(GbDistributerFatherGoodsEntity gbDistributerFatherGoods);
 
-    void delete(@Param("gbDistributerFatherGoodsId") Integer gbDistributerFatherGoodsId);
+    void delete(Integer gbDistributerFatherGoodsId);
 
     void deleteBatch(Integer[] gbDistributerFatherGoodsIds);
 
-    List<GbDistributerFatherGoodsEntity> querySubFatherGoods(@Param("goodsId") Integer goodsId);
+    List<GbDistributerFatherGoodsEntity> querySubFatherGoods(Integer goodsId);
 
     List<GbDistributerFatherGoodsEntity> queryHasDisFathersFather(Map<String, Object> map3);
 
@@ -39,13 +39,16 @@ public interface GbDistributerFatherGoodsMapper extends BaseMapper<GbDistributer
 
     GbDistributerFatherGoodsEntity queryAppFatherGoods(Map<String, Object> map);
 
-    List<GbDistributerFatherGoodsEntity> queryDisFathersGoodsByNxGoodsId(@Param("nxGoodsId") Integer nxGoodsId);
+    List<GbDistributerFatherGoodsEntity> queryDisFathersGoodsByNxGoodsId(Integer nxGoodsId);
 
-    List<GbDistributerFatherGoodsEntity> queryDisGoodsCataLinshi(@Param("nxDistributerId") Integer nxDistributerId);
+    List<GbDistributerFatherGoodsEntity> queryDisGoodsCataLinshi(Integer nxDistributerId);
 
     GbDistributerFatherGoodsEntity queryDisGoodsCataLinshiFatherGoods(Map<String, Object> map);
 
     int queryGbFatherGoodsMaxSort(Map<String, Object> map5);
 
     List<GbDistributerFatherGoodsEntity> queryDisGoodsCataWithFilter(Map<String, Object> mapG);
+
+    /** 采购涉及的曾祖父级（分类树最高层级）批发商商品分类，见 Mapper 注释。 */
+    List<GbDistributerFatherGoodsEntity> queryPurchaseGoodsFatherTypes(Map<String, Object> map);
 }

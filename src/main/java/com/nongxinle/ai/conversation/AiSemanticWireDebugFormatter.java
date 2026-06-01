@@ -183,7 +183,13 @@ public final class AiSemanticWireDebugFormatter {
             return "DISH_LOW_PROFIT_RANKING";
         }
         if (AiSemanticWireConstants.STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN.equals(w)) {
-            return "DISH_HIGH_PROFIT_RANKING";
+            return "DISH_HIGH_MARGIN_RANKING";
+        }
+        if (AiSemanticWireConstants.STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT.equals(w)) {
+            return "DISH_HIGH_PROFIT_AMOUNT_RANKING";
+        }
+        if (AiSemanticWireConstants.STRUCTURED_DISH_PROFIT_RANKING_LOW_PROFIT_AMOUNT.equals(w)) {
+            return "DISH_LOW_PROFIT_AMOUNT_RANKING";
         }
         if (AiSemanticWireConstants.STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH.equals(w)) {
             return "DISH_ACTUAL_COST_RANKING";

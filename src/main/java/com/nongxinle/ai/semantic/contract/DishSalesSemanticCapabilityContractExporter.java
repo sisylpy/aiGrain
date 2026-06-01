@@ -2,7 +2,6 @@ package com.nongxinle.ai.semantic.contract;
 
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
 import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
@@ -13,8 +12,10 @@ import java.util.Set;
 
 /**
  * 菜品销量域 Step 2 小合同只读导出。
- * <p>ACTIVE：Matrix {@link DishSalesSemanticCapabilityMatrix#firstTurnRows()} 无 knownGap 行。
- * KNOWN_GAP：Matrix 缺口行。
+ * <p>ACTIVE / KNOWN_GAP：Matrix {@link DishSalesSemanticCapabilityMatrix#firstTurnRows()}。
+ * <p>薄导出器：仅 Matrix → {@link MatrixBackedContractExporterSupport} 结构化字段。
+ * NL 见 {@code semantic_intake.v1.md}、{@code query_semantic_parser.v2.md}、Harness。
+ * 治理见 {@code docs/ai/semantic-contract-exporter-governance.md}。
  */
 public final class DishSalesSemanticCapabilityContractExporter implements SemanticCapabilityContractExporter {
 
@@ -23,10 +24,9 @@ public final class DishSalesSemanticCapabilityContractExporter implements Semant
     public static final DishSalesSemanticCapabilityContractExporter INSTANCE =
             new DishSalesSemanticCapabilityContractExporter();
 
-    private static final List<String> DISH_SALES_TOOLS = List.of(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+    private static final List<String> DISH_SALES_QUERY_TOOLS = List.of(AiBusinessToolIds.DISH_SALES_ANALYSIS_CARD);
 
-    private DishSalesSemanticCapabilityContractExporter() {
-    }
+    private DishSalesSemanticCapabilityContractExporter() {}
 
     @Override
     public String domain() {
@@ -63,7 +63,6 @@ public final class DishSalesSemanticCapabilityContractExporter implements Semant
     @Override
     public SemanticCapabilityContractExportSummary exportSummary() {
         List<SemanticCapabilityContract> active = exportActiveContracts();
-        List<SemanticCapabilityContract> planned = exportPlannedContracts();
         List<SemanticCapabilityContract> gaps = exportKnownGapContracts();
         List<String> gapMarkers = new ArrayList<>();
         for (SemanticCapabilityContract c : gaps) {
@@ -71,16 +70,11 @@ public final class DishSalesSemanticCapabilityContractExporter implements Semant
                 gapMarkers.add(c.getGapMarker());
             }
         }
-        for (SemanticCapabilityContract c : planned) {
-            if (c.getGapMarker() != null) {
-                gapMarkers.add(c.getGapMarker());
-            }
-        }
         return SemanticCapabilityContractExportSummary.builder()
                 .domainCode(DOMAIN_CODE)
-                .exportedContractCount(active.size() + planned.size() + gaps.size())
+                .exportedContractCount(active.size() + gaps.size())
                 .activeContractCount(active.size())
-                .plannedContractCount(planned.size())
+                .plannedContractCount(0)
                 .knownGapContractCount(gaps.size())
                 .knownGapMarkers(gapMarkers)
                 .build();
@@ -90,36 +84,37 @@ public final class DishSalesSemanticCapabilityContractExporter implements Semant
             DishSalesSemanticCapabilityMatrixRow row,
             SemanticCapabilityContractStatus status,
             String gapMarker) {
-        SemanticCapabilityContract.SemanticCapabilityContractBuilder builder =
-                SemanticCapabilityContract.builder()
+        MatrixBackedContractExporterSupport.MatrixContractExportSpec.MatrixContractExportSpecBuilder b =
+                MatrixBackedContractExporterSupport.MatrixContractExportSpec.builder()
                         .contractId(contractIdForRow(row))
                         .domain(DOMAIN_CODE)
                         .intentCode(AiResolvedQueryIntent.DISH_SALES_QUERY)
                         .pathCode(AiResolvedQueryIntent.PATH_DISH_SALES_QUERY)
                         .wire(row.getStructuredIntentDetailWire())
-                        .queryObject(row.getQueryObject());
+                        .queryObject(row.getQueryObject())
+                        .answerPlanType(row.getTargetDishSalesPlanType())
+                        .requiresAnchor(row.isRequiresAnchor())
+                        .anchorType(row.isRequiresAnchor() ? row.getAnchorType() : null)
+                        .selectedTools(selectedToolsForRow(row))
+                        .status(status)
+                        .gapMarker(gapMarker);
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_OVERVIEW.equals(
                 row.getStructuredIntentDetailWire())) {
-            builder.operations(Set.of("OVERVIEW", "SUMMARY")).operation(null);
+            b.operations(Set.of("OVERVIEW", "SUMMARY"));
         } else {
-            builder.operation(row.getOperation());
+            b.operation(row.getOperation());
         }
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH.equals(
                 row.getStructuredIntentDetailWire())) {
-            builder.metric("SALES_AMOUNT").metric("LIST_PRICE_REVENUE");
+            b.metric("SALES_AMOUNT").metric("LIST_PRICE_REVENUE");
         } else {
-            builder.metric(row.getMetric());
+            b.metric(row.getMetric());
         }
-        return builder
-                .sourceFacet(null)
-                .detailWanted(null)
-                .answerPlanType(row.getTargetDishSalesPlanType())
-                .requiresAnchor(false)
-                .anchorType(null)
-                .selectedTools(DISH_SALES_TOOLS)
-                .status(status)
-                .gapMarker(gapMarker)
-                .build();
+        return MatrixBackedContractExporterSupport.build(b.build());
+    }
+
+    private static List<String> selectedToolsForRow(DishSalesSemanticCapabilityMatrixRow row) {
+        return DISH_SALES_QUERY_TOOLS;
     }
 
     private static String contractIdForRow(DishSalesSemanticCapabilityMatrixRow row) {
@@ -135,33 +130,5 @@ public final class DishSalesSemanticCapabilityContractExporter implements Semant
             case "DS-J" -> "dish_sales.trend";
             default -> "dish_sales." + row.getRowId().toLowerCase();
         };
-    }
-
-    private static SemanticCapabilityContract plannedContract(
-            String contractId,
-            String wire,
-            String answerPlanType,
-            String queryObject,
-            Set<String> operations,
-            Set<String> metrics,
-            String gapMarker) {
-        return SemanticCapabilityContract.builder()
-                .contractId(contractId)
-                .domain(DOMAIN_CODE)
-                .intentCode(AiResolvedQueryIntent.DISH_SALES_QUERY)
-                .pathCode(AiResolvedQueryIntent.PATH_DISH_SALES_QUERY)
-                .wire(wire)
-                .queryObject(queryObject)
-                .operations(operations)
-                .metrics(metrics)
-                .sourceFacet(null)
-                .detailWanted(null)
-                .answerPlanType(answerPlanType)
-                .requiresAnchor(false)
-                .anchorType(null)
-                .selectedTools(DISH_SALES_TOOLS)
-                .status(SemanticCapabilityContractStatus.PLANNED)
-                .gapMarker(gapMarker)
-                .build();
     }
 }

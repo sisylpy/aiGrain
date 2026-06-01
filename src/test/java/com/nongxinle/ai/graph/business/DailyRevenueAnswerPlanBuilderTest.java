@@ -81,10 +81,8 @@ class DailyRevenueAnswerPlanBuilderTest {
 
     @Test
     void attachIfApplicable_buildsWhenBusinessOverviewPathAndRevenueToolRan() {
-        AiResolvedQueryIntent qi = AiResolvedQueryIntent.builder()
-                .pathCode(AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW)
-                .build();
-        AiResolvedQueryContext rq = AiResolvedQueryContext.builder().queryIntent(qi).build();
+        AiResolvedQueryContext rq = BusinessOverviewSubPlanAttachSupportTest.businessOverviewContext(
+                AiQuerySemanticLexicon.STRUCTURED_BUSINESS_OVERVIEW_SUMMARY);
 
         AiRunState state = AiRunState.builder()
                 .runId(210L)
@@ -92,6 +90,7 @@ class DailyRevenueAnswerPlanBuilderTest {
                 .revenueOverviewPath(false)
                 .businessDiagnosisPath(false)
                 .resolvedQueryContext(rq)
+                .dataPlanTools(List.of(AiBusinessToolIds.REVENUE_QUERY))
                 .rawUserInput("这个月经营怎么样？")
                 .build();
 
@@ -113,6 +112,9 @@ class DailyRevenueAnswerPlanBuilderTest {
         DailyRevenueAnswerPlanBuilder.attachIfApplicable(state);
         assertNotNull(state.getRevenueAnswerPlan());
         assertEquals(DailyRevenueAnswerPlan.TYPE_REVENUE_OVERVIEW, state.getRevenueAnswerPlan().getPlanType());
+        assertEquals(1, state.getRevenueAnswerPlan().getFocusRows().size());
+        assertEquals(BusinessOverviewSubPlanAttachSupport.ATTACH_MODE,
+                state.getRevenueAnswerPlan().getDebug().get("attachMode"));
     }
 
     @Test

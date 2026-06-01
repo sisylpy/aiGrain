@@ -1,6 +1,5 @@
 package com.nongxinle.ai.semantic.matrix;
 
-import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
@@ -111,7 +110,9 @@ public final class DishSalesSemanticCapabilityMatrix {
                     "DETAIL",
                     "SOLD_PORTIONS",
                     SALES_FACET_SINGLE_DISH,
-                    null);
+                    null,
+                    true,
+                    ANCHOR_STRATEGY_DISH);
 
     public static final DishSalesSemanticCapabilityMatrixRow STORE_COUNT_RANKING =
             firstTurnRow(
@@ -133,7 +134,9 @@ public final class DishSalesSemanticCapabilityMatrix {
                     "DETAIL",
                     "SOLD_PORTIONS",
                     SALES_FACET_SINGLE_DISH,
-                    null);
+                    null,
+                    true,
+                    ANCHOR_STRATEGY_DISH);
 
     public static final DishSalesSemanticCapabilityMatrixRow CROSS_DOMAIN_PROFIT =
             DishSalesSemanticCapabilityMatrixRow.builder()
@@ -208,6 +211,16 @@ public final class DishSalesSemanticCapabilityMatrix {
         return isDishSalesRankingAnchorSourcePlanType(planType);
     }
 
+    /** 单菜成功轮也沉淀 DISH resultAnchor，供多轮 USE_PREVIOUS_ANCHOR 继承。 */
+    public static boolean planTypeEmitsDishSalesResultAnchor(String planType) {
+        if (!StringUtils.hasText(planType)) {
+            return false;
+        }
+        String pt = planType.trim();
+        return isDishSalesRankingAnchorSourcePlanType(pt)
+                || DishSalesAnswerPlan.TYPE_DISH_SALES_SINGLE_DISH.equals(pt);
+    }
+
     public static AiResultAnchor resolveUniqueDishSalesRankingAnchor(List<AiResultAnchor> anchors) {
         if (anchors == null || anchors.isEmpty()) {
             return null;
@@ -246,16 +259,20 @@ public final class DishSalesSemanticCapabilityMatrix {
                 || AiQuerySemanticLexicon.STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN.equals(canon);
     }
 
-    public static DishSalesSemanticCapabilityMatrixRow resolveMatrixRow(
-            String pathCode, String resolvedWire, AiQuerySemanticParseResult sem) {
-        return resolveMatrixRow(pathCode, resolvedWire, sem, null);
-    }
-
+    /**
+     * contract-completed canonical wire → matrix row 纯查表。
+     * {@code rq} 保留仅为调用方兼容；不参与 wire→row 决策（scope 不得改写主链 wire/row）。
+     */
     public static DishSalesSemanticCapabilityMatrixRow resolveMatrixRow(
             String pathCode,
             String resolvedWire,
             AiQuerySemanticParseResult sem,
             AiResolvedQueryContext rq) {
+        return resolveMatrixRow(pathCode, resolvedWire, sem);
+    }
+
+    public static DishSalesSemanticCapabilityMatrixRow resolveMatrixRow(
+            String pathCode, String resolvedWire, AiQuerySemanticParseResult sem) {
         if (!AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(pathCode)) {
             return null;
         }
@@ -276,18 +293,12 @@ public final class DishSalesSemanticCapabilityMatrix {
             return COUNT_RANKING_LOW;
         }
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_HIGH.equals(canon)) {
-            if (isSingleStoreFirstTurnScope(rq)) {
-                return STORE_COUNT_RANKING;
-            }
             return COUNT_RANKING_HIGH_A;
         }
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_STORE_RANKING.equals(canon)) {
             return STORE_COUNT_RANKING;
         }
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_SINGLE_DISH.equals(canon)) {
-            if (isSingleStoreFirstTurnScope(rq)) {
-                return STORE_SINGLE_DISH;
-            }
             return SINGLE_DISH;
         }
         if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_STORE_SINGLE_DISH.equals(canon)) {
@@ -301,14 +312,6 @@ public final class DishSalesSemanticCapabilityMatrix {
             return first;
         }
         return null;
-    }
-
-    private static boolean isSingleStoreFirstTurnScope(AiResolvedQueryContext rq) {
-        if (rq == null || rq.getOrgScope() == null) {
-            return false;
-        }
-        String st = rq.getOrgScope().getScopeType();
-        return AiResolvedOrgScope.SCOPE_STORE.equals(st) || AiResolvedOrgScope.SCOPE_PURCHASER.equals(st);
     }
 
     public static String knownGapForResolvedRow(DishSalesSemanticCapabilityMatrixRow row) {
@@ -347,6 +350,21 @@ public final class DishSalesSemanticCapabilityMatrix {
             String metric,
             String salesFacet,
             String knownGap) {
+        return firstTurnRow(
+                rowId, wire, planType, queryObject, operation, metric, salesFacet, knownGap, false, null);
+    }
+
+    private static DishSalesSemanticCapabilityMatrixRow firstTurnRow(
+            String rowId,
+            String wire,
+            String planType,
+            String queryObject,
+            String operation,
+            String metric,
+            String salesFacet,
+            String knownGap,
+            boolean requiresAnchor,
+            String anchorType) {
         return DishSalesSemanticCapabilityMatrixRow.builder()
                 .rowId(rowId)
                 .queryObject(queryObject)
@@ -356,6 +374,8 @@ public final class DishSalesSemanticCapabilityMatrix {
                 .structuredIntentDetailWire(wire)
                 .targetDishSalesPlanType(planType)
                 .knownGapCode(knownGap)
+                .requiresAnchor(requiresAnchor)
+                .anchorType(anchorType)
                 .build();
     }
 

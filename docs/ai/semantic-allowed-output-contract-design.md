@@ -50,6 +50,8 @@ rawUserMessage
 | [`AiSemanticWireConstants.java`](../src/main/java/com/nongxinle/ai/conversation/AiSemanticWireConstants.java) | registered canonical wire 常量 + `isRegisteredCanonicalWire` | 与 ACTIVE SemanticCapabilityContract 对齐 |
 | [`AiSemanticWireDebugFormatter.java`](../src/main/java/com/nongxinle/ai/conversation/AiSemanticWireDebugFormatter.java) | Harness wire → debug 枚举标签 | 不参与主链归一 |
 | [`*SemanticCapabilityMatrix.java`](../src/main/java/com/nongxinle/ai/semantic/matrix/) | 矩阵行（槽位形状 + wire + planType）、合同帧补全 | SSOT 与 `SemanticCapabilityContract` exporter 对齐 |
+| [`semantic-contract-exporter-governance.md`](./semantic-contract-exporter-governance.md) | Exporter 薄导出治理、瘦身顺序、禁止第三套 NL | Exporter **不得**复制 Prompt 中文 hint |
+| [`MatrixBackedContractExporterSupport.java`](../src/main/java/com/nongxinle/ai/semantic/contract/MatrixBackedContractExporterSupport.java) | Matrix → Contract 统一构建（无 hint） | 新域/瘦身时优先使用 |
 | [`CurrentSemanticFrameValidator.java`](../src/main/java/com/nongxinle/ai/semantic/frame/CurrentSemanticFrameValidator.java) | 采购 wire `Set` 白名单、`frameMatchesRow` | 白名单与 Lexicon `PURCHASE_OVERVIEW_DOMAIN_CANONICAL_WIRES` **双份维护** |
 | [`SemanticCapabilityRegistry.java`](../src/main/java/com/nongxinle/ai/semantic/capability/SemanticCapabilityRegistry.java) | 上一轮 frame + 本轮 slot → capabilityId | **匹配**合同，**不导出** allowed 集合给 LLM |
 | [`*AnswerPlanBuilder.java`](../src/main/java/com/nongxinle/ai/graph/business/) | wire → planType 路由（平行契约） | P1B 待矩阵化；与 LLM 合同无直接反馈环 |
@@ -545,9 +547,9 @@ Step 1 Router 结果 **不** 走 wire Validator；仅校验 `primaryDomain ∈ r
 
 | 指标 | 值 |
 |------|-----|
-| ACTIVE | **13**（Matrix goods-anchor 3 + 主流程 overview / ranking / anomaly 10） |
+| ACTIVE | **14**（Matrix goods-anchor 3 + 主流程 overview / ranking / anomaly / store ranking 11） |
 | PLANNED | **0** |
-| KNOWN_GAP | **2**（`purchase.store_amount_ranking`、`purchase.risk.stock_reduce_mismatch`） |
+| KNOWN_GAP | **3**（`purchase.store_compare`、`purchase.store_pair_amount_compare`、`purchase.risk.stock_reduce_mismatch`） |
 | Router / ContractSelector | **已进入主链** |
 | anomaly `sourceFacet` 默认 ALL | **已在 SlotMerge / Matrix 公共层补齐** |
 | Strict Validator | **未开启**（只观测） |
@@ -556,7 +558,8 @@ Step 1 Router 结果 **不** 走 wire Validator；仅校验 `primaryDomain ∈ r
 
 | contractId | gapMarker |
 |------------|-----------|
-| `purchase.store_amount_ranking` | `purchase_store_amount_ranking_missing_contract` |
+| `purchase.store_compare` | `purchase_store_compare_not_in_p1` |
+| `purchase.store_pair_amount_compare` | `purchase_store_pair_amount_compare_not_in_p1` |
 | `purchase.risk.stock_reduce_mismatch` | `purchase_stock_reduce_mismatch_missing_contract` |
 
 **Catalog 观测 marker（非 contract）**：`goods_anchor_supplier_breakdown_missing_contract`（R5 问法 prompt 绑定，P3）
@@ -586,10 +589,10 @@ Step 1 Router 结果 **不** 走 wire Validator；仅校验 `primaryDomain ∈ r
 - `semanticRoute`：`primaryDomain` / `candidateDomains` / `routeType` / `confidence`
 - `allowedOutputContract`：单域 ACTIVE 摘要（`allowedWires` 等）；capability 缺失时不注入
 
-**Purchase ACTIVE allowedWires（当前，13 条）**
+**Purchase ACTIVE allowedWires（当前，14 条）**
 
 - Matrix goods-anchor：`purchase_source_goods_query`（三行；detailWanted 由槽位区分）
-- 主流程：`purchase_overview_summary`、`purchase_source_summary`（self/supplier）、`purchase_goods_amount_ranking`、`purchase_goods_count_ranking`、`supplier_amount_ranking`
+- 主流程：`purchase_overview_summary`、`purchase_source_summary`（self/supplier）、`purchase_goods_amount_ranking`、`purchase_goods_count_ranking`、`supplier_amount_ranking`、`purchase_store_amount_ranking`
 - 异常：`purchase_price_anomaly`、`purchase_frequency_anomaly`、`purchase_quantity_anomaly`、`purchase_goods_amount_spike`（`sourceFacet=ALL` 默认已补齐）
 
 **Known gap（不阻塞主链，本轮不修）**
@@ -598,7 +601,7 @@ Step 1 Router 结果 **不** 走 wire Validator；仅校验 `primaryDomain ∈ r
 |------|------|
 | Router 单一 candidate 分数不足 → `AMBIGUOUS` | **P2.5 已缓解**：单域 + businessObject + taskType 信号 → EXPLICIT；多域接近仍 AMBIGUOUS |
 | Strict Validator 未开启 | `SemanticContractValidator.observe` 记录 wire + 槽位 combo 违例；不改变执行 |
-| `purchase.store_amount_ranking` / `purchase.risk.stock_reduce_mismatch` | Catalog KNOWN_GAP；不注入 allowedWires |
+| `purchase.store_compare` / `purchase.store_pair_amount_compare` / `purchase.risk.stock_reduce_mismatch` | Catalog KNOWN_GAP；不注入 allowedWires |
 
 **Harness / Context 观测**
 
@@ -636,7 +639,7 @@ Step 1 Router 结果 **不** 走 wire Validator；仅校验 `primaryDomain ∈ r
 
 | Domain | RoutingContract | CapabilityContract | ACTIVE | PLANNED | KNOWN_GAP | Runtime switched | Strict Validator |
 |--------|-----------------|-------------------|--------|---------|-----------|------------------|------------------|
-| PURCHASE | yes | yes | 13 | 0 | 2 | partial | no |
+| PURCHASE | yes | yes | 14 | 0 | 3 | partial | no |
 | REVENUE | yes | yes | 3 | 7 | 4 | no | no |
 | STOCK_REDUCE | yes | yes | 7 | 2 | 1 | no | no |
 | WAREHOUSE | yes | yes | 5 | 0 | 2 | no | no |

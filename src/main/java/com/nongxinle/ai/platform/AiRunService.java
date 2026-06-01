@@ -1,13 +1,16 @@
 package com.nongxinle.ai.platform;
 
 import com.alibaba.fastjson2.JSON;
+import com.nongxinle.ai.composer.AiAnswerContextSummarySupport;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.context.AiUserContextResolver;
 import com.nongxinle.ai.platform.dto.StopRunOutcome;
+import com.nongxinle.ai.resolver.RequestExplicitGroupScopeSupport;
 import com.nongxinle.ai.resolver.AiResolvedQueryContextResolver;
+import com.nongxinle.ai.resolver.AiResolvedOrgScopeAssembler;
 import com.nongxinle.ai.core.AiGraphRunner;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.core.AiWorkspaceMode;
@@ -24,8 +27,10 @@ import com.nongxinle.ai.planner.BusinessDiagnosisCompositeProductionGate;
 import com.nongxinle.ai.planner.ShadowDecision;
 import com.nongxinle.ai.planner.ShadowPolicy;
 import com.nongxinle.ai.security.AiPermissionDenied;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.trace.AiAgentTraceService;
 import com.nongxinle.ai.harness.AiHarnessResolvedContextSummarizer;
+import com.nongxinle.ai.harness.BusinessOverviewDishSalesReasonAgentHarnessSupport;
 import com.nongxinle.ai.trace.AiRunSession;
 import com.nongxinle.ai.trace.AiRunSessionRegistry;
 import com.nongxinle.ai.conversation.AiConversationMemoryService;
@@ -44,6 +49,8 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Optional;
 import java.util.LinkedHashMap;
@@ -92,6 +99,11 @@ public class AiRunService {
     private String compositeBusinessDiagnosisExecutionModeSpring;
 
     public AiRunStartResult startRun(AiRunCreateRequest req) {
+        log.info(
+                "[AiRunService#createRun] received userId={} conversationId={} messageLen={}",
+                req != null ? req.getUserId() : null,
+                req != null ? req.getConversationId() : null,
+                req != null && req.getMessage() != null ? req.getMessage().length() : 0);
         if (req == null || req.getUserId() == null) {
             throw new IllegalArgumentException("userId required");
         }
@@ -105,23 +117,28 @@ public class AiRunService {
             conv = conversationCoreService.createNewConversationForAgentRun(
                     req.getDepartmentId(), req.getDistributerId(), mode, req.getUserId());
             req.setConversationId(conv.getGbAiConversationId());
-            log.info("[AiRunService] created conversationId={} userId={} mode={}",
+            log.info("[AiRunService#createRun] created conversationId={} userId={} mode={}",
                     conv.getGbAiConversationId(), req.getUserId(), mode);
         } else {
             conv = conversationCoreService.requireConversationOwnedByUser(req.getConversationId(), req.getUserId());
         }
 
         long runId = sessionRegistry.nextRunId();
+        log.info("[AiRunService#createRun] created runId={} conversationId={}", runId, req.getConversationId());
 
-        var uc = userContextResolver.resolve(req);
-        AiResolvedQueryContext resolved = resolvedQueryContextResolver.resolve(runId, req, uc);
-
-        AiRunState state = newRunStateFromResolved(runId, req, uc, resolved);
-        maybeAppendOutOfScopeMentionDenial(resolvedQueryContextResolver, resolved, state);
-        recordCompositeProductionGateObservation(state, null);
-
-        logResolvedQueryContext(runId, req.getConversationId(), resolved);
-        logHarnessTurnMemory(runId, req.getConversationId(), resolved);
+        // 仅登记 Run 壳层；语义解析 / LLM / Graph / Composer 在异步 executeRun 中执行。
+        AiRunState state = AiRunState.builder()
+                .runId(runId)
+                .advisorId(req.getAdvisorId())
+                .conversationId(req.getConversationId())
+                .userId(req.getUserId())
+                .departmentId(req.getDepartmentId())
+                .distributerId(req.getDistributerId())
+                .scopeMode(req.getScopeMode())
+                .rawUserInput(req.getMessage())
+                .normalizedUserInput(req.getMessage().trim())
+                .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
+                .build();
 
         // 用户消息正文固定用请求原始字段（不归一化、不替换为 normalizedUserInput）
         runMessagePersistence.persistUserMessageForRun(
@@ -134,7 +151,70 @@ public class AiRunService {
         sessionRegistry.register(session);
 
         asyncExecutor.runAsync(() -> executeRun(runId));
+        log.info("[AiRunService#createRun] async submitted runId={}", runId);
+        log.info("[AiRunService#createRun] return response runId={} conversationId={}", runId, req.getConversationId());
         return new AiRunStartResult(runId, req.getConversationId());
+    }
+
+    /**
+     * 异步阶段补全 {@link AiResolvedQueryContext}；生产 POST /api/ai/runs 不在 HTTP 线程调用 LLM。
+     */
+    private void ensureRunResolved(AiRunSession session) {
+        AiRunState state = session.getState();
+        if (state == null || state.getResolvedQueryContext() != null) {
+            return;
+        }
+        AiRunCreateRequest req = toCreateRequest(state);
+        GbAiConversationEntity conv =
+                conversationCoreService.requireConversationOwnedByUser(
+                        state.getConversationId(), state.getUserId());
+        long runId = state.getRunId();
+        var uc = userContextResolver.resolve(req);
+        AiConversationScopeMode scopeMode =
+                RequestExplicitGroupScopeSupport.resolveEffectiveScopeMode(
+                        req, AiConversationScopeMode.fromCode(conv.getGbAiConversationScopeMode()));
+        AiResolvedQueryContext resolved =
+                resolvedQueryContextResolver.resolve(runId, req, uc, scopeMode, LocalDate.now());
+        hydrateStateFromResolved(state, req, uc, resolved, conv);
+        maybeAppendOutOfScopeMentionDenial(resolvedQueryContextResolver, resolved, state);
+        recordCompositeProductionGateObservation(state, null);
+        logResolvedQueryContext(runId, state.getConversationId(), resolved);
+        logHarnessTurnMemory(runId, state.getConversationId(), resolved);
+    }
+
+    private static AiRunCreateRequest toCreateRequest(AiRunState state) {
+        AiRunCreateRequest req = new AiRunCreateRequest();
+        req.setConversationId(state.getConversationId());
+        req.setAdvisorId(state.getAdvisorId());
+        req.setUserId(state.getUserId());
+        req.setDepartmentId(state.getDepartmentId());
+        req.setDistributerId(state.getDistributerId());
+        req.setScopeMode(state.getScopeMode());
+        req.setMessage(state.getRawUserInput());
+        return req;
+    }
+
+    private static void hydrateStateFromResolved(
+            AiRunState state,
+            AiRunCreateRequest req,
+            AiUserContext uc,
+            AiResolvedQueryContext resolved,
+            GbAiConversationEntity conv) {
+        AiRunState hydrated = newRunStateFromResolved(state.getRunId(), req, uc, resolved, conv);
+        state.setAdvisorId(hydrated.getAdvisorId());
+        state.setConversationId(hydrated.getConversationId());
+        state.setUserId(hydrated.getUserId());
+        state.setDepartmentId(hydrated.getDepartmentId());
+        state.setDistributerId(hydrated.getDistributerId());
+        state.setAiUserContext(hydrated.getAiUserContext());
+        state.setResolvedQueryContext(hydrated.getResolvedQueryContext());
+        state.setWorkspaceMode(hydrated.getWorkspaceMode());
+        state.setUserRole(hydrated.getUserRole());
+        state.setRawUserInput(hydrated.getRawUserInput());
+        state.setNormalizedUserInput(hydrated.getNormalizedUserInput());
+        state.setNeedClarification(hydrated.isNeedClarification());
+        state.setClarificationQuestion(hydrated.getClarificationQuestion());
+        state.setScopeMode(req.getScopeMode());
     }
 
     private static void maybeAppendOutOfScopeMentionDenial(
@@ -147,18 +227,29 @@ public class AiRunService {
     }
 
     private static AiRunState newRunStateFromResolved(
-            long runId, AiRunCreateRequest req, AiUserContext uc, AiResolvedQueryContext resolved) {
+            long runId,
+            AiRunCreateRequest req,
+            AiUserContext uc,
+            AiResolvedQueryContext resolved,
+            GbAiConversationEntity conv) {
         String normalizedInput = resolved.getNormalizedQuestion();
         if (!StringUtils.hasText(normalizedInput)) {
             normalizedInput = req.getMessage().trim();
         }
+        Long conversationDis =
+                conv != null && conv.getGbAiConversationDistributerId() != null
+                        ? conv.getGbAiConversationDistributerId().longValue()
+                        : null;
+        Long distributerId =
+                AiResolvedOrgScopeAssembler.mergedRunDistributerId(req, uc, resolved, conversationDis);
         return AiRunState.builder()
                 .runId(runId)
                 .advisorId(req.getAdvisorId())
                 .conversationId(req.getConversationId())
                 .userId(req.getUserId())
                 .departmentId(req.getDepartmentId())
-                .distributerId(req.getDistributerId())
+                .distributerId(distributerId)
+                .scopeMode(req.getScopeMode())
                 .aiUserContext(uc)
                 .resolvedQueryContext(resolved)
                 .workspaceMode(AiWorkspaceMode.BUSINESS_CHAT)
@@ -260,13 +351,18 @@ public class AiRunService {
         if (today == null) {
             throw new IllegalArgumentException("today required");
         }
-        conversationCoreService.requireConversationOwnedByUser(req.getConversationId(), req.getUserId());
+        GbAiConversationEntity conv =
+                conversationCoreService.requireConversationOwnedByUser(req.getConversationId(), req.getUserId());
 
         var uc = userContextResolver.resolve(req);
-        AiResolvedQueryContext resolved = resolvedQueryContextResolver.resolve(runId, req, uc, today);
+        AiConversationScopeMode scopeMode =
+                RequestExplicitGroupScopeSupport.resolveEffectiveScopeMode(
+                        req, AiConversationScopeMode.fromCode(conv.getGbAiConversationScopeMode()));
+        AiResolvedQueryContext resolved =
+                resolvedQueryContextResolver.resolve(runId, req, uc, scopeMode, today);
         resolved.setRunId(runId);
 
-        AiRunState state = newRunStateFromResolved(runId, req, uc, resolved);
+        AiRunState state = newRunStateFromResolved(runId, req, uc, resolved, conv);
         if (toolRequestOnly) {
             state.setHarnessToolRequestOnly(true);
             state.setToolExecuteSkipped(true);
@@ -501,10 +597,46 @@ public class AiRunService {
         long t0 = System.currentTimeMillis();
         AiRunState endedState = session.getState();
         session.setStatus(AiRunStatus.RUNNING);
+        try {
+            ensureRunResolved(session);
+        } catch (Exception resolveEx) {
+            log.error("[AiRunService#executeRun] resolve failed runId={}", runId, resolveEx);
+            session.setStatus(AiRunStatus.FAILED);
+            String msg = resolveEx.getMessage() == null ? "resolve_failed" : resolveEx.getMessage();
+            eventPublisher.publishError(runId, msg, msg, resolveEx.getClass().getSimpleName(), resolveEx.getClass().getSimpleName(), null);
+            try {
+                persistRunTerminalAssistantHistory(
+                        session.getState(),
+                        runId,
+                        AiRunMessagePersistenceService.ASSISTANT_FAILURE_FALLBACK,
+                        AiRunStatus.FAILED.name());
+            } catch (Exception persistEx) {
+                log.warn("[AiRunService#executeRun] persist FAILED assistant history runId={}: {}", runId, persistEx.toString());
+            }
+            traceService.updateRunFinished(
+                    runId,
+                    AiRunStatus.FAILED.name(),
+                    session.getState(),
+                    System.currentTimeMillis() - t0,
+                    session.getState().getWorkspaceMode() != null ? session.getState().getWorkspaceMode().name() : null);
+            try {
+                gbAiWorkflowRunService.markTerminalByHarnessRunId(runId, AiRunStatus.FAILED, null, msg);
+            } catch (Exception wfEx) {
+                log.warn("[AiRunService#executeRun] workflow_run terminal update failed runId={}: {}", runId, wfEx.toString());
+            }
+            Map<String, Object> fin = new HashMap<>();
+            fin.put("status", sseStatusForFrontend(AiRunStatus.FAILED));
+            fin.put("displayText", runFinishedDisplayText(AiRunStatus.FAILED));
+            eventPublisher.publish(runId, "run_finished", fin);
+            session.completeEmitters();
+            return;
+        }
         LinkedHashMap<String, Object> runStarted = new LinkedHashMap<>();
         runStarted.put("displayText", "任务已接收，开始执行…");
-        enrichSseEnvelopeWithHarnessDebug(session.getState(), runStarted);
-        envelopePutCompositeGateAndExecution(session.getState(), runStarted);
+        runStarted.put("runId", runId);
+        runStarted.put("conversationId", session.getState().getConversationId());
+        AiResolvedQueryContext rq0 = session.getState().getResolvedQueryContext();
+        runStarted.put("semanticPromptId", rq0 != null ? rq0.getSemanticPromptRegistryId() : null);
         eventPublisher.publish(runId, "run_started", runStarted);
         traceService.insertRunStarting(runId, session.getState());
         AtomicReference<String> terminalErrorMessage = new AtomicReference<>(null);
@@ -513,6 +645,8 @@ public class AiRunService {
             if (!endedState.isCancelled()) {
                 maybeExecuteShadowCompositePlanner(endedState);
             }
+
+            AiCardPayloadWireSupport.refreshAllCardPayloads(endedState);
 
             String answerText = endedState.getFinalAnswerText() == null ? "" : endedState.getFinalAnswerText();
             Map<String, Object> data = new HashMap<>();
@@ -537,6 +671,11 @@ public class AiRunService {
                 } catch (Exception ignore) {
                     data.put("dishProfitAnswerPlanWarning", "serialize_failed");
                 }
+            }
+            if (endedState.getMenuOperationAnswerPlan() != null) {
+                appendMenuOperationAnswerPlanFields(data, endedState, null);
+            } else {
+                data.put("menuOperationAnswerPlanPresent", false);
             }
             if (endedState.getPurchaseAnswerPlan() != null) {
                 try {
@@ -581,21 +720,21 @@ public class AiRunService {
             }
             if (harnessDebugContextEnabled && endedState.getResolvedQueryContext() != null) {
                 try {
-                    data.put("resolvedQueryContextSummary", AiHarnessResolvedContextSummarizer.summarize(
-                            endedState.getResolvedQueryContext(),
-                            endedState.getConversationId(),
-                            endedState));
+                    appendSseHarnessDebug(data, endedState);
                 } catch (Exception ex) {
-                    data.put("resolvedQueryContextSummaryWarning", "summarize_failed");
+                    log.debug("[AiRunService] answer_delta harness debug skipped: {}", ex.toString());
                 }
             }
 
             envelopePutCompositeGateAndExecution(endedState, data);
 
-            Map<String, Object> delta = new HashMap<>();
+            AiCardPayloadWireSupport.appendCardFieldsToDataMap(data, endedState);
+            AiAnswerContextSummarySupport.appendToEnvelope(data, endedState);
+
+            Map<String, Object> delta = new HashMap<>(data);
             delta.put("text", answerText);
-            delta.put("data", data);
             delta.put("displayText", "回答生成中");
+            AiCardPayloadWireSupport.appendFlatCardFields(delta, endedState);
             eventPublisher.publish(runId, "answer_delta", delta);
 
             session.setStatus(endedState.isCancelled() ? AiRunStatus.CANCELLED : AiRunStatus.COMPLETED);
@@ -658,9 +797,14 @@ public class AiRunService {
             Map<String, Object> fin = new HashMap<>();
             fin.put("status", sseStatusForFrontend(session.getStatus()));
             fin.put("displayText", runFinishedDisplayText(session.getStatus()));
-            fin.put("data", new HashMap<String, Object>());
-            enrichSseEnvelopeWithHarnessDebug(endedState, fin);
+            AiCardPayloadWireSupport.appendCardFieldsToDataMap(fin, endedState);
+            AiCardPayloadWireSupport.appendFlatCardFields(fin, endedState);
+            appendMenuOperationAnswerPlanFields(fin, endedState, null);
+            AiAnswerContextSummarySupport.appendToEnvelope(fin, endedState);
             envelopePutCompositeGateAndExecution(endedState, fin);
+            if (harnessDebugContextEnabled && endedState.getResolvedQueryContext() != null) {
+                appendSseHarnessDebug(fin, endedState);
+            }
             eventPublisher.publish(runId, "run_finished", fin);
             session.completeEmitters();
         }
@@ -673,12 +817,18 @@ public class AiRunService {
         if (state == null || state.getConversationId() == null || state.getUserId() == null) {
             return;
         }
+        AiCardPayloadWireSupport.refreshAllCardPayloads(state);
+        String cardsJson = AiCardPayloadWireSupport.serializeCardsForPersistence(state.getCards());
+        String contextSummaryJson =
+                AiAnswerContextSummarySupport.serializeForPersistence(state.getAnswerContextSummary());
         Long assistantMessageId = runMessagePersistence.persistAssistantMessageForRun(
                 state.getConversationId(),
                 state.getUserId(),
                 runId,
                 content,
-                assistantStatusName);
+                assistantStatusName,
+                cardsJson,
+                contextSummaryJson);
         AiResolvedQueryContext rq = state.getResolvedQueryContext();
         String effIntent = rq != null ? rq.getEffectiveIntentCode() : null;
         String effPath = rq != null ? rq.getEffectivePathCode() : null;
@@ -900,20 +1050,240 @@ public class AiRunService {
     }
 
     /**
-     * SSE 信封追加与 GET /ai/runs/{id} 一致的解析摘要（仅 {@code ai.harness.debug-context-enabled=true}），便于前台调试面板订阅事件即可见。
+     * GET {@code /ai/runs} harnessDebug 与 SSE 共用：补全 cardPayload/cards（调用方须已 summarize）。
      */
-    private void enrichSseEnvelopeWithHarnessDebug(AiRunState state, Map<String, Object> envelope) {
+    public void enrichHarnessDebugWithRunCardFields(Map<String, Object> harnessDebug, AiRunState state) {
+        AiCardPayloadWireSupport.enrichHarnessDebugWithRunCardFields(harnessDebug, state);
+    }
+
+    /**
+     * GET {@code /ai/runs/{runId}} 顶层 {@code cardPayload}/{@code cards}，与 SSE {@code answer_delta}/{@code run_finished} 同源。
+     * 优先 {@link AiRunState}；若 state 尚无卡片则从 {@code harnessDebug.masterBusinessAgentDebug} 提升。
+     */
+    public void appendGetRunTopLevelCardFields(
+            Map<String, Object> response, AiRunState state, Map<String, Object> harnessDebug) {
+        if (response == null) {
+            return;
+        }
+        if (state != null) {
+            AiCardPayloadWireSupport.refreshAllCardPayloads(state);
+            if (state.isCardPayloadPresent() || state.isCardsPresent()) {
+                AiCardPayloadWireSupport.appendFlatCardFields(response, state);
+                return;
+            }
+        }
+        appendGetRunCardFieldsFromHarnessDebug(response, harnessDebug);
+    }
+
+    /**
+     * GET {@code /ai/runs/{runId}} 与 SSE 共用：顶层 {@code menuOperationAnswerPlan}（含 displayCards / menuPortfolioClassification）。
+     * 优先 {@link AiRunState}；其次 {@code harnessDebug.resolvedQueryContextSummary}。
+     */
+    public void appendMenuOperationAnswerPlanFields(
+            Map<String, Object> response, AiRunState state, Map<String, Object> harnessDebug) {
+        if (response == null) {
+            return;
+        }
+        Map<String, Object> planMap = resolveMenuOperationAnswerPlanMap(state, harnessDebug);
+        if (planMap != null && !planMap.isEmpty()) {
+            response.put("menuOperationAnswerPlan", planMap);
+            response.put("menuOperationAnswerPlanPresent", true);
+            Object planType = planMap.get("type");
+            if (planType != null && StringUtils.hasText(planType.toString())) {
+                response.put("menuOperationAnswerPlanType", planType.toString().trim());
+            }
+            appendMenuOperationAnswerPlanCounts(response, planMap);
+            return;
+        }
+        response.put("menuOperationAnswerPlanPresent", false);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> resolveMenuOperationAnswerPlanMap(
+            AiRunState state, Map<String, Object> harnessDebug) {
+        if (state != null && state.getMenuOperationAnswerPlan() != null) {
+            try {
+                return JSON.parseObject(JSON.toJSONString(state.getMenuOperationAnswerPlan()));
+            } catch (Exception ignore) {
+                // fall through to harness summary
+            }
+        }
+        return menuOperationAnswerPlanFromHarnessSummary(harnessDebug);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> menuOperationAnswerPlanFromHarnessSummary(
+            Map<String, Object> harnessDebug) {
+        if (harnessDebug == null || harnessDebug.isEmpty()) {
+            return null;
+        }
+        Object summaryObj = harnessDebug.get("resolvedQueryContextSummary");
+        if (!(summaryObj instanceof Map<?, ?> summaryRaw) || summaryRaw.isEmpty()) {
+            return null;
+        }
+        Object planObj = summaryRaw.get("menuOperationAnswerPlan");
+        if (!(planObj instanceof Map<?, ?> planRaw) || planRaw.isEmpty()) {
+            return null;
+        }
+        return (Map<String, Object>) planRaw;
+    }
+
+    private static void appendMenuOperationAnswerPlanCounts(
+            Map<String, Object> response, Map<String, Object> planMap) {
+        response.put("menuOperationFocusDishCount", listSize(planMap.get("focusDishes")));
+        response.put("menuOperationRiskDishCount", listSize(planMap.get("riskDishes")));
+        response.put("menuOperationRecommendedActionCount", listSize(planMap.get("recommendedActions")));
+    }
+
+    private static int listSize(Object raw) {
+        if (raw instanceof List<?> list) {
+            return list.size();
+        }
+        return 0;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void appendGetRunCardFieldsFromHarnessDebug(
+            Map<String, Object> response, Map<String, Object> harnessDebug) {
+        if (response == null || harnessDebug == null || harnessDebug.isEmpty()) {
+            return;
+        }
+        Map<String, Object> md = resolveMasterBusinessAgentDebug(harnessDebug);
+        if (md == null) {
+            return;
+        }
+        Object cardPayload = md.get("cardPayload");
+        if (cardPayload instanceof Map<?, ?> cp && !cp.isEmpty()) {
+            response.put("cardPayload", cp);
+        }
+        Object cards = md.get("cards");
+        if (cards instanceof List<?> list && !list.isEmpty()) {
+            response.put("cards", list);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> resolveMasterBusinessAgentDebug(Map<String, Object> harnessDebug) {
+        Object direct = harnessDebug.get("masterBusinessAgentDebug");
+        if (direct instanceof Map<?, ?> m && !m.isEmpty()) {
+            return (Map<String, Object>) m;
+        }
+        Object summary = harnessDebug.get("resolvedQueryContextSummary");
+        if (summary instanceof Map<?, ?> sm) {
+            Object nested = sm.get("masterBusinessAgentDebug");
+            if (nested instanceof Map<?, ?> nm && !nm.isEmpty()) {
+                return (Map<String, Object>) nm;
+            }
+        }
+        return null;
+    }
+
+    // ── SSE Harness Debug（与 GET /ai/runs/{id}?debug=full 同源摘要） ──
+
+    /**
+     * SSE {@code answer_delta} / {@code run_finished}：写入 Harness 调试摘要。
+     * {@code resolvedQueryContextSummary} 为唯一全量摘要；{@code debugSummary} 仅含 Run 级元数据。
+     * 需 {@code ai.harness.debug-context-enabled=true}。
+     */
+    private void appendSseHarnessDebug(Map<String, Object> envelope, AiRunState state) {
+        Map<String, Object> summary = buildSseResolvedQueryContextSummary(state);
+        if (summary == null || summary.isEmpty()) {
+            return;
+        }
+        envelope.put("resolvedQueryContextSummary", summary);
+        Map<String, Object> metadata = buildSseHarnessDebugMetadata(state);
+        if (metadata != null && !metadata.isEmpty()) {
+            envelope.put("debugSummary", metadata);
+        }
+    }
+
+    /** 与 GET {@code harnessDebug.resolvedQueryContextSummary} 同源的全量观测摘要。 */
+    private Map<String, Object> buildSseResolvedQueryContextSummary(AiRunState state) {
+        if (state == null) {
+            return null;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return null;
+        }
+        Map<String, Object> summary =
+                AiHarnessResolvedContextSummarizer.summarize(rq, state.getConversationId(), state);
+        AiCardPayloadWireSupport.enrichHarnessSummaryWithCardFields(summary, state);
+        return summary;
+    }
+
+    /** SSE 元数据：不含与 {@code resolvedQueryContextSummary} 重复的 routing / semantic / time 字段。 */
+    private Map<String, Object> buildSseHarnessDebugMetadata(AiRunState state) {
+        if (state == null) {
+            return null;
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq == null) {
+            return null;
+        }
+        LinkedHashMap<String, Object> debug = new LinkedHashMap<>();
+        debug.put("debugMode", "full");
+        debug.put("debugContextEnabled", harnessDebugContextEnabled);
+        debug.put("composerPromptId", state.getComposerPromptRegistryId());
+        debug.put("semanticPromptId", rq.getSemanticPromptRegistryId());
+        if (state.getMenuExpertPromptPreview() != null && !state.getMenuExpertPromptPreview().isEmpty()) {
+            debug.put("menuExpertPromptPreview", state.getMenuExpertPromptPreview());
+        }
+        if (state.getMenuExpertLlmOutputPreview() != null && !state.getMenuExpertLlmOutputPreview().isEmpty()) {
+            debug.put("menuExpertLlmOutputPreview", state.getMenuExpertLlmOutputPreview());
+        }
+        if (state.getMenuExpertComposerDecision() != null && !state.getMenuExpertComposerDecision().isEmpty()) {
+            debug.put("menuExpertComposerDecision", state.getMenuExpertComposerDecision());
+        }
+        BusinessOverviewDishSalesReasonAgentHarnessSupport.copyFlatHarnessFieldsToMap(debug, state);
+        if (state.getToolResults() != null && !state.getToolResults().isEmpty()) {
+            debug.put("usedTools", new ArrayList<>(state.getToolResults().keySet()));
+        }
+        debug.put("needClarification", state.isNeedClarification());
+        debug.put("clarificationQuestion", state.getClarificationQuestion());
+        debug.put("dishProfitAnswerPlanPresent", state.getDishProfitAnswerPlan() != null);
+        debug.put("purchaseAnswerPlanPresent", state.getPurchaseAnswerPlan() != null);
+        debug.put("diagnosisPlanPresent", state.getDiagnosisPlan() != null);
+        debug.put("cardPayloadPresent", state.isCardPayloadPresent());
+        debug.put("cardsPresent", state.isCardsPresent());
+        String answer = state.getFinalAnswerText();
+        if (answer != null) {
+            debug.put("answerPreview", answer.substring(0, Math.min(500, answer.length())));
+        }
+        if (StringUtils.hasText(state.getAnswerContextPreambleDebug())) {
+            debug.put("answerContextPreambleDebug", state.getAnswerContextPreambleDebug());
+        }
+        if (state.getAnswerContextSummary() != null && !state.getAnswerContextSummary().isEmpty()) {
+            debug.put("answerContextSummary", state.getAnswerContextSummary());
+        }
+        return debug;
+    }
+
+    // ── 全量 debug（仅 GET /api/ai/runs/{runId}?debug=full 或内部调用） ──
+
+    /**
+     * 全量 Harness Debug 信封追加（仅用于 GET {@code /api/ai/runs/{runId}?debug=full} 等需要完整调试信息的场景）。
+     * SSE 实时事件请使用 {@link #appendSseHarnessDebug}（与 GET {@code debug=full} 同源摘要）。
+     *
+     * @deprecated SSE 中不再调用此方法；保留供外部全量 debug 场景复用。
+     */
+    @Deprecated
+    private void enrichEnvelopeWithFullHarnessDebug(AiRunState state, Map<String, Object> envelope) {
         if (!harnessDebugContextEnabled || state == null || envelope == null) {
             return;
         }
+        AiCardPayloadWireSupport.refreshAllCardPayloads(state);
         envelope.put("composerPromptId", state.getComposerPromptRegistryId());
         AiResolvedQueryContext rq = state.getResolvedQueryContext();
         envelope.put("semanticPromptId", rq != null ? rq.getSemanticPromptRegistryId() : null);
         if (rq == null) {
+            AiCardPayloadWireSupport.appendFlatCardFields(envelope, state);
             return;
         }
         Map<String, Object> sum = AiHarnessResolvedContextSummarizer.summarize(rq, state.getConversationId(), state);
+        AiCardPayloadWireSupport.enrichHarnessSummaryWithCardFields(sum, state);
         envelope.put("resolvedQueryContextSummary", sum);
+        // 以下摊平字段仅在 GET debug=full 时下发，SSE 不再包含
         envelope.put("structuredIntentDetail", sum.get("structuredIntentDetail"));
         envelope.put("structuredIntentDetailWire", sum.get("structuredIntentDetailWire"));
         envelope.put("structuredIntentDetailCode", sum.get("structuredIntentDetailCode"));
@@ -983,6 +1353,7 @@ public class AiRunService {
         envelope.put("compositeGateDebug", sum.get("compositeGateDebug"));
         envelope.put("compositeGateProductionEnabledSource", sum.get("compositeGateProductionEnabledSource"));
         envelope.put("compositeGateProductionEnabledEffective", sum.get("compositeGateProductionEnabledEffective"));
+        AiCardPayloadWireSupport.appendFlatCardFields(envelope, state);
     }
 
     private static HttpProbe probeHttpClient() {

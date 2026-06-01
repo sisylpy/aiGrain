@@ -4,6 +4,9 @@ import com.nongxinle.ai.gateway.LlmGateway;
 import com.nongxinle.ai.prompt.AiPromptIds;
 import com.nongxinle.ai.prompt.AiPromptService;
 import com.nongxinle.ai.semantic.intake.*;
+import com.nongxinle.ai.semantic.dimension.BareRankingDimensionSwitchSupport;
+import com.nongxinle.ai.semantic.inheritance.StructuredRankingTimeOnlyIntakeSupport;
+import com.nongxinle.ai.semantic.SemanticLlmFailureClassification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +19,8 @@ import java.util.List;
 /**
  * SemanticIntake LLM：话术规范化 + 一级业务域选择 + 多问题识别。
  * Java 仅做 schema/enum 校验，不通过关键词修正 domain。
+ * <p>协议层暂通过 {@code reason} wire token 校验维度切换（过渡方案）；见
+ * {@code docs/ai/semantic-intake-schema-evolution.md}。
  */
 @Slf4j
 @Component
@@ -55,16 +60,21 @@ public class LlmSemanticIntakeParser {
                 return SemanticIntakeResult.invalid(
                         "parse_failed", pid, truncateRaw(raw), parsed.getParseError());
             }
-            List<String> enumErrors = collectEnumErrors(parsed);
+            List<String> enumErrors = collectEnumErrors(parsed, input);
             if (!enumErrors.isEmpty()) {
                 return parseWithProtocolRepair(input, pid, systemPrompt, truncateRaw(raw), parsed, enumErrors);
             }
-            return mapParsed(input, pid, truncateRaw(raw), parsed);
+            return applyIntakeReconcilers(input, mapParsed(input, pid, truncateRaw(raw), parsed));
         } catch (Exception e) {
             log.warn("[LlmSemanticIntakeParser] llm intake failed: {}", e.toString());
-            return SemanticIntakeResult.invalid(
+            return invalidIntake(
                     "llm_exception", pid, truncateRaw(raw), e.getClass().getSimpleName());
         }
+    }
+
+    private static SemanticIntakeResult invalidIntake(
+            String reason, String promptId, String raw, String parseError) {
+        return SemanticIntakeResult.invalid(reason, promptId, raw, parseError);
     }
 
     private SemanticIntakeResult mapParsed(
@@ -122,6 +132,7 @@ public class LlmSemanticIntakeParser {
                     .needClarification(true)
                     .clarificationQuestion(question)
                     .reason(firstNonBlank(parsed.getReason(), "multi_question"))
+                    .warehouseInventorySemantics(warehouseSemanticsFromParsed(parsed))
                     .subQuestions(parsed.getSubQuestions())
                     .promptId(promptId)
                     .llmRawText(rawObs)
@@ -158,15 +169,25 @@ public class LlmSemanticIntakeParser {
                 .needClarification(false)
                 .clarificationQuestion(null)
                 .reason(parsed.getReason())
+                .warehouseInventorySemantics(warehouseSemanticsFromParsed(parsed))
                 .subQuestions(parsed.getSubQuestions())
                 .promptId(promptId)
                 .llmRawText(rawObs)
                 .build();
     }
 
+    private static String warehouseSemanticsFromParsed(LlmSemanticIntakeParsed parsed) {
+        if (parsed == null) {
+            return null;
+        }
+        return WarehouseInventoryShortageSemanticsSupport.normalizeSemantics(
+                parsed.getWarehouseInventorySemantics());
+    }
+
     private static SemanticIntakeResult invalidFromParsed(
             LlmSemanticIntakeParsed parsed, String promptId, String rawObs, String reason) {
-        return SemanticIntakeResult.builder()
+        SemanticIntakeResult result =
+                SemanticIntakeResult.builder()
                 .status(SemanticIntakeStatus.INVALID)
                 .questionMode(safeQuestionMode(parsed.getQuestionMode()))
                 .normalizationType(safeNormalizationType(parsed.getNormalizationType()))
@@ -184,6 +205,8 @@ public class LlmSemanticIntakeParser {
                 .llmRawText(rawObs)
                 .parseError(reason)
                 .build();
+        SemanticLlmFailureClassification.enrichIntakeFailureMeta(result);
+        return result;
     }
 
     private static SemanticIntakeResult needClarificationFromParsed(
@@ -209,6 +232,7 @@ public class LlmSemanticIntakeParser {
                 .needClarification(true)
                 .clarificationQuestion(clarificationQuestion)
                 .reason(reason)
+                .warehouseInventorySemantics(warehouseSemanticsFromParsed(parsed))
                 .subQuestions(parsed.getSubQuestions())
                 .promptId(promptId)
                 .llmRawText(rawObs)
@@ -256,7 +280,121 @@ public class LlmSemanticIntakeParser {
      * 收集所有非空但枚举值非法的字段错误，用于触发协议纠错重试。
      */
     static List<String> collectEnumErrors(LlmSemanticIntakeParsed parsed) {
+        return collectEnumErrors(parsed, null);
+    }
+
+    static List<String> collectEnumErrors(LlmSemanticIntakeParsed parsed, SemanticIntakeInput input) {
         List<String> errors = new ArrayList<>();
+        collectEnumFieldErrors(parsed, errors);
+        collectDimensionSwitchReasonProtocolErrors(parsed, errors);
+        collectDishSalesBossShortPhraseProtocolErrors(parsed, errors);
+        collectBareRankingDimensionSwitchIntakeProtocolErrors(parsed, input, errors);
+        collectExplicitMultiDishCostRankingIntakeProtocolErrors(parsed, errors);
+        SemanticIntakeDishIngredientCoverDaysSupport.collectDishIngredientCoverProtocolErrors(
+                parsed, errors);
+        SemanticIntakeGoodsSupportedDishCoverSupport.collectGoodsSupportedDishCoverProtocolErrors(
+                parsed, errors);
+        collectWarehouseInventoryShortageProtocolErrors(parsed, errors);
+        return errors;
+    }
+
+    /**
+     * 库房 shortage marker 协议：自报 marker 时必须 needClarification，禁止 READY 进入 V2 选 WH-C。
+     */
+    private static void collectWarehouseInventorySemanticsEnumErrors(
+            LlmSemanticIntakeParsed parsed, List<String> errors) {
+        if (parsed == null || !StringUtils.hasText(parsed.getWarehouseInventorySemantics())) {
+            return;
+        }
+        if (SemanticIntakeDishIngredientCoverDaysSupport.parsedDeclaresDishIngredientCoverDays(parsed)) {
+            return;
+        }
+        if (SemanticIntakeGoodsSupportedDishCoverSupport.parsedDeclaresGoodsSupportedDishCover(parsed)) {
+            return;
+        }
+        if (WarehouseInventoryShortageSemanticsSupport.normalizeSemantics(
+                        parsed.getWarehouseInventorySemantics())
+                == null) {
+            errors.add(
+                    "warehouseInventorySemantics: got \""
+                            + parsed.getWarehouseInventorySemantics().trim()
+                            + "\", allowed UNDERSTOCK_QUERY, OUT_OF_STOCK, NEAR_EXPIRY, "
+                            + "EXPLICIT_AMOUNT_RANKING_LOW, INVENTORY_AMOUNT_LOW (§13d); "
+                            + "dish cover days use DISH_COST + reason=dish_ingredient_cover_days (§34a)");
+        }
+    }
+
+    static void collectWarehouseInventoryShortageProtocolErrors(
+            LlmSemanticIntakeParsed parsed, List<String> errors) {
+        if (parsed == null
+                || SemanticIntakeDishIngredientCoverDaysSupport.parsedDeclaresDishIngredientCoverDays(
+                        parsed)
+                || SemanticIntakeGoodsSupportedDishCoverSupport.parsedDeclaresGoodsSupportedDishCover(
+                        parsed)) {
+            return;
+        }
+        String semanticsRaw = parsed.getWarehouseInventorySemantics();
+        if (StringUtils.hasText(semanticsRaw) && "PURCHASE".equals(parsed.getPrimaryDomain())) {
+            errors.add(
+                    "warehouse_inventory_risk: warehouseInventorySemantics set requires "
+                            + "primaryDomain=WAREHOUSE, never PURCHASE (§13b)");
+        }
+        String amountSemantics =
+                WarehouseInventoryShortageSemanticsSupport.normalizeSemantics(semanticsRaw);
+        if (WarehouseInventoryShortageSemanticsSupport.SEMANTICS_EXPLICIT_AMOUNT_RANKING_LOW.equals(
+                amountSemantics)) {
+            if (parsed.isNeedClarification()) {
+                errors.add(
+                        "warehouse_inventory_amount_ranking: EXPLICIT_AMOUNT_RANKING_LOW requires "
+                                + "needClarification=false and must not use shortage/alert markers "
+                                + "(§13d)");
+            }
+            if (WarehouseInventoryShortageSemanticsSupport.reasonDeclaresShortageSemantics(
+                    parsed.getReason())) {
+                errors.add(
+                        "warehouse_inventory_amount_ranking: reason must use "
+                                + "warehouse_inventory_amount_ranking_low, not shortage/alert markers "
+                                + "(§13d)");
+            }
+            return;
+        }
+        if (!WarehouseInventoryShortageSemanticsSupport.parsedDeclaresInventoryRisk(parsed)) {
+            return;
+        }
+        if ("PURCHASE".equals(parsed.getPrimaryDomain())) {
+            errors.add(
+                    "warehouse_inventory_risk: inventory shortage/alert/near-expiry must "
+                            + "primaryDomain=WAREHOUSE, never PURCHASE (§13b)");
+        }
+        String riskSemantics =
+                WarehouseInventoryShortageSemanticsSupport.normalizeSemantics(semanticsRaw);
+        if (WarehouseInventoryShortageSemanticsSupport.SEMANTICS_NEAR_EXPIRY.equals(riskSemantics)) {
+            if ("WAREHOUSE".equals(parsed.getPrimaryDomain()) && !parsed.isNeedClarification()) {
+                errors.add(
+                        "warehouse_inventory_near_expiry: must needClarification=true; "
+                                + "near_expiry not in P1 ACTIVE (§13a)");
+            }
+            return;
+        }
+        if ("WAREHOUSE".equals(parsed.getPrimaryDomain()) && parsed.isNeedClarification()) {
+            errors.add(
+                    "warehouse_inventory_risk: understock/alert/out_of_stock must needClarification=false "
+                            + "and route to warehouse.inventory_risk_list (§13a)");
+        }
+    }
+
+    private static SemanticIntakeResult applyIntakeReconcilers(
+            SemanticIntakeInput input, SemanticIntakeResult mapped) {
+        mapped = SemanticIntakeDishIngredientCoverDaysSupport.reconcile(input, mapped);
+        mapped = SemanticIntakeGoodsAnchorFollowUpSupport.reconcile(input, mapped);
+        mapped = SemanticIntakeDishFollowUpInheritanceSupport.reconcile(input, mapped);
+        mapped = SemanticIntakeMultiDishRankingSupport.reconcileExplicitMultiDishRankingDomain(input, mapped);
+        mapped = BareRankingDimensionSwitchSupport.reconcileIntakeDomain(input, mapped);
+        return WarehouseInventoryShortageSemanticsSupport.reconcileIntake(input, mapped);
+    }
+
+    private static void collectEnumFieldErrors(LlmSemanticIntakeParsed parsed, List<String> errors) {
+        collectWarehouseInventorySemanticsEnumErrors(parsed, errors);
         String nt = parsed.getNormalizationType();
         if (nt != null && !LlmSemanticIntakeJsonParser.isValidNormalizationType(nt)) {
             errors.add(
@@ -278,17 +416,198 @@ public class LlmSemanticIntakeParser {
                             + rt
                             + "\", allowed: EXPLICIT, INHERITED, AMBIGUOUS, UNKNOWN, MULTI_DOMAIN");
         }
-        return errors;
     }
 
     /**
-     * 构建协议纠错 user message，仅要求修正枚举值，不做业务语义推断。
+     * 维度切换 reason 协议：self-declared dimension_switch 必须含 wire token 后缀。
+     * 仅校验 LLM 输出的 reason 字段，不解析用户原文。
+     */
+    static void collectDimensionSwitchReasonProtocolErrors(
+            LlmSemanticIntakeParsed parsed, List<String> errors) {
+        if (parsed == null
+                || BareRankingDimensionSwitchSupport.isOutsideBareRankingDimensionSwitchScope(parsed)
+                || !StringUtils.hasText(parsed.getReason())) {
+            return;
+        }
+        String reason = parsed.getReason().trim();
+        if (StructuredRankingTimeOnlyIntakeSupport.isStructuredRankingTimeOnlyIntakeReason(reason)) {
+            return;
+        }
+        String normalized = reason.toLowerCase(java.util.Locale.ROOT);
+        if (!normalized.contains("dimension_switch")) {
+            return;
+        }
+        if (normalized.contains("_to_cost_ranking")
+                || normalized.contains("_to_margin_ranking")
+                || normalized.contains("_to_profit_amount_ranking")
+                || normalized.contains("_to_sales_ranking")
+                || normalized.contains("_to_amount_ranking")) {
+            return;
+        }
+        errors.add(
+                "reason: dimension_switch must include one of "
+                        + "_to_cost_ranking, _to_margin_ranking, _to_profit_amount_ranking, "
+                        + "_to_sales_ranking, _to_amount_ranking; got \""
+                        + reason
+                        + "\"");
+    }
+
+    /**
+     * 老板销量短句协议：LLM 自报 DISH_SALES 时不得与 BUSINESS_OVERVIEW 双候选并 AMBIGUOUS 澄清。
+     * 仅校验 LLM 输出字段，不解析用户原文。
+     */
+    static void collectDishSalesBossShortPhraseProtocolErrors(
+            LlmSemanticIntakeParsed parsed, List<String> errors) {
+        if (parsed == null || !"DISH_SALES".equals(parsed.getPrimaryDomain())) {
+            return;
+        }
+        List<String> candidates = parsed.getCandidateDomains();
+        boolean hasBusinessOverview =
+                candidates != null
+                        && candidates.stream().anyMatch("BUSINESS_OVERVIEW"::equals);
+        String routeType = parsed.getRouteType();
+        boolean ambiguousRoute =
+                routeType != null
+                        && ("AMBIGUOUS".equals(routeType.trim().toUpperCase())
+                                || "UNKNOWN".equals(routeType.trim().toUpperCase())
+                                || "MULTI_DOMAIN".equals(routeType.trim().toUpperCase()));
+        if (hasBusinessOverview && (ambiguousRoute || parsed.isNeedClarification())) {
+            errors.add(
+                    "dish_sales_boss_short_phrase: primaryDomain=DISH_SALES must not pair "
+                            + "candidateDomains containing BUSINESS_OVERVIEW with AMBIGUOUS/needClarification; "
+                            + "use routeType=EXPLICIT, needClarification=false, candidateDomains=[DISH_SALES] only (§26a–26h)");
+        }
+        String reason = parsed.getReason();
+        if (!StringUtils.hasText(reason)) {
+            return;
+        }
+        String normalizedReason = reason.trim().toLowerCase(java.util.Locale.ROOT);
+        boolean bossShortReason =
+                normalizedReason.startsWith("dish_sales_ranking_short_phrase")
+                        || normalizedReason.startsWith("dish_sales_quantity_short_phrase")
+                        || normalizedReason.startsWith("dish_sales_amount_short_phrase");
+        if (!bossShortReason) {
+            return;
+        }
+        if (ambiguousRoute || parsed.isNeedClarification() || hasBusinessOverview) {
+            errors.add(
+                    "dish_sales_boss_short_phrase: reason="
+                            + reason
+                            + " requires routeType=EXPLICIT, needClarification=false, "
+                            + "candidateDomains=[DISH_SALES] only (§26a–26h)");
+        }
+    }
+
+    /**
+     * 裸维度切换 Intake 协议：仅校验 LLM 输出（canonical / primaryDomain / reason），不解析用户原文。
+     */
+    static void collectBareRankingDimensionSwitchIntakeProtocolErrors(
+            LlmSemanticIntakeParsed parsed, SemanticIntakeInput input, List<String> errors) {
+        if (parsed == null || BareRankingDimensionSwitchSupport.isOutsideBareRankingDimensionSwitchScope(parsed)) {
+            return;
+        }
+        String reason = parsed.getReason();
+        String normalizedReason =
+                StringUtils.hasText(reason)
+                        ? reason.trim().toLowerCase(java.util.Locale.ROOT)
+                        : null;
+        boolean namedDishReason =
+                normalizedReason != null && normalizedReason.startsWith("named_dish_");
+        String primary = parsed.getPrimaryDomain();
+        String canonical = parsed.getCanonicalUserQuery();
+        boolean multiDishRankingCanonical =
+                SemanticIntakeMultiDishRankingSupport.looksLikeMultiDishRankingCanonical(canonical);
+
+        if (multiDishRankingCanonical
+                && SemanticIntakePrimaryDomain.DISH_COST.equals(primary)
+                && !namedDishReason) {
+            if (SemanticIntakeMultiDishRankingSupport.looksLikeMultiDishCostRankingCanonical(canonical)) {
+                errors.add(
+                        "primaryDomain: explicit multi-dish cost ranking canonical must use DISH_PROFIT, "
+                                + "reason=dish_actual_cost_ranking_high_explicit (§38b–38c); not DISH_COST");
+            } else {
+                errors.add(
+                        "primaryDomain: multi-dish ranking canonical must use DISH_PROFIT (actual cost ranking) "
+                                + "or DISH_SALES, not DISH_COST; use reason with _to_*_ranking token (§38f–38g)");
+            }
+        }
+
+        if (StringUtils.hasText(normalizedReason)) {
+            if (normalizedReason.contains("_to_cost_ranking")
+                    && !SemanticIntakePrimaryDomain.DISH_PROFIT.equals(primary)) {
+                errors.add(
+                        "primaryDomain: reason contains _to_cost_ranking so primaryDomain must be DISH_PROFIT (§38g)");
+            }
+            if (normalizedReason.contains("_to_margin_ranking")
+                    && !SemanticIntakePrimaryDomain.DISH_PROFIT.equals(primary)) {
+                errors.add(
+                        "primaryDomain: reason contains _to_margin_ranking so primaryDomain must be DISH_PROFIT (§38g)");
+            }
+            if (normalizedReason.contains("_to_sales_ranking")
+                    && !SemanticIntakePrimaryDomain.DISH_SALES.equals(primary)) {
+                errors.add(
+                        "primaryDomain: reason contains _to_sales_ranking so primaryDomain must be DISH_SALES (§38g)");
+            }
+            if (normalizedReason.contains("_to_amount_ranking")
+                    && !SemanticIntakePrimaryDomain.DISH_SALES.equals(primary)) {
+                errors.add(
+                        "primaryDomain: reason contains _to_amount_ranking so primaryDomain must be DISH_SALES (§38g)");
+            }
+        }
+
+        if (input == null
+                || !input.isHasPreviousTurn()
+                || !parsed.isFollowUp()
+                || namedDishReason
+                || StructuredRankingTimeOnlyIntakeSupport.isStructuredRankingTimeOnlyIntakeReason(reason)
+                || !BareRankingDimensionSwitchSupport.hasPreviousDishRankingTurn(input)
+                || !multiDishRankingCanonical) {
+            return;
+        }
+        if (BareRankingDimensionSwitchSupport.hasDimensionSwitchReasonToken(reason)) {
+            return;
+        }
+        errors.add(
+                "reason: bare ranking dimension switch after previous dish ranking requires "
+                        + "_to_cost_ranking / _to_margin_ranking / _to_profit_amount_ranking / _to_sales_ranking / _to_amount_ranking "
+                        + "(e.g. dimension_switch_sales_to_cost_ranking); without token BareRankingDimensionSwitchPlan stays inactive (§38g)");
+    }
+
+    static boolean looksLikeMultiDishRankingCanonical(String canonical) {
+        return SemanticIntakeMultiDishRankingSupport.looksLikeMultiDishRankingCanonical(canonical);
+    }
+
+    /**
+     * 完整显式多菜成本排行 Intake 协议：canonical 已是成本排行语义时禁止 DISH_COST。
+     */
+    static void collectExplicitMultiDishCostRankingIntakeProtocolErrors(
+            LlmSemanticIntakeParsed parsed, List<String> errors) {
+        if (parsed == null) {
+            return;
+        }
+        String reason = parsed.getReason();
+        if (SemanticIntakeMultiDishRankingSupport.isNamedDishIntakeReason(reason)) {
+            return;
+        }
+        String canonical = parsed.getCanonicalUserQuery();
+        if (!SemanticIntakeMultiDishRankingSupport.looksLikeMultiDishCostRankingCanonical(canonical)) {
+            return;
+        }
+        if (SemanticIntakePrimaryDomain.DISH_COST.equals(parsed.getPrimaryDomain())) {
+            errors.add(
+                    "primaryDomain: dish cost ranking canonical requires DISH_PROFIT + "
+                            + "reason=dish_actual_cost_ranking_high_explicit (§38b–38c)");
+        }
+    }
+
+    /**
+     * 构建协议纠错 user message，仅要求修正非法字段，不做业务语义推断。
      */
     static String buildRepairUserMessage(String originalRaw, List<String> enumErrors) {
         StringBuilder sb = new StringBuilder();
         sb.append("protocol_repair_request\n");
         sb.append(
-                "Your JSON output contained invalid enum values. Correct ONLY the invalid enum values while keeping all other fields unchanged. Re-output one line of corrected JSON.\n\n");
+                "Your JSON output contained invalid enum or protocol values. Correct ONLY the invalid fields while keeping all other fields unchanged. Re-output one line of corrected JSON.\n\n");
         sb.append("Invalid fields:\n");
         for (String err : enumErrors) {
             sb.append("- ").append(err).append("\n");
@@ -328,7 +647,7 @@ public class LlmSemanticIntakeParser {
                 return markRepairedInvalid(
                         originalParsed, promptId, originalRaw, enumErrors, false, repaired.getParseError());
             }
-            List<String> repairedErrors = collectEnumErrors(repaired);
+            List<String> repairedErrors = collectEnumErrors(repaired, input);
             if (!repairedErrors.isEmpty()) {
                 return markRepairedInvalid(
                         originalParsed,
@@ -339,7 +658,8 @@ public class LlmSemanticIntakeParser {
                         "repair_still_invalid:" + String.join(";", repairedErrors));
             }
             SemanticIntakeResult result =
-                    mapParsed(input, promptId, truncateRaw(repairedRaw), repaired);
+                    applyIntakeReconcilers(
+                            input, mapParsed(input, promptId, truncateRaw(repairedRaw), repaired));
             result.setIntakeRepairAttempted(true);
             result.setIntakeRepairSuccess(true);
             result.setIntakeRepairReason(buildRepairReasonCode(enumErrors));
@@ -367,7 +687,8 @@ public class LlmSemanticIntakeParser {
         if (StringUtils.hasText(detailError)) {
             reasonCode = reasonCode + ";" + detailError;
         }
-        return SemanticIntakeResult.builder()
+        SemanticIntakeResult result =
+                SemanticIntakeResult.builder()
                 .status(SemanticIntakeStatus.INVALID)
                 .questionMode(safeQuestionMode(originalParsed.getQuestionMode()))
                 .normalizationType(safeNormalizationType(originalParsed.getNormalizationType()))
@@ -389,6 +710,8 @@ public class LlmSemanticIntakeParser {
                 .intakeRepairSuccess(repairSuccess)
                 .intakeRepairReason(buildRepairReasonCode(enumErrors))
                 .build();
+        SemanticLlmFailureClassification.enrichIntakeFailureMeta(result);
+        return result;
     }
 
     private static String buildRepairReasonCode(List<String> enumErrors) {
@@ -406,6 +729,9 @@ public class LlmSemanticIntakeParser {
         }
         if (enumErrors.stream().anyMatch(e -> e.startsWith("questionMode:"))) {
             return "invalid_question_mode";
+        }
+        if (enumErrors.stream().anyMatch(e -> e.startsWith("reason:"))) {
+            return "invalid_dimension_switch_reason_token";
         }
         return "invalid_enum";
     }

@@ -5,7 +5,6 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolver;
-import com.nongxinle.ai.followup.AiFollowUpHintSupport;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.SemanticParseClarificationPolicy;
 import lombok.extern.slf4j.Slf4j;
@@ -209,7 +208,7 @@ public class AiResolvedQueryContextDiagnostics {
                         + "previousTimeWindow={} "
                         + "currentIntentCode={} currentPathCode={} currentStructuredIntentDetail={} currentPurchaseSourceType={} "
                         + "currentExplicitTimeMentioned={} currentExplicitStoreMentioned={} "
-                        + "currentDeclaresDomainPath={} "
+                        + "querySemanticV2IntentAction={} "
                         + "effectiveIntentCode={} effectivePathCode={} "
                         + "effectiveTimeWindow={}..{} effectiveTimeLabel={} "
                         + "effectiveScopeType={} effectiveVisibleStores={} "
@@ -232,7 +231,7 @@ public class AiResolvedQueryContextDiagnostics {
                 cur != null ? cur.getPurchaseSourceType() : null,
                 currentExplicitTimeMentioned,
                 currentExplicitStore,
-                AiFollowUpHintSupport.currentMessageDeclaresDomainPath(rawMessage),
+                semanticIntentActionForLogging(ctx.getQuerySemanticParse()),
                 ctx.getEffectiveIntentCode(),
                 ctx.getEffectivePathCode(),
                 tw != null ? tw.getStartDate() : null,
@@ -277,6 +276,13 @@ public class AiResolvedQueryContextDiagnostics {
                 "[AiResolvedQueryContext] time contract missing on non-clarification path runId={} conversationId={}",
                 runId,
                 convId);
+    }
+
+    private static String semanticIntentActionForLogging(AiQuerySemanticParseResult sem) {
+        if (sem == null || !StringUtils.hasText(sem.getIntentAction())) {
+            return null;
+        }
+        return sem.getIntentAction().trim();
     }
 
     private static boolean semanticDeclaresStoreFocusForLogging(

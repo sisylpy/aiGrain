@@ -4,6 +4,7 @@ import com.nongxinle.ai.scope.AiScopeResolver;
 import com.nongxinle.ai.tool.AiTool;
 import com.nongxinle.ai.tool.ToolRequest;
 import com.nongxinle.ai.tool.ToolResult;
+import com.nongxinle.ai.inventory.InventoryPresentationTimeSupport;
 import com.nongxinle.entity.GbDepartmentEntity;
 import com.nongxinle.entity.GbDepartmentGoodsStockEntity;
 import com.nongxinle.mapper.GbDepartmentMapper;
@@ -85,19 +86,21 @@ public class WarehouseStockOverviewTool implements AiTool {
             return executeGroupAggregation(request, args, disId, start, stop);
         }
 
-        if (dept == null || disId == null || start.isEmpty() || stop.isEmpty()) {
+        if (dept == null || disId == null) {
             Map<String, Object> data = new LinkedHashMap<>();
             return ToolResult.builder()
                     .success(false)
-                    .message("missing departmentFatherId/disId/date range")
+                    .message("missing departmentFatherId/disId")
                     .data(AiBusinessToolResponses.envelope(name(), false, false, start, stop, dept, disId, data,
                             "参数不完整"))
                     .build();
         }
 
+        String stockAsOf = InventoryPresentationTimeSupport.resolveStockAsOfFromToolArgs(args, start, stop);
+
         try {
             Map<String, Object> wo = buildWarehouseOverviewForFather(dept.intValue(), disId.intValue(), start, stop,
-                    null);
+                    null, stockAsOf);
             boolean reduceMock = Boolean.TRUE.equals(wo.remove("_reduceMock"));
             attachGoodsStockAmountRankings(wo, wo.remove("_byGoods"));
             wo.put("scopeType", "STORE");
@@ -155,15 +158,16 @@ public class WarehouseStockOverviewTool implements AiTool {
 
     private ToolResult executeGroupAggregation(ToolRequest request, Map<String, Object> args, Long disId, String start,
             String stop) {
-        if (disId == null || start.isEmpty() || stop.isEmpty()) {
+        if (disId == null) {
             Map<String, Object> data = new LinkedHashMap<>();
             return ToolResult.builder()
                     .success(false)
-                    .message("missing disId/date range for group stock aggregation")
+                    .message("missing disId for group stock aggregation")
                     .data(AiBusinessToolResponses.envelope(name(), false, false, start, stop, null, disId, data,
                             "参数不完整"))
                     .build();
         }
+        String stockAsOf = InventoryPresentationTimeSupport.resolveStockAsOfFromToolArgs(args, start, stop);
         List<Integer> resolved = parsePositiveIntList(args.get(ARG_RESOLVED_DEPARTMENT_IDS));
         List<Integer> storeIds = scopeResolver.listDomainStoreAnchorsInResolved(resolved);
         if (storeIds.isEmpty()) {
@@ -220,7 +224,7 @@ public class WarehouseStockOverviewTool implements AiTool {
                 String storeLabel = namesById.getOrDefault(sid, "门店 " + sid);
                 Map<String, Object> one;
                 try {
-                    one = buildWarehouseOverviewForFather(sid, disId.intValue(), start, stop, storeLabel);
+                    one = buildWarehouseOverviewForFather(sid, disId.intValue(), start, stop, storeLabel, stockAsOf);
                 } catch (Exception ex) {
                     log.warn("[WAREHOUSE-STOCK-OVERVIEW][GROUP] storeAggFailed runId={} sid={}: {}",
                             request.getRunId(), sid, ex.toString());
@@ -497,7 +501,7 @@ public class WarehouseStockOverviewTool implements AiTool {
      */
     @SuppressWarnings("unchecked")
     private Map<String, Object> buildWarehouseOverviewForFather(int depFatherId, int disId, String start, String stop,
-            String storeLabel) {
+            String storeLabel, String stockAsOf) {
         Map<String, Object> snap = new HashMap<>(4);
         snap.put("depFatherId", depFatherId);
         snap.put("disId", disId);
@@ -507,25 +511,35 @@ public class WarehouseStockOverviewTool implements AiTool {
         double restAmtTotal = nzD(gbDepartmentGoodsStockService.queryDepGoodsRestTotal(snap));
         double restWtTotal = nzD(gbDepartmentGoodsStockService.queryDepGoodsRestWeightTotal(snap));
 
-        Map<String, Object> period = new HashMap<>(snap);
-        period.put("startDate", start);
-        period.put("stopDate", stop);
-        double inboundAmt = nzD(gbDepartmentGoodsStockService.queryDepGoodsSubtotal(period));
-        double inboundWt = nzD(gbDepartmentGoodsStockService.queryDepStockWeightTotal(period));
+        boolean periodFlow = InventoryPresentationTimeSupport.hasPeriodFlowDates(start, stop);
+        double inboundAmt = 0.0;
+        double inboundWt = 0.0;
+        boolean reduceMock = true;
+        BigDecimal produceBd = BigDecimal.ZERO;
+        BigDecimal wasteBd = BigDecimal.ZERO;
+        BigDecimal lossBd = BigDecimal.ZERO;
+        BigDecimal returnBd = BigDecimal.ZERO;
+        if (periodFlow) {
+            Map<String, Object> period = new HashMap<>(snap);
+            period.put("startDate", start);
+            period.put("stopDate", stop);
+            inboundAmt = nzD(gbDepartmentGoodsStockService.queryDepGoodsSubtotal(period));
+            inboundWt = nzD(gbDepartmentGoodsStockService.queryDepStockWeightTotal(period));
 
-        Map<String, Object> reduceParams = new HashMap<>();
-        reduceParams.put("departmentFatherId", (long) depFatherId);
-        reduceParams.put("matchDailyRevenueDepartmentId", (long) depFatherId);
-        reduceParams.put("startDate", start);
-        reduceParams.put("stopDate", stop);
-        Map<String, Object> rawReduce =
-                gbDepartmentGoodsStockReduceService.queryReduceAllTypesTotalOnDailyRevenueDays(reduceParams);
-        boolean reduceMock = rawReduce == null || rawReduce.isEmpty();
+            Map<String, Object> reduceParams = new HashMap<>();
+            reduceParams.put("departmentFatherId", (long) depFatherId);
+            reduceParams.put("matchDailyRevenueDepartmentId", (long) depFatherId);
+            reduceParams.put("startDate", start);
+            reduceParams.put("stopDate", stop);
+            Map<String, Object> rawReduce =
+                    gbDepartmentGoodsStockReduceService.queryReduceAllTypesTotalOnDailyRevenueDays(reduceParams);
+            reduceMock = rawReduce == null || rawReduce.isEmpty();
 
-        BigDecimal produceBd = nzBd(rawReduce == null ? null : rawReduce.get("produceTotal"));
-        BigDecimal wasteBd = nzBd(rawReduce == null ? null : rawReduce.get("wasteTotal"));
-        BigDecimal lossBd = nzBd(rawReduce == null ? null : rawReduce.get("lossTotal"));
-        BigDecimal returnBd = nzBd(rawReduce == null ? null : rawReduce.get("returnTotal"));
+            produceBd = nzBd(rawReduce == null ? null : rawReduce.get("produceTotal"));
+            wasteBd = nzBd(rawReduce == null ? null : rawReduce.get("wasteTotal"));
+            lossBd = nzBd(rawReduce == null ? null : rawReduce.get("lossTotal"));
+            returnBd = nzBd(rawReduce == null ? null : rawReduce.get("returnTotal"));
+        }
         BigDecimal outboundBd = produceBd;
         BigDecimal reduceAllBd = produceBd.add(wasteBd).add(lossBd).add(returnBd);
 
@@ -559,7 +573,7 @@ public class WarehouseStockOverviewTool implements AiTool {
             GoodAgg g = byGoods.computeIfAbsent(key, k -> new GoodAgg(label, key));
             g.mergeFrom(e); // 同时累加数量并提取商品单位
             String batchDate = e.getGbDgsDate();
-            if (batchDate != null && start.compareTo(batchDate) > 0 && rw > 0) {
+            if (periodFlow && batchDate != null && start.compareTo(batchDate) > 0 && rw > 0) {
                 if (inactiveBatches.size() < INACTIVE_BATCH_MAX) {
                     LinkedHashMap<String, Object> it = new LinkedHashMap<>();
                     if (storeLabel != null && !storeLabel.isBlank()) {
@@ -598,9 +612,8 @@ public class WarehouseStockOverviewTool implements AiTool {
 
         String summary;
         if (skuCount == 0 && batchRows == 0 && restAmtTotal <= 0 && inboundAmt <= 0 && reduceAllBd.signum() == 0) {
-            summary = "当前范围内暂未查询到有效库存记录，请确认入库、出库、盘点数据是否已录入。";
-        } else {
-            // 【优化】统一使用"账面剩余数量/重量合计"替代"剩余重量约 x 斤"，避免包装类商品误导
+            summary = "当前库存口径下暂未查询到有效库存记录，请确认入库、出库、盘点数据是否已录入。";
+        } else if (periodFlow) {
             String metrics = String.format(
                     Locale.CHINA,
                     "共有 %d 种商品、约 %d 个批次仍有账面剩余；剩余金额约 %.2f 元，账面剩余数量/重量合计约 %.2f（含不同规格商品）；"
@@ -608,6 +621,16 @@ public class WarehouseStockOverviewTool implements AiTool {
                     skuCount, batchRows, restAmtTotal, restWtTotal, inboundAmt, inboundWt,
                     outboundBd.doubleValue(), wasteBd.doubleValue(),
                     lossBd.doubleValue(), returnBd.doubleValue());
+            if (storeLabel == null || storeLabel.isBlank()) {
+                summary = "当前库存。" + metrics;
+            } else {
+                summary = String.format(Locale.CHINA, "当前库存范围：%s。", storeLabel.trim()) + metrics;
+            }
+        } else {
+            String metrics = String.format(
+                    Locale.CHINA,
+                    "共有 %d 种商品、约 %d 个批次仍有账面剩余；剩余金额约 %.2f 元，账面剩余数量/重量合计约 %.2f（含不同规格商品）。",
+                    skuCount, batchRows, restAmtTotal, restWtTotal);
             if (storeLabel == null || storeLabel.isBlank()) {
                 summary = "当前库存。" + metrics;
             } else {
@@ -635,6 +658,7 @@ public class WarehouseStockOverviewTool implements AiTool {
         wo.put("recommendations", recommendations);
         wo.put("_reduceMock", reduceMock);
         wo.put("_byGoods", byGoods);
+        InventoryPresentationTimeSupport.applySnapshotMetadataToPayload(wo, start, stop, stockAsOf);
         return wo;
     }
 

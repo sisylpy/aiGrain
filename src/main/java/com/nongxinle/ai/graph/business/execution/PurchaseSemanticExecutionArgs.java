@@ -54,6 +54,10 @@ public final class PurchaseSemanticExecutionArgs {
         }
         if (PurchaseSemanticExecutionIntent.EXEC_CHANNEL_GOODS_DETAIL.equals(exec)) {
             putExecutionDetailWanted(m, "GOODS_DETAIL");
+            return;
+        }
+        if (PurchaseSemanticExecutionIntent.EXEC_PERIOD_GOODS_LIST.equals(exec)) {
+            putExecutionDetailWanted(m, "PERIOD_GOODS_LIST");
         }
     }
 

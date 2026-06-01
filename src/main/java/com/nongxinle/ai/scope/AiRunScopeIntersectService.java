@@ -5,10 +5,12 @@ import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.platform.dto.AiRunCreateRequest;
 import com.nongxinle.ai.mapping.AiRoleMapper;
 import com.nongxinle.ai.resolver.AiResolvedQueryContextResolver;
+import com.nongxinle.ai.resolver.SemanticStoreNarrowingScopeSupport;
 import com.nongxinle.ai.security.AiAnswerBoundary;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -34,8 +36,25 @@ public class AiRunScopeIntersectService {
             return;
         }
         AiUserContext ctx = state.getAiUserContext();
-        if (AiRoleMapper.isGroupWideOrgScope(ctx.getRoleCode())) {
+        if (SemanticStoreNarrowingScopeSupport.isSemanticStoreNarrowingActive(state.getResolvedQueryContext())) {
+            fillSemanticNarrowedStoreScopeSnapshot(state, subtreeCache);
+            if (state.getResolvedQueryContext() != null
+                    && state.getResolvedQueryContext().getScopeResolutionTrace() != null) {
+                state.getResolvedQueryContext()
+                        .getScopeResolutionTrace()
+                        .setScopeIntersectPath("SEMANTIC_STORE_NARROW_SUBTREE");
+            }
+            return;
+        }
+        if (AiRoleMapper.isGroupWideOrgScope(ctx.getRoleCode())
+                && shouldUseGroupWideIntersect(state)) {
             fillGroupWideScopeSnapshot(state, subtreeCache);
+            if (state.getResolvedQueryContext() != null
+                    && state.getResolvedQueryContext().getScopeResolutionTrace() != null) {
+                state.getResolvedQueryContext()
+                        .getScopeResolutionTrace()
+                        .setScopeIntersectPath("GROUP_WIDE_DISTRIBUTER_ENUM");
+            }
             return;
         }
 
@@ -89,6 +108,23 @@ public class AiRunScopeIntersectService {
         refreshResolvedQuerySnapshot(state);
     }
 
+    private static boolean shouldUseGroupWideIntersect(AiRunState state) {
+        if (state == null) {
+            return false;
+        }
+        if (SemanticStoreNarrowingScopeSupport.isSemanticStoreNarrowingActive(state.getResolvedQueryContext())) {
+            return false;
+        }
+        if (AiConversationScopeMode.enumeratesDistributerStores(state.getResolvedQueryContext())) {
+            return true;
+        }
+        if (StringUtils.hasText(state.getScopeMode())
+                && AiConversationScopeMode.fromApiString(state.getScopeMode()) == AiConversationScopeMode.GROUP) {
+            return true;
+        }
+        return false;
+    }
+
     /** 集团管理端：仅按 {@code distributerId} 枚举门店根（father_id=0），合并各门店子树写入 scope；不依赖请求 departmentId。 */
     private void fillGroupWideScopeSnapshot(AiRunState state, Map<Integer, List<Integer>> subtreeCache) {
         AiUserContext ctx = state.getAiUserContext();
@@ -120,6 +156,41 @@ public class AiRunScopeIntersectService {
         log.info(
                 "[AI-RUN-SCOPE] GROUP_WIDE disId={} storeRootCount={} storeRootIds={} resolvedDeptNodeCount={}",
                 dis, storeRoots.size(), storeRoots, union.size());
+        writeQueryScope(state, union, storeRoots.size());
+        refreshResolvedQuerySnapshot(state);
+    }
+
+    /** 语义已点名收窄：仅展开命中门店根子树，禁止回落 distributer 全门店广角。 */
+    private void fillSemanticNarrowedStoreScopeSnapshot(
+            AiRunState state, Map<Integer, List<Integer>> subtreeCache) {
+        List<Integer> storeRoots =
+                SemanticStoreNarrowingScopeSupport.resolveNarrowedStoreRootDepartmentIds(
+                        state.getResolvedQueryContext());
+        if (storeRoots.isEmpty()) {
+            log.warn(
+                    "[AI-RUN-SCOPE] SEMANTIC_STORE_NARROW missing store roots userId={}",
+                    state.getAiUserContext() != null ? state.getAiUserContext().getUserId() : null);
+            writeQueryScope(state, Set.of(), null);
+            refreshResolvedQuerySnapshot(state);
+            return;
+        }
+        state.setDepartmentId(storeRoots.get(0).longValue());
+        LinkedHashSet<Integer> union = new LinkedHashSet<>();
+        for (Integer root : storeRoots) {
+            if (root == null || root <= 0) {
+                continue;
+            }
+            List<Integer> subtree = scopeResolver.collectSubtreeDepartmentIds(root, subtreeCache);
+            if (subtree == null || subtree.isEmpty()) {
+                union.add(root);
+            } else {
+                union.addAll(subtree);
+            }
+        }
+        log.info(
+                "[AI-RUN-SCOPE] SEMANTIC_STORE_NARROW storeRootIds={} resolvedDeptNodeCount={}",
+                storeRoots,
+                union.size());
         writeQueryScope(state, union, storeRoots.size());
         refreshResolvedQuerySnapshot(state);
     }

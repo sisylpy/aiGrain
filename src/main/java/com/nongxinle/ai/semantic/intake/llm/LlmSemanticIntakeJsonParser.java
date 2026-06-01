@@ -4,6 +4,8 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeDishIngredientCoverDaysSupport;
+import com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeNormalizationType;
 import com.nongxinle.ai.semantic.intake.SemanticIntakePrimaryDomain;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeQuestionMode;
@@ -63,6 +65,17 @@ public final class LlmSemanticIntakeJsonParser {
         String normalizationType = trimToNull(o.getStr("normalizationType"));
         List<SemanticIntakeSubQuestion> subQuestions = parseSubQuestions(o.getJSONArray("subQuestions"));
         List<String> candidateDomains = parseStringList(o.getJSONArray("candidateDomains"));
+        String warehouseSemanticsRaw = trimToNull(o.getStr("warehouseInventorySemantics"));
+        String reason = trimToNull(o.getStr("reason"));
+        String warehouseSemanticsNormalized = null;
+        if (SemanticIntakeDishIngredientCoverDaysSupport.rawWarehouseSemanticsDeclaresDishCoverMislabel(
+                warehouseSemanticsRaw)) {
+            reason = SemanticIntakeDishIngredientCoverDaysSupport.appendDishCoverReasonMarker(reason);
+            warehouseSemanticsNormalized = warehouseSemanticsRaw;
+        } else if (StringUtils.hasText(warehouseSemanticsRaw)) {
+            warehouseSemanticsNormalized =
+                    WarehouseInventoryShortageSemanticsSupport.normalizeSemantics(warehouseSemanticsRaw);
+        }
         return LlmSemanticIntakeParsed.builder()
                 .parseFailed(false)
                 .rawDigest(digest)
@@ -77,7 +90,8 @@ public final class LlmSemanticIntakeJsonParser {
                 .confidence(parseConfidence(o.get("confidence")))
                 .needClarification(o.getBool("needClarification", false))
                 .clarificationQuestion(trimToNull(o.getStr("clarificationQuestion")))
-                .reason(trimToNull(o.getStr("reason")))
+                .reason(reason)
+                .warehouseInventorySemantics(warehouseSemanticsNormalized)
                 .subQuestions(subQuestions)
                 .build();
     }

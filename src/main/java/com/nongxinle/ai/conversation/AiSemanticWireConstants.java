@@ -18,6 +18,8 @@ public final class AiSemanticWireConstants {
     public static final String STRUCTURED_PURCHASE_SOURCE_SUMMARY = "purchase_source_summary";
     public static final String STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY = "purchase_source_amount_query";
     public static final String STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY = "purchase_source_goods_query";
+    /** 时间窗内采购原料/商品明细清单（无 GOODS 锚点）。 */
+    public static final String STRUCTURED_PURCHASE_PERIOD_GOODS_LIST = "purchase_period_goods_list";
     public static final String STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING = "purchase_goods_amount_ranking";
     public static final String STRUCTURED_PURCHASE_GOODS_COUNT_RANKING = "purchase_goods_count_ranking";
     public static final String STRUCTURED_PURCHASE_GOODS_ANOMALY = "purchase_goods_anomaly";
@@ -30,6 +32,11 @@ public final class AiSemanticWireConstants {
     public static final String STRUCTURED_PURCHASE_INVENTORY_OVERSTOCK_RISK = "purchase_inventory_overstock_risk";
     public static final String STRUCTURED_PURCHASE_FRESHNESS_RISK = "purchase_freshness_risk";
     public static final String STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING = "purchase_store_amount_ranking";
+    /** KNOWN_GAP：多门店采购对比（P1 未注入 allowedContracts）。 */
+    public static final String STRUCTURED_PURCHASE_STORE_COMPARE = "purchase_store_compare";
+    /** KNOWN_GAP：两店并排采购金额对比（P1 未注入 allowedContracts）。 */
+    public static final String STRUCTURED_PURCHASE_STORE_PAIR_AMOUNT_COMPARE =
+            "purchase_store_pair_amount_compare";
     public static final String STRUCTURED_SUPPLIER_AMOUNT_RANKING = "supplier_amount_ranking";
     public static final String STRUCTURED_SUPPLIER_RANKING = STRUCTURED_SUPPLIER_AMOUNT_RANKING;
 
@@ -58,6 +65,12 @@ public final class AiSemanticWireConstants {
     public static final String STRUCTURED_DISH_GROSS_MARGIN_QUERY = "dish_gross_margin_query";
     public static final String STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN = "dish_profit_ranking_low_margin";
     public static final String STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN = "dish_profit_ranking_high_margin";
+    /** 菜品毛利额（标价收入−实际成本）由高到低排行。 */
+    public static final String STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT =
+            "dish_profit_ranking_high_profit_amount";
+    /** 菜品毛利额（标价收入−实际成本）由低到高排行。 */
+    public static final String STRUCTURED_DISH_PROFIT_RANKING_LOW_PROFIT_AMOUNT =
+            "dish_profit_ranking_low_profit_amount";
     public static final String STRUCTURED_DISH_LOW_PROFIT_REASON = "dish_low_profit_reason";
     public static final String STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH = "dish_actual_cost_ranking_high";
     public static final String STRUCTURED_DISH_ACTUAL_COST_RANKING_LOW = "dish_actual_cost_ranking_low";
@@ -75,6 +88,16 @@ public final class AiSemanticWireConstants {
     public static final String STRUCTURED_DISH_SALES_STORE_SINGLE_DISH = "dish_sales_store_single_dish";
     public static final String STRUCTURED_DISH_SALES_TREND = "dish_sales_trend";
     public static final String STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN = "dish_ingredient_cost_breakdown";
+    /** 单菜成本+销售分析（{@link com.nongxinle.ai.tool.business.AiBusinessToolIds#DISH_COST_ANALYSIS}）。 */
+    public static final String STRUCTURED_DISH_COST_ANALYSIS = "dish_cost_analysis";
+    /** 单菜利润处方卡（{@code dish.profit.prescription.v1}；双 Tool 合并）。 */
+    public static final String STRUCTURED_DISH_PROFIT_PRESCRIPTION = "dish_profit_prescription";
+    /** 单菜配料可支撑天数（{@code dish.ingredient_cover_days.v1}；复用 dish_cost_analysis）。 */
+    public static final String STRUCTURED_DISH_INGREDIENT_COVER_DAYS = "dish_ingredient_cover_days";
+
+    public static final String STRUCTURED_MENU_OPERATION_OVERVIEW = "menu_operation_overview";
+    public static final String STRUCTURED_MENU_DISH_HIGH_SALES_LOW_PROFIT = "menu_dish_high_sales_low_profit";
+    public static final String STRUCTURED_MENU_ACTION_RECOMMENDATION = "menu_action_recommendation";
 
     public static final String STRUCTURED_REVENUE_OVERVIEW_SUMMARY = "revenue_overview_summary";
     /** @deprecated 历史别名；不在 REGISTERED 集合；须用 {@link #STRUCTURED_REVENUE_OVERVIEW_SUMMARY}。 */
@@ -123,6 +146,8 @@ public final class AiSemanticWireConstants {
     public static final String STRUCTURED_WAREHOUSE_STOCK_AMOUNT_RANKING = "warehouse_stock_amount_ranking";
     public static final String STRUCTURED_WAREHOUSE_STOCK_ITEM_COUNT_RANKING = "warehouse_stock_item_count_ranking";
     public static final String STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW = "goods_stock_amount_ranking_low";
+    /** 原料 → 受影响菜品可支撑（{@code warehouse.goods_supported_dish_cover.v1}）。 */
+    public static final String STRUCTURED_GOODS_SUPPORTED_DISH_COVER = "goods_supported_dish_cover";
     public static final String STRUCTURED_WAREHOUSE_NEAR_EXPIRY = "warehouse_near_expiry";
 
     private static final Set<String> PURCHASE_OVERVIEW_DOMAIN_CANONICAL_WIRES =
@@ -131,6 +156,7 @@ public final class AiSemanticWireConstants {
                     STRUCTURED_PURCHASE_SOURCE_SUMMARY,
                     STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY,
                     STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY,
+                    STRUCTURED_PURCHASE_PERIOD_GOODS_LIST,
                     STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING,
                     STRUCTURED_PURCHASE_GOODS_COUNT_RANKING,
                     STRUCTURED_PURCHASE_GOODS_ANOMALY,
@@ -143,6 +169,8 @@ public final class AiSemanticWireConstants {
                     STRUCTURED_PURCHASE_INVENTORY_OVERSTOCK_RISK,
                     STRUCTURED_PURCHASE_FRESHNESS_RISK,
                     STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING,
+                    STRUCTURED_PURCHASE_STORE_COMPARE,
+                    STRUCTURED_PURCHASE_STORE_PAIR_AMOUNT_COMPARE,
                     STRUCTURED_SUPPLIER_AMOUNT_RANKING);
 
     private static final Set<String> PURCHASE_ANOMALY_DETECTION_WIRES =
@@ -159,6 +187,7 @@ public final class AiSemanticWireConstants {
                     STRUCTURED_PURCHASE_SOURCE_SUMMARY,
                     STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY,
                     STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY,
+                    STRUCTURED_PURCHASE_PERIOD_GOODS_LIST,
                     STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING,
                     STRUCTURED_PURCHASE_GOODS_COUNT_RANKING,
                     STRUCTURED_PURCHASE_GOODS_ANOMALY,
@@ -171,6 +200,8 @@ public final class AiSemanticWireConstants {
                     STRUCTURED_PURCHASE_INVENTORY_OVERSTOCK_RISK,
                     STRUCTURED_PURCHASE_FRESHNESS_RISK,
                     STRUCTURED_PURCHASE_STORE_AMOUNT_RANKING,
+                    STRUCTURED_PURCHASE_STORE_COMPARE,
+                    STRUCTURED_PURCHASE_STORE_PAIR_AMOUNT_COMPARE,
                     STRUCTURED_SUPPLIER_AMOUNT_RANKING,
                     STRUCTURED_STOCK_REDUCE_OVERVIEW_SUMMARY,
                     STRUCTURED_PRODUCE_CONSUME,
@@ -188,6 +219,8 @@ public final class AiSemanticWireConstants {
                     STRUCTURED_DISH_GROSS_MARGIN_QUERY,
                     STRUCTURED_DISH_PROFIT_RANKING_LOW_MARGIN,
                     STRUCTURED_DISH_PROFIT_RANKING_HIGH_MARGIN,
+                    STRUCTURED_DISH_PROFIT_RANKING_HIGH_PROFIT_AMOUNT,
+                    STRUCTURED_DISH_PROFIT_RANKING_LOW_PROFIT_AMOUNT,
                     STRUCTURED_DISH_LOW_PROFIT_REASON,
                     STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH,
                     STRUCTURED_DISH_ACTUAL_COST_RANKING_LOW,
@@ -205,6 +238,12 @@ public final class AiSemanticWireConstants {
                     STRUCTURED_DISH_SALES_STORE_SINGLE_DISH,
                     STRUCTURED_DISH_SALES_TREND,
                     STRUCTURED_DISH_INGREDIENT_COST_BREAKDOWN,
+                    STRUCTURED_DISH_COST_ANALYSIS,
+                    STRUCTURED_DISH_PROFIT_PRESCRIPTION,
+                    STRUCTURED_DISH_INGREDIENT_COVER_DAYS,
+                    STRUCTURED_MENU_OPERATION_OVERVIEW,
+                    STRUCTURED_MENU_DISH_HIGH_SALES_LOW_PROFIT,
+                    STRUCTURED_MENU_ACTION_RECOMMENDATION,
                     STRUCTURED_REVENUE_OVERVIEW_SUMMARY,
                     STRUCTURED_REVENUE_SINGLE_STORE_OVERVIEW,
                     STRUCTURED_REVENUE_STORE_COMPARE,
@@ -241,6 +280,7 @@ public final class AiSemanticWireConstants {
                     STRUCTURED_WAREHOUSE_STOCK_AMOUNT_RANKING,
                     STRUCTURED_WAREHOUSE_STOCK_ITEM_COUNT_RANKING,
                     STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW,
+                    STRUCTURED_GOODS_SUPPORTED_DISH_COVER,
                     STRUCTURED_WAREHOUSE_NEAR_EXPIRY);
 
     public static boolean isRegisteredCanonicalWire(String wire) {

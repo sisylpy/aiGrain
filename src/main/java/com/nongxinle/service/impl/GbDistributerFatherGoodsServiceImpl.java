@@ -1,6 +1,6 @@
 package com.nongxinle.service.impl;
 
-import com.nongxinle.dao.GbDistributerFatherGoodsDao;
+import com.nongxinle.mapper.GbDistributerFatherGoodsMapper;
 import com.nongxinle.entity.GbDistributerFatherGoodsEntity;
 import com.nongxinle.service.GbDistributerFatherGoodsService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,106 +14,106 @@ import java.util.TreeSet;
 public class GbDistributerFatherGoodsServiceImpl implements GbDistributerFatherGoodsService {
 
     @Autowired
-    private GbDistributerFatherGoodsDao gbDistributerFatherGoodsDao;
+    private GbDistributerFatherGoodsMapper gbDistributerFatherGoodsMapper;
 
     @Override
     public GbDistributerFatherGoodsEntity queryObject(Integer gbDistributerFatherGoodsId) {
-        return gbDistributerFatherGoodsDao.queryObject(gbDistributerFatherGoodsId);
+        return gbDistributerFatherGoodsMapper.queryObject(gbDistributerFatherGoodsId);
     }
 
     @Override
     public List<GbDistributerFatherGoodsEntity> queryList(Map<String, Object> map) {
-        return gbDistributerFatherGoodsDao.queryList(map);
+        return gbDistributerFatherGoodsMapper.queryList(map);
     }
 
     @Override
     public int queryTotal(Map<String, Object> map) {
-        return gbDistributerFatherGoodsDao.queryTotal(map);
+        return gbDistributerFatherGoodsMapper.queryTotal(map);
     }
 
     @Override
     public void save(GbDistributerFatherGoodsEntity gbDistributerFatherGoods) {
-        gbDistributerFatherGoodsDao.save(gbDistributerFatherGoods);
+        gbDistributerFatherGoodsMapper.save(gbDistributerFatherGoods);
     }
 
     @Override
     public void update(GbDistributerFatherGoodsEntity gbDistributerFatherGoods) {
-        gbDistributerFatherGoodsDao.update(gbDistributerFatherGoods);
+        gbDistributerFatherGoodsMapper.update(gbDistributerFatherGoods);
     }
 
     @Override
     public void delete(Integer gbDistributerFatherGoodsId) {
-        gbDistributerFatherGoodsDao.delete(gbDistributerFatherGoodsId);
+        gbDistributerFatherGoodsMapper.delete(gbDistributerFatherGoodsId);
     }
 
     @Override
     public void deleteBatch(Integer[] gbDistributerFatherGoodsIds) {
-        gbDistributerFatherGoodsDao.deleteBatch(gbDistributerFatherGoodsIds);
+        gbDistributerFatherGoodsMapper.deleteBatch(gbDistributerFatherGoodsIds);
     }
 
     @Override
     public List<GbDistributerFatherGoodsEntity> querySubFatherGoods(Integer goodsId) {
-        return gbDistributerFatherGoodsDao.querySubFatherGoods(goodsId);
+        return gbDistributerFatherGoodsMapper.querySubFatherGoods(goodsId);
     }
 
     @Override
     public List<GbDistributerFatherGoodsEntity> queryHasDisFathersFather(Map<String, Object> map3) {
-        return gbDistributerFatherGoodsDao.queryHasDisFathersFather(map3);
+        return gbDistributerFatherGoodsMapper.queryHasDisFathersFather(map3);
     }
 
     @Override
     public List<GbDistributerFatherGoodsEntity> queryDisGoodsCata(Map<String, Object> map) {
-        return gbDistributerFatherGoodsDao.queryDisGoodsCata(map);
+        return gbDistributerFatherGoodsMapper.queryDisGoodsCata(map);
     }
 
     @Override
     public List<GbDistributerFatherGoodsEntity> queryDisStockOrdersFatherGoods(Map<String, Object> map) {
-        return gbDistributerFatherGoodsDao.queryDisStockOrdersFatherGoods(map);
+        return gbDistributerFatherGoodsMapper.queryDisStockOrdersFatherGoods(map);
     }
 
     @Override
     public List<GbDistributerFatherGoodsEntity> queryDisFathersGoodsByParamsGb(Map<String, Object> mapGrand) {
-        return gbDistributerFatherGoodsDao.queryDisFathersGoodsByParamsGb(mapGrand);
+        return gbDistributerFatherGoodsMapper.queryDisFathersGoodsByParamsGb(mapGrand);
     }
 
     @Override
     public List<GbDistributerFatherGoodsEntity> queryDisGoodsCataWithGoods(Map<String, Object> map) {
-        return gbDistributerFatherGoodsDao.queryDisGoodsCataWithGoods(map);
+        return gbDistributerFatherGoodsMapper.queryDisGoodsCataWithGoods(map);
     }
 
     @Override
     public GbDistributerFatherGoodsEntity queryAppFatherGoods(Map<String, Object> map) {
-        return gbDistributerFatherGoodsDao.queryAppFatherGoods(map);
+        return gbDistributerFatherGoodsMapper.queryAppFatherGoods(map);
     }
 
     @Override
     public List<GbDistributerFatherGoodsEntity> queryDisFathersGoodsByNxGoodsId(Integer nxGoodsId) {
-        return gbDistributerFatherGoodsDao.queryDisFathersGoodsByNxGoodsId(nxGoodsId);
+        return gbDistributerFatherGoodsMapper.queryDisFathersGoodsByNxGoodsId(nxGoodsId);
     }
 
     @Override
     public List<GbDistributerFatherGoodsEntity> queryDisGoodsCataLinshi(Integer nxDistributerId) {
-        return gbDistributerFatherGoodsDao.queryDisGoodsCataLinshi(nxDistributerId);
+        return gbDistributerFatherGoodsMapper.queryDisGoodsCataLinshi(nxDistributerId);
     }
 
     @Override
     public GbDistributerFatherGoodsEntity queryDisGoodsCataLinshiFatherGoods(Map<String, Object> map) {
-        return gbDistributerFatherGoodsDao.queryDisGoodsCataLinshiFatherGoods(map);
+        return gbDistributerFatherGoodsMapper.queryDisGoodsCataLinshiFatherGoods(map);
     }
 
     @Override
     public int queryGbFatherGoodsMaxSort(Map<String, Object> map5) {
-        return gbDistributerFatherGoodsDao.queryGbFatherGoodsMaxSort(map5);
+        return gbDistributerFatherGoodsMapper.queryGbFatherGoodsMaxSort(map5);
     }
 
     @Override
     public List<GbDistributerFatherGoodsEntity> queryDisGoodsCataWithFilter(Map<String, Object> mapG) {
-        return gbDistributerFatherGoodsDao.queryDisGoodsCataWithFilter(mapG);
+        return gbDistributerFatherGoodsMapper.queryDisGoodsCataWithFilter(mapG);
     }
 
     @Override
     public TreeSet<GbDistributerFatherGoodsEntity> queryPurchaseGoodsFatherTypes(Map<String, Object> map) {
-        List<GbDistributerFatherGoodsEntity> list = gbDistributerFatherGoodsDao.queryPurchaseGoodsFatherTypes(map);
+        List<GbDistributerFatherGoodsEntity> list = gbDistributerFatherGoodsMapper.queryPurchaseGoodsFatherTypes(map);
         return list != null ? new TreeSet<>(list) : new TreeSet<>();
     }
 }

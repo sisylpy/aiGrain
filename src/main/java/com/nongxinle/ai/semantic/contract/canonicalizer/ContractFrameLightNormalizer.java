@@ -8,8 +8,9 @@ import org.springframework.util.StringUtils;
 import java.util.Locale;
 
 /**
- * P4-J2：canonicalizer 降级路径 — 仅大小写 / 空值 / Lexicon wire 格式整理。
- * <p>Contract selection only from {@code selectedContractId}；禁止按槽位推断 wire 或改选合同。
+ * P4-J2：contract-locked parse 轻量规范化。
+ * <p>Contract selection only from {@code selectedContractId}；{@code structuredIntentDetailWire} 以
+ * {@link SemanticContractCompletionEngine} completion trace / contract entry 为准，不用 LLM 槽位 wire 抢主链。
  */
 public final class ContractFrameLightNormalizer {
 
@@ -23,11 +24,7 @@ public final class ContractFrameLightNormalizer {
             return raw;
         }
         AiQuerySemanticParseResult.SemanticSlotsPart s = raw.getSemanticSlots();
-        String wire =
-                StringUtils.hasText(s.getStructuredIntentDetailWire())
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                                s.getStructuredIntentDetailWire().trim())
-                        : null;
+        String wire = resolveAuthoritativeWire(raw, s);
         AiQuerySemanticParseResult.SemanticSlotsPart updated =
                 AiQuerySemanticParseResult.SemanticSlotsPart.builder()
                         .selectedContractId(trim(s.getSelectedContractId()))
@@ -39,11 +36,36 @@ public final class ContractFrameLightNormalizer {
                         .detailWanted(normalizeToken(s.getDetailWanted()))
                         .structuredIntentDetailWire(wire)
                         .answerPlanType(normalizeToken(s.getAnswerPlanType()))
+                        .mentionedDishName(trim(raw.effectiveMentionedDishName()))
+                        .mentionedGoodsName(trim(raw.effectiveMentionedGoodsName()))
+                        .requestedTargetGrossMarginRate(trim(s.getRequestedTargetGrossMarginRate()))
                         .build();
         return raw.toBuilder()
                 .semanticSlots(updated)
+                .mentionedDishName(trim(raw.effectiveMentionedDishName()))
+                .mentionedGoodsName(trim(raw.effectiveMentionedGoodsName()))
                 .currentTurnStructuredIntentDetailWire(wire)
                 .build();
+    }
+
+    private static String resolveAuthoritativeWire(
+            AiQuerySemanticParseResult raw, AiQuerySemanticParseResult.SemanticSlotsPart s) {
+        java.util.Map<String, Object> trace = raw.getContractCompletionTrace();
+        if (trace != null) {
+            Object completed = trace.get("completedWire");
+            if (completed instanceof String cs && StringUtils.hasText(cs)) {
+                return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(cs.trim());
+            }
+            Object w = trace.get("wire");
+            if (w instanceof String ws && StringUtils.hasText(ws)) {
+                return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(ws.trim());
+            }
+        }
+        if (s != null && StringUtils.hasText(s.getStructuredIntentDetailWire())) {
+            return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
+                    s.getStructuredIntentDetailWire().trim());
+        }
+        return null;
     }
 
     private static String normalizeToken(String raw) {

@@ -3,7 +3,9 @@ package com.nongxinle.ai.composer.renderer;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
+import com.nongxinle.ai.dto.business.DishProfitPrescriptionAnswerPlan;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
+import com.nongxinle.ai.dto.business.MenuOperationAnswerPlan;
 import com.nongxinle.ai.dto.cost.AiCostDiagnosisResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -25,14 +27,20 @@ public final class DeterministicAnswerRenderer {
     private final DiagnosisDeterministicRenderer diagnosisDeterministicRenderer;
     private final DishProfitDeterministicRenderer dishProfitDeterministicRenderer;
     private final DishSalesDeterministicRenderer dishSalesDeterministicRenderer;
+    private final MenuOperationDeterministicRenderer menuOperationDeterministicRenderer;
+    private final DishProfitPrescriptionDeterministicRenderer dishProfitPrescriptionDeterministicRenderer;
 
     @Autowired
     public DeterministicAnswerRenderer(DiagnosisDeterministicRenderer diagnosisDeterministicRenderer,
             DishProfitDeterministicRenderer dishProfitDeterministicRenderer,
-            DishSalesDeterministicRenderer dishSalesDeterministicRenderer) {
+            DishSalesDeterministicRenderer dishSalesDeterministicRenderer,
+            MenuOperationDeterministicRenderer menuOperationDeterministicRenderer,
+            DishProfitPrescriptionDeterministicRenderer dishProfitPrescriptionDeterministicRenderer) {
         this.diagnosisDeterministicRenderer = diagnosisDeterministicRenderer;
         this.dishProfitDeterministicRenderer = dishProfitDeterministicRenderer;
         this.dishSalesDeterministicRenderer = dishSalesDeterministicRenderer;
+        this.menuOperationDeterministicRenderer = menuOperationDeterministicRenderer;
+        this.dishProfitPrescriptionDeterministicRenderer = dishProfitPrescriptionDeterministicRenderer;
     }
 
     /**
@@ -42,7 +50,9 @@ public final class DeterministicAnswerRenderer {
         return new DeterministicAnswerRenderer(
                 new DiagnosisDeterministicRenderer(),
                 new DishProfitDeterministicRenderer(),
-                new DishSalesDeterministicRenderer());
+                new DishSalesDeterministicRenderer(),
+                new MenuOperationDeterministicRenderer(),
+                new DishProfitPrescriptionDeterministicRenderer());
     }
 
     private static final String GENERIC_NON_BUSINESS_PLAN_FALLBACK =
@@ -103,6 +113,16 @@ public final class DeterministicAnswerRenderer {
     /** 菜品销量/销售额排行 AnswerPlan：确定性宣读，不调 LLM。 */
     public String renderDishSalesAnswerPlan(DishSalesAnswerPlan plan) {
         return dishSalesDeterministicRenderer.render(plan);
+    }
+
+    /** 菜单经营顾问 AnswerPlan：确定性宣读，只读 Plan。 */
+    public String renderMenuOperationAnswerPlan(MenuOperationAnswerPlan plan) {
+        return menuOperationDeterministicRenderer.render(plan);
+    }
+
+    /** 单菜利润处方 AnswerPlan：确定性宣读，只读 Plan。 */
+    public String renderDishProfitPrescriptionAnswerPlan(DishProfitPrescriptionAnswerPlan plan) {
+        return dishProfitPrescriptionDeterministicRenderer.render(plan);
     }
 
     public String genericNonBusinessPlanFallback() {

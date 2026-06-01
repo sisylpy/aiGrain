@@ -50,8 +50,9 @@ public class PurchaseOverviewToolExecutor {
     public static Map<String, Object> buildPurchaseOverviewToolArgs(
             Long dept, Long dis, String start, String stop, AiRunState state) {
         Map<String, Object> m = new HashMap<>(16);
-        if (dis != null) {
-            m.put(AiBusinessToolIds.ARG_DIS_ID, dis);
+        Long effectiveDis = resolvePurchaseOverviewDistributerId(dis, state);
+        if (effectiveDis != null) {
+            m.put(AiBusinessToolIds.ARG_DIS_ID, effectiveDis);
         }
         if (state != null && state.isGroupPurchaseOverview()) {
             m.put(AiBusinessToolIds.ARG_GROUP_PURCHASE_AGGREGATION, Boolean.TRUE);
@@ -108,6 +109,27 @@ public class PurchaseOverviewToolExecutor {
         }
         PurchaseSemanticExecutionArgs.applyToToolArgs(m, purCtx);
         return m;
+    }
+
+    private static Long resolvePurchaseOverviewDistributerId(Long dis, AiRunState state) {
+        if (dis != null) {
+            return dis;
+        }
+        if (state == null) {
+            return null;
+        }
+        if (state.getDistributerId() != null) {
+            return state.getDistributerId();
+        }
+        AiUserContext ctx = state.getAiUserContext();
+        if (ctx != null && ctx.getDistributerId() != null) {
+            return ctx.getDistributerId();
+        }
+        AiResolvedQueryContext rq = state.getResolvedQueryContext();
+        if (rq != null && rq.getOrgScope() != null && rq.getOrgScope().getDistributerId() != null) {
+            return rq.getOrgScope().getDistributerId();
+        }
+        return null;
     }
 
     /**

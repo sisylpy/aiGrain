@@ -11,6 +11,7 @@ import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.security.AiAnswerBoundary;
 import com.nongxinle.ai.security.AiPermissionDenied;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -99,18 +100,32 @@ public class SemanticPermissionMentionPolicy {
         }
         String path = qi.getPathCode();
         boolean dishProfitPath = AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(path);
+        boolean dishSalesSingleDishPath =
+                AiResolvedQueryIntent.PATH_DISH_SALES_QUERY.equals(path)
+                        && isDishSalesSingleDishStructuredWire(qi, semLlm);
+        boolean dishCostAnalysisPath = AiResolvedQueryIntent.PATH_DISH_COST_ANALYSIS.equals(path);
         boolean diagnosisSingleDishTail = AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(path)
                 && AiQuerySemanticLexicon.isSingleDishMetricOrReasonStructuredDetail(qi.getStructuredIntentDetail());
-        if (!dishProfitPath && !diagnosisSingleDishTail) {
+        if (!dishProfitPath && !dishSalesSingleDishPath && !dishCostAnalysisPath && !diagnosisSingleDishTail) {
             return null;
         }
-        if (semLlm != null && StringUtils.hasText(semLlm.getMentionedDishName())) {
-            String dish = discardIfHintIsScopedStoreName(semLlm.getMentionedDishName().trim(), mergedOrg, followUp);
+        if (dishCostAnalysisPath) {
+            return resolveMentionedDishNameFromSemanticParseOnly(semLlm, mergedOrg, followUp);
+        }
+        if (semLlm != null && StringUtils.hasText(semLlm.effectiveMentionedDishName())) {
+            String dish =
+                    discardIfHintIsScopedStoreName(semLlm.effectiveMentionedDishName().trim(), mergedOrg, followUp);
             if (StringUtils.hasText(dish)) {
                 return AiQuerySemanticLexicon.finalizeMentionedDishNameForDishProfit(dish);
             }
         }
         if (AiQuerySemanticLexicon.isDishProfitRankingStructuredDetail(qi.getStructuredIntentDetail())) {
+            return null;
+        }
+        if (AiQuerySemanticLexicon.isDishSalesRankingStructuredDetail(qi.getStructuredIntentDetail())) {
+            return null;
+        }
+        if (!shouldInheritPreviousDishAnchor(semLlm)) {
             return null;
         }
         if (previousTurn != null && StringUtils.hasText(previousTurn.getLastMentionedDishName())) {
@@ -131,6 +146,22 @@ public class SemanticPermissionMentionPolicy {
             }
         }
         return null;
+    }
+
+    /** DISH_COST 单菜合同：仅 v2 结构化 mentionedDishName，不继承 previousTurn / resultAnchors。 */
+    private static String resolveMentionedDishNameFromSemanticParseOnly(
+            AiQuerySemanticParseResult semLlm,
+            AiResolvedOrgScope mergedOrg,
+            com.nongxinle.ai.conversation.AiFollowUpResolution followUp) {
+        if (semLlm == null || !StringUtils.hasText(semLlm.effectiveMentionedDishName())) {
+            return null;
+        }
+        String dish =
+                discardIfHintIsScopedStoreName(semLlm.effectiveMentionedDishName().trim(), mergedOrg, followUp);
+        if (!StringUtils.hasText(dish)) {
+            return null;
+        }
+        return AiQuerySemanticLexicon.finalizeMentionedDishNameForDishProfit(dish);
     }
 
     private static String discardIfHintIsScopedStoreName(
@@ -161,5 +192,32 @@ public class SemanticPermissionMentionPolicy {
         String a = dishHint.replace(" ", "").trim();
         String b = storeLabel.replace(" ", "").trim();
         return !a.isEmpty() && a.equals(b);
+    }
+
+    private static boolean isDishSalesSingleDishStructuredWire(
+            AiResolvedQueryIntent qi, AiQuerySemanticParseResult semLlm) {
+        if (semLlm != null && semLlm.getSemanticSlots() != null) {
+            String slotWire = semLlm.getSemanticSlots().getStructuredIntentDetailWire();
+            if (StringUtils.hasText(slotWire)
+                    && AiQuerySemanticLexicon.isDishSalesSingleDishStructuredDetail(slotWire)) {
+                return true;
+            }
+        }
+        if (qi != null && StringUtils.hasText(qi.getStructuredIntentDetail())) {
+            return AiQuerySemanticLexicon.isDishSalesSingleDishStructuredDetail(qi.getStructuredIntentDetail());
+        }
+        return false;
+    }
+
+    private static boolean shouldInheritPreviousDishAnchor(AiQuerySemanticParseResult semLlm) {
+        if (semLlm == null || semLlm.getSemanticSlots() == null) {
+            return false;
+        }
+        String policy = semLlm.getSemanticSlots().getAnchorPolicy();
+        if (!StringUtils.hasText(policy)) {
+            return false;
+        }
+        return AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS.equals(
+                policy.trim().toUpperCase(java.util.Locale.ROOT).replace('-', '_'));
     }
 }
