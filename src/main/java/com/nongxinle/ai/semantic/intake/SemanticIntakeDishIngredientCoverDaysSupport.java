@@ -4,6 +4,8 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.intake.grounding.CoverDaysEntityGroundingService;
+import com.nongxinle.ai.semantic.intake.grounding.CoverDaysEntityType;
 import com.nongxinle.ai.semantic.intake.llm.LlmSemanticIntakeParsed;
 import com.nongxinle.ai.semantic.matrix.DishCostAnalysisSemanticCapabilityMatrix;
 import org.springframework.util.StringUtils;
@@ -79,6 +81,9 @@ public final class SemanticIntakeDishIngredientCoverDaysSupport {
         if (parsed == null) {
             return false;
         }
+        if (SemanticIntakeGoodsSupportedDishCoverSupport.parsedDeclaresGoodsSupportedDishCover(parsed)) {
+            return false;
+        }
         if (WarehouseInventoryShortageSemanticsSupport.parsedRawInventoryRiskSemantics(parsed)) {
             return false;
         }
@@ -86,14 +91,17 @@ public final class SemanticIntakeDishIngredientCoverDaysSupport {
             return true;
         }
         if (rawWarehouseSemanticsDeclaresDishCoverMislabel(parsed.getWarehouseInventorySemantics())) {
-            return true;
+            String primary = SemanticIntakePrimaryDomain.normalize(parsed.getPrimaryDomain());
+            return !SemanticIntakePrimaryDomain.WAREHOUSE.equals(primary);
         }
-        return SemanticIntakePrimaryDomain.DISH_COST.equals(
-                SemanticIntakePrimaryDomain.normalize(parsed.getPrimaryDomain()));
+        return false;
     }
 
     public static boolean intakeDeclaresDishIngredientCoverDays(SemanticIntakeResult intake) {
         if (intake == null) {
+            return false;
+        }
+        if (SemanticIntakeGoodsSupportedDishCoverSupport.intakeDeclaresGoodsSupportedDishCover(intake)) {
             return false;
         }
         if (WarehouseInventoryShortageSemanticsSupport.intakeHasAuthoritativeInventoryRisk(intake)) {
@@ -103,11 +111,8 @@ public final class SemanticIntakeDishIngredientCoverDaysSupport {
             return true;
         }
         if (rawWarehouseSemanticsDeclaresDishCoverMislabel(intake.getWarehouseInventorySemantics())) {
-            return true;
-        }
-        String primary = SemanticIntakePrimaryDomain.normalize(intake.getPrimaryDomain());
-        if (SemanticIntakePrimaryDomain.DISH_COST.equals(primary)) {
-            return !WarehouseInventoryShortageSemanticsSupport.intakeExplicitAmountRankingLow(intake);
+            String primary = SemanticIntakePrimaryDomain.normalize(intake.getPrimaryDomain());
+            return !SemanticIntakePrimaryDomain.WAREHOUSE.equals(primary);
         }
         return false;
     }
@@ -218,6 +223,10 @@ public final class SemanticIntakeDishIngredientCoverDaysSupport {
                 errors.add(
                         "dish_ingredient_cover_days: primaryDomain must be DISH_COST, not WAREHOUSE (§34a)");
             }
+            if (SemanticIntakePrimaryDomain.DISH_SALES.equals(primary)) {
+                errors.add(
+                        "dish_ingredient_cover_days: primaryDomain must be DISH_COST, not DISH_SALES (§34a/§34d)");
+            }
             if (WarehouseInventoryShortageSemanticsSupport.parsedDeclaresInventoryRisk(parsed)) {
                 errors.add(
                         "dish_ingredient_cover_days: warehouseInventorySemantics must be empty (§34a)");
@@ -248,41 +257,26 @@ public final class SemanticIntakeDishIngredientCoverDaysSupport {
 
     private static boolean shouldReconcileToDishCost(
             SemanticIntakeInput input, SemanticIntakeResult intake) {
+        if (SemanticIntakeGoodsSupportedDishCoverSupport.intakeDeclaresGoodsSupportedDishCover(intake)) {
+            return false;
+        }
+        if (CoverDaysEntityGroundingService.hasCoverDaysEntityGroundingSignals(intake)) {
+            if (CoverDaysEntityType.DISH.equals(
+                    CoverDaysEntityType.normalize(intake.getCoverDaysEntityType()))) {
+                return true;
+            }
+            if (intakeDeclaresDishIngredientCoverDays(intake)) {
+                return true;
+            }
+            return false;
+        }
         if (isDishCoverToWarehouseInventoryRiskCrossFollowUp(input, intake)) {
             return false;
         }
         if (intakeDeclaresDishIngredientCoverDays(intake)) {
             return true;
         }
-        if (isCrossDomainWarehouseToDishCoverFollowUp(input, intake)) {
-            return true;
-        }
-        return isMisroutedPrimaryWithDishCostCandidate(intake);
-    }
-
-    /**
-     * LLM 已把 DISH_COST 放进 candidateDomains，但 primary 误标为 PURCHASE/WAREHOUSE（结构化域信号，不读用户原文）。
-     */
-    private static boolean isMisroutedPrimaryWithDishCostCandidate(SemanticIntakeResult intake) {
-        if (intake == null || Boolean.TRUE.equals(intake.getNeedClarification())) {
-            return false;
-        }
-        if (WarehouseInventoryShortageSemanticsSupport.intakeExplicitAmountRankingLow(intake)) {
-            return false;
-        }
-        if (WarehouseInventoryShortageSemanticsSupport.intakeHasAuthoritativeInventoryRisk(intake)) {
-            return false;
-        }
-        String primary = SemanticIntakePrimaryDomain.normalize(intake.getPrimaryDomain());
-        if (!SemanticIntakePrimaryDomain.PURCHASE.equals(primary)
-                && !SemanticIntakePrimaryDomain.WAREHOUSE.equals(primary)) {
-            return false;
-        }
-        if (!candidateDomainsIncludeDishCost(intake.getCandidateDomains())) {
-            return false;
-        }
-        String routeType = intake.getRouteType();
-        return routeType != null && "EXPLICIT".equals(routeType.trim().toUpperCase(java.util.Locale.ROOT));
+        return isCrossDomainWarehouseToDishCoverFollowUp(input, intake);
     }
 
     private static SemanticIntakeResult promoteDishCostReady(
@@ -307,6 +301,8 @@ public final class SemanticIntakeDishIngredientCoverDaysSupport {
                 .clarificationQuestion(null)
                 .reason(reason)
                 .warehouseInventorySemantics(null)
+                .coverDaysEntityType(intake.getCoverDaysEntityType())
+                .coverDaysEntityName(intake.getCoverDaysEntityName())
                 .subQuestions(intake.getSubQuestions())
                 .promptId(intake.getPromptId())
                 .llmRawText(intake.getLlmRawText())
@@ -340,22 +336,7 @@ public final class SemanticIntakeDishIngredientCoverDaysSupport {
         if (WarehouseInventoryShortageSemanticsSupport.intakeExplicitAmountRankingLow(intake)) {
             return false;
         }
-        if (reasonDeclaresDishIngredientCoverDays(intake.getReason())) {
-            return true;
-        }
-        return candidateDomainsIncludeDishCost(intake.getCandidateDomains());
-    }
-
-    private static boolean candidateDomainsIncludeDishCost(List<String> candidateDomains) {
-        if (candidateDomains == null || candidateDomains.isEmpty()) {
-            return false;
-        }
-        for (String c : candidateDomains) {
-            if (SemanticIntakePrimaryDomain.DISH_COST.equals(SemanticIntakePrimaryDomain.normalize(c))) {
-                return true;
-            }
-        }
-        return false;
+        return reasonDeclaresDishIngredientCoverDays(intake.getReason());
     }
 
     private static String blank(String s) {

@@ -47,7 +47,7 @@ WHERE gb_ai_wsq_question_text IN (
 UPDATE gb_ai_workflow_suggested_question
 SET gb_ai_wsq_topic_id = 'stock_ingredient',
     gb_ai_wsq_topic_title = '库存与原料',
-    gb_ai_wsq_topic_description = '看库存核查、账面库存金额排行与用量变化',
+    gb_ai_wsq_topic_description = '看库存监督诊断、账面库存金额排行与用量变化',
     gb_ai_wsq_topic_sort = 4
 WHERE gb_ai_wsq_question_text IN (
     '库存核查情况怎么样？',
@@ -350,7 +350,7 @@ ON DUPLICATE KEY UPDATE
     gb_ai_wsq_contract_hint = VALUES(gb_ai_wsq_contract_hint);
 
 -- ---------------------------------------------------------------------------
--- 5) topic 4 — 库存与原料（STOCK_REDUCE / WAREHOUSE）
+-- 5) topic 4 — 库存与原料（WH-I 监督 / WAREHOUSE 排行 / STOCK_REDUCE）
 -- ---------------------------------------------------------------------------
 INSERT INTO gb_ai_workflow_suggested_question (
     gb_ai_wsq_workflow_id, gb_ai_wsq_workflow_code,
@@ -359,12 +359,12 @@ INSERT INTO gb_ai_workflow_suggested_question (
     gb_ai_wsq_enabled, gb_ai_wsq_status, gb_ai_wsq_scene, gb_ai_wsq_sort,
     gb_ai_wsq_intent_hint, gb_ai_wsq_contract_hint)
 SELECT w.gb_ai_workflow_id, w.gb_ai_workflow_code,
-       'stock_ingredient', '库存与原料', '看库存核查、账面库存金额排行与用量变化', 4,
+       'stock_ingredient', '库存与原料', '看库存监督诊断、账面库存金额排行与用量变化', 4,
        'bo_stock_reconciliation', '库存核查情况怎么样？',
-       1, 'COMING_SOON', 'BOTH', 1,
-       'BUSINESS_DIAGNOSIS', 'purchase.risk.stock_reduce_mismatch'
+       1, 'ACTIVE', 'BOTH', 1,
+       'WAREHOUSE_STOCK_OVERVIEW', 'warehouse.inventory_supervision.v1'
 FROM gb_ai_workflow w
-WHERE w.gb_ai_workflow_code = 'WF_STOCK_CONSUMPTION'
+WHERE w.gb_ai_workflow_code = 'WF_STOCK_ON_HAND'
   AND NOT EXISTS (
       SELECT 1 FROM gb_ai_workflow_suggested_question sq
       WHERE sq.gb_ai_wsq_question_text = '库存核查情况怎么样？'
@@ -376,7 +376,11 @@ ON DUPLICATE KEY UPDATE
     gb_ai_wsq_topic_title = VALUES(gb_ai_wsq_topic_title),
     gb_ai_wsq_topic_description = VALUES(gb_ai_wsq_topic_description),
     gb_ai_wsq_topic_sort = VALUES(gb_ai_wsq_topic_sort),
+    gb_ai_wsq_question_text = VALUES(gb_ai_wsq_question_text),
+    gb_ai_wsq_enabled = VALUES(gb_ai_wsq_enabled),
     gb_ai_wsq_status = VALUES(gb_ai_wsq_status),
+    gb_ai_wsq_scene = VALUES(gb_ai_wsq_scene),
+    gb_ai_wsq_sort = VALUES(gb_ai_wsq_sort),
     gb_ai_wsq_intent_hint = VALUES(gb_ai_wsq_intent_hint),
     gb_ai_wsq_contract_hint = VALUES(gb_ai_wsq_contract_hint);
 
@@ -387,7 +391,7 @@ INSERT INTO gb_ai_workflow_suggested_question (
     gb_ai_wsq_enabled, gb_ai_wsq_status, gb_ai_wsq_scene, gb_ai_wsq_sort,
     gb_ai_wsq_intent_hint, gb_ai_wsq_contract_hint)
 SELECT w.gb_ai_workflow_id, w.gb_ai_workflow_code,
-       'stock_ingredient', '库存与原料', '看库存核查、账面库存金额排行与用量变化', 4,
+       'stock_ingredient', '库存与原料', '看库存监督诊断、账面库存金额排行与用量变化', 4,
        'bo_stock_low_ingredient', '哪些商品账面库存金额较低？',
        1, 'ACTIVE', 'BOTH', 2,
        'WAREHOUSE_STOCK_OVERVIEW', 'warehouse.goods_amount_ranking_low'
@@ -419,7 +423,7 @@ INSERT INTO gb_ai_workflow_suggested_question (
     gb_ai_wsq_enabled, gb_ai_wsq_status, gb_ai_wsq_scene, gb_ai_wsq_sort,
     gb_ai_wsq_intent_hint, gb_ai_wsq_contract_hint)
 SELECT w.gb_ai_workflow_id, w.gb_ai_workflow_code,
-       'stock_ingredient', '库存与原料', '看库存核查、账面库存金额排行与用量变化', 4,
+       'stock_ingredient', '库存与原料', '看库存监督诊断、账面库存金额排行与用量变化', 4,
        'bo_ingredient_usage_change', '哪些原料用量变化比较明显？',
        1, 'COMING_SOON', 'BOTH', 3,
        'STOCK_REDUCE_QUERY', NULL
@@ -440,10 +444,23 @@ ON DUPLICATE KEY UPDATE
     gb_ai_wsq_intent_hint = VALUES(gb_ai_wsq_intent_hint),
     gb_ai_wsq_contract_hint = VALUES(gb_ai_wsq_contract_hint);
 
+-- 启用 WH-I 库存监督推荐问句（历史曾绑 purchase.risk / COMING_SOON）
+UPDATE gb_ai_workflow_suggested_question sq
+INNER JOIN gb_ai_workflow w ON w.gb_ai_workflow_code = 'WF_STOCK_ON_HAND'
+SET sq.gb_ai_wsq_workflow_id = w.gb_ai_workflow_id,
+    sq.gb_ai_wsq_workflow_code = w.gb_ai_workflow_code,
+    sq.gb_ai_wsq_topic_description = '看库存监督诊断、账面库存金额排行与用量变化',
+    sq.gb_ai_wsq_enabled = 1,
+    sq.gb_ai_wsq_status = 'ACTIVE',
+    sq.gb_ai_wsq_intent_hint = 'WAREHOUSE_STOCK_OVERVIEW',
+    sq.gb_ai_wsq_contract_hint = 'warehouse.inventory_supervision.v1'
+WHERE sq.gb_ai_wsq_question_code = 'bo_stock_reconciliation'
+   OR sq.gb_ai_wsq_question_text = '库存核查情况怎么样？';
+
 -- 清理历史误导文案：「库存偏少」不得绑定 WH-C 金额低排行
 UPDATE gb_ai_workflow_suggested_question
 SET gb_ai_wsq_question_text = '哪些商品账面库存金额较低？',
-    gb_ai_wsq_topic_description = '看库存核查、账面库存金额排行与用量变化',
+    gb_ai_wsq_topic_description = '看库存监督诊断、账面库存金额排行与用量变化',
     gb_ai_wsq_intent_hint = 'WAREHOUSE_STOCK_OVERVIEW',
     gb_ai_wsq_contract_hint = 'warehouse.goods_amount_ranking_low'
 WHERE gb_ai_wsq_question_text IN (

@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import com.nongxinle.service.GbDistributerFoodGoodsService;
 import com.nongxinle.service.GbDistributerFoodService;
 import com.nongxinle.service.GbMenuCategoryBusinessOverviewService;
 import com.nongxinle.service.GbMenuCategoryFoodBusinessListService;
@@ -46,6 +47,8 @@ public class GbDistributerFoodController {
 	private GbMenuCategoryFoodBusinessListService gbMenuCategoryFoodBusinessListService;
 	@Autowired
 	private GbMenuFoodBusinessDetailService gbMenuFoodBusinessDetailService;
+	@Autowired
+	private GbDistributerFoodGoodsService gbDistributerFoodGoodsService;
 
 
 
@@ -263,6 +266,14 @@ public class GbDistributerFoodController {
 			if (depFoodEntities.size() > 0) {
 				for (GbDepFoodEntity depFood : depFoodEntities) {
 					gbDepFoodService.delete(depFood.getGbDepFoodId());
+
+				}
+			}
+			// 同时删除菜品下的配料
+			List<GbDistributerFoodGoodsEntity> foodGoodsList = gbDistributerFoodGoodsService.queryFoodGoodsByFoodId(id);
+			if (foodGoodsList != null && foodGoodsList.size() > 0) {
+				for (GbDistributerFoodGoodsEntity foodGoods : foodGoodsList) {
+					gbDistributerFoodGoodsService.delete(foodGoods.getGbDistributerFoodGoodsId());
 				}
 			}
 		}

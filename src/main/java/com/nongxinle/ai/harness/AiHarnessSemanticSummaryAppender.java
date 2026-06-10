@@ -102,9 +102,13 @@ final class AiHarnessSemanticSummaryAppender {
         out.put("rewriteInheritedAnchorType", AiHarnessSummaryUtils.blankToNull(ctx.getRewriteInheritedAnchorType()));
         out.put("rewriteInheritedAnchorName", AiHarnessSummaryUtils.blankToNull(ctx.getRewriteInheritedAnchorName()));
         out.put(
+                "rewriteInheritedAnchorEntityId",
+                AiHarnessSummaryUtils.blankToNull(ctx.getRewriteInheritedAnchorEntityId()));
+        out.put(
                 "followUpRewriteClarificationQuestion",
                 AiHarnessSummaryUtils.blankToNull(ctx.getFollowUpRewriteClarificationQuestion()));
         out.put("rewriteUsedAnchors", copyRewriteUsedAnchors(ctx.getRewriteUsedAnchors()));
+        appendEntityExistenceGroundingDebug(out, ctx);
         out.put("previousTurnResultAnchorsCount", ctx.getPreviousTurnResultAnchorsCount());
         out.put("rewritePromptResultAnchorsCount", ctx.getRewritePromptResultAnchorsCount());
         out.put("querySemanticV2ScopeAction", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2ScopeAction()));
@@ -192,6 +196,8 @@ final class AiHarnessSemanticSummaryAppender {
         if (ctx == null) {
             out.put("semanticDomainRoute", null);
             out.put("domainContractSelection", null);
+            out.put("effectiveSemanticDomainRoute", null);
+            out.put("effectiveDomainContractSelection", null);
             out.put("semanticContractValidation", null);
             out.put("semanticContractStrictDecision", null);
             out.put("querySemanticV2Domain", null);
@@ -201,6 +207,10 @@ final class AiHarnessSemanticSummaryAppender {
         }
         out.put("semanticDomainRoute", mapDomainRoute(ctx.getSemanticDomainRoute()));
         out.put("domainContractSelection", mapDomainContractSelection(ctx.getDomainContractSelection()));
+        out.put("effectiveSemanticDomainRoute", mapDomainRoute(ctx.getEffectiveSemanticDomainRoute()));
+        out.put(
+                "effectiveDomainContractSelection",
+                mapDomainContractSelection(ctx.getEffectiveDomainContractSelection()));
         out.put("semanticContractValidation", mapContractValidation(ctx.getSemanticContractValidation()));
         out.put("semanticContractStrictDecision", mapStrictDecision(ctx.getSemanticContractStrictDecision()));
         out.put("querySemanticV2Domain", AiHarnessSummaryUtils.blankToNull(ctx.getQuerySemanticV2Domain()));
@@ -389,8 +399,12 @@ final class AiHarnessSemanticSummaryAppender {
         frameMap.put("structuredIntentDetailWire", AiHarnessSummaryUtils.blankToNull(frame.getStructuredIntentDetailWire()));
         if (qsp != null && qsp.getSemanticSlots() != null) {
             frameMap.put("answerPlanType", AiHarnessSummaryUtils.blankToNull(qsp.getSemanticSlots().getAnswerPlanType()));
+            frameMap.put(
+                    "expiryRiskFilter",
+                    AiHarnessSummaryUtils.blankToNull(qsp.getSemanticSlots().getExpiryRiskFilter()));
         } else {
             frameMap.put("answerPlanType", null);
+            frameMap.put("expiryRiskFilter", null);
         }
         LinkedHashMap<String, Object> valMap = new LinkedHashMap<>();
         valMap.put("validationDomain", AiHarnessSummaryUtils.blankToNull(harness.validationDomain()));
@@ -536,6 +550,9 @@ final class AiHarnessSemanticSummaryAppender {
             slots.put(
                     "requestedTargetGrossMarginRate",
                     AiHarnessSummaryUtils.blankToNull(s.getRequestedTargetGrossMarginRate()));
+            slots.put(
+                    "expiryRiskFilter",
+                    AiHarnessSummaryUtils.blankToNull(s.getExpiryRiskFilter()));
             m.put("semanticSlots", slots);
             m.put("selectedContractId", AiHarnessSummaryUtils.blankToNull(s.getSelectedContractId()));
         } else {
@@ -790,5 +807,69 @@ final class AiHarnessSemanticSummaryAppender {
             out.add(new LinkedHashMap<>(row));
         }
         return out.isEmpty() ? null : out;
+    }
+
+    private static void appendEntityExistenceGroundingDebug(
+            LinkedHashMap<String, Object> out, AiResolvedQueryContext ctx) {
+        Map<String, Object> trace = null;
+        if (ctx != null
+                && ctx.getQuerySemanticParse() != null
+                && ctx.getQuerySemanticParse().getMultiTurnInheritanceTrace() != null) {
+            trace = ctx.getQuerySemanticParse().getMultiTurnInheritanceTrace();
+        }
+        putTraceField(out, "entityExistenceGroundingAtExecution", trace, "entityExistenceGrounding");
+        putTraceField(out, "rewriteAnchorEntityIdInput", trace, "rewriteAnchorEntityIdInput");
+        putTraceField(out, "rewriteUsedAnchorsInput", trace, "rewriteUsedAnchorsInput");
+        putTraceField(out, "canonicalIdPreferenceMatched", trace, "canonicalIdPreferenceMatched");
+        putTraceField(out, "canonicalIdProbeAttempted", trace, "canonicalIdProbeAttempted");
+        putTraceField(out, "canonicalIdProbeResult", trace, "canonicalIdProbeResult");
+        putTraceField(out, "fallbackToNameProbeReason", trace, "fallbackToNameProbeReason");
+        putTraceField(out, "entityGroundingLlmEntityTypeAtProbe", trace, "entityGroundingLlmEntityTypeAtProbe");
+        putTraceField(out, "entityGroundingLlmEntityType", trace, "entityGroundingLlmEntityType");
+        putTraceField(out, "entityGroundingDecision", trace, "entityGroundingDecision");
+        putTraceField(out, "goodsExistence", trace, "goodsExistence");
+    }
+
+    private static void putTraceField(
+            LinkedHashMap<String, Object> out,
+            String harnessKey,
+            Map<String, Object> trace,
+            String traceKey) {
+        if (trace == null || !trace.containsKey(traceKey)) {
+            out.put(harnessKey, null);
+            return;
+        }
+        Object value = trace.get(traceKey);
+        if (value instanceof Map<?, ?> map) {
+            out.put(harnessKey, copyStringKeyMap(map));
+            return;
+        }
+        if (value instanceof List<?> list) {
+            List<Object> copy = new ArrayList<>();
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> map) {
+                    copy.add(copyStringKeyMap(map));
+                } else {
+                    copy.add(item);
+                }
+            }
+            out.put(harnessKey, copy.isEmpty() ? null : copy);
+            return;
+        }
+        out.put(harnessKey, value);
+    }
+
+    private static Map<String, Object> copyStringKeyMap(Map<?, ?> map) {
+        if (map == null || map.isEmpty()) {
+            return null;
+        }
+        LinkedHashMap<String, Object> copy = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (entry.getKey() == null) {
+                continue;
+            }
+            copy.put(String.valueOf(entry.getKey()), entry.getValue());
+        }
+        return copy.isEmpty() ? null : copy;
     }
 }

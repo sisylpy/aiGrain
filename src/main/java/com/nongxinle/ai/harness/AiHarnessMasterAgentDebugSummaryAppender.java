@@ -127,6 +127,7 @@ final class AiHarnessMasterAgentDebugSummaryAppender {
         out.put("compositeGateProductionEnabledEffective", null);
         out.put("masterBusinessAgentDebug", null);
         AiHarnessCompositeSummaryAppender.putCompositeHarnessExecutionFieldDefaults(out);
+        com.nongxinle.ai.identity.BusinessEntityIdentityHarnessDebugSupport.putHarnessIdentityDebugDefaults(out);
     }
 
     static void mergeMasterBusinessAgentDebug(LinkedHashMap<String, Object> out, AiRunState state) {
@@ -167,6 +168,14 @@ final class AiHarnessMasterAgentDebugSummaryAppender {
                 "purchaseToolExecutedByMasterPath",
                 "purchaseRequestResolutionDebug",
         };
+        String[] purchaseIdentityKeys =
+                com.nongxinle.ai.identity.BusinessEntityIdentityHarnessDebugSupport
+                        .flatHarnessIdentityDebugKeys();
+        String[] purchaseKeysWithIdentity = concatKeys(purchaseKeys, purchaseIdentityKeys, new String[] {
+                "purchaseGoodsBusinessAnalysisIdentityDebug",
+                "purchaseGoodsBusinessAnalysisFailureReason",
+        });
+        purchaseKeys = purchaseKeysWithIdentity;
         String[] stockReduceKeys = {
                 "stockReduceMasterAgentEnabled",
                 "stockReduceMasterAgentUsed",
@@ -240,6 +249,8 @@ final class AiHarnessMasterAgentDebugSummaryAppender {
             out.put("masterBusinessAgentDebug", null);
             fillSupplierAnalysisHarnessFieldsFromMaster(out, state);
             fillWarehouseStockHarnessFieldsFromMaster(out, state);
+            com.nongxinle.ai.identity.BusinessEntityIdentityHarnessDebugSupport.mirrorIdentityDebugToHarnessSummary(
+                    out, state);
             return;
         }
         Object boNest = md.get("businessOverviewMultiMaster");
@@ -276,6 +287,8 @@ final class AiHarnessMasterAgentDebugSummaryAppender {
         }
         fillSupplierAnalysisHarnessFieldsFromMaster(out, state);
         fillWarehouseStockHarnessFieldsFromMaster(out, state);
+        com.nongxinle.ai.identity.BusinessEntityIdentityHarnessDebugSupport.mirrorIdentityDebugToHarnessSummary(
+                out, state);
     }
 
     static void fillFlatBusinessOverviewOrchestrationFieldsFromNestedMultiMaster(LinkedHashMap<String, Object> out) {
@@ -489,5 +502,29 @@ final class AiHarnessMasterAgentDebugSummaryAppender {
         } else {
             out.put("dishIngredientCostBreakdownToolSuccess", null);
         }
+    }
+
+    private static String[] concatKeys(String[] base, String[] extra, String[] tail) {
+        int n = (base == null ? 0 : base.length)
+                + (extra == null ? 0 : extra.length)
+                + (tail == null ? 0 : tail.length);
+        String[] out = new String[n];
+        int i = 0;
+        if (base != null) {
+            for (String k : base) {
+                out[i++] = k;
+            }
+        }
+        if (extra != null) {
+            for (String k : extra) {
+                out[i++] = k;
+            }
+        }
+        if (tail != null) {
+            for (String k : tail) {
+                out[i++] = k;
+            }
+        }
+        return out;
     }
 }

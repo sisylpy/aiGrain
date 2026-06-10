@@ -1,5 +1,6 @@
 package com.nongxinle.ai.resolver;
 
+import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
@@ -9,6 +10,7 @@ import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import com.nongxinle.ai.semantic.SemanticParseClarificationPolicy;
 import com.nongxinle.ai.semantic.SemanticTimeContractCheck;
 import com.nongxinle.ai.semantic.TimeLayerContextSignals;
+import com.nongxinle.ai.semantic.contract.SemanticContractViolationCode;
 import com.nongxinle.ai.semantic.inheritance.SemanticSlotInheritanceApplier;
 import com.nongxinle.ai.semantic.inheritance.SemanticSlotInheritanceDecision;
 import com.nongxinle.ai.semantic.inheritance.SemanticSlotInheritancePolicy;
@@ -18,11 +20,12 @@ import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.contract.SemanticContractClarificationQuestionFactory;
 import com.nongxinle.ai.semantic.dimension.BareRankingDimensionSwitchPlan;
 import com.nongxinle.ai.semantic.dimension.BareRankingDimensionSwitchSupport;
-import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
-import com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport;
+import com.nongxinle.ai.semantic.intake.*;
+import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 import com.nongxinle.ai.semantic.frame.CurrentSemanticFrame;
 import com.nongxinle.ai.semantic.frame.PurchaseCurrentSemanticFrameValidator;
 import com.nongxinle.ai.semantic.frame.SemanticFrameValidationResult;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -49,6 +52,7 @@ import java.util.Map;
  * </ul>
  */
 @Component
+@RequiredArgsConstructor
 public class SemanticAdoptionPipeline {
 
     @Value("${ai.agent.querySemanticLlm.minConfidence:0.55}")
@@ -62,11 +66,16 @@ public class SemanticAdoptionPipeline {
             AiResolvedTimeWindow explicitTentative,
             boolean followUpRewriteApplied,
             DomainContractSelectionResult contractSelection,
+            SemanticDomainRouteResult intakeSemanticDomainRoute,
             SemanticIntakeResult semanticIntake,
             BareRankingDimensionSwitchPlan bareRankingDimensionSwitchPlan,
             String rewriteInheritedAnchorType,
             String rewriteInheritedAnchorName,
-            TimeLayerContextSignals timeLayerContextSignals) {}
+            String rewriteInheritedAnchorEntityId,
+            List<Map<String, String>> rewriteUsedAnchors,
+            TimeLayerContextSignals timeLayerContextSignals,
+            Long distributerId,
+            AiResolvedOrgScope orgScope) {}
 
     public SemanticAdoptionAttempt tryAdopt(Request request) {
         if (request == null) {
@@ -80,11 +89,16 @@ public class SemanticAdoptionPipeline {
                 request.explicitTentative(),
                 request.followUpRewriteApplied(),
                 request.contractSelection(),
+                request.intakeSemanticDomainRoute(),
                 request.semanticIntake(),
                 request.bareRankingDimensionSwitchPlan(),
                 request.rewriteInheritedAnchorType(),
                 request.rewriteInheritedAnchorName(),
-                request.timeLayerContextSignals());
+                request.rewriteInheritedAnchorEntityId(),
+                request.rewriteUsedAnchors(),
+                request.timeLayerContextSignals(),
+                request.distributerId(),
+                request.orgScope());
     }
 
     SemanticAdoptionAttempt tryAdopt(
@@ -95,14 +109,21 @@ public class SemanticAdoptionPipeline {
             AiResolvedTimeWindow explicitTentative,
             boolean followUpRewriteApplied,
             DomainContractSelectionResult contractSelection,
+            SemanticDomainRouteResult intakeSemanticDomainRoute,
             SemanticIntakeResult semanticIntake,
             BareRankingDimensionSwitchPlan bareRankingDimensionSwitchPlan,
             String rewriteInheritedAnchorType,
             String rewriteInheritedAnchorName,
-            TimeLayerContextSignals timeLayerContextSignals) {
+            String rewriteInheritedAnchorEntityId,
+            List<Map<String, String>> rewriteUsedAnchors,
+            TimeLayerContextSignals timeLayerContextSignals,
+            Long distributerId,
+            AiResolvedOrgScope orgScope) {
         if (sem == null || SemanticParseClarificationPolicy.needSemanticParseClarification(sem, querySemanticMinConfidence)) {
             return null;
         }
+
+        DomainContractSelectionResult effectiveContractSelection = contractSelection;
 
         SemanticSlotInheritanceDecision inheritanceDecision =
                 SemanticSlotInheritancePolicy.decide(
@@ -115,12 +136,16 @@ public class SemanticAdoptionPipeline {
                                 .semanticIntake(semanticIntake)
                                 .build());
         sem = SemanticSlotInheritanceApplier.apply(sem, previousTurn, inheritanceDecision);
+        TimeLayerContextSignals effectiveTimeLayerSignals =
+                TimeLayerContextSignals.from(semanticIntake, inheritanceDecision);
+
+        SemanticIntakeResult canonicalIntake = semanticIntake;
 
         DomainContractSelectionResult completionSelection =
                 BareRankingDimensionSwitchSupport.contractSelectionForPlan(
                         bareRankingDimensionSwitchPlan, contractSelection);
+        effectiveContractSelection = completionSelection;
 
-        sem = AiQuerySemanticSlotMerge.reconcileDishSalesSingleDishContractSovereignty(sem);
         sem = AiQuerySemanticSlotMerge.reconcileExplicitCurrentTurnDishAnchor(sem, previousTurn);
 
         AiQuerySemanticParseResult rawForDebug = sem;
@@ -135,6 +160,7 @@ public class SemanticAdoptionPipeline {
                                                 : null)
                                 .contractSelection(completionSelectionResolved)
                                 .previousTurn(previousTurn)
+                                .anchorDate(today)
                                 .rewriteInheritedAnchorType(rewriteInheritedAnchorType)
                                 .rewriteInheritedAnchorName(rewriteInheritedAnchorName)
                                 .build());
@@ -153,7 +179,10 @@ public class SemanticAdoptionPipeline {
                 question = "当前问题无法匹配已支持的能力，请换一种说法或补充信息。";
             }
             sem = sem.toBuilder().needClarification(true).clarificationQuestion(question).build();
-            return new SemanticAdoptionAttempt(
+            return outcome(
+                    intakeSemanticDomainRoute,
+                    effectiveContractSelection,
+                    canonicalIntake,
                     preserveV2RepairTrace(rawForDebug, sem),
                     null,
                     null,
@@ -163,25 +192,29 @@ public class SemanticAdoptionPipeline {
                     completion.getViolationCode());
         }
         sem = completion.getCompletedParse();
-        sem = WarehouseInventoryShortageSemanticsSupport.applyRiskClarificationToParse(sem, semanticIntake);
+        sem = WarehouseInventoryShortageSemanticsSupport.applyRiskClarificationToParse(sem, canonicalIntake);
         if (Boolean.TRUE.equals(sem.getNeedClarification())
                 && !com.nongxinle.ai.semantic.intake.SemanticIntakeDishIngredientCoverDaysSupport
-                        .mustNotApplyWarehouseInventoryShortagePipeline(semanticIntake, sem)
+                        .mustNotApplyWarehouseInventoryShortagePipeline(canonicalIntake, sem)
                 && WarehouseInventoryShortageSemanticsSupport.intakeSignalsInventoryShortageSemantics(
-                        semanticIntake)
+                        canonicalIntake)
                 && !WarehouseInventoryShortageSemanticsSupport.CONTRACT_INVENTORY_RISK_LIST.equals(
                         SemanticContractCompletionEngine.extractSelectedContractId(sem))) {
             String riskQuestion =
                     WarehouseInventoryShortageSemanticsSupport.resolveClarificationQuestion(
-                            semanticIntake);
+                            canonicalIntake);
             if (StringUtils.hasText(riskQuestion)) {
-                return new SemanticAdoptionAttempt(
+                return outcome(
+                        intakeSemanticDomainRoute,
+                        effectiveContractSelection,
+                        canonicalIntake,
                         preserveV2RepairTrace(rawForDebug, sem),
                         null,
                         null,
                         null,
                         "warehouse_inventory_risk_clarification",
-                        riskQuestion);
+                        riskQuestion,
+                        null);
             }
         }
         if (rawForDebug != sem) {
@@ -206,6 +239,41 @@ public class SemanticAdoptionPipeline {
         boolean planActive =
                 bareRankingDimensionSwitchPlan != null && bareRankingDimensionSwitchPlan.isActive();
         boolean contractLocked = SemanticContractCompletionEngine.isContractLockedParse(sem);
+        if (contractLocked && isContractLockedPurchaseDomain(sem, effectiveContractSelection)) {
+            CurrentSemanticFrame frame = CurrentSemanticFrame.fromParseResult(sem);
+            SemanticFrameValidationResult frameVal =
+                    PurchaseCurrentSemanticFrameValidator.validate(
+                            frame,
+                            sem,
+                            previousTurn,
+                            normalized,
+                            followUpRewriteApplied,
+                            effectiveContractSelection,
+                            orgScope);
+            if (frameVal.needSemanticClarification()) {
+                sem.setNeedClarification(true);
+                String frameQuestion = frameVal.semanticClarificationQuestion();
+                if (StringUtils.hasText(frameQuestion)) {
+                    sem.setClarificationQuestion(frameQuestion);
+                }
+                List<String> frameCodes = frameVal.violationCodes();
+                String frameRejectReason =
+                        frameCodes != null && !frameCodes.isEmpty()
+                                ? String.join(",", frameCodes)
+                                : "purchase_capability_boundary";
+                return outcome(
+                        intakeSemanticDomainRoute,
+                        effectiveContractSelection,
+                        canonicalIntake,
+                        preserveV2RepairTrace(rawForDebug, sem),
+                        null,
+                        null,
+                        null,
+                        frameRejectReason,
+                        frameQuestion,
+                        null);
+            }
+        }
         boolean purchaseFrameAdoption =
                 !planActive
                         && !contractLocked
@@ -226,7 +294,7 @@ public class SemanticAdoptionPipeline {
             CurrentSemanticFrame frame = CurrentSemanticFrame.buildFrame(sem);
             SemanticFrameValidationResult frameVal =
                     PurchaseCurrentSemanticFrameValidator.validate(
-                            frame, sem, previousTurn, normalized, followUpRewriteApplied, contractSelection);
+                            frame, sem, previousTurn, normalized, followUpRewriteApplied, contractSelection, orgScope);
             if (frameVal.needSemanticClarification()) {
                 sem.setNeedClarification(true);
                 String frameQuestion = frameVal.semanticClarificationQuestion();
@@ -238,8 +306,17 @@ public class SemanticAdoptionPipeline {
                         frameCodes != null && !frameCodes.isEmpty()
                                 ? String.join(",", frameCodes)
                                 : "frame_validation";
-                return new SemanticAdoptionAttempt(
-                        preserveV2RepairTrace(rawForDebug, sem), null, null, null, frameRejectReason, frameQuestion);
+                return outcome(
+                        intakeSemanticDomainRoute,
+                        effectiveContractSelection,
+                        canonicalIntake,
+                        preserveV2RepairTrace(rawForDebug, sem),
+                        null,
+                        null,
+                        null,
+                        frameRejectReason,
+                        frameQuestion,
+                        null);
             }
             sem = AiQuerySemanticSlotMerge.reconcileSemanticSlotsViaCapabilityMatrices(sem);
             sem.setPurchaseSemanticFramePrimaryMerge(true);
@@ -251,7 +328,7 @@ public class SemanticAdoptionPipeline {
                             normalized,
                             followUpRewriteApplied,
                             contractSelection,
-                            semanticIntake);
+                            canonicalIntake);
             if (frameVal.needSemanticClarification()) {
                 sem.setNeedClarification(true);
                 String frameQuestion = frameVal.semanticClarificationQuestion();
@@ -263,8 +340,17 @@ public class SemanticAdoptionPipeline {
                         frameCodes != null && !frameCodes.isEmpty()
                                 ? String.join(",", frameCodes)
                                 : "basic_domain_contract_entry_validation";
-                return new SemanticAdoptionAttempt(
-                        preserveV2RepairTrace(rawForDebug, sem), null, null, null, frameRejectReason, frameQuestion);
+                return outcome(
+                        intakeSemanticDomainRoute,
+                        effectiveContractSelection,
+                        canonicalIntake,
+                        preserveV2RepairTrace(rawForDebug, sem),
+                        null,
+                        null,
+                        null,
+                        frameRejectReason,
+                        frameQuestion,
+                        null);
             }
         } else if (!contractLocked && !planActive) {
             sem = AiQuerySemanticSlotMerge.reconcileSemanticSlotsViaCapabilityMatrices(sem);
@@ -282,12 +368,16 @@ public class SemanticAdoptionPipeline {
                             baseline, sem, querySemanticMinConfidence, normalized, previousTurn);
         }
         if (!StringUtils.hasText(merged.getPathCode())) {
-            return new SemanticAdoptionAttempt(
+            return outcome(
+                    intakeSemanticDomainRoute,
+                    effectiveContractSelection,
+                    canonicalIntake,
                     preserveV2RepairTrace(rawForDebug, sem),
                     null,
                     null,
                     null,
                     "v2_no_routable_path",
+                    null,
                     null);
         }
         AiQuerySemanticParseResult.SemanticSlotsPart alignedSlots =
@@ -307,11 +397,46 @@ public class SemanticAdoptionPipeline {
                         previousTurn);
         sem =
                 SemanticTimeContractCheck.reconcileTimePartForContract(
-                        sem, previousTurn, today, timeLayerContextSignals);
+                        sem, previousTurn, today, effectiveTimeLayerSignals);
         SemanticTimeContractCheck.Result timeContract =
                 SemanticTimeContractCheck.check(sem, previousTurn, today);
+        return outcome(
+                intakeSemanticDomainRoute,
+                effectiveContractSelection,
+                canonicalIntake,
+                preserveV2RepairTrace(rawForDebug, sem),
+                merged,
+                tentative,
+                timeContract,
+                null,
+                null,
+                null);
+    }
+
+    private static SemanticAdoptionAttempt outcome(
+            SemanticDomainRouteResult intakeSemanticDomainRoute,
+            DomainContractSelectionResult effectiveContractSelection,
+            SemanticIntakeResult intakeForRoute,
+            AiQuerySemanticParseResult semantic,
+            AiResolvedQueryIntent mergedIntent,
+            AiResolvedTimeWindow tentativeTime,
+            SemanticTimeContractCheck.Result timeContract,
+            String rejectionReason,
+            String semanticClarificationQuestion,
+            SemanticContractViolationCode contractViolationCode) {
+        SemanticDomainRouteResult effectiveRoute =
+                SemanticAdoptionEffectiveSupport.routeForDomainSwitch(
+                        intakeSemanticDomainRoute, effectiveContractSelection, intakeForRoute);
         return new SemanticAdoptionAttempt(
-                preserveV2RepairTrace(rawForDebug, sem), merged, tentative, timeContract, null, null);
+                semantic,
+                mergedIntent,
+                tentativeTime,
+                timeContract,
+                rejectionReason,
+                semanticClarificationQuestion,
+                contractViolationCode,
+                effectiveRoute,
+                effectiveContractSelection);
     }
 
     private static AiQuerySemanticParseResult preserveV2RepairTrace(
@@ -327,5 +452,23 @@ public class SemanticAdoptionPipeline {
                 .querySemanticV2RepairSuccess(anchor.getQuerySemanticV2RepairSuccess())
                 .querySemanticV2RepairReason(anchor.getQuerySemanticV2RepairReason())
                 .build();
+    }
+
+    private static Integer resolveDisId(Long distributerId) {
+        if (distributerId == null || distributerId <= 0) {
+            return null;
+        }
+        return distributerId.intValue();
+    }
+
+    private static boolean isContractLockedPurchaseDomain(
+            AiQuerySemanticParseResult sem, DomainContractSelectionResult contractSelection) {
+        if (contractSelection != null && StringUtils.hasText(contractSelection.getSelectedDomain())) {
+            if ("PURCHASE".equalsIgnoreCase(contractSelection.getSelectedDomain().trim())) {
+                return true;
+            }
+        }
+        String contractId = SemanticContractCompletionEngine.extractSelectedContractId(sem);
+        return StringUtils.hasText(contractId) && contractId.trim().startsWith("purchase.");
     }
 }

@@ -8,7 +8,7 @@ import java.util.Map;
 
 /** 配料可支撑天数：日均销量/用量统计基线（与库存快照分离）。 */
 @Value
-@Builder
+@Builder(toBuilder = true)
 public class DishIngredientCoverSalesBaseline {
 
     public static final int DEFAULT_BASELINE_DAYS = 7;

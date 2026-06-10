@@ -1,8 +1,13 @@
 # Contract-Entry Validation — P2 阶段收口
 
-> **阶段**：D-CONTRACT-ENTRY-VALIDATION-P2  
-> **日期**：2026-05  
-> **范围**：语义主链 contract-entry 落地状态盘点；**不含** Tool / SQL / AnswerPlan / Composer 改动。  
+> **状态：Current Baseline（语义合同主链）**
+> 本文虽为 P2 阶段收口，但其中 `SemanticIntake → DomainContractSelector → V2 selectedContractId → SemanticContractCompletionEngine.complete() → contractEntryValidated → Tool / AnswerPlan` 的合同主链和红线仍为当前修改基线。若早期 observe-only / strict-mode 规划文档与本文冲突，以本文、`.cursor/rules/harness-java-boundary.md` 与当前代码事实为准。
+>
+> **Current 补充**：V2 之后 Java 没有重新选择业务合同的权力。Completion 成功后，任何 support 都不得修改 `selectedContractId`、canonical wire、`answerPlanType` 或 `selectedTools`；后置冲突只能澄清、失败或 known gap。
+
+> **阶段**：D-CONTRACT-ENTRY-VALIDATION-P2
+> **日期**：2026-05
+> **范围**：语义主链 contract-entry 落地状态盘点；**不含** Tool / SQL / AnswerPlan / Composer 改动。
 > **关联**：[`harness-composer-architecture.md`](./harness-composer-architecture.md) §1b、[`semantic-contract-strict-mode-plan.md`](./semantic-contract-strict-mode-plan.md)
 
 ---

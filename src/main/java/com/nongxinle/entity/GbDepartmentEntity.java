@@ -161,6 +161,9 @@ public class GbDepartmentEntity implements Serializable {
     private GbDistributerUserEntity gbDistributerUserEntity;
 
     @TableField(exist = false)
+    private Integer cankaoDepId;
+
+    @TableField(exist = false)
     private GbDepartmentEntity fatherGbDepartmentEntity;
 
     @TableField(exist = false)
@@ -193,6 +196,9 @@ public class GbDepartmentEntity implements Serializable {
 
     @TableField(exist = false)
     private String depWasteGoodsTotalString;
+
+    @TableField(exist = false)
+    private String depEmployeeMealGoodsTotalString;
 
     @TableField(exist = false)
     private String depCostGoodsTotalString;

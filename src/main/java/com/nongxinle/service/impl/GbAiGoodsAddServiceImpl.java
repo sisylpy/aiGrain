@@ -539,7 +539,7 @@ public class GbAiGoodsAddServiceImpl implements GbAiGoodsAddService {
                 logPreview(gName, 40), logPreview(gSpec, 20), detail != null ? detail.length() : 0, depFather);
         GbDistributerGoodsEntity g = gbDistributerGoodsService.saveLinshiGoodsGb(
                 null, gName, gSpec, detail,
-                snap.distributerId(), depFather, snap.depId(), depFather);
+                snap.distributerId(), depFather, snap.depId(), depFather, null, null, null);
         if (g.getGbDistributerGoodsId() != null) {
             GbDistributerGoodsEntity reloaded = gbDistributerGoodsService.getById(g.getGbDistributerGoodsId());
             if (reloaded != null) {

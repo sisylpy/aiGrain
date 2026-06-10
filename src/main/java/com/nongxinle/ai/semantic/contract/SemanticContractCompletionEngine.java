@@ -4,7 +4,10 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
+import com.nongxinle.ai.semantic.InventoryCoverDaysContractSupport;
 import com.nongxinle.ai.semantic.SemanticParserAllowedOutputContract;
+import com.nongxinle.ai.semantic.frame.ContractLockedSemanticFrame;
+import com.nongxinle.ai.semantic.intake.grounding.CoverDaysSalesBaselineTimeSupport;
 import lombok.Builder;
 import lombok.Value;
 import org.springframework.util.StringUtils;
@@ -15,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalDate;
 
 /**
  * P4-J2：根据 Parser 输出的 {@code selectedContractId} 从 ACTIVE {@link SemanticCapabilityContract}
@@ -38,6 +42,7 @@ public final class SemanticContractCompletionEngine {
         String selectedDomain;
         DomainContractSelectionResult contractSelection;
         AiConversationTurnMemory previousTurn;
+        LocalDate anchorDate;
         String rewriteInheritedAnchorType;
         String rewriteInheritedAnchorName;
     }
@@ -119,6 +124,17 @@ public final class SemanticContractCompletionEngine {
                             "contractDomain", contract.getDomain()));
         }
 
+        if (InventoryCoverDaysContractSupport.isInventoryCoverDaysContractId(contract.getContractId())) {
+            raw = CoverDaysSalesBaselineTimeSupport.normalizeDraftBeforeCompletion(raw, request.getAnchorDate());
+            if (Boolean.TRUE.equals(raw.getNeedClarification())) {
+                return violation(
+                        raw,
+                        SemanticContractViolationCode.MODEL_CONTRACT_VIOLATION,
+                        "cover_days_dual_time_protocol_error",
+                        Map.of("selectedContractId", contract.getContractId()));
+            }
+        }
+
         // 先按 ACTIVE entry 补齐 contract-owned wire/operation/metric 等，再校验残留冲突（避免
         // 「single_dish + 上一轮排行 wire」在 apply 前误判 UNSUPPORTED 并保留 ranking wire）。
         AiQuerySemanticParseResult completed =
@@ -128,17 +144,18 @@ public final class SemanticContractCompletionEngine {
                         request.getPreviousTurn(),
                         request.getRewriteInheritedAnchorType(),
                         request.getRewriteInheritedAnchorName());
+        AiQuerySemanticParseResult normalizedCompleted =
+                com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer.normalize(
+                        completed);
 
         com.nongxinle.ai.semantic.frame.CurrentSemanticFrame completedFrame =
-                com.nongxinle.ai.semantic.frame.CurrentSemanticFrame.buildFrame(
-                        com.nongxinle.ai.semantic.contract.canonicalizer.ContractFrameLightNormalizer.normalize(
-                                completed));
+                com.nongxinle.ai.semantic.frame.CurrentSemanticFrame.buildFrame(normalizedCompleted);
         List<String> slotMismatches =
                 com.nongxinle.ai.semantic.frame.ContractEntrySemanticFrameValidationSupport
-                        .slotMismatchesAgainstContract(completedFrame, completed, contract);
+                        .slotMismatchesAgainstContract(completedFrame, normalizedCompleted, contract);
         if (!slotMismatches.isEmpty()) {
             return violation(
-                    completed,
+                    normalizedCompleted,
                     SemanticContractViolationCode.UNSUPPORTED_CONTRACT,
                     "selectedContractId_slot_mismatch:" + String.join(",", slotMismatches),
                     Map.of(
@@ -152,7 +169,7 @@ public final class SemanticContractCompletionEngine {
 
         EffectiveSemanticContractFrame anchorFrame =
                 EffectiveSemanticContractFrame.of(
-                        completed,
+                        normalizedCompleted,
                         domain,
                         request.getPreviousTurn(),
                         request.getRewriteInheritedAnchorType(),
@@ -161,11 +178,19 @@ public final class SemanticContractCompletionEngine {
                 && anchorFrame != null
                 && !anchorFrame.hasAnchorEvidence(contract.getAnchorType())) {
             return violation(
-                    completed,
+                    normalizedCompleted,
                     SemanticContractViolationCode.ANCHOR_CONTRACT_MISMATCH,
                     "requiresAnchor:" + contract.getAnchorType(),
                     Map.of("selectedContractId", contract.getContractId()));
         }
+
+        ContractLockedSemanticFrame lockedFrame =
+                ContractLockedSemanticFrame.fromDraftAndActiveContract(
+                        normalizedCompleted.getSemanticDraft(), contract);
+        normalizedCompleted =
+                normalizedCompleted.toBuilder()
+                        .contractLockedFrame(lockedFrame)
+                        .build();
 
         Map<String, Object> trace = new LinkedHashMap<>();
         trace.put(TRACE_CONTRACT_ENTRY_VALIDATED, true);
@@ -174,7 +199,7 @@ public final class SemanticContractCompletionEngine {
         trace.put("domain", domain);
         return Result.builder()
                 .rawParse(raw)
-                .completedParse(completed)
+                .completedParse(normalizedCompleted)
                 .violation(false)
                 .completionTrace(trace)
                 .build();
@@ -285,10 +310,12 @@ public final class SemanticContractCompletionEngine {
                         .mentionedGoodsName(mentionedGoodsName)
                         .requestedTargetGrossMarginRate(
                                 coalesceRequestedTargetGrossMarginRate(prev, raw))
+                        .expiryRiskFilter(blank(prev.getExpiryRiskFilter()))
                         .build();
 
         AiQuerySemanticParseResult.OrchestrationDecisionCandidatePart orch =
-                mergeSelectedTools(raw.getOrchestrationDecisionCandidate(), contract.getSelectedTools());
+                applyContractSelectedTools(
+                        raw.getOrchestrationDecisionCandidate(), contract.getSelectedTools());
 
         Map<String, Object> trace = new LinkedHashMap<>();
         trace.put(TRACE_CONTRACT_ENTRY_VALIDATED, true);
@@ -358,27 +385,23 @@ public final class SemanticContractCompletionEngine {
         return null;
     }
 
-    private static AiQuerySemanticParseResult.OrchestrationDecisionCandidatePart mergeSelectedTools(
+    private static AiQuerySemanticParseResult.OrchestrationDecisionCandidatePart applyContractSelectedTools(
             AiQuerySemanticParseResult.OrchestrationDecisionCandidatePart orch,
             List<String> contractTools) {
-        if (contractTools == null || contractTools.isEmpty()) {
-            return orch;
+        List<String> ownedTools = new ArrayList<>();
+        if (contractTools != null) {
+            for (String t : contractTools) {
+                if (StringUtils.hasText(t)) {
+                    ownedTools.add(t.trim());
+                }
+            }
         }
         if (orch == null) {
             return AiQuerySemanticParseResult.OrchestrationDecisionCandidatePart.builder()
-                    .selectedTools(new ArrayList<>(contractTools))
+                    .selectedTools(ownedTools)
                     .build();
         }
-        List<String> merged = new ArrayList<>();
-        if (orch.getSelectedTools() != null) {
-            merged.addAll(orch.getSelectedTools());
-        }
-        for (String t : contractTools) {
-            if (StringUtils.hasText(t) && !merged.contains(t.trim())) {
-                merged.add(t.trim());
-            }
-        }
-        return orch.toBuilder().selectedTools(merged).build();
+        return orch.toBuilder().selectedTools(ownedTools).build();
     }
 
     private static Result passThrough(AiQuerySemanticParseResult raw, String reason) {
@@ -424,6 +447,7 @@ public final class SemanticContractCompletionEngine {
                         .mentionedDishName(s.getMentionedDishName())
                         .mentionedGoodsName(s.getMentionedGoodsName())
                         .requestedTargetGrossMarginRate(s.getRequestedTargetGrossMarginRate())
+                        .expiryRiskFilter(s.getExpiryRiskFilter())
                         .build();
         return raw.toBuilder()
                 .semanticSlots(cleared)

@@ -117,6 +117,26 @@ public final class SemanticContractFamilySupport {
                 previousTurn.getLastStructuredIntentDetail());
     }
 
+    /** Intake 侧上一轮 stable ACTIVE contractId；无 previousTurn 或无 contractId 时返回 null。 */
+    public static String resolvePreviousStableContractIdFromIntakeInput(
+            com.nongxinle.ai.semantic.intake.SemanticIntakeInput input) {
+        if (input == null || !input.isHasPreviousTurn()) {
+            return null;
+        }
+        if (input.getPreviousSemanticSlots() != null) {
+            String contractId = trim(input.getPreviousSemanticSlots().getSelectedContractId());
+            if (StringUtils.hasText(contractId)) {
+                return contractId;
+            }
+        }
+        return null;
+    }
+
+    public static boolean intakeHasPreviousStableContract(
+            com.nongxinle.ai.semantic.intake.SemanticIntakeInput input) {
+        return StringUtils.hasText(resolvePreviousStableContractIdFromIntakeInput(input));
+    }
+
     private static String trim(String s) {
         return StringUtils.hasText(s) ? s.trim() : null;
     }

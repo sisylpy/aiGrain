@@ -32,6 +32,8 @@ public final class AiQuerySemanticLexicon {
             AiSemanticWireConstants.STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING;
     public static final String STRUCTURED_PURCHASE_GOODS_COUNT_RANKING =
             AiSemanticWireConstants.STRUCTURED_PURCHASE_GOODS_COUNT_RANKING;
+    public static final String STRUCTURED_PURCHASE_GOODS_QUANTITY_RANKING =
+            AiSemanticWireConstants.STRUCTURED_PURCHASE_GOODS_QUANTITY_RANKING;
     public static final String STRUCTURED_PURCHASE_GOODS_ANOMALY =
             AiSemanticWireConstants.STRUCTURED_PURCHASE_GOODS_ANOMALY;
     public static final String STRUCTURED_PURCHASE_PRICE_ANOMALY =
@@ -42,6 +44,8 @@ public final class AiQuerySemanticLexicon {
             AiSemanticWireConstants.STRUCTURED_PURCHASE_QUANTITY_ANOMALY;
     public static final String STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE =
             AiSemanticWireConstants.STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE;
+    public static final String STRUCTURED_PURCHASE_GOODS_BUSINESS_ANALYSIS =
+            AiSemanticWireConstants.STRUCTURED_PURCHASE_GOODS_BUSINESS_ANALYSIS;
     public static final String STRUCTURED_PURCHASE_STOCK_REDUCE_MISMATCH =
             AiSemanticWireConstants.STRUCTURED_PURCHASE_STOCK_REDUCE_MISMATCH;
     public static final String STRUCTURED_PURCHASE_SLOW_MOVING_RISK =
@@ -229,8 +233,14 @@ public final class AiQuerySemanticLexicon {
             AiSemanticWireConstants.STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW;
     public static final String STRUCTURED_GOODS_SUPPORTED_DISH_COVER =
             AiSemanticWireConstants.STRUCTURED_GOODS_SUPPORTED_DISH_COVER;
+    public static final String STRUCTURED_GOODS_STOCK_BATCH_DETAIL =
+            AiSemanticWireConstants.STRUCTURED_GOODS_STOCK_BATCH_DETAIL;
+    public static final String STRUCTURED_GOODS_ANCHOR_INVENTORY_BUNDLE =
+            AiSemanticWireConstants.STRUCTURED_GOODS_ANCHOR_INVENTORY_BUNDLE;
     public static final String STRUCTURED_WAREHOUSE_NEAR_EXPIRY =
             AiSemanticWireConstants.STRUCTURED_WAREHOUSE_NEAR_EXPIRY;
+    public static final String STRUCTURED_WAREHOUSE_INVENTORY_SUPERVISION =
+            AiSemanticWireConstants.STRUCTURED_WAREHOUSE_INVENTORY_SUPERVISION;
 
     public static boolean isPurchaseOverviewDomainCanonicalWire(String canonicalWire) {
         return AiSemanticWireConstants.isPurchaseOverviewDomainCanonicalWire(canonicalWire);
@@ -441,8 +451,11 @@ public final class AiQuerySemanticLexicon {
                 || STRUCTURED_WAREHOUSE_STOCK_REPLENISHMENT_NEEDED.equals(t)
                 || STRUCTURED_WAREHOUSE_STOCK_OVERSTOCK_RISK.equals(t)
                 || STRUCTURED_WAREHOUSE_NEAR_EXPIRY.equals(t)
+                || STRUCTURED_WAREHOUSE_INVENTORY_SUPERVISION.equals(t)
                 || STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW.equals(t)
                 || STRUCTURED_GOODS_SUPPORTED_DISH_COVER.equals(t)
+                || STRUCTURED_GOODS_STOCK_BATCH_DETAIL.equals(t)
+                || STRUCTURED_GOODS_ANCHOR_INVENTORY_BUNDLE.equals(t)
                 || isStructuredWarehouseStockRankingDetail(t);
     }
 

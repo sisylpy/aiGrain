@@ -28,6 +28,10 @@ public class PurchaseAnswerPlan {
     public static final String TYPE_PURCHASE_SUPPLIER_OVERVIEW = "PURCHASE_SUPPLIER_OVERVIEW";
     public static final String TYPE_PURCHASE_GOODS_AMOUNT_RANKING = "PURCHASE_GOODS_AMOUNT_RANKING";
     public static final String TYPE_PURCHASE_GOODS_COUNT_RANKING = "PURCHASE_GOODS_COUNT_RANKING";
+    /** 按采购数量（buy_quantity 合计）排行；与 {@link #TYPE_PURCHASE_GOODS_COUNT_RANKING}（采购次数）区分。 */
+    public static final String TYPE_PURCHASE_GOODS_QUANTITY_RANKING = "PURCHASE_GOODS_QUANTITY_RANKING";
+    /** 采购异常检测（单价/次数/数量/金额突增等细分 wire 统一 AnswerPlan）。 */
+    public static final String TYPE_PURCHASE_ANOMALY = "PURCHASE_ANOMALY";
     public static final String TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING = "PURCHASE_SUPPLIER_AMOUNT_RANKING";
 
     /** 供货商渠道：按上一锚点或语义追问商品/单价明细（不重跑排行 SQL；商品行来自 Tool 已有列表）。 */
@@ -44,6 +48,16 @@ public class PurchaseAnswerPlan {
 
     /** 原料采购清单卡（单域采购「买了什么」问法）。 */
     public static final String CARD_TYPE_PURCHASE_GOODS_DETAIL = "PURCHASE_GOODS_DETAIL_CARD";
+
+    /** GOODS 锚单商品逐笔采购明细卡（contract {@code purchase.goods_anchor.source_breakdown}）。 */
+    public static final String CARD_TYPE_PURCHASE_GOODS_ANCHOR_DETAIL = "PURCHASE_GOODS_ANCHOR_DETAIL_CARD";
+
+    /** 采购商品数量排行卡。 */
+    public static final String CARD_TYPE_PURCHASE_GOODS_QUANTITY_RANKING = "PURCHASE_GOODS_QUANTITY_RANKING_CARD";
+    /** 采购异常事实卡。 */
+    public static final String CARD_TYPE_PURCHASE_ANOMALY = "PURCHASE_ANOMALY_CARD";
+    /** 门店采购金额排行卡。 */
+    public static final String CARD_TYPE_PURCHASE_STORE_AMOUNT_RANKING = "PURCHASE_STORE_AMOUNT_RANKING_CARD";
 
     /**
      * Phase2-A：单一 {@code disGoodsId} + 时间窗 + 权限范围下，按采购记录行 legacy 桶拆自采/供货商/其它（ALL 口径）。

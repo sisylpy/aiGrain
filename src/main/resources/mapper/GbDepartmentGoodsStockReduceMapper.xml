@@ -35,6 +35,18 @@
                     or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
                 )
             </if>
+            <if test="params.disGoodsGrandId != null">
+                and (
+                    gbdssr.gb_dgsr_gb_dis_goods_grand_id = #{params.disGoodsGrandId}
+                    or gdd.gb_dg_dfg_goods_grand_id = #{params.disGoodsGrandId}
+                )
+            </if>
+            <if test="params.disGoodsFatherId != null">
+                and (
+                    gbdssr.gb_dgsr_gb_dis_goods_father_id = #{params.disGoodsFatherId}
+                    or gdd.gb_dg_dfg_goods_father_id = #{params.disGoodsFatherId}
+                )
+            </if>
             <if test="params.disGoodsId != null">
                 and gbdssr.gb_dgsr_gb_dis_goods_id = #{params.disGoodsId}
             </if>
@@ -92,14 +104,14 @@
         order by ifnull(gd.gb_department_sort, 0), gd.gb_department_id
     </select>
 
-    <!-- 与 queryReduceTypeCount 条件一致；明细含退货 type=4 -->
+    <!-- 与 queryReduceTypeCount 条件一致；明细含退货 type=4、员工餐 type=6 -->
     <select id="queryStockReduceListByParams" resultType="com.nongxinle.entity.GbDepartmentGoodsStockReduceEntity">
         select gsr.*
         from gb_department_goods_stock_reduce as gsr
         left join gb_department as gd on gd.gb_department_id = gsr.gb_dgsr_gb_department_id
         left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gsr.gb_dgsr_gb_dis_goods_id
         <where>
-            and gsr.gb_dgsr_type in (1, 2, 3, 4)
+            and gsr.gb_dgsr_type in (1, 2, 3, 4, 6)
             <if test="params.disId != null">
                 and gsr.gb_dgsr_gb_distributer_id = #{params.disId}
             </if>
@@ -166,6 +178,18 @@
                     or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
                 )
             </if>
+            <if test="params.disGoodsGrandId != null">
+                and (
+                    gbdssr.gb_dgsr_gb_dis_goods_grand_id = #{params.disGoodsGrandId}
+                    or gdd.gb_dg_dfg_goods_grand_id = #{params.disGoodsGrandId}
+                )
+            </if>
+            <if test="params.disGoodsFatherId != null">
+                and (
+                    gbdssr.gb_dgsr_gb_dis_goods_father_id = #{params.disGoodsFatherId}
+                    or gdd.gb_dg_dfg_goods_father_id = #{params.disGoodsFatherId}
+                )
+            </if>
             <if test="params.disGoodsId != null">
                 and gbdssr.gb_dgsr_gb_dis_goods_id = #{params.disGoodsId}
             </if>
@@ -214,6 +238,18 @@
                     or gdd.gb_dg_dfg_goods_great_id = #{params.disGoodsGreatId}
                 )
             </if>
+            <if test="params.disGoodsGrandId != null">
+                and (
+                    gbdssr.gb_dgsr_gb_dis_goods_grand_id = #{params.disGoodsGrandId}
+                    or gdd.gb_dg_dfg_goods_grand_id = #{params.disGoodsGrandId}
+                )
+            </if>
+            <if test="params.disGoodsFatherId != null">
+                and (
+                    gbdssr.gb_dgsr_gb_dis_goods_father_id = #{params.disGoodsFatherId}
+                    or gdd.gb_dg_dfg_goods_father_id = #{params.disGoodsFatherId}
+                )
+            </if>
             <if test="params.disGoodsId != null">
                 and gbdssr.gb_dgsr_gb_dis_goods_id = #{params.disGoodsId}
             </if>
@@ -235,7 +271,8 @@
             IFNULL(SUM(CASE WHEN gbdssr.gb_dgsr_type = 1 THEN CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,4)) ELSE 0 END), 0) as produceWeight,
             IFNULL(SUM(CASE WHEN gbdssr.gb_dgsr_type = 3 THEN CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,4)) ELSE 0 END), 0) as lossWeight,
             IFNULL(SUM(CASE WHEN gbdssr.gb_dgsr_type = 2 THEN CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,4)) ELSE 0 END), 0) as wasteWeight,
-            IFNULL(SUM(CASE WHEN gbdssr.gb_dgsr_type = 4 THEN CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,4)) ELSE 0 END), 0) as returnWeight
+            IFNULL(SUM(CASE WHEN gbdssr.gb_dgsr_type = 4 THEN CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,4)) ELSE 0 END), 0) as returnWeight,
+            IFNULL(SUM(CASE WHEN gbdssr.gb_dgsr_type = 6 THEN CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,4)) ELSE 0 END), 0) as employeeMealWeight
         from gb_department_goods_stock_reduce as gbdssr
         left join gb_department as gd on gd.gb_department_id = gbdssr.gb_dgsr_gb_department_id
         left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gbdssr.gb_dgsr_gb_dis_goods_id
@@ -321,10 +358,10 @@
     <!-- 查询所有类型的 subtotal 总和 -->
     <select id="queryReduceAllTypesTotal" resultType="java.util.Map">
         select
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 1), 0) as produceTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 1), 0) as wasteTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 1), 0) as lossTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 1), 0) as returnTotal
+            IFNULL(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 0) as produceTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 0) as wasteTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 0) as lossTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 0) as returnTotal
         from gb_department_goods_stock_reduce r
         left join gb_department gd on gd.gb_department_id = r.gb_dgsr_gb_department_father_id
         left join gb_distributer_goods gdd on gdd.gb_distributer_goods_id = r.gb_dgsr_gb_dis_goods_id
@@ -361,10 +398,10 @@
 
     <select id="queryReduceAllTypesTotalForRetailDepartmentFathers" resultType="java.util.Map">
         select
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 1), 0) as produceTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 1), 0) as wasteTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 1), 0) as lossTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 1), 0) as returnTotal
+            IFNULL(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 0) as produceTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 0) as wasteTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 0) as lossTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 0) as returnTotal
         from gb_department_goods_stock_reduce r
         inner join gb_department gd on gd.gb_department_id = r.gb_dgsr_gb_department_father_id
         left join gb_distributer_goods gdd on gdd.gb_distributer_goods_id = r.gb_dgsr_gb_dis_goods_id
@@ -398,10 +435,10 @@
     <select id="queryReduceAllTypesTotalGroupedByDepartmentFather" resultType="java.util.Map">
         select
             r.gb_dgsr_gb_department_father_id as departmentFatherId,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 1), 0) as produceTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 1), 0) as wasteTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 1), 0) as lossTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 1), 0) as returnTotal
+            IFNULL(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 0) as produceTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 0) as wasteTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 0) as lossTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 0) as returnTotal
         from gb_department_goods_stock_reduce r
         <where>
             r.gb_dgsr_gb_department_father_id in
@@ -424,10 +461,10 @@
     -->
     <select id="queryReduceAllTypesTotalOnDailyRevenueDays" resultType="java.util.Map">
         select
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 1), 0) as produceTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 1), 0) as wasteTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 1), 0) as lossTotal,
-            IFNULL(ROUND(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 1), 0) as returnTotal
+            IFNULL(SUM(case when r.gb_dgsr_type = 1 then r.gb_dgsr_subtotal else 0 end), 0) as produceTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 2 then r.gb_dgsr_subtotal else 0 end), 0) as wasteTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 3 then r.gb_dgsr_subtotal else 0 end), 0) as lossTotal,
+            IFNULL(SUM(case when r.gb_dgsr_type = 4 then r.gb_dgsr_subtotal else 0 end), 0) as returnTotal
         from gb_department_goods_stock_reduce r
         left join gb_department gd on gd.gb_department_id = r.gb_dgsr_gb_department_father_id
         left join gb_distributer_goods gdd on gdd.gb_distributer_goods_id = r.gb_dgsr_gb_dis_goods_id
@@ -527,7 +564,9 @@
             gsr.gb_dgsr_gb_dis_goods_id AS gbDistributerGoodsId,
             IFNULL(ROUND(SUM(CASE WHEN gsr.gb_dgsr_type = 1 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 1), 0) AS goodsProduceTotal,
             IFNULL(ROUND(SUM(CASE WHEN gsr.gb_dgsr_type = 2 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 1), 0) AS goodsWasteTotal,
-            IFNULL(ROUND(SUM(CASE WHEN gsr.gb_dgsr_type = 3 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 1), 0) AS goodsLossTotal
+            IFNULL(ROUND(SUM(CASE WHEN gsr.gb_dgsr_type = 3 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 1), 0) AS goodsLossTotal,
+            IFNULL(ROUND(SUM(CASE WHEN gsr.gb_dgsr_type = 6 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 1), 0) AS goodsEmployeeMealTotal,
+            IFNULL(ROUND(SUM(CASE WHEN gsr.gb_dgsr_type = 6 THEN CAST(gsr.gb_dgsr_weight AS DECIMAL(18,4)) ELSE 0 END), 1), 0) AS goodsEmployeeMealWeightTotal
         FROM gb_department_goods_stock_reduce gsr
         LEFT JOIN gb_department gd ON gd.gb_department_id = gsr.gb_dgsr_gb_department_id
         LEFT JOIN gb_distributer_goods dg ON dg.gb_distributer_goods_id = gsr.gb_dgsr_gb_dis_goods_id
@@ -579,6 +618,9 @@
             </when>
             <when test="params.orderType != null and params.orderType == 'loss'">
                 ORDER BY IFNULL(SUM(CASE WHEN gsr.gb_dgsr_type = 3 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 0) DESC
+            </when>
+            <when test="params.orderType != null and params.orderType == 'employeeMeal'">
+                ORDER BY IFNULL(SUM(CASE WHEN gsr.gb_dgsr_type = 6 THEN gsr.gb_dgsr_subtotal ELSE 0 END), 0) DESC
             </when>
             <otherwise>
                 ORDER BY (
@@ -661,6 +703,9 @@
                 <when test="params.type == 4">
                     IFNULL(ROUND(SUM(gsr.gb_dgsr_subtotal), 1), 0) AS goodsReturnTotal
                 </when>
+                <when test="params.type == 6">
+                    IFNULL(ROUND(SUM(gsr.gb_dgsr_subtotal), 1), 0) AS goodsEmployeeMealTotal
+                </when>
                 <otherwise>
                     IFNULL(ROUND(SUM(gsr.gb_dgsr_subtotal), 1), 0) AS goodsSubtotalTotal
                 </otherwise>
@@ -702,6 +747,9 @@
             </when>
             <when test="params.type == 4">
                 ORDER BY goodsReturnTotal DESC
+            </when>
+            <when test="params.type == 6">
+                ORDER BY goodsEmployeeMealTotal DESC
             </when>
             <otherwise>
                 ORDER BY goodsSubtotalTotal DESC
@@ -868,6 +916,85 @@
             </if>
         </where>
         group by gbdssr.gb_dgsr_gb_dis_goods_id
+    </select>
+
+    <!-- 同 queryProduceLossWasteReduceAggByDisGoods，且 gb_dgsr_date 须在 gb_ai_daily_revenue 已有上传记录的自然日 -->
+    <select id="queryProduceLossWasteReduceAggByDisGoodsOnDailyRevenueDays" resultType="java.util.LinkedHashMap">
+        select
+            gbdssr.gb_dgsr_gb_dis_goods_id as disGoodsId,
+            IFNULL(SUM(CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,6))), 0) as weightSum,
+            IFNULL(SUM(CAST(gbdssr.gb_dgsr_subtotal AS DECIMAL(18,4))), 0) as subtotalSum
+        from gb_department_goods_stock_reduce as gbdssr
+        left join gb_department as gd on gd.gb_department_id = gbdssr.gb_dgsr_gb_department_id
+        left join gb_distributer_goods as gdd on gdd.gb_distributer_goods_id = gbdssr.gb_dgsr_gb_dis_goods_id
+        <where>
+            and gbdssr.gb_dgsr_type in (1, 2, 3)
+            <if test="params.matchDailyRevenueDepartmentId != null">
+                and exists (
+                    select 1 from gb_ai_daily_revenue dr
+                    where gbdssr.gb_dgsr_date = DATE_FORMAT(dr.gb_ai_daily_revenue_record_date, '%Y-%m-%d')
+                    and (
+                        dr.gb_ai_daily_revenue_department_id = #{params.matchDailyRevenueDepartmentId}
+                        or dr.gb_ai_daily_revenue_department_id in (
+                            select gb_department_id from gb_department
+                            where gb_department_father_id = #{params.matchDailyRevenueDepartmentId}
+                        )
+                    )
+                )
+            </if>
+            <if test="params.disId != null">
+                and gbdssr.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depFatherId != null">
+                and gbdssr.gb_dgsr_gb_department_father_id = #{params.depFatherId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.startDate != null">
+                and gbdssr.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and gbdssr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+        </where>
+        group by gbdssr.gb_dgsr_gb_dis_goods_id
+    </select>
+
+    <!-- type1+2+3 按商品 + 出库日汇总，供配料核销「销售宽限期」拆分 -->
+    <select id="queryProduceLossWasteReduceAggByDisGoodsAndDate" resultType="java.util.LinkedHashMap">
+        select
+            gbdssr.gb_dgsr_gb_dis_goods_id as disGoodsId,
+            gbdssr.gb_dgsr_date as reduceDate,
+            IFNULL(SUM(CAST(gbdssr.gb_dgsr_weight AS DECIMAL(18,6))), 0) as weightSum,
+            IFNULL(SUM(CAST(gbdssr.gb_dgsr_subtotal AS DECIMAL(18,4))), 0) as subtotalSum
+        from gb_department_goods_stock_reduce as gbdssr
+        left join gb_department as gd on gd.gb_department_id = gbdssr.gb_dgsr_gb_department_id
+        <where>
+            and gbdssr.gb_dgsr_type in (1, 2, 3)
+            <if test="params.disId != null">
+                and gbdssr.gb_dgsr_gb_distributer_id = #{params.disId}
+            </if>
+            <if test="params.depId != null">
+                and gbdssr.gb_dgsr_gb_department_id = #{params.depId}
+            </if>
+            <if test="params.depFatherId != null">
+                and gbdssr.gb_dgsr_gb_department_father_id = #{params.depFatherId}
+            </if>
+            <if test="params.depType != null">
+                and gd.gb_department_type = #{params.depType}
+            </if>
+            <if test="params.startDate != null">
+                and gbdssr.gb_dgsr_date &gt;= #{params.startDate}
+            </if>
+            <if test="params.stopDate != null">
+                and gbdssr.gb_dgsr_date &lt;= #{params.stopDate}
+            </if>
+        </where>
+        group by gbdssr.gb_dgsr_gb_dis_goods_id, gbdssr.gb_dgsr_date
     </select>
 
 </mapper>

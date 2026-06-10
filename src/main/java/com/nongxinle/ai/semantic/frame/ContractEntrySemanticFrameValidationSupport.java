@@ -2,6 +2,7 @@ package com.nongxinle.ai.semantic.frame;
 
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.semantic.contract.ContractSourceFacetSupport;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticCapabilityContract;
 import com.nongxinle.ai.semantic.contract.SemanticCapabilityContractStatus;
@@ -139,10 +140,11 @@ public final class ContractEntrySemanticFrameValidationSupport {
                 mismatches.add("metric");
             }
         }
-        if (StringUtils.hasText(contract.getSourceFacet())) {
-            String contractFacet = normalizeToken(contract.getSourceFacet());
+        if (StringUtils.hasText(contract.getSourceFacet())
+                || (contract.getAllowedSourceFacets() != null && !contract.getAllowedSourceFacets().isEmpty())) {
             String frameFacet = normalizeToken(frame.getSourceFacet());
-            if (StringUtils.hasText(frameFacet) && !contractFacet.equals(frameFacet)) {
+            if (StringUtils.hasText(frameFacet)
+                    && !ContractSourceFacetSupport.frameSourceFacetAllowed(contract, frameFacet)) {
                 mismatches.add("sourceFacet");
             }
         }
@@ -161,7 +163,22 @@ public final class ContractEntrySemanticFrameValidationSupport {
                 mismatches.add("answerPlanType");
             }
         }
+        if (rawParse != null && unanchoredContractWithNamedGoodsAnchor(contract, rawParse)) {
+            mismatches.add("mentionedGoodsName");
+        }
         return mismatches;
+    }
+
+    /**
+     * {@code requiresAnchor=false} 的合同（清单/排行/概况等）不得携带 {@code mentionedGoodsName}；
+     * 点名原料/商品须走 {@code requiresAnchor=true} 的 GOODS 锚合同（如 {@code purchase.goods_anchor.*}、WH-H）。
+     */
+    private static boolean unanchoredContractWithNamedGoodsAnchor(
+            SemanticCapabilityContract contract, AiQuerySemanticParseResult rawParse) {
+        if (contract == null || rawParse == null || contract.isRequiresAnchor()) {
+            return false;
+        }
+        return StringUtils.hasText(rawParse.effectiveMentionedGoodsName());
     }
 
     @FunctionalInterface

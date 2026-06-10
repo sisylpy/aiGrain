@@ -1,9 +1,12 @@
 package com.nongxinle.ai.tool.business;
 
+import com.nongxinle.ai.context.AiResolvedQueryContext;
+import com.nongxinle.ai.dto.business.GoodsStockBatchDetailAnswerPlan;
+import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
 import com.nongxinle.ai.graph.business.DishIngredientCoverSalesBaseline;
 import com.nongxinle.ai.graph.business.DishIngredientCoverSalesBaselineSupport;
+import com.nongxinle.ai.graph.business.GoodsStockBatchDetailDomainSupport;
 import com.nongxinle.ai.graph.business.GoodsSupportedDishCoverDomainService;
-import com.nongxinle.ai.inventory.InventoryPresentationTimeSupport;
 import com.nongxinle.ai.inventory.InventoryQueryTimeKind;
 import com.nongxinle.ai.tool.AiTool;
 import com.nongxinle.ai.tool.ToolRequest;
@@ -14,14 +17,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_DEPARTMENT_FATHER_ID;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_DIS_ID;
-import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_INVENTORY_QUERY_TIME_KIND;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_DIS_GOODS_ID;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_GOODS_NAME;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_QUERY_SCOPE_BANNER;
+import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_REQUESTED_PLAN_OUTPUTS;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_SALES_BASELINE_START_DATE;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_SALES_BASELINE_STOP_DATE;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_STOCK_AS_OF_DATE;
@@ -36,6 +41,7 @@ import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_STOCK_AS_OF_D
 public class WarehouseGoodsSupportedDishCoverTool implements AiTool {
 
     private final GoodsSupportedDishCoverDomainService domainService;
+    private final GoodsStockBatchDetailDomainSupport batchDetailDomainSupport;
 
     @Override
     public String name() {
@@ -45,6 +51,13 @@ public class WarehouseGoodsSupportedDishCoverTool implements AiTool {
     @Override
     public ToolResult execute(ToolRequest request) {
         Map<String, Object> args = request.getArgs() == null ? Map.of() : request.getArgs();
+        List<String> planOutputs = readRequestedPlanOutputs(args);
+        boolean wantCover = planOutputs.contains(GoodsSupportedDishCoverAnswerPlan.TYPE);
+        boolean wantBatch = planOutputs.contains(GoodsStockBatchDetailAnswerPlan.TYPE);
+        if (!wantCover && !wantBatch) {
+            return fail("missing_requested_plan_outputs", args);
+        }
+
         Long disLong = toLong(args.get(ARG_DIS_ID));
         Long deptLong = toLong(args.get(ARG_DEPARTMENT_FATHER_ID));
         if (disLong == null) {
@@ -57,31 +70,78 @@ public class WarehouseGoodsSupportedDishCoverTool implements AiTool {
         String stockAsOf = str(args.get(ARG_STOCK_AS_OF_DATE));
         String baselineStart = str(args.get(ARG_SALES_BASELINE_START_DATE));
         String baselineStop = str(args.get(ARG_SALES_BASELINE_STOP_DATE));
+        String scopeBanner = str(args.get(ARG_QUERY_SCOPE_BANNER));
 
-        DishIngredientCoverSalesBaseline baseline = resolveBaseline(baselineStart, baselineStop);
+        DishIngredientCoverSalesBaseline baseline =
+                wantCover ? resolveBaseline(request, baselineStart, baselineStop) : null;
+        if (baseline != null) {
+            baselineStart = baseline.getStartDateIso();
+            baselineStop = baseline.getStopDateIso();
+        }
 
         LinkedHashMap<String, Object> debug = new LinkedHashMap<>();
         try {
-            Map<String, Object> core =
-                    domainService.buildPayload(
-                            disId,
-                            depFatherId,
-                            disGoodsId,
-                            goodsName,
-                            baseline,
-                            stockAsOf,
-                            debug);
+            Map<String, Object> coverCore = null;
+            Map<String, Object> batchCore = null;
+            if (wantCover) {
+                coverCore =
+                        domainService.buildPayload(
+                                disId,
+                                depFatherId,
+                                disGoodsId,
+                                goodsName,
+                                baseline,
+                                stockAsOf,
+                                debug);
+            }
+            if (wantBatch) {
+                batchCore =
+                        batchDetailDomainSupport.buildPayload(
+                                disId, depFatherId, disGoodsId, goodsName, debug);
+                if (batchCore != null && scopeBanner != null) {
+                    batchCore.put("scopeBanner", scopeBanner);
+                }
+            }
+
             LinkedHashMap<String, Object> data = new LinkedHashMap<>();
-            data.put(GoodsSupportedDishCoverDomainService.PAYLOAD_KEY, core);
-            data.put("scopeBanner", str(args.get(ARG_QUERY_SCOPE_BANNER)));
-            data.put("inventoryQueryTimeKind", InventoryQueryTimeKind.HYBRID_SNAPSHOT_WITH_PERIOD_BASELINE.name());
+            if (wantCover && coverCore != null) {
+                data.put(GoodsSupportedDishCoverDomainService.PAYLOAD_KEY, coverCore);
+            }
+            if (wantBatch && batchCore != null) {
+                data.put(GoodsStockBatchDetailDomainSupport.PAYLOAD_KEY, batchCore);
+            }
+            if (scopeBanner != null) {
+                data.put("scopeBanner", scopeBanner);
+            }
+            data.put(
+                    "inventoryQueryTimeKind",
+                    wantCover
+                            ? InventoryQueryTimeKind.HYBRID_SNAPSHOT_WITH_PERIOD_BASELINE.name()
+                            : InventoryQueryTimeKind.CURRENT_SNAPSHOT.name());
             data.put("debug", debug);
-            String status = str(core.get("status"));
-            boolean needClarification = "NEED_CLARIFICATION".equalsIgnoreCase(status);
-            boolean ok = "OK".equalsIgnoreCase(status);
+
+            boolean needClarification = false;
+            boolean ok = true;
+            if (wantCover) {
+                String coverStatus = coverCore == null ? null : str(coverCore.get("status"));
+                if ("NEED_CLARIFICATION".equalsIgnoreCase(coverStatus)) {
+                    needClarification = true;
+                } else if (!"OK".equalsIgnoreCase(coverStatus)) {
+                    ok = false;
+                }
+            }
+            if (wantBatch) {
+                String batchStatus = batchCore == null ? null : str(batchCore.get("status"));
+                if ("NEED_CLARIFICATION".equalsIgnoreCase(batchStatus)) {
+                    needClarification = true;
+                } else if (!"OK".equalsIgnoreCase(batchStatus)) {
+                    ok = false;
+                }
+            }
+
             return ToolResult.builder()
                     .success(ok || needClarification)
-                    .message(needClarification ? "need_clarification" : (ok ? "ok" : status))
+                    .message(needClarification ? "need_clarification" : (ok ? "ok" : "failed"))
                     .data(
                             AiBusinessToolResponses.envelope(
                                     name(),
@@ -105,6 +165,23 @@ public class WarehouseGoodsSupportedDishCoverTool implements AiTool {
                                     Map.of("error", ex.getMessage()), "查询异常"))
                     .build();
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> readRequestedPlanOutputs(Map<String, Object> args) {
+        if (args == null || args.isEmpty()) {
+            return List.of();
+        }
+        Object raw = args.get(ARG_REQUESTED_PLAN_OUTPUTS);
+        if (!(raw instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .toList();
     }
 
     private static ToolResult fail(String msg, Map<String, Object> args) {
@@ -143,7 +220,12 @@ public class WarehouseGoodsSupportedDishCoverTool implements AiTool {
         }
     }
 
-    private static DishIngredientCoverSalesBaseline resolveBaseline(String start, String stop) {
+    private static DishIngredientCoverSalesBaseline resolveBaseline(
+            ToolRequest request, String start, String stop) {
+        AiResolvedQueryContext rq = request != null ? request.getResolvedQueryContext() : null;
+        if (rq != null) {
+            return DishIngredientCoverSalesBaselineSupport.resolve(null, rq);
+        }
         if (!StringUtils.hasText(start) || !StringUtils.hasText(stop)) {
             return DishIngredientCoverSalesBaseline.builder()
                     .startDateIso(start)
@@ -153,6 +235,10 @@ public class WarehouseGoodsSupportedDishCoverTool implements AiTool {
                     .displayLabel("最近7天")
                     .build();
         }
+        return baselineFromArgDates(start, stop);
+    }
+
+    private static DishIngredientCoverSalesBaseline baselineFromArgDates(String start, String stop) {
         java.time.LocalDate s = java.time.LocalDate.parse(start.trim());
         java.time.LocalDate e = java.time.LocalDate.parse(stop.trim());
         if (e.isBefore(s)) {

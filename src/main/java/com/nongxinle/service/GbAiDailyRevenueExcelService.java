@@ -78,9 +78,66 @@ public interface GbAiDailyRevenueExcelService {
     String COMBINED_SHEET_FOOD_NAME = "菜品日销售";
     /** 合并模板：日营业额 Sheet 名称（无堂食/当日营业额列）。 */
     String COMBINED_SHEET_REVENUE_NAME = "日营业额";
+    /** 合并模板：折扣销售与员工餐 Sheet 名称（一行一条，含类型/数量/实际单价）。 */
+    String COMBINED_SHEET_DISCOUNT_NAME = "打折菜品销售";
+
+    /** 打折/员工餐 Sheet 行：日期、部门、菜品、类型(2/5)、数量、实际单价。 */
+    class DiscountFoodSalesExcelRow {
+        private final Date recordDate;
+        private final Integer depId;
+        private final Integer foodRefId;
+        private final Integer type;
+        private final BigDecimal quantity;
+        private final BigDecimal actualUnitPrice;
+
+        public DiscountFoodSalesExcelRow(Date recordDate, Integer depId, Integer foodRefId, Integer type,
+                BigDecimal quantity, BigDecimal actualUnitPrice) {
+            this.recordDate = recordDate;
+            this.depId = depId;
+            this.foodRefId = foodRefId;
+            this.type = type;
+            this.quantity = quantity;
+            this.actualUnitPrice = actualUnitPrice;
+        }
+
+        public Date getRecordDate() {
+            return recordDate;
+        }
+
+        public Integer getDepId() {
+            return depId;
+        }
+
+        public Integer getFoodRefId() {
+            return foodRefId;
+        }
+
+        public Integer getType() {
+            return type;
+        }
+
+        public BigDecimal getQuantity() {
+            return quantity;
+        }
+
+        public BigDecimal getActualUnitPrice() {
+            return actualUnitPrice;
+        }
+    }
 
     /** 按工作簿定位合并模板中菜品、日营业额 Sheet 的下标（优先按名称；兼容 Numbers 导出「导出摘要」与工作表重命名）。 */
     int[] resolveCombinedTemplateFoodAndRevenueSheetIndexes(byte[] spreadsheetBytes) throws IOException;
+
+    /**
+     * 定位合并模板中「打折菜品销售」Sheet；未找到返回 -1（上传时可跳过）。
+     */
+    int resolveCombinedTemplateDiscountSheetIndex(byte[] spreadsheetBytes) throws IOException;
+
+    /**
+     * 解析「打折菜品销售」Sheet：透视布局（序号/部门/菜品/类型/实际单价/各日数量）或旧版逐行日期格式；类型仅允许 2 或 5。
+     */
+    List<DiscountFoodSalesExcelRow> parseCombinedTemplateDiscountFoodSalesSheet(
+            byte[] spreadsheetBytes, int sheetIndex, Long departmentId) throws IOException;
 
     /**
      * 解析「菜品日销售」所在 Sheet 下标：跳过 Numbers 导出摘要等无关表，找首表含 序号+菜品+日期 透视或旧版「日期|各菜品」。

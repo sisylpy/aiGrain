@@ -75,6 +75,11 @@ public interface GbDistributerPurchaseGoodsService extends IService<GbDistribute
     List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopSubtotalMerged(Map<String, Object> map);
 
     /**
+     * 同上合并规则，按采购数量（{@code gb_DPG_buy_quantity} 合计）Top。
+     */
+    List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopQuantityMerged(Map<String, Object> map);
+
+    /**
      * 与 {@link #queryGbPurchaseGoodsCount} 条件一致，汇总 {@code gb_DPG_buy_quantity}。
      */
     Double queryPurchaseGoodsWeightTotal(Map<String, Object> map);

@@ -7,6 +7,10 @@ import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.context.AiResolvedTimeWindowDisplaySupport;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.graph.business.DishIngredientCoverSalesBaseline;
+import com.nongxinle.ai.graph.business.DishIngredientCoverSalesBaselineSupport;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
+import com.nongxinle.ai.inventory.InventoryPresentationTimeSupport;
 import com.nongxinle.ai.history.dto.AiConversationMessageDTO;
 import com.nongxinle.ai.resolver.AiMultiTurnOrgScopePolicy;
 import com.nongxinle.ai.security.AiAnswerBoundary;
@@ -273,6 +277,35 @@ public final class AiAnswerContextSummarySupport {
     }
 
     private static void resolveTimeFields(AiResolvedQueryContext ctx, AiRunState state, Map<String, Object> out) {
+        if (ToolRequestContractExecutionParamSupport.isInventoryCoverDaysCapability(ctx)) {
+            DishIngredientCoverSalesBaseline baseline =
+                    DishIngredientCoverSalesBaselineSupport.resolve(state, ctx);
+            String baselinePhrase =
+                    baseline != null && StringUtils.hasText(baseline.getDisplayLabel())
+                            ? baseline.getDisplayLabel().trim()
+                            : "最近7天销量基线";
+            out.put("timeText", "当前库存 · " + baselinePhrase);
+            out.put("dateRangeText", null);
+            return;
+        }
+        if (ToolRequestContractExecutionParamSupport.isWarehouseNearExpiryContract(ctx)) {
+            String asOf =
+                    InventoryPresentationTimeSupport.resolveCoverStockSnapshotAsOfDateIso(state, ctx);
+            out.put(
+                    "timeText",
+                    InventoryPresentationTimeSupport.formatStockSnapshotLabel(asOf));
+            out.put("dateRangeText", null);
+            return;
+        }
+        if (ToolRequestContractExecutionParamSupport.isWarehouseInventorySupervisionContract(ctx)) {
+            String asOf =
+                    InventoryPresentationTimeSupport.resolveCoverStockSnapshotAsOfDateIso(state, ctx);
+            out.put(
+                    "timeText",
+                    InventoryPresentationTimeSupport.formatStockSnapshotLabel(asOf));
+            out.put("dateRangeText", null);
+            return;
+        }
         String timeText = null;
         AiResolvedTimeWindow tw = ctx != null ? ctx.getTimeWindow() : null;
         if (ctx != null && StringUtils.hasText(ctx.getTimeWindowLabel())) {

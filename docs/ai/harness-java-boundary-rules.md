@@ -1,5 +1,11 @@
 # Harness Java Boundary Rules：Java 不得猜业务语义
 
+> **状态：Partial / Reference（非最高优先级规则）**
+> 本文保留为历史整理和代码审查参考。当前最高优先级规则以 `.cursor/rules/harness-java-boundary.md`、`.cursor/rules/time-layer-inheritance.mdc`、`.cursor/rules/semantic-contract-exporter.mdc`、`docs/ai/semantic-inheritance-architecture.md`、`docs/ai/contract-entry-validation-p2-summary.md` 为准。
+> 若本文与上述 Current Baseline 或当前运行代码冲突，**不得**按本文恢复旧逻辑；必须以 Current Baseline 为准并明确标出冲突。
+>
+> **Current 合同主权补充**：V2 在 `allowedContracts` 内选择 `selectedContractId`；Java 仅可在 V2 前做确定性实体存在性落地以缩小 `allowedContracts` 或澄清；V2 之后 Java 无权重新选择业务合同。Completion 成功后任何 support / repair / normalize / slot merge / scope / planner / tool / AnswerPlan / Composer 都不得修改 `selectedContractId`、canonical wire、`answerPlanType` 或 `selectedTools`。后置冲突只能澄清、失败或 known gap，不能通过再次 Completion / Validation 合法化 Java 后置切换合同。
+
 ## 1. 总原则
 
 Java 不允许猜业务语义。
@@ -129,7 +135,7 @@ AnswerPlanBuilder 禁止：
 | 层 | 职责 | 禁止 |
 |----|------|------|
 | **Prompt** | 引导 LLM 在 `allowedContracts` 中选择 `selectedContractId`；输出合同要求的 `semanticSlots`；抽取实体如 `mentionedDishName`、`mentionedGoodsName`、`mentionedSupplierName` | 不做合同校验 |
-| **Contract** | 约束 allowed contract；定义 `wire` / `queryObject` / `operation` / `metric` / `sourceFacet` / `answerPlanType`；定义 `requiresAnchor` / `anchorType` / `selectionHint` / `examples` | 不做具体查数 |
+| **Contract** | 约束 allowed contract；定义 `wire` / `queryObject` / `operation` / `metric` / `sourceFacet` / `answerPlanType`；定义 `requiresAnchor` / `anchorType` / `selectedTools` 等机器字段。**Current**：Exporter 不再写 `selectionHint` / examples | 不做具体查数 |
 | **Java** | 校验 `selectedContractId` 是否存在；校验 slots 是否和合同一致；校验 anchor 是否完整；缺失则澄清，不猜 | 不猜业务语义 |
 
 完整主链：
@@ -236,3 +242,55 @@ AnswerPlanBuilder 禁止：
 
 - **能** → 合理，继续
 - **不能** → 大概率是在猜语义，应删除或标记 LEGACY_ONLY
+
+---
+
+## 11. 单一主权与单一投影原则
+
+修改 AnswerPlan / Card / Composer / Wire 链路时，**同一个业务决定只能有一个权威来源和一个决策入口**。下游只消费结果，不得重新判断、补挂、替换、修复或改变业务含义。
+
+### 11.1 单一主权（SSOT）
+
+| 决定 | 主权 |
+|------|------|
+| 语义能力 | `selectedContractId` → ACTIVE Contract |
+| wire / AnswerPlanType / Tool / 执行模式 | Contract 派生（contract-locked） |
+| 卡片类型 | 最终 `AnswerPlan.planType`（或该域独立 AnswerPlan 的 `planType`） |
+| 时间 | Time Layer（见 `.cursor/rules/time-layer-inheritance.mdc`） |
+| 组织 / 权限 | `AiResolvedQueryContext` scope / dataScope |
+
+禁止 `contractId`、`wire`、`executionIntent`、raw LLM、关键词、已有 `cardType` 等**并行推导同一结果**。
+
+### 11.2 单一决策入口
+
+同一映射只允许一个统一入口，例如 `AnswerPlan.planType → CardType`。
+
+采购域参考：`PurchaseAnswerPlanCardSupport`（映射 SSOT）→ `PurchaseAnswerPlanCardWireService.attachCardsIfApplicable`（唯一挂载）。
+
+Service、Composer、`refreshAllCardPayloads` 等下游**只消费**，不得再次 PlanType / intent / wire / contract 判断来决定卡片。
+
+### 11.3 禁止后置修复
+
+禁止：reconcile 补挂、错卡替换、refresh 重选 CardType、Composer 从全量 Tool/cards 筛选实体、fallback 旧逻辑、单 case 补丁。
+
+上游非法状态应在权威边界 **fail closed**（澄清 / known gap / noDataReason）。
+
+允许：协议归一化（字段名、`cardPayload` 镜像、title）——非业务重决策。
+
+### 11.4 Composer 边界
+
+**只负责**：消费 AnswerPlan + 已生成 cards，生成自然语言（可按 `planType` 选短引导，不补挂/替换卡）。
+
+**不负责**：选合同、执行模式、卡片类型、改事实、补挂/替换卡、从 Tool 原始结果拼答案。
+
+### 11.5 接入与清理
+
+- 新能力前先查现有 Contract / Tool / Plan / Card / Projection，避免重复类型或 Service
+- 统一入口落地后，删除重复判断、旧 WireService、reconcile、fallback、Composer 业务 skip
+- Harness 只读探针可留，**不得**参与挂载决策
+
+### 11.6 修改汇报
+
+说明：根因、唯一主权入口、修改范围、删除的重复逻辑（不必跑测试，除非用户明确要求）。
+
+Cursor 规则全文同步见 `.cursor/rules/harness-java-boundary.md` §12。

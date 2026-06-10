@@ -2,6 +2,8 @@ package com.nongxinle.ai.semantic.contract;
 
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.dto.business.GoodsStockBatchDetailAnswerPlan;
+import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
 import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow;
@@ -30,8 +32,20 @@ public final class WarehouseSemanticCapabilityContractExporter implements Semant
         if (row != null && "WH-F".equals(row.getRowId())) {
             return AiBusinessToolIds.DEFAULT_WAREHOUSE_INVENTORY_RISK_TOOLS;
         }
+        if (row != null && "WH-G".equals(row.getRowId())) {
+            return AiBusinessToolIds.DEFAULT_WAREHOUSE_NEAR_EXPIRY_TOOLS;
+        }
         if (row != null && "WH-H".equals(row.getRowId())) {
             return AiBusinessToolIds.DEFAULT_WAREHOUSE_GOODS_SUPPORTED_DISH_COVER_TOOLS;
+        }
+        if (row != null && "WH-J".equals(row.getRowId())) {
+            return AiBusinessToolIds.DEFAULT_WAREHOUSE_GOODS_STOCK_BATCH_DETAIL_TOOLS;
+        }
+        if (row != null && "WH-K".equals(row.getRowId())) {
+            return AiBusinessToolIds.DEFAULT_WAREHOUSE_GOODS_SUPPORTED_DISH_COVER_TOOLS;
+        }
+        if (row != null && "WH-I".equals(row.getRowId())) {
+            return AiBusinessToolIds.DEFAULT_WAREHOUSE_INVENTORY_SUPERVISION_TOOLS;
         }
         return List.of(AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW);
     }
@@ -144,8 +158,11 @@ public final class WarehouseSemanticCapabilityContractExporter implements Semant
             SemanticCapabilityContractStatus status,
             String gapMarker) {
         String contractId = contractIdForRow(row);
-        boolean requiresGoodsAnchor = "WH-H".equals(row.getRowId());
-        return MatrixBackedContractExporterSupport.build(
+        boolean requiresGoodsAnchor =
+                "WH-H".equals(row.getRowId())
+                        || "WH-J".equals(row.getRowId())
+                        || "WH-K".equals(row.getRowId());
+        MatrixBackedContractExporterSupport.MatrixContractExportSpec.MatrixContractExportSpecBuilder spec =
                 MatrixBackedContractExporterSupport.MatrixContractExportSpec.builder()
                         .contractId(contractId)
                         .domain(DOMAIN_CODE)
@@ -161,8 +178,11 @@ public final class WarehouseSemanticCapabilityContractExporter implements Semant
                         .anchorType(requiresGoodsAnchor ? "GOODS" : null)
                         .selectedTools(selectedToolsForMatrixRow(row))
                         .status(status)
-                        .gapMarker(gapMarker)
-                        .build());
+                        .gapMarker(gapMarker);
+        if (row.getPlanOutputs() != null) {
+            row.getPlanOutputs().forEach(spec::planOutput);
+        }
+        return MatrixBackedContractExporterSupport.build(spec.build());
     }
 
     private static SemanticCapabilityContract plannedContract(
@@ -200,6 +220,9 @@ public final class WarehouseSemanticCapabilityContractExporter implements Semant
             case "WH-F" -> "warehouse.inventory_risk_list";
             case "WH-G" -> "warehouse.near_expiry";
             case "WH-H" -> "warehouse.goods_supported_dish_cover.v1";
+            case "WH-J" -> "warehouse.goods_stock_batch_detail.v1";
+            case "WH-K" -> WarehouseSemanticCapabilityMatrix.CONTRACT_GOODS_ANCHOR_INVENTORY_BUNDLE;
+            case "WH-I" -> "warehouse.inventory_supervision.v1";
             default -> "warehouse." + row.getRowId().toLowerCase();
         };
     }

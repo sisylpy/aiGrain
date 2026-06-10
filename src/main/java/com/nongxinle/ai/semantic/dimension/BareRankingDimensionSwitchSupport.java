@@ -209,11 +209,11 @@ public final class BareRankingDimensionSwitchSupport {
             trace.put("previousContractId", plan.getPreviousContractId());
             trace.put("targetFacetResolveSource", plan.getTargetFacetResolveSource());
             trace.put("fallbackUsed", plan.isTargetFacetFallbackUsed());
-            if (StructuredRankingTimeOnlyIntakeSupport.FOLLOW_UP_PATH_TIME_ONLY.equals(
+            if (StructuredRankingTimeOnlyIntakeSupport.FOLLOW_UP_PATH_RANKING_TIME_ONLY.equals(
                     plan.getTargetFacetResolveSource())) {
                 trace.put(
                         "followUpPath",
-                        StructuredRankingTimeOnlyIntakeSupport.FOLLOW_UP_PATH_TIME_ONLY);
+                        StructuredRankingTimeOnlyIntakeSupport.FOLLOW_UP_PATH_RANKING_TIME_ONLY);
             }
         }
         if (!active) {
@@ -436,7 +436,7 @@ public final class BareRankingDimensionSwitchSupport {
                 .intakeReason(intake != null ? trim(intake.getReason()) : null)
                 .canonicalUserQuery(intake != null ? trim(intake.getCanonicalUserQuery()) : null)
                 .targetFacetResolveSource(
-                        StructuredRankingTimeOnlyIntakeSupport.FOLLOW_UP_PATH_TIME_ONLY)
+                        StructuredRankingTimeOnlyIntakeSupport.FOLLOW_UP_PATH_RANKING_TIME_ONLY)
                 .targetFacetFallbackUsed(false)
                 .build();
     }

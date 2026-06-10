@@ -117,6 +117,9 @@ public class GbDepartmentGoodsStockEntity implements Serializable,Comparable {
 	private String  gbDgsMyLossWeight = "-1";
 	@TableField(exist = false)
 	private String  gbDgsMyReturnWeight = "-1";
+	/** 本次员工餐实际使用数量（基础单位重量，与 {@code gbDgsMyLossWeight} 同语义） */
+	@TableField(exist = false)
+	private String gbDgsMyEmployeeMealWeight = "-1";
 	@TableField(exist = false)
 	private Integer gbDgsReturnUserId ;
 
@@ -149,6 +152,11 @@ public class GbDepartmentGoodsStockEntity implements Serializable,Comparable {
 	private String gbDgsLossSubtotal;
 	private String gbDgsReturnWeight;
 	private String gbDgsReturnSubtotal;
+	/** 批次累计员工餐出库（由 reduce type=6 汇总；无独立库存列，展示层回填） */
+	@TableField(exist = false)
+	private String gbDgsEmployeeMealWeight;
+	@TableField(exist = false)
+	private String gbDgsEmployeeMealSubtotal;
 	private String gbDgsProduceWeight;
 	private String gbDgsProduceSubtotal;
 	private String gbDgsProduceSellingSubtotal;
@@ -235,6 +243,10 @@ public class GbDepartmentGoodsStockEntity implements Serializable,Comparable {
 	@TableField(exist = false)
 	@JSONField(name = "goodsPrice")
 	private String goodsPrice;
+
+	/** 来自 {@code gb_distributer_goods.gb_dg_quantity_days}（Mapper join 投影）。 */
+	@TableField(exist = false)
+	private Integer gbDgQuantityDays;
 
 	@TableField(exist = false)
 	@JSONField(name = "wasteGoodsCount")

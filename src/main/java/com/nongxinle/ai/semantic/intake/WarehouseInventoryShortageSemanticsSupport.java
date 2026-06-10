@@ -1,6 +1,7 @@
 package com.nongxinle.ai.semantic.intake;
 
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
+import com.nongxinle.ai.inventory.WarehouseNearExpiryRiskFilterSupport;
 import com.nongxinle.ai.semantic.SemanticParserAllowedOutputContract;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
@@ -57,6 +58,9 @@ public final class WarehouseInventoryShortageSemanticsSupport {
     /** P1 ACTIVE：库存风险列表（偏少/快缺货/需关注）。 */
     public static final String CONTRACT_INVENTORY_RISK_LIST = "warehouse.inventory_risk_list";
 
+    /** ACTIVE：库存批次临期/过期风险。 */
+    public static final String CONTRACT_NEAR_EXPIRY = "warehouse.near_expiry";
+
     private static final String CLARIFICATION_UNDERSTOCK_QUERY =
             "判断库存是否偏少需要结合当前库存、保质期与近期消耗/销量；"
                     + "当前库存报警与库存偏少筛查能力尚未开放，暂不能生成库存偏少原料或商品列表。"
@@ -93,6 +97,9 @@ public final class WarehouseInventoryShortageSemanticsSupport {
         }
         String semantics = normalizeSemantics(intake.getWarehouseInventorySemantics());
         if (isInventoryRiskSemantics(semantics)) {
+            return true;
+        }
+        if (intakeDeclaresNearExpiryRiskFilter(intake)) {
             return true;
         }
         if (reasonDeclaresShortageSemantics(intake.getReason())) {
@@ -152,9 +159,15 @@ public final class WarehouseInventoryShortageSemanticsSupport {
                 parsed.getWarehouseInventorySemantics())) {
             return false;
         }
+        if (WarehouseInventorySupervisionSemanticsSupport.parsedDeclaresSupervision(parsed)) {
+            return false;
+        }
         String semantics = normalizeSemantics(parsed.getWarehouseInventorySemantics());
         if (SEMANTICS_EXPLICIT_AMOUNT_RANKING_LOW.equals(semantics)) {
             return false;
+        }
+        if (WarehouseNearExpiryRiskFilterSupport.isKnownFilter(parsed.getExpiryRiskFilter())) {
+            return true;
         }
         if (reasonDeclaresShortageSemantics(parsed.getReason())) {
             return true;
@@ -190,6 +203,52 @@ public final class WarehouseInventoryShortageSemanticsSupport {
         return SEMANTICS_UNDERSTOCK_QUERY.equals(normalizedSemantics)
                 || SEMANTICS_OUT_OF_STOCK.equals(normalizedSemantics)
                 || SEMANTICS_NEAR_EXPIRY.equals(normalizedSemantics);
+    }
+
+    /** Intake 结构化 {@code expiryRiskFilter}（非用户原文）即 near_expiry 主权信号。 */
+    public static boolean intakeDeclaresNearExpiryRiskFilter(SemanticIntakeResult intake) {
+        return intake != null
+                && WarehouseNearExpiryRiskFilterSupport.isKnownFilter(intake.getExpiryRiskFilter());
+    }
+
+    /** V2 {@code semanticSlots.expiryRiskFilter} 即 near_expiry 主权信号。 */
+    public static boolean parseDeclaresNearExpiryRiskFilter(AiQuerySemanticParseResult sem) {
+        return sem != null
+                && sem.getSemanticSlots() != null
+                && WarehouseNearExpiryRiskFilterSupport.isKnownFilter(
+                        sem.getSemanticSlots().getExpiryRiskFilter());
+    }
+
+    public static boolean parseOrIntakeDeclaresNearExpiryRisk(
+            AiQuerySemanticParseResult sem, SemanticIntakeResult intake) {
+        return intakeDeclaresNearExpiryRiskFilter(intake) || parseDeclaresNearExpiryRiskFilter(sem);
+    }
+
+    /** Intake LLM 原始 JSON：{@code expiryRiskFilter} 优先于 {@code warehouseInventorySemantics}。 */
+    public static String resolveEffectiveSemanticsFromParsed(
+            com.nongxinle.ai.semantic.intake.llm.LlmSemanticIntakeParsed parsed) {
+        if (parsed != null
+                && WarehouseNearExpiryRiskFilterSupport.isKnownFilter(parsed.getExpiryRiskFilter())) {
+            return SEMANTICS_NEAR_EXPIRY;
+        }
+        return normalizeSemantics(parsed != null ? parsed.getWarehouseInventorySemantics() : null);
+    }
+
+    /** 当前轮库房风险语义：{@code expiryRiskFilter} 优先于 {@code warehouseInventorySemantics} / reason。 */
+    static String resolveEffectiveInventoryRiskSemantics(SemanticIntakeResult intake) {
+        if (intake == null) {
+            return null;
+        }
+        if (intakeDeclaresNearExpiryRiskFilter(intake)) {
+            return SEMANTICS_NEAR_EXPIRY;
+        }
+        if (StringUtils.hasText(intake.getWarehouseInventorySemantics())) {
+            return normalizeSemantics(intake.getWarehouseInventorySemantics());
+        }
+        if (reasonDeclaresShortageSemantics(intake.getReason())) {
+            return inferSemanticsFromReason(intake.getReason());
+        }
+        return null;
     }
 
     public static boolean intakeExplicitAmountRankingLow(SemanticIntakeResult intake) {
@@ -234,52 +293,67 @@ public final class WarehouseInventoryShortageSemanticsSupport {
                         mapped)) {
             return mapped;
         }
+        if (WarehouseInventorySupervisionSemanticsSupport.intakeDeclaresSupervisionQuery(mapped)) {
+            return mapped;
+        }
         if (intakeExplicitAmountRankingLow(mapped)) {
             return promoteExplicitAmountRankingIntake(mapped);
         }
         if (!signalsInventoryRisk(mapped)) {
             return mapped;
         }
-        String semantics =
-                StringUtils.hasText(mapped.getWarehouseInventorySemantics())
-                        ? normalizeSemantics(mapped.getWarehouseInventorySemantics())
-                        : inferSemanticsFromReason(
-                                StringUtils.hasText(mapped.getReason())
-                                        ? mapped.getReason().trim()
-                                        : REASON_MARKER_PRIMARY);
+        String semantics = resolveEffectiveInventoryRiskSemantics(mapped);
+        if (!StringUtils.hasText(semantics)) {
+            semantics =
+                    inferSemanticsFromReason(
+                            StringUtils.hasText(mapped.getReason())
+                                    ? mapped.getReason().trim()
+                                    : REASON_MARKER_PRIMARY);
+        }
         if (SEMANTICS_NEAR_EXPIRY.equals(semantics)) {
-            String clarification = resolveClarificationQuestion(mapped);
-            String reason =
-                    StringUtils.hasText(mapped.getReason())
-                            ? mapped.getReason().trim()
-                            : REASON_MARKER_PRIMARY;
-            return SemanticIntakeResult.builder()
-                    .status(SemanticIntakeStatus.NEED_CLARIFICATION)
-                    .questionMode(mapped.getQuestionMode())
-                    .normalizationType(mapped.getNormalizationType())
-                    .canonicalUserQuery(mapped.getCanonicalUserQuery())
-                    .isFollowUp(mapped.getIsFollowUp())
-                    .usedPreviousContext(mapped.getUsedPreviousContext())
-                    .primaryDomain(SemanticIntakePrimaryDomain.WAREHOUSE)
-                    .candidateDomains(List.of(SemanticIntakePrimaryDomain.WAREHOUSE))
-                    .routeType("EXPLICIT")
-                    .confidence(mapped.getConfidence())
-                    .needClarification(true)
-                    .clarificationQuestion(clarification)
-                    .reason(reason)
-                    .warehouseInventorySemantics(semantics)
-                    .subQuestions(mapped.getSubQuestions())
-                    .promptId(mapped.getPromptId())
-                    .llmRawText(mapped.getLlmRawText())
-                    .parseError(mapped.getParseError())
-                    .intakeRepairAttempted(mapped.getIntakeRepairAttempted())
-                    .intakeRepairSuccess(mapped.getIntakeRepairSuccess())
-                    .intakeRepairReason(mapped.getIntakeRepairReason())
-                    .failureCode(mapped.getFailureCode())
-                    .failureStage(mapped.getFailureStage())
-                    .build();
+            return promoteNearExpiryReadyIntake(mapped, semantics);
         }
         return promoteInventoryRiskReadyIntake(mapped, semantics);
+    }
+
+    private static SemanticIntakeResult promoteNearExpiryReadyIntake(
+            SemanticIntakeResult mapped, String semantics) {
+        String reason =
+                StringUtils.hasText(mapped.getReason())
+                        ? mapped.getReason().trim()
+                        : REASON_MARKER_PRIMARY;
+        if (!reason.contains("warehouse_inventory_near_expiry")) {
+            reason = reason + ";warehouse_inventory_near_expiry";
+        }
+        return SemanticIntakeResult.builder()
+                .status(SemanticIntakeStatus.READY)
+                .questionMode(mapped.getQuestionMode())
+                .normalizationType(mapped.getNormalizationType())
+                .canonicalUserQuery(mapped.getCanonicalUserQuery())
+                .isFollowUp(mapped.getIsFollowUp())
+                .usedPreviousContext(mapped.getUsedPreviousContext())
+                .primaryDomain(SemanticIntakePrimaryDomain.WAREHOUSE)
+                .candidateDomains(
+                        mapped.getCandidateDomains() != null
+                                ? mapped.getCandidateDomains()
+                                : List.of(SemanticIntakePrimaryDomain.WAREHOUSE))
+                .routeType("EXPLICIT")
+                .confidence(mapped.getConfidence())
+                .needClarification(false)
+                .clarificationQuestion(null)
+                .reason(reason)
+                .warehouseInventorySemantics(semantics)
+                .expiryRiskFilter(mapped.getExpiryRiskFilter())
+                .subQuestions(mapped.getSubQuestions())
+                .promptId(mapped.getPromptId())
+                .llmRawText(mapped.getLlmRawText())
+                .parseError(mapped.getParseError())
+                .intakeRepairAttempted(mapped.getIntakeRepairAttempted())
+                .intakeRepairSuccess(mapped.getIntakeRepairSuccess())
+                .intakeRepairReason(mapped.getIntakeRepairReason())
+                .failureCode(mapped.getFailureCode())
+                .failureStage(mapped.getFailureStage())
+                .build();
     }
 
     private static SemanticIntakeResult promoteInventoryRiskReadyIntake(
@@ -309,6 +383,7 @@ public final class WarehouseInventoryShortageSemanticsSupport {
                 .clarificationQuestion(null)
                 .reason(reason)
                 .warehouseInventorySemantics(semantics)
+                .expiryRiskFilter(mapped.getExpiryRiskFilter())
                 .subQuestions(mapped.getSubQuestions())
                 .promptId(mapped.getPromptId())
                 .llmRawText(mapped.getLlmRawText())
@@ -328,7 +403,7 @@ public final class WarehouseInventoryShortageSemanticsSupport {
         if (intake == null || !signalsInventoryRisk(intake)) {
             return null;
         }
-        String semantics = normalizeSemantics(intake.getWarehouseInventorySemantics());
+        String semantics = resolveEffectiveInventoryRiskSemantics(intake);
         if (SEMANTICS_NEAR_EXPIRY.equals(semantics)) {
             return CLARIFICATION_NEAR_EXPIRY;
         }
@@ -357,9 +432,24 @@ public final class WarehouseInventoryShortageSemanticsSupport {
         if (contract == null) {
             return selection;
         }
-        String semantics = normalizeSemantics(intake.getWarehouseInventorySemantics());
+        String semantics = resolveEffectiveInventoryRiskSemantics(intake);
         if (SEMANTICS_NEAR_EXPIRY.equals(semantics)) {
-            return buildFilteredSelection(selection, contract, List.of(), 0);
+            List<SemanticParserAllowedOutputContract.AllowedContractEntry> allowed = new ArrayList<>();
+            if (contract.getAllowedContracts() != null) {
+                for (SemanticParserAllowedOutputContract.AllowedContractEntry e : contract.getAllowedContracts()) {
+                    if (e != null && CONTRACT_NEAR_EXPIRY.equals(e.getContractId())) {
+                        allowed.add(e);
+                    }
+                }
+            }
+            if (allowed.isEmpty() && contract.getKnownGapContracts() != null) {
+                for (SemanticParserAllowedOutputContract.AllowedContractEntry e : contract.getKnownGapContracts()) {
+                    if (e != null && CONTRACT_NEAR_EXPIRY.equals(e.getContractId())) {
+                        allowed.add(e);
+                    }
+                }
+            }
+            return buildFilteredSelection(selection, contract, allowed, allowed.size());
         }
         List<SemanticParserAllowedOutputContract.AllowedContractEntry> allowed = new ArrayList<>();
         if (contract.getAllowedContracts() != null) {
@@ -425,7 +515,8 @@ public final class WarehouseInventoryShortageSemanticsSupport {
             return SemanticFrameValidationResult.success();
         }
         String selected = SemanticContractCompletionEngine.extractSelectedContractId(rawParse);
-        if (CONTRACT_INVENTORY_RISK_LIST.equals(blank(selected))) {
+        if (CONTRACT_INVENTORY_RISK_LIST.equals(blank(selected))
+                || CONTRACT_NEAR_EXPIRY.equals(blank(selected))) {
             return SemanticFrameValidationResult.success();
         }
         if (CONTRACT_GOODS_AMOUNT_RANKING_LOW.equals(blank(selected))) {
@@ -446,28 +537,48 @@ public final class WarehouseInventoryShortageSemanticsSupport {
 
     public static AiQuerySemanticParseResult applyRiskClarificationToParse(
             AiQuerySemanticParseResult sem, SemanticIntakeResult intake) {
-        if (sem == null
-                || intake == null
-                || intakeExplicitAmountRankingLow(intake)
-                || SemanticIntakeDishIngredientCoverDaysSupport.mustNotApplyWarehouseInventoryShortagePipeline(
-                        intake)
-                || SemanticIntakeGoodsSupportedDishCoverSupport.intakeDeclaresGoodsSupportedDishCover(
-                        intake)) {
+        if (sem == null) {
             return sem;
         }
-        if (!signalsInventoryRisk(intake)) {
+        if (intake != null
+                && (intakeExplicitAmountRankingLow(intake)
+                        || SemanticIntakeDishIngredientCoverDaysSupport
+                                .mustNotApplyWarehouseInventoryShortagePipeline(intake)
+                        || SemanticIntakeGoodsSupportedDishCoverSupport
+                                .intakeDeclaresGoodsSupportedDishCover(intake))) {
             return sem;
         }
-        String semantics = normalizeSemantics(intake.getWarehouseInventorySemantics());
-        if (SEMANTICS_NEAR_EXPIRY.equals(semantics)) {
-            String question = resolveClarificationQuestion(intake);
-            if (StringUtils.hasText(question)) {
-                return sem.toBuilder()
-                        .needClarification(true)
-                        .clarificationQuestion(question)
-                        .build();
+        if (parseOrIntakeDeclaresNearExpiryRisk(sem, intake)) {
+            String selected = blank(SemanticContractCompletionEngine.extractSelectedContractId(sem));
+            if (CONTRACT_NEAR_EXPIRY.equals(selected)) {
+                return mergeExpiryRiskFilterIntoParse(
+                        sem.toBuilder().needClarification(false).clarificationQuestion(null).build(),
+                        intake);
             }
+            String question = resolveClarificationQuestion(intake);
+            return sem.toBuilder()
+                    .needClarification(true)
+                    .clarificationQuestion(
+                            StringUtils.hasText(question) ? question : CLARIFICATION_NEAR_EXPIRY)
+                    .build();
+        }
+        if (intake == null || !signalsInventoryRisk(intake)) {
             return sem;
+        }
+        String semantics = resolveEffectiveInventoryRiskSemantics(intake);
+        if (SEMANTICS_NEAR_EXPIRY.equals(semantics)) {
+            String selected = blank(SemanticContractCompletionEngine.extractSelectedContractId(sem));
+            if (CONTRACT_NEAR_EXPIRY.equals(selected)) {
+                return mergeExpiryRiskFilterIntoParse(
+                        sem.toBuilder().needClarification(false).clarificationQuestion(null).build(),
+                        intake);
+            }
+            String question = resolveClarificationQuestion(intake);
+            return sem.toBuilder()
+                    .needClarification(true)
+                    .clarificationQuestion(
+                            StringUtils.hasText(question) ? question : CLARIFICATION_NEAR_EXPIRY)
+                    .build();
         }
         String selected = blank(SemanticContractCompletionEngine.extractSelectedContractId(sem));
         if (CONTRACT_GOODS_AMOUNT_RANKING_LOW.equals(selected)) {
@@ -481,7 +592,12 @@ public final class WarehouseInventoryShortageSemanticsSupport {
         if (CONTRACT_INVENTORY_RISK_LIST.equals(selected)) {
             return sem.toBuilder().needClarification(false).clarificationQuestion(null).build();
         }
-        return sem;
+        String question = resolveClarificationQuestion(intake);
+        return sem.toBuilder()
+                .needClarification(true)
+                .clarificationQuestion(
+                        StringUtils.hasText(question) ? question : CLARIFICATION_UNDERSTOCK_QUERY)
+                .build();
     }
 
     /**
@@ -534,6 +650,9 @@ public final class WarehouseInventoryShortageSemanticsSupport {
         if (intake == null || intakeExplicitAmountRankingLow(intake)) {
             return false;
         }
+        if (WarehouseInventorySupervisionSemanticsSupport.intakeDeclaresSupervisionQuery(intake)) {
+            return false;
+        }
         if (SemanticIntakeDishIngredientCoverDaysSupport.reasonDeclaresDishIngredientCoverDays(
                 intake.getReason())) {
             return false;
@@ -544,6 +663,9 @@ public final class WarehouseInventoryShortageSemanticsSupport {
         }
         String semantics = normalizeSemantics(intake.getWarehouseInventorySemantics());
         if (isInventoryRiskSemantics(semantics)) {
+            return true;
+        }
+        if (intakeDeclaresNearExpiryRiskFilter(intake)) {
             return true;
         }
         return reasonDeclaresShortageSemantics(intake.getReason());
@@ -606,6 +728,52 @@ public final class WarehouseInventoryShortageSemanticsSupport {
 
     private static String blank(String s) {
         return s == null ? null : s.trim();
+    }
+
+    private static AiQuerySemanticParseResult mergeExpiryRiskFilterIntoParse(
+            AiQuerySemanticParseResult sem, SemanticIntakeResult intake) {
+        String filter = resolveMergedExpiryRiskFilter(sem, intake);
+        if (!StringUtils.hasText(filter)) {
+            return sem;
+        }
+        AiQuerySemanticParseResult.SemanticSlotsPart slots = sem.getSemanticSlots();
+        AiQuerySemanticParseResult.SemanticSlotsPart updated =
+                slots == null
+                        ? AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                                .expiryRiskFilter(filter)
+                                .build()
+                        : AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                                .selectedContractId(slots.getSelectedContractId())
+                                .queryObject(slots.getQueryObject())
+                                .operation(slots.getOperation())
+                                .metric(slots.getMetric())
+                                .sourceFacet(slots.getSourceFacet())
+                                .anchorPolicy(slots.getAnchorPolicy())
+                                .detailWanted(slots.getDetailWanted())
+                                .structuredIntentDetailWire(slots.getStructuredIntentDetailWire())
+                                .answerPlanType(slots.getAnswerPlanType())
+                                .mentionedDishName(slots.getMentionedDishName())
+                                .mentionedGoodsName(slots.getMentionedGoodsName())
+                                .requestedTargetGrossMarginRate(slots.getRequestedTargetGrossMarginRate())
+                                .expiryRiskFilter(filter)
+                                .build();
+        return sem.toBuilder().semanticSlots(updated).build();
+    }
+
+    private static String resolveMergedExpiryRiskFilter(
+            AiQuerySemanticParseResult sem, SemanticIntakeResult intake) {
+        if (sem != null && sem.getSemanticSlots() != null) {
+            String fromSlots =
+                    WarehouseNearExpiryRiskFilterSupport.normalizeFilter(
+                            sem.getSemanticSlots().getExpiryRiskFilter());
+            if (fromSlots != null) {
+                return fromSlots;
+            }
+        }
+        if (intake != null) {
+            return WarehouseNearExpiryRiskFilterSupport.normalizeFilter(intake.getExpiryRiskFilter());
+        }
+        return null;
     }
 
 }

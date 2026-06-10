@@ -28,6 +28,18 @@ public class GbDistributerFoodGoodsEntity implements Serializable {
     private String gbDfgGoodsName;
     private String gbDfgGoodsStandardname;
     private Integer gbDfgStatus;
+    /**
+     * 每份用量（用户录入的数），如 50（表示 50g/份）
+     */
+    private java.math.BigDecimal gbDfgPortionAmount;
+    /**
+     * 每份用量单位（最小单位），如 g/ml/个/张/只/斤
+     */
+    private String gbDfgPortionUnit;
+    /**
+     * 1 个采购包装 = 多少最小单位，如 3000（1袋=3000g）
+     */
+    private java.math.BigDecimal gbDfgPackQtyInMin;
 
     /**
      * 近 30 日库存批次采购单价（gb_department_goods_stock.gb_dgs_price）均值；无有效记录为 "0"。
@@ -61,4 +73,11 @@ public class GbDistributerFoodGoodsEntity implements Serializable {
     private String gbDfgOutbound123Weight;
     @TableField(exist = false)
     private String gbDfgOutbound123Cost;
+    /**
+     * 员工餐（type=6，原料型）出库总数量/金额；与 {@link com.nongxinle.utils.GbConstants.StockReduceType#EMPLOYEE_MEAL} 一致。
+     */
+    @TableField(exist = false)
+    private String gbDfgEmployeeMealReduceWeight;
+    @TableField(exist = false)
+    private String gbDfgEmployeeMealReduceCost;
 }

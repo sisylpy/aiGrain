@@ -8,6 +8,7 @@ import com.nongxinle.service.GbAiDailyRevenueExcelService;
 import com.nongxinle.service.GbDepartmentService;
 import com.nongxinle.service.GbDepFoodService;
 import com.nongxinle.service.GbDistributerFoodService;
+import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.GbDateTimeUtils;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -229,6 +230,13 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 entity.setGbAiDailyRevenueNotes("");
             }
             
+            // 计算总营业额 = 堂食 + 外卖
+            {
+                BigDecimal dineIn = entity.getGbAiDailyRevenueDineInRevenue() != null ? entity.getGbAiDailyRevenueDineInRevenue() : BigDecimal.ZERO;
+                BigDecimal takeout = entity.getGbAiDailyRevenueTakeoutRevenue() != null ? entity.getGbAiDailyRevenueTakeoutRevenue() : BigDecimal.ZERO;
+                entity.setGbAiDailyRevenueGrossRevenue(dineIn.add(takeout));
+            }
+
             // 设置创建时间和更新时间
             Date currentTime = new Date();
             entity.setGbAiDailyRevenueCreateTime(currentTime);
@@ -611,6 +619,11 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                     log.info("resolveCombinedTemplate skip junk sheet index={} name=\"{}\"", i, sheetName);
                     continue;
                 }
+                if (GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME.equals(sheetName)
+                        || findDiscountFoodSalesHeaderRow(rows) != null) {
+                    log.info("resolveCombinedTemplate skip discount sheet index={} name=\"{}\"", i, sheetName);
+                    continue;
+                }
                 if (food < 0 && findFoodSalesPivotHeaderRow(rows) != null) {
                     food = i;
                     log.info("resolveCombinedTemplate detected FOOD sheet index={} name=\"{}\"", i, sheetName);
@@ -639,6 +652,364 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             logWorkbookSheetNames(wb);
             return new int[] { food, revenue };
         }
+    }
+
+    @Override
+    public int resolveCombinedTemplateDiscountSheetIndex(byte[] spreadsheetBytes) throws IOException {
+        try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(spreadsheetBytes))) {
+            int sheetCount = wb.getNumberOfSheets();
+            for (int i = 0; i < sheetCount; i++) {
+                if (GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME.equals(wb.getSheetName(i))) {
+                    log.info("resolveCombinedTemplateDiscount by sheet name index={}", i);
+                    return i;
+                }
+            }
+            for (int i = 0; i < sheetCount; i++) {
+                String sheetName = wb.getSheetName(i);
+                List<List<Object>> rows = readSheetRowsForDetection(spreadsheetBytes, i);
+                if (isNumbersOrExportJunkSheet(sheetName, rows)) {
+                    continue;
+                }
+                if (findDiscountFoodSalesHeaderRow(rows) != null) {
+                    log.info("resolveCombinedTemplateDiscount detected index={} name=\"{}\"", i, sheetName);
+                    return i;
+                }
+            }
+            log.info("resolveCombinedTemplateDiscount not found totalSheets={}", sheetCount);
+            return -1;
+        }
+    }
+
+    @Override
+    public List<GbAiDailyRevenueExcelService.DiscountFoodSalesExcelRow> parseCombinedTemplateDiscountFoodSalesSheet(
+            byte[] spreadsheetBytes, int sheetIndex, Long departmentId) throws IOException {
+        if (sheetIndex < 0) {
+            return Collections.emptyList();
+        }
+        cn.hutool.poi.excel.ExcelReader reader =
+                cn.hutool.poi.excel.ExcelUtil.getReader(new ByteArrayInputStream(spreadsheetBytes), sheetIndex);
+        List<List<Object>> rows = reader.read();
+        Integer pivotHeaderRow = findDiscountFoodSalesPivotHeaderRow(rows);
+        if (pivotHeaderRow != null) {
+            log.info("parseCombinedTemplateDiscount using pivot layout, headerRowIndex={}", pivotHeaderRow);
+            return readDiscountFoodSalesExcelPivotLayout(rows, pivotHeaderRow, departmentId);
+        }
+        Integer legacyHeaderRow = findDiscountFoodSalesLegacyHeaderRow(rows);
+        if (legacyHeaderRow != null) {
+            log.info("parseCombinedTemplateDiscount using legacy row layout, headerRowIndex={}", legacyHeaderRow);
+            return readDiscountFoodSalesExcelLegacyRows(rows, legacyHeaderRow, departmentId);
+        }
+        throw new IllegalArgumentException(
+                "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME
+                        + "」未找到表头（需含：序号、部门名称、菜品名称、类型、实际单价及各日期列；或旧版逐行日期格式）");
+    }
+
+    private List<GbAiDailyRevenueExcelService.DiscountFoodSalesExcelRow> readDiscountFoodSalesExcelPivotLayout(
+            List<List<Object>> rows, int headerRowIndex, Long departmentId) {
+        List<GbAiDailyRevenueExcelService.DiscountFoodSalesExcelRow> out = new ArrayList<>();
+        List<Object> header = rows.get(headerRowIndex);
+        int dataStartRow = headerRowIndex + 1;
+
+        int typeCol = -1;
+        int priceCol = -1;
+        int foodCol = -1;
+        int depCol = -1;
+        for (int c = 0; c < header.size(); c++) {
+            Object cell = header.get(c);
+            if (cell == null) {
+                continue;
+            }
+            String s = cell.toString();
+            if (s.contains("类型")) {
+                typeCol = c;
+            }
+            if (s.contains("实际单价") || (s.contains("单价") && !s.contains("类型"))) {
+                priceCol = c;
+            }
+            if (s.contains("菜品")) {
+                foodCol = c;
+            }
+            if (s.contains("部门")) {
+                depCol = c;
+            }
+        }
+        if (typeCol < 0 || priceCol < 0 || foodCol < 0) {
+            throw new IllegalArgumentException(
+                    "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME
+                            + "」表头须含「类型」「实际单价」「菜品名称」列");
+        }
+        int firstDateCol = indexOfFirstDateColumnInRow(header, priceCol + 1);
+        if (firstDateCol < 0) {
+            throw new IllegalArgumentException(
+                    "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME
+                            + "」未找到日期列表头（实际单价列后须为各日 yyyy-MM-dd 列）");
+        }
+
+        List<String> dateKeys = new ArrayList<>();
+        for (int c = firstDateCol; c < header.size(); c++) {
+            String dk = GbDateTimeUtils.normalizeExcelDayKey(header.get(c));
+            dateKeys.add(dk);
+        }
+
+        for (int i = dataStartRow; i < rows.size(); i++) {
+            List<Object> row = rows.get(i);
+            if (row == null || row.size() <= foodCol || row.get(foodCol) == null) {
+                continue;
+            }
+            Integer foodId = parseFoodIdFromHeader(row.get(foodCol));
+            if (foodId == null) {
+                continue;
+            }
+            Integer depId = null;
+            if (depCol >= 0 && row.size() > depCol) {
+                depId = parseDepartmentIdFromHeaderCell(row.get(depCol));
+            }
+            if (depId == null && departmentId != null) {
+                depId = departmentId.intValue();
+            }
+            if (depId != null) {
+                assertDepartmentInUploadScope(depId.longValue(), departmentId);
+            }
+
+            boolean hasPositiveQty = false;
+            boolean hasExplicitZero = false;
+            for (int j = 0; j < dateKeys.size(); j++) {
+                String dk = dateKeys.get(j);
+                if (dk == null) {
+                    continue;
+                }
+                int col = firstDateCol + j;
+                if (col >= row.size()) {
+                    continue;
+                }
+                BigDecimal q = parseExcelBigDecimalCell(row.get(col));
+                if (q == null) {
+                    continue;
+                }
+                if (q.compareTo(BigDecimal.ZERO) > 0) {
+                    hasPositiveQty = true;
+                } else {
+                    hasExplicitZero = true;
+                }
+            }
+            if (!hasPositiveQty && !hasExplicitZero) {
+                continue;
+            }
+
+            Integer type = parseDiscountFoodSalesTypeCell(
+                    row.size() > typeCol ? row.get(typeCol) : null, i + 1);
+            BigDecimal actualUnitPrice = parseExcelBigDecimalCell(row.size() > priceCol ? row.get(priceCol) : null);
+            if (hasPositiveQty && (actualUnitPrice == null || actualUnitPrice.compareTo(BigDecimal.ZERO) < 0)) {
+                throw new IllegalArgumentException(
+                        "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME + "」第 " + (i + 1)
+                                + " 行有销量时实际单价必填且不能为负");
+            }
+            BigDecimal priceForRow = actualUnitPrice != null ? actualUnitPrice : BigDecimal.ZERO;
+
+            for (int j = 0; j < dateKeys.size(); j++) {
+                String dk = dateKeys.get(j);
+                if (dk == null) {
+                    continue;
+                }
+                int col = firstDateCol + j;
+                if (col >= row.size()) {
+                    continue;
+                }
+                BigDecimal qty = parseExcelBigDecimalCell(row.get(col));
+                if (qty == null) {
+                    continue;
+                }
+                Date recordDate = GbDateTimeUtils.parseDay(dk);
+                if (recordDate == null) {
+                    continue;
+                }
+                out.add(new GbAiDailyRevenueExcelService.DiscountFoodSalesExcelRow(
+                        recordDate, depId, foodId, type, qty, priceForRow));
+            }
+        }
+        return out;
+    }
+
+    private List<GbAiDailyRevenueExcelService.DiscountFoodSalesExcelRow> readDiscountFoodSalesExcelLegacyRows(
+            List<List<Object>> rows, int headerRow, Long departmentId) {
+        List<GbAiDailyRevenueExcelService.DiscountFoodSalesExcelRow> out = new ArrayList<>();
+        for (int i = headerRow + 1; i < rows.size(); i++) {
+            List<Object> row = rows.get(i);
+            if (row == null || row.isEmpty() || row.get(0) == null) {
+                continue;
+            }
+            Date recordDate = GbDateTimeUtils.parseExcelDateLikeCell(row.get(0));
+            if (recordDate == null) {
+                continue;
+            }
+            if (row.size() < 6) {
+                throw new IllegalArgumentException(
+                        "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME + "」第 " + (i + 1)
+                                + " 行列数不足（需：日期、部门、菜品、类型、数量、实际单价）");
+            }
+            Integer depId = parseDepartmentIdFromHeaderCell(row.get(1));
+            if (depId == null) {
+                depId = departmentId == null ? null : departmentId.intValue();
+            }
+            if (depId == null) {
+                throw new IllegalArgumentException(
+                        "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME + "」第 " + (i + 1)
+                                + " 行部门无法识别（请在部门列填写「名称（id:xx）」）");
+            }
+            assertDepartmentInUploadScope(depId.longValue(), departmentId);
+
+            Integer foodId = parseFoodIdFromHeader(row.get(2));
+            if (foodId == null) {
+                throw new IllegalArgumentException(
+                        "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME + "」第 " + (i + 1)
+                                + " 行菜品无法识别（请在菜品列填写「名称（id:xx）」）");
+            }
+
+            Integer type = parseDiscountFoodSalesTypeCell(row.get(3), i + 1);
+            BigDecimal qty = parseExcelBigDecimalCell(row.get(4));
+            BigDecimal actualUnitPrice = parseExcelBigDecimalCell(row.get(5));
+            if (qty == null) {
+                continue;
+            }
+            if (qty.compareTo(BigDecimal.ZERO) <= 0) {
+                out.add(new GbAiDailyRevenueExcelService.DiscountFoodSalesExcelRow(
+                        recordDate, depId, foodId, type, BigDecimal.ZERO,
+                        actualUnitPrice != null ? actualUnitPrice : BigDecimal.ZERO));
+                continue;
+            }
+            if (actualUnitPrice == null || actualUnitPrice.compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException(
+                        "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME + "」第 " + (i + 1)
+                                + " 行实际单价无效");
+            }
+            out.add(new GbAiDailyRevenueExcelService.DiscountFoodSalesExcelRow(
+                    recordDate, depId, foodId, type, qty, actualUnitPrice));
+        }
+        return out;
+    }
+
+    private static Integer findDiscountFoodSalesPivotHeaderRow(List<List<Object>> rows) {
+        for (int r = 0; r < Math.min(rows.size(), 20); r++) {
+            List<Object> row = rows.get(r);
+            if (row == null || row.size() < 6) {
+                continue;
+            }
+            Object c0 = row.get(0);
+            if (c0 == null || !c0.toString().trim().contains("序号")) {
+                continue;
+            }
+            int typeCol = -1;
+            int priceCol = -1;
+            int foodCol = -1;
+            for (int c = 0; c < row.size(); c++) {
+                Object cell = row.get(c);
+                if (cell == null) {
+                    continue;
+                }
+                String s = cell.toString();
+                if (s.contains("类型")) {
+                    typeCol = c;
+                }
+                if (s.contains("实际单价") || (s.contains("单价") && !s.contains("类型"))) {
+                    priceCol = c;
+                }
+                if (s.contains("菜品")) {
+                    foodCol = c;
+                }
+            }
+            if (typeCol < 0 || priceCol < 0 || foodCol < 0 || priceCol <= typeCol || typeCol <= foodCol) {
+                continue;
+            }
+            if (indexOfFirstDateColumnInRow(row, priceCol + 1) < 0) {
+                continue;
+            }
+            return r;
+        }
+        return null;
+    }
+
+    private static Integer findDiscountFoodSalesHeaderRow(List<List<Object>> rows) {
+        Integer pivot = findDiscountFoodSalesPivotHeaderRow(rows);
+        if (pivot != null) {
+            return pivot;
+        }
+        return findDiscountFoodSalesLegacyHeaderRow(rows);
+    }
+
+    private static Integer findDiscountFoodSalesLegacyHeaderRow(List<List<Object>> rows) {
+        for (int r = 0; r < Math.min(rows.size(), 40); r++) {
+            List<Object> row = rows.get(r);
+            if (row == null || row.isEmpty() || row.get(0) == null) {
+                continue;
+            }
+            String c0 = row.get(0).toString().trim();
+            if (!"日期".equals(c0) && !c0.contains("日期")) {
+                continue;
+            }
+            boolean hasDept = false;
+            boolean hasFood = false;
+            boolean hasType = false;
+            boolean hasQty = false;
+            boolean hasPrice = false;
+            for (Object cell : row) {
+                if (cell == null) {
+                    continue;
+                }
+                String s = cell.toString();
+                if (s.contains("部门")) {
+                    hasDept = true;
+                }
+                if (s.contains("菜品")) {
+                    hasFood = true;
+                }
+                if (s.contains("类型")) {
+                    hasType = true;
+                }
+                if (s.contains("数量")) {
+                    hasQty = true;
+                }
+                if (s.contains("实际单价") || (s.contains("单价") && !s.contains("类型"))) {
+                    hasPrice = true;
+                }
+            }
+            if (hasDept && hasFood && hasType && hasQty && hasPrice) {
+                return r;
+            }
+        }
+        return null;
+    }
+
+    private static Integer parseDiscountFoodSalesTypeCell(Object cell, int excelRowOneBased) {
+        if (cell == null) {
+            throw new IllegalArgumentException(
+                    "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME + "」第 " + excelRowOneBased
+                            + " 行类型不能为空（2=折扣销售，5=员工餐）");
+        }
+        Integer type;
+        if (cell instanceof Number) {
+            type = ((Number) cell).intValue();
+        } else {
+            String s = cell.toString().trim();
+            if (s.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME + "」第 " + excelRowOneBased
+                                + " 行类型不能为空（2=折扣销售，5=员工餐）");
+            }
+            try {
+                type = Integer.parseInt(s.replaceAll("\\.0+$", ""));
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(
+                        "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME + "」第 " + excelRowOneBased
+                                + " 行类型须为整数 2 或 5，当前: " + s);
+            }
+        }
+        if (!GbConstants.FoodSalesType.DISCOUNT_SALE.equals(type)
+                && !GbConstants.FoodSalesType.EMPLOYEE_MEAL.equals(type)) {
+            throw new IllegalArgumentException(
+                    "「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME + "」第 " + excelRowOneBased
+                            + " 行类型须为 2（折扣销售）或 5（员工餐），当前: " + type);
+        }
+        return type;
     }
 
     @Override
@@ -875,6 +1246,13 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 entity.setGbAiDailyRevenueNotes("");
             }
 
+            // 总营业额 = 堂食 + 外卖（组合模板无堂食列，堂食默认为0，由菜品导入逻辑后续填入）
+            {
+                BigDecimal dineIn = entity.getGbAiDailyRevenueDineInRevenue() != null ? entity.getGbAiDailyRevenueDineInRevenue() : BigDecimal.ZERO;
+                BigDecimal takeout = entity.getGbAiDailyRevenueTakeoutRevenue() != null ? entity.getGbAiDailyRevenueTakeoutRevenue() : BigDecimal.ZERO;
+                entity.setGbAiDailyRevenueGrossRevenue(dineIn.add(takeout));
+            }
+
             Date currentTime = new Date();
             entity.setGbAiDailyRevenueCreateTime(currentTime);
             entity.setGbAiDailyRevenueUpdateTime(currentTime);
@@ -1009,15 +1387,63 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 }
             }
 
+            writer.setSheet(GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME);
+            List<Object> discMeta = new ArrayList<>();
+            discMeta.add("部门ID: " + departmentId);
+            discMeta.add("部门名称: " + department.getGbDepartmentName());
+            discMeta.add("日期范围: " + startDate + " 至 " + endDate);
+            discMeta.add("总天数: " + days);
+            discMeta.add("菜品行数(含id): " + dishRowCount);
+            discMeta.add("说明: 布局与「菜品日销售」相同，多「类型」「实际单价」列；类型 2=折扣，5=员工餐");
+            discMeta.add("有销量的行须填类型与实际单价；各日期列填数量");
+            discMeta.add("");
+            discMeta.add("");
+            writer.writeRow(discMeta);
+            writer.writeRow(new ArrayList<>());
+
+            List<Object> discDataHeaders = new ArrayList<>();
+            discDataHeaders.add("序号");
+            discDataHeaders.add("部门名称");
+            discDataHeaders.add("菜品名称");
+            discDataHeaders.add("类型（2=折扣销售，5=员工餐）");
+            discDataHeaders.add("实际单价(元/份)");
+            for (LocalDate d : dayList) {
+                discDataHeaders.add(GbDateTimeUtils.formatDay(d));
+            }
+            writer.writeHeadRow(discDataHeaders);
+
+            int discSerial = 1;
+            for (GbDepFoodEntity f : depFoods) {
+                Integer foodId = f.getGbDfFoodId();
+                if (foodId == null || !includeDepFoodInSalesTemplate(f, department)) {
+                    continue;
+                }
+                String name = distributerFoodDisplayName(f, foodId);
+                Integer depId = f.getGbDfDepId();
+                String depName = depDisplayName(depId);
+                List<Object> rowData = new ArrayList<>();
+                rowData.add(discSerial++);
+                rowData.add(depName + "（id:" + (depId == null ? "" : depId) + "）");
+                rowData.add(name + "（id:" + foodId + "）");
+                rowData.add("");
+                rowData.add("");
+                for (int i = 0; i < days; i++) {
+                    rowData.add("");
+                }
+                writer.writeRow(rowData);
+            }
+
             writer.setSheet("使用说明");
-            writer.writeCellValue(0, 0, "合并模板说明（菜品 + 日营业额）");
-            writer.writeCellValue(1, 0, "一、「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_FOOD_NAME + "」与单独下载的菜品模板相同：第1列序号、第2列部门（含id）、第3列菜品（含id），第4列起为各日销量。");
-            writer.writeCellValue(2, 0, "二、「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_REVENUE_NAME
-                    + "」第2列为部门名称（含 id），与菜品表一致；每个日期下按子部门分行；不含堂食营业额列，堂食金额由菜品销量×单价汇总。");
-            writer.writeCellValue(3, 0, "三、上传接口：POST /ai/daily-revenue/upload-combined-excel ，参数 file、departmentId（父部门）、distributerId");
-            writer.writeCellValue(4, 0, "四、先导入菜品销售并汇总堂食，再按子部门合并写入订单数、顾客数、外卖、平台抽成、备注等。");
+            writer.writeCellValue(0, 0, "合并模板说明（菜品 + 日营业额 + 打折/员工餐）");
+            writer.writeCellValue(1, 0, "一、「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_FOOD_NAME + "」与单独下载的菜品模板相同：第1列序号、第2列部门（含id）、第3列菜品（含id），第4列起为各日正常销量（type=1）。");
+            writer.writeCellValue(2, 0, "二、「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME
+                    + "」与菜品表行一致（序号/部门/菜品均含 id），另增第4列类型（2 或 5）、第5列实际单价，第6列起为各日数量；有数量须填类型与单价。");
+            writer.writeCellValue(3, 0, "三、「" + GbAiDailyRevenueExcelService.COMBINED_SHEET_REVENUE_NAME
+                    + "」第2列为部门名称（含 id），每个日期下按子部门分行；不含堂食营业额列，堂食金额由菜品销量×单价汇总（含 type=2 折扣）。");
+            writer.writeCellValue(4, 0, "四、上传接口：POST /ai/daily-revenue/upload-combined-excel ，参数 file、departmentId（父部门）、distributerId");
+            writer.writeCellValue(5, 0, "五、先导入菜品销售并汇总堂食，再导入打折/员工餐，最后按子部门合并写入订单数、顾客数、外卖、平台抽成、备注等。");
             if (skipped > 0) {
-                writer.writeCellValue(5, 0, "五、当前有 " + skipped + " 条门店菜品未出现在菜品表中（未配置 gb_df_food_id 或与部门批发商不一致）");
+                writer.writeCellValue(6, 0, "六、当前有 " + skipped + " 条门店菜品未出现在菜品表中（未配置 gb_df_food_id 或与部门批发商不一致）");
             }
 
             writer.setSheet(GbAiDailyRevenueExcelService.COMBINED_SHEET_FOOD_NAME);
@@ -1035,6 +1461,19 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 for (int i = 2; i <= 6; i++) {
                     if (revSheet.getRow(2).getCell(i) != null) {
                         revSheet.getRow(2).getCell(i).setCellValue(revHeaders[i] + " *");
+                    }
+                }
+            }
+
+            writer.setSheet(GbAiDailyRevenueExcelService.COMBINED_SHEET_DISCOUNT_NAME);
+            for (int i = 0; i < discDataHeaders.size(); i++) {
+                writer.autoSizeColumn(i);
+            }
+            Sheet discSheet = writer.getSheet();
+            if (discSheet != null && discSheet.getRow(2) != null) {
+                for (int i = 3; i <= 4; i++) {
+                    if (discSheet.getRow(2).getCell(i) != null) {
+                        discSheet.getRow(2).getCell(i).setCellValue(discDataHeaders.get(i) + " *");
                     }
                 }
             }
@@ -1122,7 +1561,7 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 }
                 Object cell = row.get(col);
                 BigDecimal q = parseExcelBigDecimalCell(cell);
-                if (q == null || q.compareTo(BigDecimal.ZERO) <= 0) {
+                if (q == null) {
                     continue;
                 }
                 try {
@@ -1181,7 +1620,7 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
                 }
                 Object cell = row.get(c);
                 BigDecimal q = parseExcelBigDecimalCell(cell);
-                if (q == null || q.compareTo(BigDecimal.ZERO) <= 0) {
+                if (q == null) {
                     continue;
                 }
                 out.add(new FoodSalesExcelCell(recordDate, null, fid, q));

@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -80,7 +81,7 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
             BigDecimal zicaiTotal = new BigDecimal(0);
             if (zicaiCount != null && zicaiCount > 0) {
                 Double aDouble = gbDpgService.queryPurchaseGoodsSubTotal(map);
-                zicaiTotal = new BigDecimal(aDouble).setScale(2, BigDecimal.ROUND_HALF_UP);
+                zicaiTotal = new BigDecimal(aDouble).setScale(2, RoundingMode.HALF_UP);
             }
             dayMap.put("zicai", zicaiTotal);
             map.remove("purchaseType");
@@ -90,7 +91,7 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
             BigDecimal dinghuoTotal = new BigDecimal(0);
             if (dinghuoCount != null && dinghuoCount > 0) {
                 Double aDouble = gbDpgService.queryPurchaseGoodsSubTotal(map);
-                dinghuoTotal = new BigDecimal(aDouble).setScale(2, BigDecimal.ROUND_HALF_UP);
+                dinghuoTotal = new BigDecimal(aDouble).setScale(2, RoundingMode.HALF_UP);
             }
             dayMap.put("dinghuo", dinghuoTotal);
             log.debug("订货金额: {}", dinghuoTotal);
@@ -103,7 +104,7 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
             BigDecimal allStockTotal = new BigDecimal(0);
             if (allStockCount != null && allStockCount > 0) {
                 Double aDouble = gbDpgService.queryPurchaseGoodsSubTotal(mapAllStock);
-                allStockTotal = new BigDecimal(aDouble).setScale(2, BigDecimal.ROUND_HALF_UP);
+                allStockTotal = new BigDecimal(aDouble).setScale(2, RoundingMode.HALF_UP);
             }
             dayMap.put("allStock", allStockTotal);
 
@@ -113,7 +114,7 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
             restMap.put("purDayuStatus", 1);
             Double restDouble = gbDepartmentGoodsStockService.queryDepGoodsRestTotal(restMap);
             BigDecimal restStockTotal = new BigDecimal(restDouble != null ? restDouble : 0)
-                    .setScale(2, BigDecimal.ROUND_HALF_UP);
+                    .setScale(2, RoundingMode.HALF_UP);
             dayMap.put("restStock", restStockTotal);
             log.debug("所有入库采购金额: {}, 当日采购关联库存剩余金额: {}", allStockTotal, restStockTotal);
 
@@ -128,7 +129,7 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
             Integer saleCount = gbDepartmentStockReduceService.queryReduceTypeCount(mapSale);
             if (saleCount != null && saleCount > 0) {
                 Double aDouble = gbDepartmentStockReduceService.queryReduceCostSubtotal(mapSale);
-                saleCostTotal = new BigDecimal(aDouble).setScale(1, BigDecimal.ROUND_HALF_UP);
+                saleCostTotal = new BigDecimal(aDouble).setScale(2, RoundingMode.HALF_UP);
             }
             dayMap.put("saleCostTotal", saleCostTotal);
 
@@ -143,7 +144,7 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
             Integer lossCount = gbDepartmentStockReduceService.queryReduceTypeCount(mapLoss);
             if (lossCount != null && lossCount > 0) {
                 Double aDouble = gbDepartmentStockReduceService.queryReduceCostSubtotal(mapLoss);
-                lossCostTotal = new BigDecimal(aDouble).setScale(1, BigDecimal.ROUND_HALF_UP);
+                lossCostTotal = new BigDecimal(aDouble).setScale(2, RoundingMode.HALF_UP);
             }
             dayMap.put("lossCostTotal", lossCostTotal);
 
@@ -155,11 +156,18 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
             Integer returnCount = gbDepartmentStockReduceService.queryReduceTypeCount(mapReturn);
             if (returnCount != null && returnCount > 0) {
                 Double aDouble = gbDepartmentStockReduceService.queryReduceCostSubtotal(mapReturn);
-                returnCostTotal = new BigDecimal(aDouble).setScale(1, BigDecimal.ROUND_HALF_UP);
+                returnCostTotal = new BigDecimal(aDouble).setScale(2, RoundingMode.HALF_UP);
             }
             dayMap.put("returnCostTotal", returnCostTotal);
 
-            BigDecimal costTotal = saleCostTotal.add(lossCostTotal).add(returnCostTotal);
+            Map<String, Object> mapEmployeeMeal = new HashMap<>();
+            mapEmployeeMeal.put("date", whichDay);
+            mapEmployeeMeal.put("disId", disId);
+            mapEmployeeMeal.put("type", GbConstants.StockReduceType.EMPLOYEE_MEAL);
+            BigDecimal employeeMealCostTotal = queryEmployeeMealCostSubtotal(mapEmployeeMeal);
+            dayMap.put("employeeMealCostTotal", employeeMealCostTotal);
+
+            BigDecimal costTotal = saleCostTotal.add(lossCostTotal).add(returnCostTotal).add(employeeMealCostTotal);
             dayMap.put("costTotal", costTotal);
 
             dayList.add(dayMap);
@@ -176,7 +184,7 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
         Integer totalCount = gbDpgService.queryPurchaseGoodsCount(mapTotal);
         if (totalCount != null && totalCount > 0) {
             Double aDouble = gbDpgService.queryPurchaseGoodsSubTotal(mapTotal);
-            purchaseTotal = new BigDecimal(aDouble).setScale(2, BigDecimal.ROUND_HALF_UP);
+            purchaseTotal = new BigDecimal(aDouble).setScale(2, RoundingMode.HALF_UP);
         }
         log.debug("总采购金额: {}", purchaseTotal);
 
@@ -196,7 +204,7 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
         if (dinghuoCountSum != null && dinghuoCountSum > 0) {
             log.debug("mappaaptttt{}", mapTotal);
             Double aDouble = gbDpgService.queryPurchaseGoodsSubTotal(mapTotal);
-            dinghuoTotalSum = new BigDecimal(aDouble).setScale(2, BigDecimal.ROUND_HALF_UP);
+            dinghuoTotalSum = new BigDecimal(aDouble).setScale(2, RoundingMode.HALF_UP);
         }
         log.debug("订货总额1: {}", dinghuoTotalSum);
         mapTotal.remove("purchaseType");
@@ -213,7 +221,7 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
         Integer saleCountSum = gbDepartmentStockReduceService.queryReduceTypeCount(mapSaleTotal);
         if (saleCountSum != null && saleCountSum > 0) {
             Double aDouble = gbDepartmentStockReduceService.queryReduceCostSubtotal(mapSaleTotal);
-            saleCostTotalSum = new BigDecimal(aDouble).setScale(1, BigDecimal.ROUND_HALF_UP);
+            saleCostTotalSum = new BigDecimal(aDouble).setScale(2, RoundingMode.HALF_UP);
         }
         log.debug("销售支出总额: {}", saleCostTotalSum);
 
@@ -229,7 +237,7 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
         Integer lossCountSum = gbDepartmentStockReduceService.queryReduceTypeCount(mapLossTotal);
         if (lossCountSum != null && lossCountSum > 0) {
             Double aDouble = gbDepartmentStockReduceService.queryReduceCostSubtotal(mapLossTotal);
-            lossCostTotalSum = new BigDecimal(aDouble).setScale(1, BigDecimal.ROUND_HALF_UP);
+            lossCostTotalSum = new BigDecimal(aDouble).setScale(2, RoundingMode.HALF_UP);
         }
         log.debug("损耗支出总额: {}", lossCostTotalSum);
 
@@ -242,11 +250,20 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
         Integer returnCountSum = gbDepartmentStockReduceService.queryReduceTypeCount(mapReturnTotal);
         if (returnCountSum != null && returnCountSum > 0) {
             Double aDouble = gbDepartmentStockReduceService.queryReduceCostSubtotal(mapReturnTotal);
-            returnCostTotalSum = new BigDecimal(aDouble).setScale(1, BigDecimal.ROUND_HALF_UP);
+            returnCostTotalSum = new BigDecimal(aDouble).setScale(2, RoundingMode.HALF_UP);
         }
         log.debug("退货支出总额: {}", returnCostTotalSum);
 
-        BigDecimal costTotalSum = saleCostTotalSum.add(lossCostTotalSum).add(returnCostTotalSum);
+        Map<String, Object> mapEmployeeMealTotal = new HashMap<>();
+        mapEmployeeMealTotal.put("disId", disId);
+        mapEmployeeMealTotal.put("startDate", startDate);
+        mapEmployeeMealTotal.put("stopDate", stopDate);
+        mapEmployeeMealTotal.put("type", GbConstants.StockReduceType.EMPLOYEE_MEAL);
+        BigDecimal employeeMealCostTotalSum = queryEmployeeMealCostSubtotal(mapEmployeeMealTotal);
+        log.debug("员工餐支出总额: {}", employeeMealCostTotalSum);
+
+        BigDecimal costTotalSum = saleCostTotalSum.add(lossCostTotalSum).add(returnCostTotalSum)
+                .add(employeeMealCostTotalSum);
         log.debug("总支出: {}", costTotalSum);
 
         BigDecimal purchasePerDay = purchaseTotal;
@@ -267,9 +284,20 @@ public class GbDistributerPurchaseGoodsDisPurchaseDateServiceImpl implements GbD
         result.put("saleCostTotal", saleCostTotalSum);
         result.put("lossCostTotal", lossCostTotalSum);
         result.put("returnCostTotal", returnCostTotalSum);
+        result.put("employeeMealCostTotal", employeeMealCostTotalSum);
         result.put("arr", dayList);
 
         log.debug("======== GB采购日期统计完成 ========");
         return result;
+    }
+
+    /** 原料型员工餐（{@code gb_department_goods_stock_reduce type=6}）出库金额。 */
+    private BigDecimal queryEmployeeMealCostSubtotal(Map<String, Object> map) {
+        Integer count = gbDepartmentStockReduceService.queryReduceTypeCount(map);
+        if (count == null || count <= 0) {
+            return BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP);
+        }
+        Double subtotal = gbDepartmentStockReduceService.queryReduceEmployeeMealTotal(map);
+        return new BigDecimal(subtotal != null ? subtotal : 0).setScale(1, RoundingMode.HALF_UP);
     }
 }

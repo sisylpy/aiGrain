@@ -10,6 +10,8 @@ import com.nongxinle.service.GbDepartmentGoodsStockReduceService;
 import com.nongxinle.service.GbDepartmentGoodsStockService;
 import com.nongxinle.service.GbDepartmentGoodsStockQueryService;
 import com.nongxinle.utils.DateUtils;
+import com.nongxinle.utils.GbConstants;
+import com.nongxinle.utils.GbDepartmentGoodsStockReduceSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +21,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.HashMap;
@@ -60,10 +63,11 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
 
         List<GbDepartmentGoodsStockEntity> withRest = gbDepGoodsStockService.queryGoodsStockByParams(mapMain);
 
+        // 查当天有消减操作且库存已归零的批次（非按库存记录日期，按 reduce 表 gb_dgsr_date）
         Map<String, Object> mapToday = new HashMap<>();
         mapToday.put("depGoodsId", depGoodsId);
         mapToday.put("dayuStatus", -1);
-        mapToday.put("date", DateUtils.formatWhatDay(0));
+        mapToday.put("reduceDate", DateUtils.formatWhatDay(0));
         mapToday.put("equalRestWeight", 0);
 
         List<GbDepartmentGoodsStockEntity> exhaustedToday = gbDepGoodsStockService.queryGoodsStockByParams(mapToday);
@@ -102,7 +106,7 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
         Map<String, Object> mapToday = new HashMap<>();
         mapToday.put("disGoodsId", disGoodsId);
         mapToday.put("dayuStatus", -1);
-        mapToday.put("date", DateUtils.formatWhatDay(0));
+        mapToday.put("reduceDate", DateUtils.formatWhatDay(0));
         mapToday.put("equalRestWeight", 0);
 
         List<GbDepartmentGoodsStockEntity> exhaustedToday = gbDepGoodsStockService.queryGoodsStockByParams(mapToday);
@@ -125,6 +129,11 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
 
     }
 
+    @Override
+    public void enrichStockBatchReduceLists(List<GbDepartmentGoodsStockEntity> stocks) {
+        attachGoodsStockReduces(stocks);
+    }
+
 
     private void attachGoodsStockReduces(List<GbDepartmentGoodsStockEntity> stocks) {
         if (stocks.isEmpty()) {
@@ -141,6 +150,12 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
         List<GbDepartmentGoodsStockReduceEntity> all = gbDepartmentGoodsStockReduceService.list(
                 new LambdaQueryWrapper<GbDepartmentGoodsStockReduceEntity>()
                         .in(GbDepartmentGoodsStockReduceEntity::getGbDgsrGbGoodsStockId, stockIds)
+                        .in(GbDepartmentGoodsStockReduceEntity::getGbDgsrType, Arrays.asList(
+                                GbConstants.StockReduceType.PRODUCTION,
+                                GbConstants.StockReduceType.WASTE,
+                                GbConstants.StockReduceType.LOSS,
+                                GbConstants.StockReduceType.RETURN,
+                                GbConstants.StockReduceType.EMPLOYEE_MEAL))
                         .orderByDesc(GbDepartmentGoodsStockReduceEntity::getGbDepartmentGoodsStockReduceId));
         Map<Integer, List<GbDepartmentGoodsStockReduceEntity>> byStock = new HashMap<>();
         for (GbDepartmentGoodsStockReduceEntity r : all) {
@@ -152,9 +167,25 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
         }
         for (GbDepartmentGoodsStockEntity stock : stocks) {
             Integer id = stock.getGbDepartmentGoodsStockId();
-            stock.setGoodsStockReduceEntityList(
-                    id == null ? Collections.emptyList() : byStock.getOrDefault(id, Collections.emptyList()));
+            List<GbDepartmentGoodsStockReduceEntity> batch =
+                    id == null ? Collections.emptyList() : byStock.getOrDefault(id, Collections.emptyList());
+            stock.setGoodsStockReduceEntityList(batch);
+            GbDepartmentGoodsStockReduceSupport.enrichStockBatchWxDisplay(stock, batch);
         }
+        String unit = null;
+        if (!stocks.isEmpty()) {
+            GbDistributerGoodsEntity goods = stocks.get(0).getGbDistributerGoodsEntity();
+            if (goods != null && goods.getGbDgGoodsStandardname() != null) {
+                unit = goods.getGbDgGoodsStandardname().trim();
+            }
+        }
+        List<GbDepartmentGoodsStockReduceEntity> allReduces = new ArrayList<>();
+        for (GbDepartmentGoodsStockEntity stock : stocks) {
+            if (stock.getGoodsStockReduceEntityList() != null) {
+                allReduces.addAll(stock.getGoodsStockReduceEntityList());
+            }
+        }
+        gbDepartmentGoodsStockReduceService.enrichReducesWithStockAndPurchaseBatch(allReduces, unit);
     }
 
     @Override
@@ -586,6 +617,18 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
 
             greatGrandFather.setFatherStockTotalString(String.format("%.1f", greatGrandTotal.doubleValue()));
             greatGrandFather.setFatherStockManyString(String.valueOf(greatGrandStockCount));
+
+            // 计算过期/损耗金额
+            Map<String, Object> wasteParams = new HashMap<>(map0W);
+            wasteParams.put("nowTimeWaste", System.currentTimeMillis());
+            wasteParams.put("disGoodsGreatId", greatGrandFather.getGbDistributerFatherGoodsId());
+            Integer wasteGoodsCount = gbDepGoodsStockService.queryGoodsStockCount(wasteParams);
+            if (wasteGoodsCount > 0) {
+                greatWasteValue = gbDepGoodsStockService.queryDepGoodsWasteTotal(wasteParams);
+            }
+            greatGrandFather.setFatherWasteTotalString(
+                    new BigDecimal(greatWasteValue).setScale(1, BigDecimal.ROUND_HALF_UP).toString());
+
             if (total > 0) {
                 double percent = greatGrandTotal.doubleValue() / total * 100;
                 greatGrandFather.setFatherStockTotalPercent(String.format("%.1f", percent));
@@ -662,6 +705,9 @@ public class GbDepartmentGoodsStockQueryServiceImpl implements GbDepartmentGoods
 
         if (integerIn > 0) {
             map.put("orderByGoodsStockTotal", 1);
+            // 过期计算：传入当前时间戳用于 SQL 中判断过期
+            long currentTimestampSeconds = System.currentTimeMillis();
+            map.put("nowTimeWaste", currentTimestampSeconds);
             stockGoodsList = gbDepGoodsStockService.queryDisGoodsStockByParams(map);
 
             Map<String, Object> stockParams = new HashMap<>(map);

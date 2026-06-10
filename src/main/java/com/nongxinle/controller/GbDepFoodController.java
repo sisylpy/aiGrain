@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -14,6 +15,9 @@ import java.util.Set;
 import com.nongxinle.entity.*;
 import com.nongxinle.dto.GbDepFoodDailySalesQueryRequest;
 import com.nongxinle.dto.GbDepFoodDailySalesSubmitRequest;
+import com.nongxinle.dto.GbDepFoodDishDailySalesBatchSaveRequest;
+import com.nongxinle.dto.GbDepFoodDishDailySalesRangeQueryRequest;
+import com.nongxinle.dto.GbDepFoodDishSalesLineRequest;
 import com.nongxinle.service.GbDepFoodBusinessInsightService;
 import com.nongxinle.service.GbDepFoodSalesExcelImportService;
 import com.nongxinle.service.GbDepFoodService;
@@ -68,9 +72,8 @@ public class GbDepFoodController {
 	}
 
 	/**
-	 * 获取某日菜品销售 + 同日营业额表单字段；{@code recordDate} 不传则为中国时区当天（“今日”）。
+	 * 获取某日菜品销售 + 同日营业额表单字段；{@code recordDate} 不传则为中国时区当天（"今日"）。
 	 * 请求体为 JSON（与微信小程序等客户端一致）；{@code data.submitShape} 与 {@link GbDepFoodDailySalesSubmitRequest} 一致。
-	 * 可选 {@code subDepId}：只返回该子部门销量行（与按子部门维护页面一致）。
 	 */
 	@RequestMapping(value = "/getDailyFoodSalesAndRevenue", method = RequestMethod.POST)
 	@ResponseBody
@@ -80,7 +83,7 @@ public class GbDepFoodController {
 				return R.error(-1, "请求体不能为空");
 			}
 			Map<String, Object> data = gbDepFoodSalesExcelImportService.getDailyFoodSalesAndRevenue(
-					body.getDepFatherId(), body.getDistributerId(), body.getRecordDate(), body.getSubDepId());
+					body.getDepFatherId(), body.getDistributerId(), body.getRecordDate());
 			return R.ok().put("data", data);
 		} catch (IllegalArgumentException e) {
 			return R.error(-1, e.getMessage());
@@ -106,13 +109,86 @@ public class GbDepFoodController {
 	}
 
 	/**
+	 * 单条菜品销量 upsert（小程序逐菜录入页）。
+	 * <p>与日提交不同：不删除当日其它菜品行。默认 {@code quantityMode=ADD} 累加份数；
+	 * type=1～5 按 {@code (depId, foodId, recordDate, type)} 分别 upsert；
+	 * {@code quantity=0} 时删除该 type 行（与 {@code quantityMode} 无关）；{@code quantityMode=SET} 覆盖份数；
+	 * 经营型（1/2/3）同步堂食到 {@code gb_ai_daily_revenue}；type=4/5 收入为 0。</p>
+	 */
+	@RequestMapping(value = "/upsertDishSalesLine", method = RequestMethod.POST)
+	@ResponseBody
+	public R upsertDishSalesLine(@RequestBody GbDepFoodDishSalesLineRequest body) {
+		try {
+			Map<String, Object> data = gbDepFoodSalesExcelImportService.upsertDishSalesLine(body);
+			return R.ok().put("data", data);
+		} catch (IllegalArgumentException e) {
+			return R.error(-1, e.getMessage());
+		} catch (Exception e) {
+			log.warn("upsertDishSalesLine failed", e);
+			return R.error(-1, e.getMessage());
+		}
+	}
+
+	/**
+	 * 删除单条菜品销量（按 depId + foodId + recordDate + type 定位）。
+	 * <p>删除经营型（type=1）行后重算堂食；type=5 不影响营业额。</p>
+	 */
+	@RequestMapping(value = "/deleteDishSalesLine", method = RequestMethod.POST)
+	@ResponseBody
+	public R deleteDishSalesLine(@RequestBody GbDepFoodDishSalesLineRequest body) {
+		try {
+			Map<String, Object> data = gbDepFoodSalesExcelImportService.deleteDishSalesLine(body);
+			return R.ok().put("data", data);
+		} catch (IllegalArgumentException e) {
+			return R.error(-1, e.getMessage());
+		} catch (Exception e) {
+			log.warn("deleteDishSalesLine failed", e);
+			return R.error(-1, e.getMessage());
+		}
+	}
+
+	/**
+	 * 菜品每日销量页：单菜日期区间内按日五类销量明细 + 区间汇总。
+	 */
+	@RequestMapping(value = "/getDishDailySalesRange", method = RequestMethod.POST)
+	@ResponseBody
+	public R getDishDailySalesRange(@RequestBody GbDepFoodDishDailySalesRangeQueryRequest body) {
+		try {
+			Map<String, Object> data = gbDepFoodSalesExcelImportService.getDishDailySalesRange(body);
+			return R.ok().put("data", data);
+		} catch (IllegalArgumentException e) {
+			return R.error(-1, e.getMessage());
+		} catch (Exception e) {
+			log.warn("getDishDailySalesRange failed", e);
+			return R.error(-1, e.getMessage());
+		}
+	}
+
+	/**
+	 * 菜品每日销量页：单菜单日五类销量批量保存（按 type 分别 upsert，份数 0 删除）。
+	 */
+	@RequestMapping(value = "/saveDishDailySalesBatch", method = RequestMethod.POST)
+	@ResponseBody
+	public R saveDishDailySalesBatch(@RequestBody GbDepFoodDishDailySalesBatchSaveRequest body) {
+		try {
+			Map<String, Object> data = gbDepFoodSalesExcelImportService.saveDishDailySalesBatch(body);
+			return R.ok().put("data", data);
+		} catch (IllegalArgumentException e) {
+			return R.error(-1, e.getMessage());
+		} catch (Exception e) {
+			log.warn("saveDishDailySalesBatch failed", e);
+			return R.error(-1, e.getMessage());
+		}
+	}
+
+	/**
 	 * 部门菜品列表：配方、主档商品、可选日期内销量。
 	 * <p>可选请求参数 {@code subDepId}：非空时只查该子部门 {@code gb_dep_food}，且经营洞察、{@code gbDfSalesAmount}、{@code ingredientAnalysisRows}、配方出库统计均与该子部门的销量及出库分摊口径对齐（仍须传入正确的 {@code depFatherId} 以校验隶属关系）</p>
 	 * <p>当 {@code startDate}、{@code stopDate}、{@code disId}、{@code depFatherId} 齐全时：在每条 {@code GbDepFoodEntity} 上填充 {@code gbDfBusinessInsight}
 	 *（周销量 0=周日、标价收入、type=1 实际/理论成本、{@code grossMarginRateOnListPrice} = (标价收入−type1 实际成本)÷标价收入；
 	 * {@code actualCostPerPortion123}、{@code actualCostTotalAmount123}（单份 type1+2+3 实际成本×本行实销份数，与配料分析整菜金额口径一致）、{@code blendedGrossMarginRateOnListPrice} = 部门标价下（标价−type1+2+3 单份实际成本）÷标价，与配料分析整菜 {@code actualCostPerPortion} 同口径；与 {@code wasteLossRatioInOutbound123} 区间损耗率并列），
-	 * 本响应同时带上 {@code businessInsightSummary}（含 {@code comprehensiveGrossMarginRateOnListPrice}：列表标价收入合计相对区间 1+2+3 出库总成本、及仅 type1 的 blended 毛利率等）、{@code scopeOutboundSubtotals}、{@code weekdayLegend}、{@code bossColumnHintsZh} 等；
-	 * 有销量时的配方行 {@code gbDistributerFoodEntity.gbdisFoodGoodsEntities} 另挂本区间出库价、type1 制作量/额、2+3 量/差分额、1+2+3 量/额。
+	 * 本响应同时带上 {@code businessInsightSummary}（含 {@code comprehensiveGrossMarginRateOnListPrice}：列表标价收入合计相对区间 1+2+3 出库总成本、及仅 type1 的 blended 毛利率等）、{@code businessInsightSummaryChinese}（与 {@code businessInsightSummary} 各英文字段键对应的中文说明）、{@code scopeOutboundSubtotals}（含 type=6 原料型员工餐 {@code subtotalEmployeeMealType6}）、{@code weekdayLegend}、{@code bossColumnHintsZh} 等；
+	 * 有销量时的配方行 {@code gbDistributerFoodEntity.gbdisFoodGoodsEntities} 另挂本区间出库价、type1 制作量/额、2+3 量/差分额、1+2+3 量/额、type6 员工餐量/额。
 	 * {@code gbDfSalesAmount} 与经营分析总销量（子部门口径）对齐。缺参时 {@code gbDfSalesAmount} 为 {@code "0"}，且不填 {@code gbDfBusinessInsight}。</p>
 	 * <p>流程：四参齐全时先 {@code attachToFoodRows}，再剔除 {@code gb_df_status=1}（与 {@link GbConstants.DistributerFoodStatus} 中停用取值一致）且本区间销量为 0 的部门菜；
 	 * 再批量生成与 {@code /gbDishCostAnalysis/ingredientAnalysis} 中 {@code salesDishRows[].ingredientRows} 同结构的 {@code ingredientAnalysisRows}；
@@ -417,7 +493,10 @@ public class GbDepFoodController {
 
 
 	/**
-	 * 查询门店菜品（{@code gb_dep_food}）。{@code depFatherId} 必填；{@code subDepId} 可选，传则只查该子部门，不传则该父部门下全部子部门菜品。
+	 * 查询门店菜品（{@code gb_dep_food}），按菜品父级分类分组返回。
+	 * <p>{@code depFatherId} 必填；{@code subDepId} 可选，传则只查该子部门，不传则该父部门下全部子部门菜品。
+	 * 返回结构：{@code [{ "parentFood": GbDistributerFoodEntity, "children": [GbDepFoodEntity...] }, ...]}，
+	 * 无父级分类的菜品归入 {@code parentFood=null} 的分组。</p>
 	 */
 	@RequestMapping(value = "/depGetDepFoodList", method = RequestMethod.GET)
 	@ResponseBody
@@ -429,12 +508,16 @@ public class GbDepFoodController {
 			map.put("depId", subDepId);
 		}
 		List<GbDepFoodEntity> list = gbDepFoodService.queryDepAllFood(map);
+
+		// 1. 收集所有部门菜关联的批发商菜品 id
 		Set<Integer> foodIds = new HashSet<>();
 		for (GbDepFoodEntity f : list) {
 			if (f.getGbDfFoodId() != null) {
 				foodIds.add(f.getGbDfFoodId());
 			}
 		}
+
+		// 2. 批量查询批发商菜品
 		Map<Integer, GbDistributerFoodEntity> disFoodById = new HashMap<>();
 		if (!foodIds.isEmpty()) {
 			for (GbDistributerFoodEntity e : gbDistributerFoodService.queryByIds(new ArrayList<>(foodIds))) {
@@ -443,17 +526,71 @@ public class GbDepFoodController {
 				}
 			}
 		}
+
+		// 3. 填充部门菜的名称，同时收集父级分类 id
+		Set<Integer> parentFoodIds = new HashSet<>();
 		for (GbDepFoodEntity food : list) {
 			Integer foodId = food.getGbDfFoodId();
 			if (foodId == null) {
 				continue;
 			}
 			GbDistributerFoodEntity disFood = disFoodById.get(foodId);
-			if (disFood != null && disFood.getGbDfFoodName() != null && !disFood.getGbDfFoodName().trim().isEmpty()) {
+			if (disFood == null) {
+				continue;
+			}
+			if (disFood.getGbDfFoodName() != null && !disFood.getGbDfFoodName().trim().isEmpty()) {
 				food.setGbDfFoodName(disFood.getGbDfFoodName().trim());
 			}
+			if (disFood.getGbDfFoodFatherId() != null && disFood.getGbDfFoodFatherId() > 0) {
+				parentFoodIds.add(disFood.getGbDfFoodFatherId());
+			}
 		}
-		return R.ok().put("data", list);
+
+		// 4. 批量查询父级分类菜品
+		Map<Integer, GbDistributerFoodEntity> parentFoodById = new HashMap<>();
+		if (!parentFoodIds.isEmpty()) {
+			for (GbDistributerFoodEntity e : gbDistributerFoodService.queryByIds(new ArrayList<>(parentFoodIds))) {
+				if (e != null && e.getGbDistributerFoodId() != null) {
+					parentFoodById.put(e.getGbDistributerFoodId(), e);
+				}
+			}
+		}
+
+		// 5. 按父级分类 id 分组部门菜（保持插入顺序）
+		Map<Integer, List<GbDepFoodEntity>> parentGrouped = new LinkedHashMap<>();
+		List<GbDepFoodEntity> noParentList = new ArrayList<>();
+
+		for (GbDepFoodEntity food : list) {
+			Integer foodId = food.getGbDfFoodId();
+			if (foodId == null) {
+				noParentList.add(food);
+				continue;
+			}
+			GbDistributerFoodEntity disFood = disFoodById.get(foodId);
+			if (disFood == null || disFood.getGbDfFoodFatherId() == null || disFood.getGbDfFoodFatherId() <= 0) {
+				noParentList.add(food);
+				continue;
+			}
+			parentGrouped.computeIfAbsent(disFood.getGbDfFoodFatherId(), k -> new ArrayList<>()).add(food);
+		}
+
+		// 6. 组装分组结果
+		List<Map<String, Object>> result = new ArrayList<>();
+		for (Map.Entry<Integer, List<GbDepFoodEntity>> entry : parentGrouped.entrySet()) {
+			Map<String, Object> group = new HashMap<>();
+			group.put("parentFood", parentFoodById.get(entry.getKey()));
+			group.put("children", entry.getValue());
+			result.add(group);
+		}
+		// 无父级分类的菜品单独一组
+		if (!noParentList.isEmpty()) {
+			Map<String, Object> group = new HashMap<>();
+			group.put("parentFood", null);
+			group.put("children", noParentList);
+			result.add(group);
+		}
+
+		return R.ok().put("data", result);
 	}
 
 

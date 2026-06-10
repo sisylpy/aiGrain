@@ -42,6 +42,12 @@ public class GbDepartmentGoodsDailyEntity implements Serializable {
     private String gbDgdWasteWeight;
     private String gbDgdWasteSubtotal;
 
+    /** 员工餐（type=6）；无日报表列，由 reduce 汇总回填 */
+    @TableField(exist = false)
+    private String gbDgdEmployeeMealWeight;
+    @TableField(exist = false)
+    private String gbDgdEmployeeMealSubtotal;
+
     // 剩余相关
     private String gbDgdRestWeight;
     private String gbDgdRestSubtotal;

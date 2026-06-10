@@ -29,4 +29,8 @@ public interface GbDepartmentService extends IService<GbDepartmentEntity> {
     List<GbDepartmentEntity> queryGroupDepsByDisId(Map<String, Object> map);
 
     GbDepartmentEntity queryDepInfo(Map<String, Object> mapDep);
+
+    GbDepartmentEntity saveNewDepartmentGbWithDepGoods(GbDepartmentEntity department, Integer  cankaoDepFatherId);
+
+
 }

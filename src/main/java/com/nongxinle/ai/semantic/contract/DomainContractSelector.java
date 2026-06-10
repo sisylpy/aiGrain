@@ -82,6 +82,9 @@ public final class DomainContractSelector {
             addIfText(wires, c.getWire());
             addIfText(answerPlanTypes, c.getAnswerPlanType());
             addIfText(sourceFacets, c.getSourceFacet());
+            if (c.getAllowedSourceFacets() != null) {
+                c.getAllowedSourceFacets().forEach(v -> addIfText(sourceFacets, v));
+            }
             addIfText(detailWanted, c.getDetailWanted());
             if (c.getQueryObjects() != null) {
                 c.getQueryObjects().forEach(v -> addIfText(queryObjects, v));
@@ -132,6 +135,10 @@ public final class DomainContractSelector {
                         .operations(ops.isEmpty() ? null : ops)
                         .metrics(mets.isEmpty() ? null : mets)
                         .sourceFacet(c.getSourceFacet())
+                        .allowedSourceFacets(
+                                c.getAllowedSourceFacets() != null && !c.getAllowedSourceFacets().isEmpty()
+                                        ? new ArrayList<>(c.getAllowedSourceFacets())
+                                        : null)
                         .detailWanted(c.getDetailWanted())
                         .answerPlanType(c.getAnswerPlanType())
                         .requiresAnchor(c.isRequiresAnchor())

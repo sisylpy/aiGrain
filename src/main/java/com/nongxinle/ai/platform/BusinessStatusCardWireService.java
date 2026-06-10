@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 
-/** 经营状态业务卡：在 Composer 之后、{@link AiCardPayloadWireSupport} 归一化之前写入 RunState。 */
+/** 经营状态业务卡：Composer 内由 {@link BusinessStatusCardWireSupport#resolveProjection} 决定投影。 */
 @Service
 public class BusinessStatusCardWireService {
 
@@ -48,9 +48,6 @@ public class BusinessStatusCardWireService {
 
     public void attachBusinessStatusCardsIfApplicable(AiRunState state) {
         if (state == null) {
-            return;
-        }
-        if (BusinessStatusCardWireSupport.isPurchasePeriodGoodsDetailMainline(state)) {
             return;
         }
         BusinessStatusCardProjection projection = BusinessStatusCardWireSupport.resolveProjection(state);

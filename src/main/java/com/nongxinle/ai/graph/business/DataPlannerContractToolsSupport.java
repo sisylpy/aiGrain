@@ -66,9 +66,6 @@ public final class DataPlannerContractToolsSupport {
         if (execution != null && execution.getSelectedTools() != null && !execution.getSelectedTools().isEmpty()) {
             return execution.getSelectedTools();
         }
-        if (ctx.getOrchestrationSelectedTools() != null && !ctx.getOrchestrationSelectedTools().isEmpty()) {
-            return ctx.getOrchestrationSelectedTools();
-        }
         return List.of();
     }
 
@@ -81,7 +78,9 @@ public final class DataPlannerContractToolsSupport {
         if (AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(path)) {
             LinkedHashSet<String> allowed = new LinkedHashSet<>(pathDefaultTools);
             allowed.add(AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST);
+            allowed.add(AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK);
             allowed.add(AiBusinessToolIds.WAREHOUSE_GOODS_SUPPORTED_DISH_COVER);
+            allowed.add(AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION);
             return new ArrayList<>(allowed);
         }
         if (AiResolvedQueryIntent.PATH_DISH_PROFIT.equals(path)
@@ -93,6 +92,11 @@ public final class DataPlannerContractToolsSupport {
             allowed.add(AiBusinessToolIds.DISH_COST_ANALYSIS);
             allowed.add(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
             allowed.add(AiBusinessToolIds.DISH_SALES_ANALYSIS_CARD);
+            return new ArrayList<>(allowed);
+        }
+        if (AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(path)) {
+            LinkedHashSet<String> allowed = new LinkedHashSet<>(pathDefaultTools);
+            allowed.add(AiBusinessToolIds.PURCHASE_GOODS_BUSINESS_ANALYSIS);
             return new ArrayList<>(allowed);
         }
         return new ArrayList<>(pathDefaultTools);

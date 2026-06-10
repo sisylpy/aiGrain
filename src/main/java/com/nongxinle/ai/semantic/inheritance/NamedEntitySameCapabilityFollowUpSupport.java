@@ -4,9 +4,11 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeDishIngredientCoverDaysSupport;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeGoodsSupportedDishCoverSupport;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
 import com.nongxinle.ai.semantic.matrix.DishCostAnalysisSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.DishCostAnalysisSemanticCapabilityMatrixRow;
+import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
 import org.springframework.util.StringUtils;
 
 import java.util.Locale;
@@ -71,6 +73,9 @@ public final class NamedEntitySameCapabilityFollowUpSupport {
     public static String contractIdDeclaredByIntake(SemanticIntakeResult intake) {
         if (intake == null) {
             return null;
+        }
+        if (SemanticIntakeGoodsSupportedDishCoverSupport.intakeDeclaresGoodsSupportedDishCover(intake)) {
+            return WarehouseSemanticCapabilityMatrix.CONTRACT_GOODS_SUPPORTED_DISH_COVER;
         }
         if (SemanticIntakeDishIngredientCoverDaysSupport.intakeDeclaresDishIngredientCoverDays(intake)) {
             return DishCostAnalysisSemanticCapabilityMatrix.CONTRACT_DISH_INGREDIENT_COVER_DAYS;

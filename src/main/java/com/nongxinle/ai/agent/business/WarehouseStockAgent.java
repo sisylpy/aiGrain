@@ -4,6 +4,7 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
+import com.nongxinle.ai.graph.business.GoodsStockBatchDetailAnswerPlanBuilder;
 import com.nongxinle.ai.graph.business.GoodsSupportedDishCoverAnswerPlanBuilder;
 import com.nongxinle.ai.graph.business.ToolDepartmentResolutionSupport;
 import com.nongxinle.ai.graph.business.WarehouseAnswerPlanBuilder;
@@ -86,19 +87,40 @@ public class WarehouseStockAgent implements BusinessSubAgent {
 
         boolean goodsCover =
                 ToolRequestContractExecutionParamSupport.isGoodsSupportedDishCoverContract(rqCtx);
+        boolean goodsBatchDetail =
+                ToolRequestContractExecutionParamSupport.isGoodsStockBatchDetailContract(rqCtx);
+        boolean goodsAnchorInventory =
+                ToolRequestContractExecutionParamSupport.isWarehouseGoodsAnchorInventoryToolContract(
+                        rqCtx);
+        boolean inventorySupervision =
+                !goodsAnchorInventory
+                        && ToolRequestContractExecutionParamSupport.isWarehouseInventorySupervisionContract(
+                                rqCtx);
         boolean inventoryRisk =
-                !goodsCover
+                !goodsAnchorInventory
+                        && !inventorySupervision
                         && ToolRequestContractExecutionParamSupport.isWarehouseInventoryRiskListContract(
                                 rqCtx);
+        boolean nearExpiry =
+                !goodsAnchorInventory
+                        && !inventorySupervision
+                        && !inventoryRisk
+                        && ToolRequestContractExecutionParamSupport.isWarehouseNearExpiryContract(rqCtx);
         ToolResult executed =
-                goodsCover
+                goodsAnchorInventory
                         ? warehouseStockOverviewToolExecutor.executeWarehouseGoodsSupportedDishCover(
                                 rid, state, deptScoped, dis, new LinkedHashMap<>())
-                        : inventoryRisk
+                        : inventorySupervision
+                                ? warehouseStockOverviewToolExecutor.executeWarehouseInventorySupervision(
+                                        rid, state, deptScoped, dis, start, stop, new LinkedHashMap<>())
+                                : inventoryRisk
                                 ? warehouseStockOverviewToolExecutor.executeWarehouseInventoryRiskList(
                                         rid, state, deptScoped, dis, start, stop, new LinkedHashMap<>())
-                                : warehouseStockOverviewToolExecutor.executeWarehouseStockOverview(
-                                        rid, state, deptScoped, dis, start, stop, new LinkedHashMap<>());
+                                : nearExpiry
+                                        ? warehouseStockOverviewToolExecutor.executeWarehouseNearExpiryRiskList(
+                                                rid, state, deptScoped, dis, start, stop, new LinkedHashMap<>())
+                                        : warehouseStockOverviewToolExecutor.executeWarehouseStockOverview(
+                                                rid, state, deptScoped, dis, start, stop, new LinkedHashMap<>());
         if (executed == null) {
             return AgentResultEnvelope.builder()
                     .agentName(agentName())
@@ -115,7 +137,11 @@ public class WarehouseStockAgent implements BusinessSubAgent {
         if (executed.isSuccess()) {
             if (goodsCover) {
                 GoodsSupportedDishCoverAnswerPlanBuilder.attachIfApplicable(state);
-            } else {
+            }
+            if (goodsBatchDetail) {
+                GoodsStockBatchDetailAnswerPlanBuilder.attachIfApplicable(state);
+            }
+            if (!goodsAnchorInventory) {
                 WarehouseAnswerPlanBuilder.attachIfApplicable(state);
                 plan = state.getWarehouseAnswerPlan();
             }
@@ -125,7 +151,9 @@ public class WarehouseStockAgent implements BusinessSubAgent {
         String resultType =
                 goodsCover && state.getGoodsSupportedDishCoverAnswerPlan() != null
                         ? state.getGoodsSupportedDishCoverAnswerPlan().getPlanType()
-                        : (plan != null ? plan.getPlanType() : null);
+                        : (goodsBatchDetail && state.getGoodsStockBatchDetailAnswerPlan() != null
+                                ? state.getGoodsStockBatchDetailAnswerPlan().getPlanType()
+                                : (plan != null ? plan.getPlanType() : null));
         return AgentResultEnvelope.builder()
                 .agentName(agentName())
                 .status(st)

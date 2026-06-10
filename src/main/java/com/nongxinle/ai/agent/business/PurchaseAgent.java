@@ -5,8 +5,12 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.dto.business.PurchaseGoodsBusinessAnalysisAnswerPlan;
 import com.nongxinle.ai.graph.business.PurchaseAnswerPlanBuilder;
+import com.nongxinle.ai.graph.business.PurchaseGoodsBusinessAnalysisAnswerPlanBuilder;
+import com.nongxinle.ai.graph.business.PurchaseGoodsBusinessAnalysisToolExecutor;
 import com.nongxinle.ai.graph.business.PurchaseOverviewToolExecutor;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import com.nongxinle.ai.graph.business.toolrequest.BusinessToolExecutionRequestResolver;
 import com.nongxinle.ai.graph.business.toolrequest.PurchaseToolRequestContext;
 import com.nongxinle.ai.tool.ToolResult;
@@ -28,6 +32,7 @@ import java.util.UUID;
 public class PurchaseAgent implements BusinessSubAgent {
 
     private final PurchaseOverviewToolExecutor purchaseOverviewToolExecutor;
+    private final PurchaseGoodsBusinessAnalysisToolExecutor purchaseGoodsBusinessAnalysisToolExecutor;
     private final BusinessToolExecutionRequestResolver toolExecutionRequestResolver;
 
     @Override
@@ -93,6 +98,34 @@ public class PurchaseAgent implements BusinessSubAgent {
         Long dis = state.getDistributerId();
         Long deptScoped = purchaseCtx.getDepartmentFatherIdForScopedTools();
 
+        if (ToolRequestContractExecutionParamSupport.isPurchaseGoodsBusinessAnalysisContract(rqCtx)) {
+            ToolResult executed =
+                    purchaseGoodsBusinessAnalysisToolExecutor.execute(
+                            rid, state, deptScoped, dis, purchaseCtx.getStartDateIso(), purchaseCtx.getEndDateIso(),
+                            new LinkedHashMap<>());
+            if (executed == null) {
+                return permissionDeniedEnvelope(t0, rid);
+            }
+            PurchaseGoodsBusinessAnalysisAnswerPlanBuilder.attachIfApplicable(state);
+            PurchaseGoodsBusinessAnalysisAnswerPlan plan = state.getPurchaseGoodsBusinessAnalysisAnswerPlan();
+            AgentResultStatus st = executed.isSuccess() ? AgentResultStatus.SUCCESS : AgentResultStatus.FAILED;
+            return AgentResultEnvelope.builder()
+                    .agentName(agentName())
+                    .status(st)
+                    .resultType(plan != null ? plan.getPlanType() : null)
+                    .answerPlan(plan)
+                    .warnings(new ArrayList<>())
+                    .errors(executed.isSuccess() ? new ArrayList<>() : List.of(
+                            executed.getMessage() == null ? "purchase_goods_business_analysis_failed"
+                                    : executed.getMessage()))
+                    .degraded(false)
+                    .durationMs(elapsedMs(t0))
+                    .traceId(traceId(rid))
+                    .revenueQueryToolSuccess(null)
+                    .purchaseOverviewToolSuccess(executed.isSuccess())
+                    .build();
+        }
+
         ToolResult executed = purchaseOverviewToolExecutor.executePurchaseOverview(
                 rid,
                 state,
@@ -102,19 +135,7 @@ public class PurchaseAgent implements BusinessSubAgent {
                 purchaseCtx.getEndDateIso(),
                 new LinkedHashMap<>());
         if (executed == null) {
-            return AgentResultEnvelope.builder()
-                    .agentName(agentName())
-                    .status(AgentResultStatus.PERMISSION_DENIED)
-                    .resultType(null)
-                    .answerPlan(null)
-                    .warnings(new ArrayList<>())
-                    .errors(List.of("permission_denied_purchase_overview"))
-                    .degraded(false)
-                    .durationMs(elapsedMs(t0))
-                    .traceId(traceId(rid))
-                    .revenueQueryToolSuccess(null)
-                    .purchaseOverviewToolSuccess(false)
-                    .build();
+            return permissionDeniedEnvelope(t0, rid);
         }
 
         PurchaseAnswerPlan plan = null;
@@ -140,6 +161,22 @@ public class PurchaseAgent implements BusinessSubAgent {
                 .traceId(traceId(rid))
                 .revenueQueryToolSuccess(null)
                 .purchaseOverviewToolSuccess(executed.isSuccess())
+                .build();
+    }
+
+    private static AgentResultEnvelope permissionDeniedEnvelope(long t0, long rid) {
+        return AgentResultEnvelope.builder()
+                .agentName(BusinessAgentNames.PURCHASE_OVERVIEW)
+                .status(AgentResultStatus.PERMISSION_DENIED)
+                .resultType(null)
+                .answerPlan(null)
+                .warnings(new ArrayList<>())
+                .errors(List.of("permission_denied_purchase_overview"))
+                .degraded(false)
+                .durationMs(elapsedMs(t0))
+                .traceId(traceId(rid))
+                .revenueQueryToolSuccess(null)
+                .purchaseOverviewToolSuccess(false)
                 .build();
     }
 

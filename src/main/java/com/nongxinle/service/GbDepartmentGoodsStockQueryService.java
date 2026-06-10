@@ -32,10 +32,16 @@ public interface GbDepartmentGoodsStockQueryService {
 
     /**
      * 部门商品关联库存批次 + 每批次下全部库存减少（reduce）记录。
-     * <p>先查指定日期范围内剩余大于 0 的批次，再查「当天、剩余为 0」的批次并合并去重，最后按批次 id 批量加载 reduce。</p>
+     * <p>先查出指定日期范围内库存剩余大于 0 的批次；再查出「当天剩余等于 0，但当天有库存消减操作」
+     * 的批次（例如当天被全部消耗、或当天有操作导致归零的批次），两集合合并去重后按批次 id 批量加载 reduce 明细。</p>
      */
     List<GbDepartmentGoodsStockEntity> queryDepGoodsBusiness(Integer depGoodsId, String startDate, String stopDate);
 
     List<GbDepartmentGoodsStockEntity> queryDisGoodsBusiness(Integer disGoodsId, String startDate, String stopDate);
+
+    /**
+     * 为库存批次填充 {@code goodsStockReduceEntityList}，并回填小程序展示字段（含 type=6 员工餐）。
+     */
+    void enrichStockBatchReduceLists(List<GbDepartmentGoodsStockEntity> stocks);
 
 }

@@ -83,8 +83,11 @@ public class GbDistributerGoodsController {
                                                  @RequestParam("disId") Integer disId,
                                                  @RequestParam("toDepId") Integer toDepId,
                                                  @RequestParam("depId") Integer depId,
-                                                 @RequestParam("depFatherId") Integer depFatherId) {
-        return gbDgService.saveLinshiGoodsGb(file, goodsName, standard, detail, disId, toDepId, depId, depFatherId);
+                                                 @RequestParam("depFatherId") Integer depFatherId,
+                                                 @RequestParam(value = "standardWeight", required = false) String standardWeight,
+                                                 @RequestParam(value = "cartonUnit", required = false) String cartonUnit,
+                                                 @RequestParam(value = "itemsPerCarton", required = false) String itemsPerCarton) {
+        return gbDgService.saveLinshiGoodsGb(file, goodsName, standard, detail, disId, toDepId, depId, depFatherId, standardWeight, cartonUnit, itemsPerCarton);
     }
 
 
@@ -363,6 +366,7 @@ public class GbDistributerGoodsController {
             Map<String, Object> map = new HashMap<>();
             map.put("disGoodsId", gbDistributerGoodsId);
             map.put("status", 3);
+            System.out.println("mapmap有未完成订单" +map);
             List<GbDepartmentOrdersEntity> ordersEntities = depOrdersService.queryDisOrdersByParams(map);
             if (ordersEntities.size() > 0) {
                 return R.error(-1, "有未完成订单");

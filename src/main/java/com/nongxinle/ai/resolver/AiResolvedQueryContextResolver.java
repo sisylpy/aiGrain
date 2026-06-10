@@ -160,17 +160,23 @@ public class AiResolvedQueryContextResolver {
         Map<String, Object> querySemanticV2InputPreview = null;
         AiQuerySemanticParseResult querySemanticV2Raw = null;
         DomainContractSelectionResult domainContractSelection = null;
+        SemanticDomainRouteResult effectiveSemanticDomainRoute = semanticDomainRoute;
+        DomainContractSelectionResult effectiveDomainContractSelection = null;
         SemanticContractValidationDebug semanticContractValidation = null;
         SemanticContractStrictDecision semanticContractStrictDecision = null;
         if (!intakeClarificationRequired) {
             domainContractSelection = DomainContractSelector.select(semanticDomainRoute);
             domainContractSelection =
-                    WarehouseInventoryShortageSemanticsSupport.filterContractSelection(
+                    WarehouseIntakeContractSelectionSupport.applyPreV2WarehouseIntakeFilters(
                             domainContractSelection, semanticIntake);
             domainContractSelection =
                     BareRankingDimensionSwitchSupport.contractSelectionForPlan(
                             bareRankingDimensionSwitchPlan, domainContractSelection);
+            effectiveDomainContractSelection = domainContractSelection;
             try {
+                SemanticParserFollowUpContext followUpContext =
+                        SemanticParserInputBuilder.buildFollowUpContext(
+                                previousTurn, semanticIntake);
                 var v2In =
                         SemanticParserInputBuilder.build(
                                 querySemanticV2UserMessage,
@@ -179,7 +185,8 @@ public class AiResolvedQueryContextResolver {
                                 orgScope,
                                 semanticDomainRoute,
                                 domainContractSelection,
-                                previousTurn);
+                                previousTurn,
+                                followUpContext);
                 querySemanticV2InputPreview = SemanticParserInputBuilder.toDebugPreview(v2In);
                 querySemanticV2Raw = querySemanticLlmParser.parse(v2In);
             } catch (Exception ex) {
@@ -209,6 +216,10 @@ public class AiResolvedQueryContextResolver {
         Map<String, Object> semanticV2AbstractIntentNormalizationNotes = null;
 
         SemanticAdoptionAttempt adoption = null;
+        String rewriteInheritedAnchorType = null;
+        String rewriteInheritedAnchorName = null;
+        String rewriteInheritedAnchorEntityId = null;
+        List<Map<String, String>> rewriteUsedAnchors = null;
         boolean timeContractFailed = false;
         boolean frameClarificationRequired = false;
         boolean contractStrictClarificationRequired = false;
@@ -240,23 +251,19 @@ public class AiResolvedQueryContextResolver {
                     querySemanticV2Raw != null && !querySemanticV2Raw.isParseMissing()
                             ? querySemanticV2Raw
                             : null;
-            String rewriteInheritedAnchorType = null;
-            String rewriteInheritedAnchorName = null;
             boolean bareRankingDimensionSwitch = bareRankingDimensionSwitchPlan.isActive();
             if (intakeRewriteApplied
-                    && previousTurnForParser != null
-                    && v2ForAdoption != null
                     && !bareRankingDimensionSwitch
                     && !SemanticIntakeMultiDishRankingSupport.suppressRewriteAnchorInjection(
-                            semanticIntake)
-                    && SemanticContractAnchorInheritanceSupport.isUsePreviousAnchorPolicy(
-                            v2ForAdoption)) {
-                String structuredDish =
-                        SemanticContractAnchorInheritanceSupport.resolveStructuredDishAnchor(
-                                previousTurnForParser, null, null);
-                if (StringUtils.hasText(structuredDish)) {
-                    rewriteInheritedAnchorType = AiResultAnchor.ENTITY_TYPE_DISH;
-                    rewriteInheritedAnchorName = structuredDish;
+                            semanticIntake)) {
+                SemanticIntakeRewriteResultAnchorProvenanceSupport.Provenance rewriteProvenance =
+                        SemanticIntakeRewriteResultAnchorProvenanceSupport.resolve(
+                                intakeInput, semanticIntake);
+                if (rewriteProvenance != null) {
+                    rewriteInheritedAnchorType = rewriteProvenance.entityType();
+                    rewriteInheritedAnchorName = rewriteProvenance.entityName();
+                    rewriteInheritedAnchorEntityId = rewriteProvenance.entityId();
+                    rewriteUsedAnchors = List.of(rewriteProvenance.toWireMap());
                 }
             }
             adoption =
@@ -269,21 +276,34 @@ public class AiResolvedQueryContextResolver {
                                     explicitTentative,
                                     intakeRewriteApplied,
                                     domainContractSelection,
+                                    semanticDomainRoute,
                                     semanticIntake,
                                     bareRankingDimensionSwitchPlan,
                                     rewriteInheritedAnchorType,
                                     rewriteInheritedAnchorName,
-                                    TimeLayerContextSignals.fromIntake(semanticIntake)));
+                                    rewriteInheritedAnchorEntityId,
+                                    rewriteUsedAnchors,
+                                    TimeLayerContextSignals.fromIntake(semanticIntake),
+                                    orgScope != null ? orgScope.getDistributerId() : null,
+                                    orgScope));
+            effectiveDomainContractSelection =
+                    adoption != null
+                            ? adoption.effectiveDomainContractSelectionOr(domainContractSelection)
+                            : domainContractSelection;
+            effectiveSemanticDomainRoute =
+                    adoption != null
+                            ? adoption.effectiveSemanticDomainRouteOr(semanticDomainRoute)
+                            : semanticDomainRoute;
             SemanticContractValidationPipeline.Result contractPipeline =
                     SemanticContractValidationPipeline.run(
                             new SemanticContractValidationPipeline.Request(
                                     false,
-                                    domainContractSelection,
+                                    effectiveDomainContractSelection,
                                     adoption,
                                     querySemanticV2Raw,
                                     previousTurn,
                                     intakeRewriteApplied,
-                                    semanticDomainRoute,
+                                    effectiveSemanticDomainRoute,
                                     semanticContractStrictProperties.isEnabled()));
             semanticContractValidation = contractPipeline.semanticContractValidation();
             semanticContractStrictDecision = contractPipeline.semanticContractStrictDecision();
@@ -344,6 +364,13 @@ public class AiResolvedQueryContextResolver {
             }
         }
 
+        String v2ModelClarificationQuestion =
+                intakeClarificationRequired
+                        ? null
+                        : AiResolvedQueryContextDiagnostics.resolveModelExplicitClarificationQuestion(
+                                querySemanticV2Raw);
+        boolean v2ModelClarificationRequired = StringUtils.hasText(v2ModelClarificationQuestion);
+
         boolean adoptionPathUnresolved =
                 adoption != null
                         && (adoption.mergedIntent() == null
@@ -390,6 +417,8 @@ public class AiResolvedQueryContextResolver {
                                 semanticFailureCode)
                         : intakeClarificationRequired
                         ? resolveIntakeClarificationQuestion(semanticIntake)
+                        : v2ModelClarificationRequired
+                                ? v2ModelClarificationQuestion
                         : contractStrictClarificationRequired
                                 ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
                                         semanticContractStrictDecision.getClarificationQuestion())
@@ -476,6 +505,8 @@ public class AiResolvedQueryContextResolver {
                         querySemanticV2InputPreview,
                         semanticDomainRoute,
                         domainContractSelection,
+                        effectiveSemanticDomainRoute,
+                        effectiveDomainContractSelection,
                         semanticContractValidation,
                         semanticContractStrictDecision,
                         previousTurnResultAnchorsCount,
@@ -494,7 +525,11 @@ public class AiResolvedQueryContextResolver {
                         semanticFailureCode,
                         semanticFailureStage,
                         scopeTrace,
-                        bareRankingDimensionSwitchPlan));
+                        bareRankingDimensionSwitchPlan,
+                        rewriteInheritedAnchorType,
+                        rewriteInheritedAnchorName,
+                        rewriteInheritedAnchorEntityId,
+                        rewriteUsedAnchors));
         assembled.setConversationScopeMode(effectiveScopeMode);
         if (assembled.getScopeResolutionTrace() != null && semanticLlm != null) {
             assembled.getScopeResolutionTrace().setRawScopeAction(semanticLlm.getScopeAction());

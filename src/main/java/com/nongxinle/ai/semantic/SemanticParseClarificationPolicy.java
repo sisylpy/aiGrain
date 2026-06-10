@@ -5,8 +5,10 @@ package com.nongxinle.ai.semantic;
  * <p>
  * <b>澄清话术优先级</b>（由 {@link com.nongxinle.ai.resolver.AiResolvedQueryContextResolver} 组装，本类仅提供最末级固定模板）：
  * <ol>
+ *   <li>Intake 澄清</li>
+ *   <li>V2 {@code needClarification=true} 且非空 {@code clarificationQuestion}（业务澄清主权）</li>
+ *   <li>合同 strict 校验澄清（无更具体业务澄清时）</li>
  *   <li>时间合同 / frame validation 的具体 {@code clarificationQuestion}</li>
- *   <li>LLM 在 {@code needClarification=true} 且非空时给出的 {@code clarificationQuestion}</li>
  *   <li>{@link #FIXED_CLARIFICATION_QUESTION}（本类 {@link #clarificationQuestion()}）</li>
  * </ol>
  */

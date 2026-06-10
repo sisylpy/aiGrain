@@ -1,5 +1,6 @@
 package com.nongxinle.ai.semantic.frame;
 
+import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
@@ -30,6 +31,17 @@ public final class CurrentSemanticFrameValidatorRegistry {
 
     private CurrentSemanticFrameValidatorRegistry() {}
 
+    private static DomainContractSelectionResult resolveEffectiveDomainContractSelection(
+            AiResolvedQueryContext ctx) {
+        if (ctx == null) {
+            return null;
+        }
+        if (ctx.getEffectiveDomainContractSelection() != null) {
+            return ctx.getEffectiveDomainContractSelection();
+        }
+        return ctx.getDomainContractSelection();
+    }
+
     /** Harness / resolvedQueryContextSummary：null 表示不输出 semanticFrameValidation。 */
     public static HarnessSemanticFrameValidation validateForHarness(AiResolvedQueryContext ctx) {
         if (ctx == null) {
@@ -39,7 +51,7 @@ public final class CurrentSemanticFrameValidatorRegistry {
         if (parse == null || parse.isParseMissing()) {
             return null;
         }
-        DomainContractSelectionResult contractSelection = ctx.getDomainContractSelection();
+        DomainContractSelectionResult contractSelection = resolveEffectiveDomainContractSelection(ctx);
         boolean contractLocked = SemanticContractCompletionEngine.isContractLockedParse(parse);
         String domain = resolveValidationDomain(ctx, parse, contractSelection);
         if (!StringUtils.hasText(domain)) {
@@ -58,7 +70,9 @@ public final class CurrentSemanticFrameValidatorRegistry {
                         ctx.getNormalizedQuestion(),
                         Boolean.TRUE.equals(ctx.getFollowUpRewriteApplied()),
                         contractSelection,
-                        contractLocked);
+                        contractLocked,
+                        null,
+                        ctx.getOrgScope());
         if (result == null) {
             return null;
         }
@@ -83,6 +97,7 @@ public final class CurrentSemanticFrameValidatorRegistry {
                 followUpRewriteApplied,
                 contractSelection,
                 contractLocked,
+                null,
                 null);
     }
 
@@ -96,6 +111,30 @@ public final class CurrentSemanticFrameValidatorRegistry {
             DomainContractSelectionResult contractSelection,
             boolean contractLocked,
             SemanticIntakeResult semanticIntake) {
+        return validate(
+                domainCode,
+                frame,
+                parse,
+                previousTurn,
+                normalizedUserMessage,
+                followUpRewriteApplied,
+                contractSelection,
+                contractLocked,
+                semanticIntake,
+                null);
+    }
+
+    public static SemanticFrameValidationResult validate(
+            String domainCode,
+            CurrentSemanticFrame frame,
+            AiQuerySemanticParseResult parse,
+            AiConversationTurnMemory previousTurn,
+            String normalizedUserMessage,
+            boolean followUpRewriteApplied,
+            DomainContractSelectionResult contractSelection,
+            boolean contractLocked,
+            SemanticIntakeResult semanticIntake,
+            AiResolvedOrgScope orgScope) {
         String domain = normalizeDomain(domainCode);
         if (!StringUtils.hasText(domain)) {
             return null;
@@ -110,7 +149,8 @@ public final class CurrentSemanticFrameValidatorRegistry {
                     previousTurn,
                     normalizedUserMessage,
                     followUpRewriteApplied,
-                    contractSelection);
+                    contractSelection,
+                    orgScope);
         }
         return switch (domain) {
             case "REVENUE" ->

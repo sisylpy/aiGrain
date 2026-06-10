@@ -58,15 +58,15 @@ public final class DailyRevenueAnswerPlanBuilder {
             return;
         }
 
-        boolean overviewFourDomainAttach =
-                BusinessOverviewSubPlanAttachSupport.isFourDomainSubPlanAttach(state, rq);
+        boolean multiDomainOrchestrationAttach =
+                BusinessOverviewSubPlanAttachSupport.isMultiDomainOrchestrationSubPlanAttach(state, rq);
 
         // Contract-locked: verify completed wire exists and is Revenue canonical
         String contractWire = sem.getSemanticSlots() != null
                 ? sem.getSemanticSlots().getStructuredIntentDetailWire() : null;
         String canonWire = StringUtils.hasText(contractWire)
                 ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(contractWire.trim()) : null;
-        if (!overviewFourDomainAttach
+        if (!multiDomainOrchestrationAttach
                 && (!StringUtils.hasText(canonWire) || !AiQuerySemanticLexicon.isStructuredRevenueDetail(canonWire))) {
             LinkedHashMap<String, Object> diag = new LinkedHashMap<>();
             diag.put("attachAttempted", true);
@@ -83,7 +83,7 @@ public final class DailyRevenueAnswerPlanBuilder {
         baseDiag.put("expectedToolKey", AiBusinessToolIds.REVENUE_QUERY);
         baseDiag.put("source", "RevenueQueryTool");
         baseDiag.put("sourceToolKey", AiBusinessToolIds.REVENUE_QUERY);
-        if (overviewFourDomainAttach) {
+        if (multiDomainOrchestrationAttach) {
             baseDiag.put("attachMode", BusinessOverviewSubPlanAttachSupport.ATTACH_MODE);
             baseDiag.put("orchestrationSubPlanWire",
                     BusinessOverviewSubPlanAttachSupport.contractCompletedWire(rq));
@@ -135,7 +135,7 @@ public final class DailyRevenueAnswerPlanBuilder {
         boolean statsEmpty = rawStats == null || rawStats.isEmpty();
         baseDiag.put("foundRevenueOverview", !statsEmpty || inner.get("totalRevenue") != null);
 
-        String wire = overviewFourDomainAttach
+        String wire = multiDomainOrchestrationAttach
                 ? BusinessOverviewSubPlanAttachSupport.contractCompletedWire(rq)
                 : resolveWire(rq);
         String prevWire = prevStructuredWire(rq);
@@ -144,7 +144,7 @@ public final class DailyRevenueAnswerPlanBuilder {
         baseDiag.put("structuredIntentDetailWire", wire.isEmpty() ? null : wire);
 
         String norm = rq.getNormalizedQuestion();
-        String planType = overviewFourDomainAttach
+        String planType = multiDomainOrchestrationAttach
                 ? DailyRevenueAnswerPlan.TYPE_REVENUE_OVERVIEW
                 : resolvePlanType(wire, inheritedPlanType, sem, norm);
         baseDiag.put("resolvedPlanType", planType);

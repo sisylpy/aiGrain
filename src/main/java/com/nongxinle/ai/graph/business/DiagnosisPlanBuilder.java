@@ -66,6 +66,8 @@ public final class DiagnosisPlanBuilder {
 
         List<String> consumed = new ArrayList<>();
         List<String> missing = new ArrayList<>();
+        List<String> rejectedShellPlans = new ArrayList<>();
+        List<String> explicitEmptyDomains = new ArrayList<>();
 
         PurchaseAnswerPlan pPurchase = state.getPurchaseAnswerPlan();
         StockReduceAnswerPlan pStock = state.getStockReduceAnswerPlan();
@@ -83,26 +85,14 @@ public final class DiagnosisPlanBuilder {
             pDish = null;
         }
 
-        if (pPurchase != null) {
-            consumed.add(SRC_PURCHASE + ":" + nullToEmpty(pPurchase.getPlanType()));
-        } else {
-            missing.add(SRC_PURCHASE);
-        }
-        if (pStock != null) {
-            consumed.add(SRC_STOCK + ":" + nullToEmpty(pStock.getPlanType()));
-        } else {
-            missing.add(SRC_STOCK);
-        }
-        if (pDish != null) {
-            consumed.add(SRC_DISH + ":" + nullToEmpty(pDish.getPlanType()));
-        } else {
-            missing.add(SRC_DISH);
-        }
-        if (pRevenue != null) {
-            consumed.add(SRC_REVENUE + ":" + nullToEmpty(pRevenue.getPlanType()));
-        } else {
-            missing.add(SRC_REVENUE);
-        }
+        pPurchase = registerOrchestrationSubPlanEvidence(
+                consumed, missing, rejectedShellPlans, explicitEmptyDomains, SRC_PURCHASE, pPurchase);
+        pStock = registerOrchestrationSubPlanEvidence(
+                consumed, missing, rejectedShellPlans, explicitEmptyDomains, SRC_STOCK, pStock);
+        pDish = registerOrchestrationSubPlanEvidence(
+                consumed, missing, rejectedShellPlans, explicitEmptyDomains, SRC_DISH, pDish);
+        pRevenue = registerOrchestrationSubPlanEvidence(
+                consumed, missing, rejectedShellPlans, explicitEmptyDomains, SRC_REVENUE, pRevenue);
 
         String scopeLabel = firstNonBlank(
                 pPurchase != null ? pPurchase.getScopeLabel() : null,
@@ -161,6 +151,12 @@ public final class DiagnosisPlanBuilder {
         debug.put("consumedAnswerPlans", new ArrayList<>(consumed));
         debug.put("missingAnswerPlans", new ArrayList<>(missing));
         debug.put("fallbackUsed", false);
+        if (!rejectedShellPlans.isEmpty()) {
+            debug.put("orchestrationSubPlanEvidenceRejected", new ArrayList<>(rejectedShellPlans));
+        }
+        if (!explicitEmptyDomains.isEmpty()) {
+            debug.put("orchestrationSubPlanEvidenceExplicitEmpty", new ArrayList<>(explicitEmptyDomains));
+        }
         if (revenueDenied || dishDenied) {
             List<String> excludedSubjects = new ArrayList<>();
             if (revenueDenied) {
@@ -257,6 +253,104 @@ public final class DiagnosisPlanBuilder {
             state.setNeedClarification(true);
             state.setClarificationQuestion("当前查询范围内未能汇总诊断所需经营数据，请确认时间、门店范围或权限后再试。");
         }
+    }
+
+    private static PurchaseAnswerPlan registerOrchestrationSubPlanEvidence(
+            List<String> consumed,
+            List<String> missing,
+            List<String> rejectedShells,
+            List<String> explicitEmptyDomains,
+            String src,
+            PurchaseAnswerPlan plan) {
+        return registerSubPlanEvidence(
+                consumed,
+                missing,
+                rejectedShells,
+                explicitEmptyDomains,
+                src,
+                plan,
+                plan == null ? null : plan.getPlanType(),
+                MultiDomainOrchestrationSubPlanEvidenceSupport.evaluate(plan));
+    }
+
+    private static StockReduceAnswerPlan registerOrchestrationSubPlanEvidence(
+            List<String> consumed,
+            List<String> missing,
+            List<String> rejectedShells,
+            List<String> explicitEmptyDomains,
+            String src,
+            StockReduceAnswerPlan plan) {
+        return registerSubPlanEvidence(
+                consumed,
+                missing,
+                rejectedShells,
+                explicitEmptyDomains,
+                src,
+                plan,
+                plan == null ? null : plan.getPlanType(),
+                MultiDomainOrchestrationSubPlanEvidenceSupport.evaluate(plan));
+    }
+
+    private static DishProfitAnswerPlan registerOrchestrationSubPlanEvidence(
+            List<String> consumed,
+            List<String> missing,
+            List<String> rejectedShells,
+            List<String> explicitEmptyDomains,
+            String src,
+            DishProfitAnswerPlan plan) {
+        return registerSubPlanEvidence(
+                consumed,
+                missing,
+                rejectedShells,
+                explicitEmptyDomains,
+                src,
+                plan,
+                plan == null ? null : plan.getPlanType(),
+                MultiDomainOrchestrationSubPlanEvidenceSupport.evaluate(plan));
+    }
+
+    private static DailyRevenueAnswerPlan registerOrchestrationSubPlanEvidence(
+            List<String> consumed,
+            List<String> missing,
+            List<String> rejectedShells,
+            List<String> explicitEmptyDomains,
+            String src,
+            DailyRevenueAnswerPlan plan) {
+        return registerSubPlanEvidence(
+                consumed,
+                missing,
+                rejectedShells,
+                explicitEmptyDomains,
+                src,
+                plan,
+                plan == null ? null : plan.getPlanType(),
+                MultiDomainOrchestrationSubPlanEvidenceSupport.evaluate(plan));
+    }
+
+    private static <T> T registerSubPlanEvidence(
+            List<String> consumed,
+            List<String> missing,
+            List<String> rejectedShells,
+            List<String> explicitEmptyDomains,
+            String src,
+            T plan,
+            String planType,
+            OrchestrationSubPlanEvidenceStatus status) {
+        if (plan == null || status == null) {
+            missing.add(src);
+            return null;
+        }
+        if (status == OrchestrationSubPlanEvidenceStatus.VALID) {
+            consumed.add(src + ":" + nullToEmpty(planType));
+            return plan;
+        }
+        if (status == OrchestrationSubPlanEvidenceStatus.EXPLICIT_EMPTY) {
+            explicitEmptyDomains.add(src + ":" + nullToEmpty(planType));
+            return null;
+        }
+        missing.add(src);
+        rejectedShells.add(src + ":invalid:" + nullToEmpty(planType));
+        return null;
     }
 
     private static void populateDiagnosisAvailabilityGaps(

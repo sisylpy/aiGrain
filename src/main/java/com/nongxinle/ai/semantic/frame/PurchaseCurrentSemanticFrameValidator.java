@@ -1,5 +1,6 @@
 package com.nongxinle.ai.semantic.frame;
 
+import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
@@ -10,6 +11,7 @@ import com.nongxinle.ai.semantic.contract.SemanticCapabilityContract;
 import com.nongxinle.ai.semantic.contract.SemanticCapabilityContractStatus;
 import com.nongxinle.ai.semantic.contract.SemanticContractCatalog;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
+import com.nongxinle.ai.graph.business.PurchaseCapabilityBoundarySupport;
 import com.nongxinle.ai.semantic.matrix.PurchaseSemanticCapabilityMatrix;
 import org.springframework.util.StringUtils;
 
@@ -39,6 +41,7 @@ public final class PurchaseCurrentSemanticFrameValidator {
                     AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_GOODS_QUERY,
                     AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING,
                     AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_COUNT_RANKING,
+                    AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_QUANTITY_RANKING,
                     AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_ANOMALY,
                     AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PRICE_ANOMALY,
                     AiQuerySemanticLexicon.STRUCTURED_PURCHASE_FREQUENCY_ANOMALY,
@@ -96,6 +99,18 @@ public final class PurchaseCurrentSemanticFrameValidator {
             String normalizedUserMessage,
             boolean followUpRewriteApplied,
             DomainContractSelectionResult contractSelection) {
+        return validate(
+                frame, rawParse, previousTurn, normalizedUserMessage, followUpRewriteApplied, contractSelection, null);
+    }
+
+    public static SemanticFrameValidationResult validate(
+            CurrentSemanticFrame frame,
+            AiQuerySemanticParseResult rawParse,
+            AiConversationTurnMemory previousTurn,
+            String normalizedUserMessage,
+            boolean followUpRewriteApplied,
+            DomainContractSelectionResult contractSelection,
+            AiResolvedOrgScope orgScope) {
         if (frame == null) {
             return SemanticFrameValidationResult.clarify(Q_SLOT_MISSING, List.of("FRAME_NULL"));
         }
@@ -107,6 +122,12 @@ public final class PurchaseCurrentSemanticFrameValidator {
                     validateSelectedContractAndWire(frame, rawParse, contractSelection, warnings);
             if (contractGate != null) {
                 return contractGate;
+            }
+            SemanticFrameValidationResult capabilityGate =
+                    PurchaseCapabilityBoundarySupport.validateCapabilityBoundary(
+                            frame, rawParse, contractSelection, orgScope);
+            if (capabilityGate != null) {
+                return capabilityGate;
             }
             return warnings.isEmpty()
                     ? SemanticFrameValidationResult.success()
@@ -149,6 +170,13 @@ public final class PurchaseCurrentSemanticFrameValidator {
                 validateSelectedContractAndWire(frame, rawParse, contractSelection, legacyWarnings);
         if (contractGate != null) {
             return contractGate;
+        }
+
+        SemanticFrameValidationResult capabilityGate =
+                PurchaseCapabilityBoundarySupport.validateCapabilityBoundary(
+                        frame, rawParse, contractSelection, orgScope);
+        if (capabilityGate != null) {
+            return capabilityGate;
         }
 
         if (AiQuerySemanticLexicon.DETAIL_WANTED_SOURCE_BREAKDOWN.equals(frame.getDetailWanted())

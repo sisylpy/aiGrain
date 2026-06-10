@@ -62,7 +62,7 @@ public class GbDepartmentOrdersController {
         System.out.println("updateeelelellee" + id);
         //检查修改规格
 
-        GbDepartmentOrdersEntity oldOrdersEntity = gbDepartmentOrdersService.queryObject(id);
+        GbDepartmentOrdersEntity oldOrdersEntity = gbDepartmentOrdersService.getById(id);
         String oldStandard = oldOrdersEntity.getGbDoStandard();
         System.out.println("updateeelelellee" + oldStandard);
 

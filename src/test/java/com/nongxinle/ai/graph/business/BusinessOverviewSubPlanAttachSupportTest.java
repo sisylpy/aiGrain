@@ -40,6 +40,36 @@ class BusinessOverviewSubPlanAttachSupportTest {
         assertFalse(BusinessOverviewSubPlanAttachSupport.isFourDomainSubPlanAttach(state, rq));
     }
 
+    @Test
+    void isMultiDomainOrchestrationSubPlanAttach_trueForBusinessDiagnosisMultiAgent() {
+        LinkedHashMap<String, Object> trace = new LinkedHashMap<>();
+        trace.put(SemanticContractCompletionEngine.TRACE_CONTRACT_ENTRY_VALIDATED, true);
+        AiQuerySemanticParseResult sem = AiQuerySemanticParseResult.builder()
+                .contractCompletionTrace(trace)
+                .orchestrationDecisionCandidate(
+                        AiQuerySemanticParseResult.OrchestrationDecisionCandidatePart.builder()
+                                .taskMode("MULTI_AGENT")
+                                .build())
+                .build();
+        AiResolvedQueryIntent qi = AiResolvedQueryIntent.builder()
+                .pathCode(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS)
+                .intentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS)
+                .structuredIntentDetail(AiQuerySemanticLexicon.STRUCTURED_BUSINESS_DIAGNOSIS_SUMMARY)
+                .build();
+        AiResolvedQueryContext rq = AiResolvedQueryContext.builder()
+                .queryIntent(qi)
+                .querySemanticParse(sem)
+                .effectivePathCode(AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS)
+                .effectiveIntentCode(AiResolvedQueryIntent.BUSINESS_DIAGNOSIS)
+                .orchestrationTaskMode("MULTI_AGENT")
+                .build();
+        AiRunState state = AiRunState.builder()
+                .businessDiagnosisPath(true)
+                .resolvedQueryContext(rq)
+                .build();
+        assertTrue(BusinessOverviewSubPlanAttachSupport.isMultiDomainOrchestrationSubPlanAttach(state, rq));
+    }
+
     static AiResolvedQueryContext businessOverviewContext(String structuredWire) {
         LinkedHashMap<String, Object> trace = new LinkedHashMap<>();
         trace.put(SemanticContractCompletionEngine.TRACE_CONTRACT_ENTRY_VALIDATED, true);

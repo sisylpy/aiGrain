@@ -2,6 +2,7 @@ package com.nongxinle.controller;
 
 import com.nongxinle.entity.*;
 import com.nongxinle.service.*;
+import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.R;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -11,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 
 import static com.nongxinle.utils.DateUtils.*;
-import static com.nongxinle.utils.GbTypeUtils.*;
 import static com.nongxinle.utils.PinYin4jUtils.getHeadStringByString;
 
 /**
@@ -37,6 +37,29 @@ public class GbDepartmentController {
     private GbDistributerPurchaseGoodsService gbDistributerPurchaseGoodsService;
 
 
+
+
+    @RequestMapping(value = "/saveGbDepartment", method = RequestMethod.POST)
+    @ResponseBody
+    public R saveGbDepartment(@RequestBody GbDepartmentEntity department) {
+
+        String gbDepartmentName = department.getGbDepartmentName();
+        String headPinyin = getHeadStringByString(gbDepartmentName, false, null);
+        department.setGbDepartmentNamePy(headPinyin);
+        department.setGbDepartmentPrintSet(0);
+        department.setGbDepartmentLevel(0);
+        Integer gbDepartmentDisId = department.getGbDepartmentDisId();
+        GbDistributerEntity gbDistributerEntity1 = gbDistributerService.getById(gbDepartmentDisId);
+        department.setGbDepartmentPrintName(gbDistributerEntity1.getGbDistributerPrintName());
+            if (department.getCankaoDepId() > 0) {
+                gbDepartmentService.saveNewDepartmentGbWithDepGoods(department, department.getCankaoDepId());
+            } else {
+                gbDepartmentService.saveNewDepartmentGb(department);
+            }
+
+        GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerInfo(department.getGbDepartmentDisId());
+        return R.ok().put("data", gbDistributerEntity);
+    }
 
 
 
@@ -151,7 +174,7 @@ public class GbDepartmentController {
     public R getDisDepartmentGbMendianJing(@PathVariable Integer disId) {
         Map<String, Object> map = new HashMap<>();
         map.put("disId", disId);
-        map.put("depType", getGbDepartmentTypeMendian());
+        map.put("depType", GbConstants.DepartmentType.STORE);
         List<GbDepartmentEntity> gbDepartmentEntities = gbDepartmentService.queryGroupDepsByDisId(map);
 
         return R.ok().put("data", gbDepartmentEntities);

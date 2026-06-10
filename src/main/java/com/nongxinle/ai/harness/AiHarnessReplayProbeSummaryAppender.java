@@ -112,6 +112,9 @@ final class AiHarnessReplayProbeSummaryAppender {
         if (state.getGoodsSupportedDishCoverAnswerPlan() != null) {
             acc.add("GoodsSupportedDishCoverAnswerPlan");
         }
+        if (state.getGoodsStockBatchDetailAnswerPlan() != null) {
+            acc.add("GoodsStockBatchDetailAnswerPlan");
+        }
         if (acc.isEmpty()) {
             out.put("consumedAnswerPlans", null);
             out.put("missingAnswerPlans", null);
@@ -135,6 +138,10 @@ final class AiHarnessReplayProbeSummaryAppender {
 
     private static boolean warehouseStockOverviewEligibleForConsumedProbe(AiRunState state) {
         if (state == null) {
+            return false;
+        }
+        if (state.getGoodsSupportedDishCoverAnswerPlan() != null
+                || state.getGoodsStockBatchDetailAnswerPlan() != null) {
             return false;
         }
         if (state.getWarehouseOverview() != null && !state.getWarehouseOverview().isEmpty()) {

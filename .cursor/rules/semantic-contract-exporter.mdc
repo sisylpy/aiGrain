@@ -35,3 +35,4 @@ alwaysApply: true
 - 不替代 `.cursor/rules/harness-java-boundary.md`（Java 不得猜语义、contract-owned wire）。
 - 不替代 `.cursor/rules/time-layer-inheritance.mdc`（时间继承）。
 - 本规则专门防止 **合同导出层变成第三套 Prompt**。
+- Exporter 只定义机器合同；V2 之后 Java 无权重新选择业务合同。Completion 成功后，canonical wire / `answerPlanType` / `selectedTools` / execution path 必须来自同一 ACTIVE entry，后置 support 不得改合同。

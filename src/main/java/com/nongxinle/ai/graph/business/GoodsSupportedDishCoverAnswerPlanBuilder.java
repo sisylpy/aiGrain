@@ -3,9 +3,7 @@ package com.nongxinle.ai.graph.business;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
-import com.nongxinle.ai.graph.business.execution.EffectiveGoodsAnchor;
-import com.nongxinle.ai.graph.business.execution.EffectiveGoodsAnchorSupport;
-import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
+import com.nongxinle.ai.semantic.contract.SemanticContractPlanOutputSupport;
 import com.nongxinle.ai.inventory.InventoryPresentationTimeSupport;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +24,8 @@ public final class GoodsSupportedDishCoverAnswerPlanBuilder {
             return;
         }
         AiResolvedQueryContext rq = state.getResolvedQueryContext();
-        if (!ToolRequestContractExecutionParamSupport.isGoodsSupportedDishCoverContract(rq)) {
+        if (!SemanticContractPlanOutputSupport.requestsPlanOutput(
+                rq, GoodsSupportedDishCoverAnswerPlan.TYPE)) {
             return;
         }
         state.setGoodsSupportedDishCoverAnswerPlan(null);
@@ -104,9 +103,8 @@ public final class GoodsSupportedDishCoverAnswerPlanBuilder {
             AiResolvedQueryContext rq,
             Map<String, Object> core,
             LinkedHashMap<String, Object> debug) {
-        EffectiveGoodsAnchor anchor = EffectiveGoodsAnchorSupport.resolve(rq);
-        String goodsName = firstNonBlank(str(core.get("goodsName")), anchor.getGoodsName());
-        Integer disGoodsId = firstNonNullInt(core.get("disGoodsId"), anchor.getDisGoodsId());
+        String goodsName = GoodsEntityDisplayNameSupport.resolveDisplayGoodsName(rq, core);
+        Integer disGoodsId = GoodsEntityDisplayNameSupport.resolveDisplayDisGoodsId(rq, core);
 
         var timeFields =
                 InventoryPresentationTimeSupport.buildForGoodsSupportedDishCover(state, rq);
@@ -120,12 +118,16 @@ public final class GoodsSupportedDishCoverAnswerPlanBuilder {
                         : new ArrayList<>();
 
         LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
-        if (baseline != null) {
+        if (baseline != null && StringUtils.hasText(baseline.getDisplayLabel())) {
             summary.put("salesBaselineLabel", baseline.getDisplayLabel());
             summary.put("salesBaselineStartDate", baseline.getStartDateIso());
             summary.put("salesBaselineStopDate", baseline.getStopDateIso());
             summary.put("salesBaselineDays", baseline.getBaselineDays());
             summary.put("salesBaselineSource", baseline.getBaselineSource());
+            summary.put(
+                    "salesBaselinePeriodPhrase",
+                    com.nongxinle.ai.inventory.CoverDaysSalesBaselinePresentationSupport.formatPeriodPhrase(
+                            rq, baseline));
         }
         summary.put("linkedDishCount", dishRows.size());
         summary.put("currentStockQty", core.get("currentStockQty"));
@@ -175,6 +177,9 @@ public final class GoodsSupportedDishCoverAnswerPlanBuilder {
                         .planType(GoodsSupportedDishCoverAnswerPlan.TYPE)
                         .contractId(GoodsSupportedDishCoverAnswerPlan.CONTRACT_ID)
                         .status(status)
+                        .goodsName(
+                                GoodsEntityDisplayNameSupport.resolveDisplayGoodsName(
+                                        state.getResolvedQueryContext(), Map.of()))
                         .debug(debug)
                         .build());
     }
@@ -185,23 +190,5 @@ public final class GoodsSupportedDishCoverAnswerPlanBuilder {
         }
         String t = o.toString().trim();
         return t.isEmpty() ? null : t;
-    }
-
-    private static String firstNonBlank(String a, String b) {
-        return StringUtils.hasText(a) ? a : b;
-    }
-
-    private static Integer firstNonNullInt(Object a, Integer b) {
-        if (a instanceof Number n) {
-            return n.intValue();
-        }
-        if (a != null) {
-            try {
-                return Integer.parseInt(a.toString().trim());
-            } catch (NumberFormatException ignored) {
-                // fall through
-            }
-        }
-        return b;
     }
 }

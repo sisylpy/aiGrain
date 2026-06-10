@@ -34,4 +34,7 @@ public class SemanticParserInput {
 
     /** P2 Step 2：单域 ACTIVE allowed 摘要；capability 缺失时为 null。 */
     private SemanticParserAllowedOutputContract allowedOutputContract;
+
+    /** Intake 结构化追问 + 上一轮 stable contract；V2 辅助，主权在 Transition Policy。 */
+    private SemanticParserFollowUpContext followUpContext;
 }

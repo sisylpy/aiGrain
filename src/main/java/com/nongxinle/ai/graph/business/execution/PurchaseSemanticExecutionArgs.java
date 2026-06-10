@@ -1,6 +1,7 @@
 package com.nongxinle.ai.graph.business.execution;
 
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
+import com.nongxinle.ai.identity.BusinessEntityIdentityScopeSupport;
 import org.springframework.util.StringUtils;
 
 import java.util.Map;
@@ -16,7 +17,9 @@ public final class PurchaseSemanticExecutionArgs {
         if (m == null || ctx == null) {
             return;
         }
-        PurchaseSemanticExecutionIntent intent = PurchaseSemanticExecutionIntentResolver.resolve(ctx);
+        Integer disIdHint = BusinessEntityIdentityScopeSupport.disIdFromToolArgs(m);
+        PurchaseSemanticExecutionIntent intent =
+                PurchaseSemanticExecutionIntentResolver.resolve(ctx, disIdHint);
         if (!intent.isActive()) {
             return;
         }
@@ -24,7 +27,8 @@ public final class PurchaseSemanticExecutionArgs {
         String exec = intent.getExecutionIntentType();
         if (PurchaseSemanticExecutionIntent.EXEC_GOODS_SOURCE_BREAKDOWN.equals(exec)
                 || PurchaseSemanticExecutionIntent.EXEC_GOODS_SUPPLIER_BREAKDOWN.equals(exec)
-                || PurchaseSemanticExecutionIntent.EXEC_GOODS_SUPPLIER_UNIT_PRICE.equals(exec)) {
+                || PurchaseSemanticExecutionIntent.EXEC_GOODS_SUPPLIER_UNIT_PRICE.equals(exec)
+                || PurchaseSemanticExecutionIntent.EXEC_GOODS_BUSINESS_ANALYSIS.equals(exec)) {
             if (!intent.requiresGoodsFocus()) {
                 return;
             }

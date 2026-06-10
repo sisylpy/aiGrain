@@ -1,10 +1,14 @@
 package com.nongxinle.ai.graph.business.execution;
 
 import com.nongxinle.ai.context.AiResolvedQueryContext;
-import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
+import com.nongxinle.ai.identity.BusinessEntityIdentityBridge;
+import com.nongxinle.ai.identity.BusinessEntityIdentityGoodsProjection;
+import com.nongxinle.ai.identity.EntityIdentityResolutionStatus;
+import com.nongxinle.ai.identity.ResolvedEntityIdentity;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.dto.business.PurchaseGoodsBusinessAnalysisAnswerPlan;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.frame.CurrentSemanticFrame;
@@ -30,6 +34,11 @@ public final class PurchaseSemanticExecutionIntentResolver {
     private PurchaseSemanticExecutionIntentResolver() {}
 
     public static PurchaseSemanticExecutionIntent resolve(AiResolvedQueryContext rq) {
+        return resolve(rq, null);
+    }
+
+    public static PurchaseSemanticExecutionIntent resolve(
+            AiResolvedQueryContext rq, Integer distributerIdHint) {
         if (rq == null) {
             return PurchaseSemanticExecutionIntent.none();
         }
@@ -39,7 +48,8 @@ public final class PurchaseSemanticExecutionIntentResolver {
         CurrentSemanticFrame frame =
                 CurrentSemanticFrame.fromParseResult(rq.getQuerySemanticParse(), rq.getPreviousTurn());
         String matchedContractId = matchedContractId(rq);
-        PurchaseSemanticExecutionIntent fromContract = fromMatchedContract(matchedContractId, frame, rq);
+        PurchaseSemanticExecutionIntent fromContract =
+                fromMatchedContract(matchedContractId, frame, rq, distributerIdHint);
         if (fromContract != null && fromContract.isActive()) {
             return fromContract;
         }
@@ -66,7 +76,7 @@ public final class PurchaseSemanticExecutionIntentResolver {
     }
 
     private static PurchaseSemanticExecutionIntent fromMatchedContract(
-            String contractId, CurrentSemanticFrame frame, AiResolvedQueryContext rq) {
+            String contractId, CurrentSemanticFrame frame, AiResolvedQueryContext rq, Integer distributerIdHint) {
         if (!StringUtils.hasText(contractId)) {
             return null;
         }
@@ -74,9 +84,15 @@ public final class PurchaseSemanticExecutionIntentResolver {
         PurchaseSemanticCapabilityMatrixRow row = matrixRowForContractId(trimmed);
         if (row != null) {
             return withResolutionSource(
-                    buildGoodsAnchorIntent(row, frame, rq, trimmed), RESOLUTION_SOURCE_CONTRACT_ENTRY);
+                    buildGoodsAnchorIntent(row, frame, rq, trimmed, distributerIdHint),
+                    RESOLUTION_SOURCE_CONTRACT_ENTRY);
         }
-        PurchaseSemanticExecutionIntent catalog = fromCatalogContract(trimmed, frame);
+        if (PurchaseGoodsBusinessAnalysisAnswerPlan.CONTRACT_ID.equals(trimmed)) {
+            return withResolutionSource(
+                    buildGoodsBusinessAnalysisIntent(frame, rq, trimmed, distributerIdHint),
+                    RESOLUTION_SOURCE_CONTRACT_ENTRY);
+        }
+        PurchaseSemanticExecutionIntent catalog = fromCatalogContract(trimmed, frame, rq, distributerIdHint);
         if (catalog != null) {
             return withResolutionSource(catalog, RESOLUTION_SOURCE_CONTRACT_ENTRY);
         }
@@ -84,8 +100,14 @@ public final class PurchaseSemanticExecutionIntentResolver {
     }
 
     private static PurchaseSemanticExecutionIntent fromCatalogContract(
-            String contractId, CurrentSemanticFrame frame) {
+            String contractId,
+            CurrentSemanticFrame frame,
+            AiResolvedQueryContext rq,
+            Integer distributerIdHint) {
         if (!isPeriodGoodsListContractId(contractId)) {
+            return null;
+        }
+        if (rq != null && resolveGoodsAnchor(rq, distributerIdHint).resolved()) {
             return null;
         }
         String defaultFacet = defaultSourceFacetForPeriodGoodsListContract(contractId);
@@ -117,6 +139,14 @@ public final class PurchaseSemanticExecutionIntentResolver {
                     "purchase.period_goods_list.supplier" -> true;
             default -> false;
         };
+    }
+
+    /** contract {@code purchase.goods_anchor.source_breakdown} → 单商品逐笔采购明细卡主链。 */
+    public static boolean isGoodsAnchorSourceBreakdownContractId(String contractId) {
+        if (!StringUtils.hasText(contractId)) {
+            return false;
+        }
+        return PurchaseSemanticCapabilityMatrix.SOURCE_BREAKDOWN.getCapabilityId().equals(contractId.trim());
     }
 
     private static String defaultSourceFacetForPeriodGoodsListContract(String contractId) {
@@ -155,8 +185,9 @@ public final class PurchaseSemanticExecutionIntentResolver {
             PurchaseSemanticCapabilityMatrixRow row,
             CurrentSemanticFrame frame,
             AiResolvedQueryContext rq,
-            String matchedContractId) {
-        GoodsAnchor anchor = resolveGoodsAnchor(rq);
+            String matchedContractId,
+            Integer distributerIdHint) {
+        GoodsAnchor anchor = resolveGoodsAnchor(rq, distributerIdHint);
         String execType = executionTypeForRow(row);
         String toolKey = toolDetailWantedKeyForRow(row);
         return PurchaseSemanticExecutionIntent.builder()
@@ -173,6 +204,25 @@ public final class PurchaseSemanticExecutionIntentResolver {
                 .anchorResolved(anchor.resolved())
                 .executionIntentType(execType)
                 .toolDetailWantedKey(toolKey)
+                .build();
+    }
+
+    private static PurchaseSemanticExecutionIntent buildGoodsBusinessAnalysisIntent(
+            CurrentSemanticFrame frame, AiResolvedQueryContext rq, String matchedContractId, Integer distributerIdHint) {
+        GoodsAnchor anchor = resolveGoodsAnchor(rq, distributerIdHint);
+        return PurchaseSemanticExecutionIntent.builder()
+                .matchedContractId(matchedContractId)
+                .wire(frame != null ? frame.getStructuredIntentDetailWire() : null)
+                .queryObject(frame != null ? frame.getQueryObject() : "GOODS")
+                .operation(frame != null ? frame.getOperation() : "ANALYSIS")
+                .detailWanted(frame != null ? frame.getDetailWanted() : null)
+                .sourceFacet(frame != null ? frame.getSourceFacet() : null)
+                .answerPlanType(PurchaseGoodsBusinessAnalysisAnswerPlan.TYPE)
+                .focusGoodsId(anchor.entityId())
+                .focusGoodsName(anchor.entityName())
+                .anchorType(AiResultAnchor.ENTITY_TYPE_GOODS)
+                .anchorResolved(anchor.resolved())
+                .executionIntentType(PurchaseSemanticExecutionIntent.EXEC_GOODS_BUSINESS_ANALYSIS)
                 .build();
     }
 
@@ -217,38 +267,24 @@ public final class PurchaseSemanticExecutionIntentResolver {
     }
 
     static GoodsAnchor resolveGoodsAnchor(AiResolvedQueryContext rq) {
+        return resolveGoodsAnchor(rq, null);
+    }
+
+    static GoodsAnchor resolveGoodsAnchor(AiResolvedQueryContext rq, Integer distributerIdHint) {
         if (rq == null) {
             return GoodsAnchor.unresolved();
         }
-        AiConversationTurnMemory prev = rq.getPreviousTurn();
-        if (prev != null && prev.getLastResultAnchors() != null) {
-            for (AiResultAnchor a : prev.getLastResultAnchors()) {
-                if (a == null || !StringUtils.hasText(a.getEntityType())) {
-                    continue;
-                }
-                if (!AiResultAnchor.ENTITY_TYPE_GOODS.equalsIgnoreCase(a.getEntityType().trim())) {
-                    continue;
-                }
-                String id = blankToNull(a.getEntityId());
-                String name = blankToNull(a.getEntityName());
-                if (id != null || name != null) {
-                    return new GoodsAnchor(id, name, true);
-                }
-            }
+        ResolvedEntityIdentity identity = BusinessEntityIdentityBridge.resolveGoods(rq, distributerIdHint);
+        if (identity.getResolutionStatus() != EntityIdentityResolutionStatus.OK) {
+            return GoodsAnchor.unresolved();
         }
-        String rewriteName = blankToNull(rq.getRewriteInheritedAnchorName());
-        if (rewriteName != null) {
-            return new GoodsAnchor(null, rewriteName, true);
+        Integer disGoodsId = BusinessEntityIdentityGoodsProjection.executionDisGoodsId(identity);
+        String name = BusinessEntityIdentityGoodsProjection.executionGoodsNameHint(identity);
+        if (disGoodsId == null && !StringUtils.hasText(name)) {
+            return GoodsAnchor.unresolved();
         }
-        return GoodsAnchor.unresolved();
-    }
-
-    private static String blankToNull(String s) {
-        if (!StringUtils.hasText(s)) {
-            return null;
-        }
-        String t = s.trim();
-        return t.isEmpty() ? null : t;
+        String id = disGoodsId != null ? String.valueOf(disGoodsId) : null;
+        return new GoodsAnchor(id, name, true);
     }
 
     record GoodsAnchor(String entityId, String entityName, boolean resolved) {

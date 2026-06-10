@@ -60,6 +60,8 @@ public class SemanticParserAllowedOutputContract {
         private String metric;
         private List<String> metrics;
         private String sourceFacet;
+        /** 非空时 {@code sourceFacet} 为默认值，Parser 可选集合内任一值。 */
+        private List<String> allowedSourceFacets;
         private String detailWanted;
         private String answerPlanType;
         private Boolean requiresAnchor;

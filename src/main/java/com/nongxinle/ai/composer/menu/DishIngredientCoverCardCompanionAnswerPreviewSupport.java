@@ -1,7 +1,7 @@
 package com.nongxinle.ai.composer.menu;
 
 import com.nongxinle.ai.dto.business.DishIngredientCoverAnswerPlan;
-import com.nongxinle.ai.graph.business.DishIngredientCoverSalesBaseline;
+import com.nongxinle.ai.inventory.CoverDaysSalesBaselinePresentationSupport;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
@@ -25,11 +25,18 @@ public final class DishIngredientCoverCardCompanionAnswerPreviewSupport {
         }
         String dishLabel = resolveDishLabel(plan);
         if (StringUtils.hasText(plan.getDishCoverDays())) {
-            return composeWithCoverDays(dishLabel, plan.getDishCoverDays().trim(), plan.getBottleneckIngredientName());
+            return CoverDaysSalesBaselinePresentationSupport.composeCoverDaysSuccessPreview(
+                    dishLabel,
+                    resolveSalesBaselinePeriodPhrase(plan),
+                    plan.getDishCoverDays().trim(),
+                    plan.getBottleneckIngredientName());
         }
         if (hasKnownGap(plan, GAP_NO_SALES_IN_WINDOW)) {
-            return composeNoSalesInWindowHint(
-                    dishLabel, hasIngredientRows(plan), resolveSalesBaselineDays(plan));
+            String note = readNoSalesBaselineNote(plan);
+            if (hasIngredientRows(plan)) {
+                return CoverDaysSalesBaselinePresentationSupport.composeNoSalesWithIngredientCardHint(note);
+            }
+            return note;
         }
         if (hasKnownGap(plan, GAP_NO_RECIPE)) {
             return dishLabel + "暂无配方数据，无法列出配料可支撑天数；请先维护菜品配方。";
@@ -37,29 +44,17 @@ public final class DishIngredientCoverCardCompanionAnswerPreviewSupport {
         return dishLabel + "暂时无法按当前数据推算配料可支撑天数，详情见下方卡片。";
     }
 
-    private static String composeWithCoverDays(String dishLabel, String coverDays, String bottleneck) {
-        if (StringUtils.hasText(bottleneck)) {
-            return dishLabel
-                    + "按当前销量与库存，大约还能支撑 "
-                    + coverDays
-                    + " 天；最先不够的是「"
-                    + bottleneck.trim()
-                    + "」。详情见下方卡片。";
+    private static String readNoSalesBaselineNote(DishIngredientCoverAnswerPlan plan) {
+        String fromPlan =
+                CoverDaysSalesBaselinePresentationSupport.readNoSalesBaselineNoteFromPlanSummary(
+                        plan != null ? plan.getSummary() : null);
+        if (StringUtils.hasText(fromPlan)) {
+            return fromPlan;
         }
-        return dishLabel + "按当前销量与库存，大约还能支撑 " + coverDays + " 天。详情见下方卡片。";
-    }
-
-    private static String composeNoSalesInWindowHint(String dishLabel, boolean hasIngredientRows, int baselineDays) {
-        int days = baselineDays > 0 ? baselineDays : DishIngredientCoverSalesBaseline.DEFAULT_BASELINE_DAYS;
-        String core =
-                dishLabel
-                        + "最近 "
-                        + days
-                        + " 天没有该菜销量，暂不能按销售节奏估算可用天数";
-        if (hasIngredientRows) {
-            return core + "；下方卡片仍可查看各配料当前库存。";
-        }
-        return core + "。";
+        String dishLabel = resolveDishLabel(plan);
+        String period = resolveSalesBaselinePeriodPhrase(plan);
+        return CoverDaysSalesBaselinePresentationSupport.composeNoSalesCannotEstimateNote(
+                dishLabel, period);
     }
 
     private static String resolveDishLabel(DishIngredientCoverAnswerPlan plan) {
@@ -67,6 +62,13 @@ public final class DishIngredientCoverCardCompanionAnswerPreviewSupport {
             return "该菜品";
         }
         return plan.getDishName().trim();
+    }
+
+    private static String resolveSalesBaselinePeriodPhrase(DishIngredientCoverAnswerPlan plan) {
+        String fromSummary =
+                CoverDaysSalesBaselinePresentationSupport.readPeriodPhraseFromPlanSummary(
+                        plan != null ? plan.getSummary() : null);
+        return CoverDaysSalesBaselinePresentationSupport.defaultPeriodPhraseOr(fromSummary);
     }
 
     private static boolean hasKnownGap(DishIngredientCoverAnswerPlan plan, String gapCode) {
@@ -91,25 +93,5 @@ public final class DishIngredientCoverCardCompanionAnswerPreviewSupport {
         }
         List<Map<String, Object>> rows = plan.getIngredientRows();
         return rows != null && !rows.isEmpty();
-    }
-
-    private static int resolveSalesBaselineDays(DishIngredientCoverAnswerPlan plan) {
-        if (plan != null && plan.getSummary() != null) {
-            Object raw = plan.getSummary().get("salesBaselineDays");
-            if (raw instanceof Number n && n.intValue() > 0) {
-                return n.intValue();
-            }
-            if (raw != null) {
-                try {
-                    int parsed = Integer.parseInt(raw.toString().trim());
-                    if (parsed > 0) {
-                        return parsed;
-                    }
-                } catch (NumberFormatException ignored) {
-                    // fall through
-                }
-            }
-        }
-        return DishIngredientCoverSalesBaseline.DEFAULT_BASELINE_DAYS;
     }
 }

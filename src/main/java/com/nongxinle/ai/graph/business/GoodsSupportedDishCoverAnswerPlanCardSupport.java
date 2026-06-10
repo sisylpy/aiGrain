@@ -1,8 +1,8 @@
 package com.nongxinle.ai.graph.business;
 
+import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,22 +12,32 @@ public final class GoodsSupportedDishCoverAnswerPlanCardSupport {
     private GoodsSupportedDishCoverAnswerPlanCardSupport() {}
 
     public static List<Map<String, Object>> buildRunCards(GoodsSupportedDishCoverAnswerPlan plan) {
+        return buildRunCards(plan, null);
+    }
+
+    public static List<Map<String, Object>> buildRunCards(
+            GoodsSupportedDishCoverAnswerPlan plan, AiResolvedQueryContext rq) {
         if (plan == null || !GoodsSupportedDishCoverAnswerPlan.TYPE.equals(plan.getPlanType())) {
             return List.of();
         }
+        String goodsName =
+                GoodsEntityDisplayNameSupport.resolveDisplayGoodsNameForPlan(rq, plan.getGoodsName());
+        Integer disGoodsId =
+                GoodsEntityDisplayNameSupport.resolveDisplayDisGoodsIdForPlan(rq, plan.getDisGoodsId());
+
         Map<String, Object> card = new LinkedHashMap<>();
         card.put("cardType", GoodsSupportedDishCoverAnswerPlan.CARD_TYPE);
         String title =
-                plan.getGoodsName() == null || plan.getGoodsName().isBlank()
+                goodsName == null || goodsName.isBlank()
                         ? "原料关联菜品"
-                        : plan.getGoodsName() + " · 关联菜品";
+                        : goodsName + " · 关联菜品";
         card.put("title", title);
         card.put("subtitle", plan.getStockSnapshotLabel() == null ? "" : plan.getStockSnapshotLabel());
         card.put("sourceAnswerPlanType", plan.getPlanType());
 
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("goodsName", plan.getGoodsName());
-        payload.put("disGoodsId", plan.getDisGoodsId());
+        payload.put("goodsName", goodsName);
+        payload.put("disGoodsId", disGoodsId);
         payload.put("currentStockQty", plan.getCurrentStockQty());
         payload.put("stockUnit", plan.getStockUnit());
         payload.put("stockSnapshotLabel", plan.getStockSnapshotLabel());

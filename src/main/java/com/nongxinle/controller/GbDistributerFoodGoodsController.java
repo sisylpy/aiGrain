@@ -1,11 +1,15 @@
 package com.nongxinle.controller;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
 import com.nongxinle.entity.GbDistributerGoodsEntity;
@@ -22,6 +26,8 @@ import static com.nongxinle.utils.PinYin4jUtils.hanziToPinyin;
 @RestController
 @RequestMapping("/gbdistributerfoodgoods")
 public class GbDistributerFoodGoodsController {
+	private static final Logger log = LoggerFactory.getLogger(GbDistributerFoodGoodsController.class);
+
 	@Autowired
 	private GbDistributerFoodGoodsService gbDistributerFoodGoodsService;
 	@Autowired

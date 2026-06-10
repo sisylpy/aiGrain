@@ -35,7 +35,7 @@ public interface GbDepFoodBusinessInsightService {
 
     /**
      * 在 {@code gb_dep_food} 列表上写入 {@code gbDfBusinessInsight}，并将 {@code gbDfSalesAmount} 与按子部门口径的总销量对齐；
-     * 返回需放在 {@code R} 中与 {@code data} 并列的区间级字段（含 {@code businessInsightSummary} 顶部汇总、{@code scopeOutboundSubtotals} 出库损耗率、列说明等）。
+     * 返回需放在 {@code R} 中与 {@code data} 并列的区间级字段（含 {@code businessInsightSummary} 顶部汇总、{@code businessInsightSummaryChinese} 字段中文说明、{@code scopeOutboundSubtotals} 出库损耗率及 type6 员工餐、列说明等）。
      */
     default Map<String, Object> attachToFoodRows(List<GbDepFoodEntity> foods,
             Integer disId, Integer depFatherId, String startDate, String stopDate) {
@@ -46,7 +46,7 @@ public interface GbDepFoodBusinessInsightService {
             Integer disId, Integer depFatherId, String startDate, String stopDate, Integer subDepId);
 
     /**
-     * 在 {@code /depGetAllFood} 的配方行上挂本区间出库统计：type1 与 1+2+3 的汇总、出库单价、2+3 的差分数量/成本。
+     * 在 {@code /depGetAllFood} 的配方行上挂本区间出库统计：type1 与 1+2+3 的汇总、出库单价、2+3 的差分数量/成本、type6 员工餐量/额。
      */
     default void enrichFoodGoodsOutboundStats(List<GbDistributerFoodGoodsEntity> recipeLines, Integer disId, Integer depFatherId,
             String startDate, String stopDate) {

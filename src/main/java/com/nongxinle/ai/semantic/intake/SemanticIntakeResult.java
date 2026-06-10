@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class SemanticIntakeResult {
@@ -33,6 +33,28 @@ public class SemanticIntakeResult {
      * {@code NEAR_EXPIRY} / {@code EXPLICIT_AMOUNT_RANKING_LOW}。Java 仅做枚举校验与边界执行。
      */
     private String warehouseInventorySemantics;
+    /**
+     * warehouse.near_expiry 风险子意图（Intake/V2 结构化）：
+     * {@code NEAR_EXPIRY} / {@code EXPIRED} / {@code DUE_TODAY} / {@code ALL_RISK}。
+     */
+    private String expiryRiskFilter;
+    /**
+     * Cover days 实体类型（LLM 结构化）：{@code DISH} / {@code GOODS}。
+     * Java 按存在性落地合同，不读用户原文关键词。
+     */
+    private String coverDaysEntityType;
+    /** Cover days 点名实体（菜名或原料/商品名）。 */
+    private String coverDaysEntityName;
+    /**
+     * 结构化追问意图；由 {@link SemanticIntakeFollowUpIntentNormalizer} 写入。
+     * {@link #reason} 仅 debug，Policy 不得 parse reason。
+     */
+    private SemanticIntakeFollowUpIntent followUpIntent;
+    /**
+     * 与上一轮的业务上下文关系（Intake 结构化）：{@code NEW_CAPABILITY} /
+     * {@code CONTEXT_CONTINUATION}。Java 仅做枚举与字段一致性校验。
+     */
+    private String contextRelation;
     private List<SemanticIntakeSubQuestion> subQuestions;
 
     private String promptId;

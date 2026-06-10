@@ -1,12 +1,15 @@
 package com.nongxinle.ai.capability.dish;
 
+import com.nongxinle.entity.GbDistributerFoodEntity;
 import com.nongxinle.service.GbDepFoodBusinessInsightService;
+import com.nongxinle.service.GbDistributerFoodService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -14,6 +17,8 @@ import java.util.Objects;
 /**
  * AI 单菜销售 Capability：复用 {@link GbDepFoodBusinessInsightService#buildInsight}（与
  * {@code POST /api/gbdepfood/depGeFoodBusiness} 同源），不新增 Mapper / SQL。
+ * 单菜 selector 在 insight 行未命中时，回退 {@link GbDistributerFoodService#queryFoodByParams} /
+ * {@link GbDistributerFoodService#queryObject} 主数据存在性，唯一命中则零销量 SUCCESS。
  */
 @Component
 @RequiredArgsConstructor
@@ -24,6 +29,7 @@ public class DishSalesAnalysisCapabilityAdapter {
     private static final String REASON_MISSING_DISH_SELECTOR = "missing_dish_selector";
 
     private final GbDepFoodBusinessInsightService gbDepFoodBusinessInsightService;
+    private final GbDistributerFoodService gbDistributerFoodService;
 
     @SuppressWarnings("unchecked")
     public DishSalesAnalysisCapabilityResult analyze(DishSalesAnalysisCapabilityRequest request) {
@@ -54,6 +60,20 @@ public class DishSalesAnalysisCapabilityAdapter {
                 : List.of();
         Map<String, Object> rawSummary = buildRawReportSummary(insight, dishRows.size());
 
+        List<Map<String, Object>> rankedRows =
+                dishRows.isEmpty()
+                        ? List.of()
+                        : rankBySoldPortionsDesc(collapseRowsByFoodIdentity(dishRows));
+
+        Integer foodId = request.getFoodId();
+        String dishName = trimToNull(request.getDishName());
+        if (foodId != null) {
+            return resolveByFoodId(foodId, rankedRows, rawSummary, disId);
+        }
+        if (StringUtils.hasText(dishName)) {
+            return resolveByDishName(dishName, rankedRows, rawSummary, disId);
+        }
+
         if (dishRows.isEmpty()) {
             return DishSalesAnalysisCapabilityResult.builder()
                     .status(DishCostAnalysisCapabilityStatus.NO_DATA)
@@ -63,18 +83,6 @@ public class DishSalesAnalysisCapabilityAdapter {
                     .rawSalesRows(List.of())
                     .candidates(List.of())
                     .build();
-        }
-
-        List<Map<String, Object>> rankedRows =
-                rankBySoldPortionsDesc(collapseRowsByFoodIdentity(dishRows));
-
-        Integer foodId = request.getFoodId();
-        String dishName = trimToNull(request.getDishName());
-        if (foodId != null) {
-            return resolveByFoodId(foodId, rankedRows, rawSummary);
-        }
-        if (StringUtils.hasText(dishName)) {
-            return resolveByDishName(dishName, rankedRows, rawSummary);
         }
 
         return overviewFromRows(rankedRows, rawSummary);
@@ -92,30 +100,23 @@ public class DishSalesAnalysisCapabilityAdapter {
                 .build();
     }
 
-    private static DishSalesAnalysisCapabilityResult resolveByFoodId(
-            Integer foodId, List<Map<String, Object>> rankedRows, Map<String, Object> rawSummary) {
+    private DishSalesAnalysisCapabilityResult resolveByFoodId(
+            Integer foodId, List<Map<String, Object>> rankedRows, Map<String, Object> rawSummary, Integer disId) {
         List<Map<String, Object>> matched = new ArrayList<>();
         for (Map<String, Object> row : rankedRows) {
-            if (Objects.equals(foodId, row.get("foodId"))) {
+            if (foodIdsEqual(foodId, row.get("foodId"))) {
                 matched.add(row);
             }
         }
         if (matched.isEmpty()) {
-            return DishSalesAnalysisCapabilityResult.builder()
-                    .status(DishCostAnalysisCapabilityStatus.NO_DATA)
-                    .reasonCode(REASON_DISH_NOT_FOUND)
-                    .message("未找到指定 foodId 的菜品销售行")
-                    .rawReportSummary(rawSummary)
-                    .rawSalesRows(rankedRows)
-                    .candidates(List.of())
-                    .build();
+            return resolveWhenInsightMissByFoodId(foodId, disId, rankedRows, rawSummary);
         }
         List<Map<String, Object>> collapsed = collapseRowsByFoodIdentity(matched);
         return successFromRow(collapsed.get(0), rankingOf(rankedRows, collapsed.get(0)), rankedRows, rawSummary);
     }
 
-    private static DishSalesAnalysisCapabilityResult resolveByDishName(
-            String dishName, List<Map<String, Object>> rankedRows, Map<String, Object> rawSummary) {
+    private DishSalesAnalysisCapabilityResult resolveByDishName(
+            String dishName, List<Map<String, Object>> rankedRows, Map<String, Object> rawSummary, Integer disId) {
         String needle = dishName.trim();
         List<Map<String, Object>> exact = new ArrayList<>();
         for (Map<String, Object> row : rankedRows) {
@@ -125,7 +126,7 @@ public class DishSalesAnalysisCapabilityAdapter {
             }
         }
         if (exact.isEmpty()) {
-            return resolveByPartialDishName(needle, rankedRows, rawSummary);
+            return resolveByPartialDishName(needle, rankedRows, rawSummary, disId);
         }
         List<Map<String, Object>> collapsed = collapseRowsByFoodIdentity(exact);
         if (collapsed.size() == 1) {
@@ -135,8 +136,8 @@ public class DishSalesAnalysisCapabilityAdapter {
         return clarificationFromRows(collapsed, rankedRows, rawSummary, needle, "exact_name");
     }
 
-    private static DishSalesAnalysisCapabilityResult resolveByPartialDishName(
-            String needle, List<Map<String, Object>> rankedRows, Map<String, Object> rawSummary) {
+    private DishSalesAnalysisCapabilityResult resolveByPartialDishName(
+            String needle, List<Map<String, Object>> rankedRows, Map<String, Object> rawSummary, Integer disId) {
         List<Map<String, Object>> contains = new ArrayList<>();
         for (Map<String, Object> row : rankedRows) {
             String name = dishDisplayName(row);
@@ -145,14 +146,7 @@ public class DishSalesAnalysisCapabilityAdapter {
             }
         }
         if (contains.isEmpty()) {
-            return DishSalesAnalysisCapabilityResult.builder()
-                    .status(DishCostAnalysisCapabilityStatus.NO_DATA)
-                    .reasonCode(REASON_DISH_NOT_FOUND)
-                    .message("未找到匹配菜名")
-                    .rawReportSummary(rawSummary)
-                    .rawSalesRows(rankedRows)
-                    .candidates(List.of())
-                    .build();
+            return resolveWhenInsightMissByDishName(needle, disId, rankedRows, rawSummary);
         }
         List<Map<String, Object>> collapsed = collapseRowsByFoodIdentity(contains);
         if (collapsed.size() == 1) {
@@ -160,6 +154,188 @@ public class DishSalesAnalysisCapabilityAdapter {
                     collapsed.get(0), rankingOf(rankedRows, collapsed.get(0)), rankedRows, rawSummary);
         }
         return clarificationFromRows(collapsed, rankedRows, rawSummary, needle, "partial_name");
+    }
+
+    /**
+     * insight 未命中时：按 foodId 查分销商菜品主数据（与 {@link com.nongxinle.ai.tool.business.DishIngredientCostBreakdownTool} 同口径）。
+     */
+    private DishSalesAnalysisCapabilityResult resolveWhenInsightMissByFoodId(
+            Integer foodId, Integer disId, List<Map<String, Object>> rankedRows, Map<String, Object> rawSummary) {
+        GbDistributerFoodEntity food = loadFoodInDistributor(foodId, disId);
+        if (food == null) {
+            return dishNotFoundInMasterData(rankedRows, rawSummary);
+        }
+        return successFromZeroSalesMasterFood(food, rankedRows, rawSummary);
+    }
+
+    /**
+     * insight 未命中时：{@code queryFoodByParams(disId, foodName)}，与
+     * {@link com.nongxinle.ai.semantic.intake.grounding.CoverDaysEntityExistenceLookup#probeDish} /
+     * {@link DishCostAnalysisCapabilityAdapter} 菜名 lookup 同口径。
+     */
+    private DishSalesAnalysisCapabilityResult resolveWhenInsightMissByDishName(
+            String needle, Integer disId, List<Map<String, Object>> rankedRows, Map<String, Object> rawSummary) {
+        MasterFoodProbe probe = probeFoodsByName(disId, needle);
+        if (probe.kind == MasterFoodProbeKind.UNIQUE) {
+            return successFromZeroSalesMasterFood(probe.uniqueFood(), rankedRows, rawSummary);
+        }
+        if (probe.kind == MasterFoodProbeKind.AMBIGUOUS) {
+            return clarificationFromMasterFoods(probe.ambiguousFoods(), rankedRows, rawSummary, needle);
+        }
+        return dishNotFoundInMasterData(rankedRows, rawSummary);
+    }
+
+    private static DishSalesAnalysisCapabilityResult dishNotFoundInMasterData(
+            List<Map<String, Object>> rankedRows, Map<String, Object> rawSummary) {
+        return DishSalesAnalysisCapabilityResult.builder()
+                .status(DishCostAnalysisCapabilityStatus.NO_DATA)
+                .reasonCode(REASON_DISH_NOT_FOUND)
+                .message("未找到匹配菜名")
+                .rawReportSummary(rawSummary)
+                .rawSalesRows(rankedRows)
+                .candidates(List.of())
+                .build();
+    }
+
+    private GbDistributerFoodEntity loadFoodInDistributor(Integer foodId, Integer disId) {
+        if (foodId == null || foodId <= 0 || disId == null) {
+            return null;
+        }
+        GbDistributerFoodEntity food = gbDistributerFoodService.queryObject(foodId);
+        if (food == null || food.getGbDistributerFoodId() == null) {
+            return null;
+        }
+        if (food.getGbDfDistributerId() != null && !disId.equals(food.getGbDfDistributerId())) {
+            return null;
+        }
+        return food;
+    }
+
+    private MasterFoodProbe probeFoodsByName(Integer disId, String dishName) {
+        if (disId == null || !StringUtils.hasText(dishName)) {
+            return MasterFoodProbe.notFound();
+        }
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("disId", disId);
+        map.put("foodName", dishName.trim());
+        List<GbDistributerFoodEntity> foods = gbDistributerFoodService.queryFoodByParams(map);
+        if (foods == null || foods.isEmpty()) {
+            return MasterFoodProbe.notFound();
+        }
+        LinkedHashSet<Integer> seenIds = new LinkedHashSet<>();
+        List<GbDistributerFoodEntity> deduped = new ArrayList<>();
+        for (GbDistributerFoodEntity food : foods) {
+            if (food == null || food.getGbDistributerFoodId() == null) {
+                continue;
+            }
+            if (seenIds.add(food.getGbDistributerFoodId())) {
+                deduped.add(food);
+            }
+        }
+        if (deduped.isEmpty()) {
+            return MasterFoodProbe.notFound();
+        }
+        if (deduped.size() == 1) {
+            return MasterFoodProbe.unique(deduped.get(0));
+        }
+        return MasterFoodProbe.ambiguous(deduped);
+    }
+
+    private static DishSalesAnalysisCapabilityResult successFromZeroSalesMasterFood(
+            GbDistributerFoodEntity food,
+            List<Map<String, Object>> rawSalesRows,
+            Map<String, Object> rawSummary) {
+        return successFromRow(buildZeroSalesRowFromMasterFood(food), null, rawSalesRows, rawSummary);
+    }
+
+    private static Map<String, Object> buildZeroSalesRowFromMasterFood(GbDistributerFoodEntity food) {
+        LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+        row.put("foodId", food.getGbDistributerFoodId());
+        String name = canonicalMasterFoodName(food);
+        row.put("foodName", name);
+        row.put("dishName", name);
+        row.put("soldPortionsTotal", "0");
+        row.put("listPriceRevenue", "0");
+        if (StringUtils.hasText(food.getGbDfFoodPrice())) {
+            row.put("listPrice", food.getGbDfFoodPrice().trim());
+        }
+        return row;
+    }
+
+    private static String canonicalMasterFoodName(GbDistributerFoodEntity food) {
+        if (food == null || !StringUtils.hasText(food.getGbDfFoodName())) {
+            return "";
+        }
+        return food.getGbDfFoodName().trim();
+    }
+
+    private static DishSalesAnalysisCapabilityResult clarificationFromMasterFoods(
+            List<GbDistributerFoodEntity> foods,
+            List<Map<String, Object>> rawSalesRows,
+            Map<String, Object> rawSummary,
+            String dishNameLabel) {
+        List<Map<String, Object>> candidates = new ArrayList<>();
+        for (GbDistributerFoodEntity food : foods) {
+            if (food != null) {
+                candidates.add(masterFoodCandidateBrief(food));
+            }
+        }
+        String message = formatEntityDisambiguationMessage(dishNameLabel, candidates, "partial_name");
+        return DishSalesAnalysisCapabilityResult.builder()
+                .status(DishCostAnalysisCapabilityStatus.NEED_CLARIFICATION)
+                .reasonCode("entity_disambiguation")
+                .message(message)
+                .candidates(candidates)
+                .rawSalesRows(rawSalesRows)
+                .rawReportSummary(rawSummary)
+                .build();
+    }
+
+    private static Map<String, Object> masterFoodCandidateBrief(GbDistributerFoodEntity food) {
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("foodId", food.getGbDistributerFoodId());
+        String name = canonicalMasterFoodName(food);
+        c.put("dishName", name);
+        c.put("foodName", name);
+        c.put("soldPortionsTotal", "0");
+        c.put("listPriceRevenue", "0");
+        return c;
+    }
+
+    private static boolean foodIdsEqual(Integer expected, Object actual) {
+        if (expected == null || actual == null) {
+            return false;
+        }
+        if (actual instanceof Number n) {
+            return expected.intValue() == n.intValue();
+        }
+        try {
+            return expected.equals(Integer.parseInt(actual.toString().trim()));
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private enum MasterFoodProbeKind {
+        NOT_FOUND,
+        UNIQUE,
+        AMBIGUOUS
+    }
+
+    private record MasterFoodProbe(MasterFoodProbeKind kind, GbDistributerFoodEntity uniqueFood,
+                                   List<GbDistributerFoodEntity> ambiguousFoods) {
+
+        static MasterFoodProbe notFound() {
+            return new MasterFoodProbe(MasterFoodProbeKind.NOT_FOUND, null, List.of());
+        }
+
+        static MasterFoodProbe unique(GbDistributerFoodEntity food) {
+            return new MasterFoodProbe(MasterFoodProbeKind.UNIQUE, food, List.of());
+        }
+
+        static MasterFoodProbe ambiguous(List<GbDistributerFoodEntity> foods) {
+            return new MasterFoodProbe(MasterFoodProbeKind.AMBIGUOUS, null, foods);
+        }
     }
 
     /** 单店多行同一 foodId：聚合销量/销售额后视为同一菜品实体。 */

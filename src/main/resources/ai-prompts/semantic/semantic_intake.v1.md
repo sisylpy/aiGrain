@@ -68,6 +68,8 @@
   "needClarification": false,
   "clarificationQuestion": null,
   "reason": "single_domain_resolved",
+  "coverDaysEntityType": null,
+  "coverDaysEntityName": null,
   "subQuestions": null
 }
 ```
@@ -151,7 +153,10 @@
 | `needClarification` | 无法唯一理解时为 true |
 | `clarificationQuestion` | 面向用户的澄清问句；`needClarification=false` 时为 null |
 | `reason` | 简短英文 snake_case 观测码；**菜品排行维度切换追问**须含结构化 token 后缀（见 §38f-g），**禁止**仅中文描述 |
-| `warehouseInventorySemantics` | 可选；库房库存问法：`UNDERSTOCK_QUERY`（偏少/快缺货/报警）、`OUT_OF_STOCK`（缺货）、`NEAR_EXPIRY`（临期）、`EXPLICIT_AMOUNT_RANKING_LOW` 或 `INVENTORY_AMOUNT_LOW`（账面库存**金额**低排行，走 WH-C）。`SHORTAGE_OR_ALERT` 为过渡别名。与 §13a–13d 配合 |
+| `warehouseInventorySemantics` | 可选；库房库存问法：`UNDERSTOCK_QUERY`（偏少/快缺货/报警）、`OUT_OF_STOCK`（缺货）、`NEAR_EXPIRY`（临期）、`SUPERVISION_QUERY`（库存监督/诊断入口，§13e；**唯一 canonical**）、`EXPLICIT_AMOUNT_RANKING_LOW` 或 `INVENTORY_AMOUNT_LOW`（账面库存**金额**低排行，走 WH-C）。`SHORTAGE_OR_ALERT` 为过渡别名。**禁止**自造 `INVENTORY_STATUS` / `CURRENT_STATUS` / `STOCK_HEALTH_OVERVIEW` 等别名输出（若误输出，服务端归一为 `SUPERVISION_QUERY`）。与 §13a–13e 配合 |
+| `expiryRiskFilter` | 可选；**仅** `warehouseInventorySemantics=NEAR_EXPIRY`：`NEAR_EXPIRY`（快临期/快到期）、`EXPIRED`（已经过期）、`DUE_TODAY`（今天到期）、`ALL_RISK`（临期或过期风险；泛问默认）。与 §13a 配合 |
+| `coverDaysEntityType` | 可选；cover-days 实体类型：`DISH` / `GOODS` / `UNKNOWN`。§34a/§34b/§34d 问法须配合 `coverDaysEntityName` |
+| `coverDaysEntityName` | cover-days 问法**必填**（§34a/§34b/§34d）；实体菜/原料歧义时仍填名称，`needClarification=false` |
 | `subQuestions` | 仅 `MULTI_QUESTION` 时非空；每项含 index、canonicalQuestion、primaryDomain 等 |
 
 ## 禁止输出
@@ -190,9 +195,11 @@
 
 7. **WAREHOUSE** 关注**现存库存状态**：库房/在库余额、库存数量或金额、库存排行、盘点、库房现量、缺货风险、临期预警等 **「现在有多少 / 还剩多少」** 类问法。
 8. **STOCK_REDUCE** 关注**库存减少事件**：出库、核销、生产耗用、消耗、报损、废弃、退货等 **「已经消耗了多少 / 减少了多少」** 类问法。
-9. **硬规则**：用户只提「库存」二字（如「库存怎么样」「库存情况」）→ **必须**输出 `primaryDomain=WAREHOUSE`，**绝不允许**输出 `STOCK_REDUCE`。用户说的是库存现量，不是出库核销。
+9. **硬规则（域）**：用户只提「库存」且语境为**现量/状态**（非出库核销）→ **必须** `primaryDomain=WAREHOUSE`，**绝不允许** `STOCK_REDUCE`。
+9a. **硬规则（监督入口 vs 数值概览 — 与 §13e 配合）**：问**库存现在怎么样 / 库存大概情况 / 库存情况如何 / 有没有问题 / 有没有风险 / 健不健康**等**老板监督/诊断入口**，且**无**具体商品/原料 anchor、**无**明确「金额/总金额/多少种/SKU/排行」诉求 → **必须** §13e：`warehouseInventorySemantics=SUPERVISION_QUERY` + `reason` 含 `warehouse_inventory_supervision`；**禁止**仅输出 `primaryDomain=WAREHOUSE` 而不填 `warehouseInventorySemantics`（否则 Step 2 易误选 `warehouse.overview`）。**本句已点名具体原料/商品**（如「大米库存怎么样」）→ **不得** `SUPERVISION_QUERY`；走 §34b-bundle `goods_anchor_inventory_bundle`。
+9b. **硬规则（数值概览）**：问**库存金额多少 / 库存总金额 / 库存商品有多少种 / SKU 数**等**明确数值或排行** → **不得** `SUPERVISION_QUERY`；走 `warehouse.overview` 或对应排行合同（§13d 等）。
 10. **硬规则**：用户提「出库/核销/耗用/报损/退货」→ **必须**输出 `primaryDomain=STOCK_REDUCE`。
-11. **硬规则**：即使上一轮是 `STOCK_REDUCE`，本轮问「库存呢」「库存情况呢」→ 必须输出 `primaryDomain=WAREHOUSE`，不得因为上一轮域而误导。
+11. **硬规则**：即使上一轮是 `STOCK_REDUCE`，本轮问「库存呢」「库存情况呢」（**监督/状态入口**，见 §13e）→ 必须输出 `primaryDomain=WAREHOUSE` + `SUPERVISION_QUERY`，不得因为上一轮域而误导。
 12. **禁止**把自然语言「库存」映射为「库存减少/出库」；禁止因为 STOCK_REDUCE 域有「库存」字眼而错选。两个域完全业务独立。
 13. **`warehouse.goods_amount_ranking_low` 边界**：仅表示商品账面剩余**库存金额**从低到高的排行（wire=`goods_stock_amount_ranking_low`）。**不是**库存偏少、原料不够、快缺货、库存报警、补货或临期能力；此类问法应路由澄清或 `knownGapContracts`（缺货/临期），**禁止**因「偏少/较少」无金额语义就选 WAREHOUSE 金额低排行。
 13a. **库房库存偏少/报警语义（硬规则 — Intake marker，P1）**：
@@ -201,7 +208,12 @@
   - `warehouseInventorySemantics` 为 `UNDERSTOCK_QUERY` 或 `OUT_OF_STOCK`（报警/偏少/快缺货）
   - `reason` **必须含** `warehouse_inventory_shortage_semantics` 或 `warehouse_inventory_alert_semantics`
   - 下游合同 **`warehouse.inventory_risk_list`**（wire=`warehouse_stock_low_risk`），**禁止** `warehouse.goods_amount_ranking_low`
-- **临期/保质期**（`NEAR_EXPIRY`）→ 仍 `needClarification=true`（`warehouse.near_expiry` knownGap，无保质期批次 SQL）
+- **临期/保质期**（`NEAR_EXPIRY`）→ **`needClarification=false`**，`warehouseInventorySemantics=NEAR_EXPIRY`，`reason` 含 `warehouse_inventory_near_expiry`；合同 **`warehouse.near_expiry`**（wire=`warehouse_near_expiry`）
+- **临期风险子意图（`expiryRiskFilter`，仅 NEAR_EXPIRY）**：
+  - 快临期/快到期 → `expiryRiskFilter=NEAR_EXPIRY`
+  - 已经过期 → `expiryRiskFilter=EXPIRED`
+  - 今天到期 → `expiryRiskFilter=DUE_TODAY`
+  - 临期或过期风险（泛问）→ `expiryRiskFilter=ALL_RISK` 或省略
 - **正例（金额排行，无 marker）**：「哪些商品账面库存金额较低？」→ `needClarification=false`，`reason` **不得**含 shortage marker
 
 ```json
@@ -225,7 +237,7 @@
 
 13b. **库存风险禁止进 PURCHASE（硬规则）**：
 - **原料/商品 + 库存偏少、快缺货、库存报警** → **必须** `primaryDomain=WAREHOUSE`，`needClarification=false`，`warehouseInventorySemantics=UNDERSTOCK_QUERY` 或 `OUT_OF_STOCK`，`reason` 含 shortage/alert marker；合同 `warehouse.inventory_risk_list`。
-- **临期/保质期** → `needClarification=true`，`NEAR_EXPIRY`，knownGap 澄清。
+- **临期/保质期** → **`needClarification=false`**，`NEAR_EXPIRY`，合同 `warehouse.near_expiry`。
 - **禁止** `primaryDomain=PURCHASE` 及采购域范围澄清。
 - **正例（快缺货）**：「哪些原料快缺货了？」→ READY + `UNDERSTOCK_QUERY`。
 - **正例（报警）**：「哪些商品需要库存报警？」→ READY + `UNDERSTOCK_QUERY` + `warehouse_inventory_alert_semantics`。
@@ -257,6 +269,50 @@
 }
 ```
 
+13e. **库存监督/诊断入口（WH-I，硬规则 — 优先于 `warehouse.overview`）**：
+
+**Canonical 枚举**：`warehouseInventorySemantics=SUPERVISION_QUERY`（**禁止**输出 `INVENTORY_STATUS`、`CURRENT_STATUS`、`STOCK_HEALTH_OVERVIEW` 等自造值；语义相同一律写 `SUPERVISION_QUERY`）。
+
+**触发问法（完整句，无具体商品/原料 anchor，无明确金额/种类/排行诉求）**包括但不限于：
+- 库存现在怎么样 / 库存大概情况怎么样 / 库存情况如何 / 库存监督怎么样
+- 帮我看看库存 / 帮我看看库存有没有问题
+- 现在库存有没有风险 / 库存健康吗 / 库存正常吗
+
+**硬禁止（与 §34b-bundle 互斥）**：本句**已点名具体原料/商品名**（`coverDaysEntityName` 非空，如「大米库存怎么样」「看看三黄鸡库存」「三黄鸡现在还有多少」）→ **禁止** `SUPERVISION_QUERY` / `warehouse_inventory_supervision`；普通现量走 §34b-bundle `goods_anchor_inventory_bundle`。
+
+**必须**：
+- `primaryDomain=WAREHOUSE`，`needClarification=false`，`routeType=EXPLICIT`
+- `warehouseInventorySemantics=SUPERVISION_QUERY`
+- `reason` **必须含** `warehouse_inventory_supervision`
+- 下游合同 **`warehouse.inventory_supervision.v1`**（wire=`warehouse_inventory_supervision`）
+
+**与 §13a 专链的边界（硬规则）**：
+- 问**清单/哪些**（如「哪些原料快缺货」「哪些临期了」）→ `UNDERSTOCK_QUERY` / `NEAR_EXPIRY` + 专链 WH-F / WH-G；**不是** `SUPERVISION_QUERY`
+- 问**泛监督/整体有没有问题/怎么样**（未要求列清单）→ **`SUPERVISION_QUERY`**（WH-I 一体诊断：采购优先级分桶 + 临期 + 积压 + 关联菜）
+
+**与 `warehouse.overview` 的边界（硬规则）**：
+- **数值/统计概览**：库存金额多少、库存总金额、库存商品有多少种、SKU 数、门店库存金额对比 → **`warehouse.overview` 或排行合同**；**禁止** `SUPERVISION_QUERY`
+- **状态/监督入口**：库存怎么样/有没有问题/有没有风险 → **`SUPERVISION_QUERY`**；**禁止** `warehouse.overview` / `reason=warehouse_stock_overview`
+
+```json
+{
+  "questionMode": "SINGLE_QUESTION",
+  "normalizationType": "PASS_THROUGH",
+  "canonicalUserQuery": "库存现在怎么样？",
+  "isFollowUp": false,
+  "usedPreviousContext": false,
+  "primaryDomain": "WAREHOUSE",
+  "candidateDomains": ["WAREHOUSE"],
+  "routeType": "EXPLICIT",
+  "confidence": 0.92,
+  "needClarification": false,
+  "clarificationQuestion": null,
+  "reason": "warehouse_inventory_supervision",
+  "warehouseInventorySemantics": "SUPERVISION_QUERY",
+  "subQuestions": null
+}
+```
+
 13c. **「原料」：库存语境 vs 采购语境（硬规则）**：
 - 问法核心是**还剩多少 / 偏少 / 快缺货 / 够不够 / 报警 / 临期 / 保质期 / 补货风险**（无论对象是原料还是商品）→ **必须** `primaryDomain=WAREHOUSE` + `warehouseInventorySemantics` 风险枚举 + §13a 澄清；**禁止** `PURCHASE`。
 - 问法核心是**采购了多少 / 进货 / 订货 / 供应商 / 采购额排行** → `primaryDomain=PURCHASE`；**禁止**填写 `warehouseInventorySemantics` 风险值。
@@ -272,7 +328,19 @@
 18. 仅当用户**同时明确**采购/进货**与**出库/核销**两个业务方向（如「采购和出库各多少」「进货与核销对比」），或说法在 PURCHASE 与 STOCK_REDUCE 之间**确实无法唯一判断**时，才用 `MULTI_DOMAIN` / `AMBIGUOUS` + `needClarification`。
 19. 「采购入库」在本系统若无稳定、统一的粗域定义，**不要**自动归入 STOCK_REDUCE 出库；无法唯一判断时用 `UNKNOWN` 或 `AMBIGUOUS` + 澄清。
 20. **硬规则 — 退货金额归出库核销**：用户问**退货金额/退货多少/退库金额/退货情况**（餐饮出库口径 **type4 退货**，已发生减少事件）→ **必须** `primaryDomain=STOCK_REDUCE`，`routeType=EXPLICIT`，`needClarification=false`。**禁止**因句中出现「金额」就输出 `PURCHASE`；退货不是采购进货侧业务。以上 PURCHASE/STOCK_REDUCE 边界均按**业务对象与问法意图**判断，**禁止**维护「出现某词即某域」的硬编码词表。
-**Step 2 合同选择（PURCHASE / STOCK_REDUCE，Intake 不重复细则）**：粗域判定后，`selectedContractId` 与槽位互斥见 **`query_semantic_parser.v2.md`** 对应专节（overview vs 清单 vs 排行、出库金额 vs 数量排行、子类 type1–4 等）。**时段采购清单仅改时间追问**（上一轮 `purchase_period_goods_list`，本轮只换时间窗）须在 V2 **period_goods_list 仅改时间追问** 专节继承清单合同，**禁止**降级 `overview_summary`。**禁止**在 Java `*SemanticCapabilityContractExporter` 或用 `contractSelectionBoundaryHints` 注入中文边界。
+**Step 2 合同选择（PURCHASE / STOCK_REDUCE，Intake 不重复细则）**：粗域判定后，`selectedContractId` 与槽位互斥见 **`query_semantic_parser.v2.md`** 对应专节（overview vs 清单 vs 排行、**点名原料采购量/额/次数 vs period_goods_list**、出库金额 vs 数量排行、子类 type1–4 等）。**时段采购清单仅改时间追问**（上一轮 `purchase_period_goods_list`，本轮只换时间窗）须在 V2 **period_goods_list 仅改时间追问** 专节继承清单合同，**禁止**降级 `overview_summary`。**禁止**在 Java `*SemanticCapabilityContractExporter` 或用 `contractSelectionBoundaryHints` 注入中文边界。
+
+13d. **PURCHASE 点名原料 vs 采购清单（硬规则，与 V2 专节一致）**：
+- **已点名具体原料/商品** + 问采购了多少/进了多少/买了多少/采购金额/花了多少钱/采购次数/买了几次（**单商品**诉求）→ `primaryDomain=PURCHASE`，`needClarification=false`；**禁止**把该问法路由为「时段买了什么清单」语义；Step 2 须选 **`purchase.goods_anchor.source_breakdown`**（或对应 `goods_anchor.*`），**不是** `purchase.period_goods_list`。
+- **未点名具体商品** + 问买了什么/进了哪些货/采购了哪些原料（**清单**）→ Step 2 选 `purchase.period_goods_list*`；Intake **不得**虚构 `coverDaysEntityName` 或实体 anchor。
+- 本句**无显式时间词**时 Intake **不得**暗示 `CURRENT_MESSAGE_EXPLICIT`；时间由 Time Layer 默认 **`DEFAULT_MONTH_TO_DATE`**。
+
+13e. **PURCHASE 能力切换 vs 无条件 follow-up（硬规则）**：
+- 当前句开启与上一轮 **不同采购 capability**（如上一轮排行/清单/概况，本轮泛化**采购异常**；或排行↔清单↔概况互切）→ 须输出结构化字段 **`contextRelation=NEW_CAPABILITY`**，且 **`isFollowUp=false`**、**`usedPreviousContext=false`**（本句为独立新业务问法，**不**继承上一轮业务 frame）。
+- 本句**已显式给出时间**（如「上个月」「本月」）→ **`usedPreviousContext=false`**（时间以本句为准；**不**因存在 previousTurn 而标 `usedPreviousContext=true`）。
+- **`reason` 仅 debug**，**不得**用 reason marker 表达 capability 切换；Java **不**解析 reason 做继承判断。
+- **典型正例**：上一轮「采购数量最多的原料」；本轮「上个月采购有没有异常？」→ `primaryDomain=PURCHASE`，`contextRelation=NEW_CAPABILITY`，`isFollowUp=false`，`usedPreviousContext=false`，`normalizationType=PASS_THROUGH`。
+- **仍属追问**：仅改时间/门店且**同一 capability**（如上一轮采购数量排行，本轮「那本月呢」）→ `contextRelation=CONTEXT_CONTINUATION`，`isFollowUp=true`，按各专节继承规则。
 
 **Step 2 合同选择（DISH_SALES / DISH_PROFIT / DISH_COST / MENU_OPERATION）**：菜品销量排行 vs 单菜、利润额 vs 毛利率 vs 成本排行、三条 DISH_COST 单菜合同、三条 MENU_OPERATION 合同等细则均在 **`query_semantic_parser.v2.md`** 专节；Exporter 只导出 Matrix 机器字段。
 
@@ -283,10 +351,11 @@
 22. **硬规则**：当前句同时满足以下两点时 → **必须**输出 `primaryDomain=DISH_SALES`，`routeType=EXPLICIT`，`needClarification=false`：
     - 句中**点名具体菜品**（如「烩菜」「宫保鸡丁」）；
     - 问法指向**销量/销售**（如「卖得怎么样」「卖得好吗」「卖了多少」「销量如何」「卖得动吗」），而非整体经营或毛利。
+    - **排除（§34d，优先于本条）**：问法核心是 **可卖天数/够卖几天/还能卖几天/够用几天**（含「按…销量/销量推算…{实体}能卖几天」）→ **不是** `DISH_SALES`；句中「销量/销量推算/一个月/最近 N 月」仅表示 **计算可卖天数的销量基线**，不是查「卖了多少份」。
 23. **禁止**因上一轮是 `REVENUE` 或 `BUSINESS_OVERVIEW` 就把「{菜名}卖得怎么样」继承为 `BUSINESS_OVERVIEW`。上一轮仅可继承**时间/门店范围**，**不得**覆盖本轮已明确的菜品销量业务方向。
 24. **完整独立句优先**：「烩菜卖得怎么样？」是完整句（`PASS_THROUGH`），当前句本身已能唯一判断为 `DISH_SALES`，**不得**使用 `routeType=INHERITED` 输出 `BUSINESS_OVERVIEW`。
 25. **DISH_SALES vs DISH_PROFIT vs DISH_COST vs MENU_OPERATION**（按**对象锚点 + 问法意图**，禁止仅凭「优化/毛利率/利润」等泛词选域）：
-    - 问**纯销量/卖得怎么样/卖了多少/销量排行**（不含定价处方、不含菜单组合经营）→ `DISH_SALES`。
+    - 问**纯销量/卖得怎么样/卖了多少/销量排行**（不含定价处方、不含菜单组合经营、**不含可卖天数 cover-days**，见 §34d）→ `DISH_SALES`。
     - 问**当前毛利率是多少/毛利怎么样/哪道菜毛利率最低/毛利排行**（**查询现状**，不含「按 X% 应卖多少/建议售价/价格倒推」）→ `DISH_PROFIT`。
     - 问**点名具体单一菜品**的**定价/售价/配方优化/价格是否合适/为什么毛利不高/按目标毛利率应该卖多少钱/建议售价** → **`DISH_COST`**（单菜利润处方），**不是** `DISH_PROFIT`，**不是** `MENU_OPERATION`。
     - 问**菜单（组合）**经营/菜单优化/菜单结构/拖后腿/需要调整的菜/哪些菜在拖累菜单/整体菜单赚不赚钱，或**跨多菜**经营判断（如「卖得多但不赚钱」「爆品是不是在亏钱」「销量高利润低的菜」）→ **`MENU_OPERATION`**，**不是** `DISH_SALES`+`DISH_PROFIT` 双候选，**不要** `MULTI_DOMAIN` / `AMBIGUOUS`。
@@ -303,6 +372,7 @@
 - `needClarification=false`
 - **禁止** `routeType=AMBIGUOUS` / `UNKNOWN` / `MULTI_DOMAIN`
 - **禁止**澄清「您是指哪个菜品的销量高，还是整体销量高？」——**没有具体菜名，恰恰说明是菜品排行问法**，不是单菜详情，也不是全店概况
+- **例外（§34d，优先）**：句中有 **具体实体名** 且核心诉求是 **能卖几天/够卖几天**（含「按…销量推算…能卖几天」）→ **cover-days**，**不是**本条 DISH_SALES 短句规则
 
 **覆盖的问法（完整句，非子串匹配）**：
 - 「销量」（**仅二字也适用**；默认菜品销量排行/统计，**不是**全店经营概况）
@@ -470,6 +540,8 @@
 
 34a. **硬规则 — 单菜配料可支撑天数 → DISH_COST（非 WAREHOUSE / 非 PURCHASE，P1）**：
 - **已点名单一菜品** + 核心诉求是**时间维度可卖天数/配料够用几天/能用几天/可支撑几天**，**不是**库房「库存偏少/快缺货/报警」，**也不是**采购「进了多少/订货/供应商/采购额」→ **必须** `primaryDomain=DISH_COST`，`needClarification=false`，`routeType=EXPLICIT`。
+- **`coverDaysEntityType=DISH`**，`coverDaysEntityName` = 句中菜品名（如「椒麻鸡」）；下游 Java 按存在性落地合同，**不要求**用户必须说「配料」等固定词。
+- **歧义问法**（如「三黄鸡能卖几天」未说明是菜还是原料）：仍须 `coverDaysEntityName=三黄鸡`，`needClarification=false`；`coverDaysEntityType` 可省略或填 `UNKNOWN`，**禁止**追问「是菜品还是原料」——Java 先查菜品、不存在再查库存原料。
 - **`reason` 必须含** `dish_ingredient_cover_days`；**禁止**填写 `warehouseInventorySemantics`（含 `UNDERSTOCK_QUERY`/`OUT_OF_STOCK` 等风险枚举，也**禁止** `STOCK_DAYS`/`INGREDIENT_COVER_DAYS`/`COVER_DAYS` 等误标——这些属于菜品域，不是库房字段）。
 - **禁止** `primaryDomain=WAREHOUSE` 或 **`primaryDomain=PURCHASE`** 搭配上述问法。`warehouseInventorySemantics` **只能**用于 §13a 库房风险/金额排行，**不能**承载「某菜配料够用几天」。**PURCHASE** 只回答进货/订货/供应商/采购业务，**不**回答「某道菜配料还能撑几天/还能卖几天」。
 - **正例**：「椒麻鸡配料够用几天？」→ `DISH_COST` + `reason=dish_ingredient_cover_days`；下游合同 `dish.ingredient_cover_days.v1`（wire=`dish_ingredient_cover_days`）。
@@ -477,35 +549,144 @@
 - **反例（禁止 PURCHASE）**：「某菜配料够用几天？」→ **不得** `primaryDomain=PURCHASE`（无进货/订货/采购额诉求）；**必须** `DISH_COST` + `dish_ingredient_cover_days`。
 - **与 §13a / §13c 边界**：句中有「原料/配料」但问的是**某道菜还能卖几天**，不是**哪些原料库存偏少**，也不是**采购进了什么** → **DISH_COST**，不得因「原料/配料」二字误入 WAREHOUSE 或 PURCHASE。
 - **多轮**：上一轮为 `WAREHOUSE` 库存风险，本轮点名菜品问配料可支撑天数 → **必须**切到 `DISH_COST`；`usedPreviousContext` 可继承 time/scope，**不得**继承 WAREHOUSE 合同或 `warehouseInventorySemantics`。
+- **多轮换菜 + 销量基线**：若 `previousTurn.structuredIntentDetail` 或 `previousTurn.semanticSlotsSummary` 表明上一轮是 `dish_ingredient_cover_days`，本轮只表达**新菜名** + **销量基线窗口**（如「那椒麻鸡按最近一个月的销量算呢？」），必须继续同一 cover-days Business Frame：
+  - `canonicalUserQuery` 补全为「椒麻鸡按最近一个月的销量算还能卖几天？」这类独立问句；
+  - `primaryDomain=DISH_COST`，`candidateDomains=["DISH_COST"]`，`routeType=EXPLICIT`；
+  - `coverDaysEntityType=DISH`，`coverDaysEntityName=椒麻鸡`，新菜名覆盖 previousTurn 中旧菜名；
+  - `reason` 可为 `dish_ingredient_cover_days` 或并列 `cover_days_sales_baseline`，但销量基线只表示 `salesBaselineWindow`，不得改普通库存快照、不得改业务合同、不得输出 `WAREHOUSE` / `DISH_SALES`。
 
-34b. **硬规则 — 原料反查关联菜品 → WAREHOUSE（WH-H，P1）**：
-- **已点名单一原料/商品名**（句中有具体原料名，如「三黄鸡」「五花肉」），老板常见问法包括但不限于：
-  - **还有多少库存**（「三黄鸡还有多少库存？」）
-  - **能做哪些菜 / 是哪些菜的配料**（「三黄鸡能做哪些菜？」「三黄鸡是哪些菜的配料？」）
+34b-bundle. **硬规则 — 商品库存综合详情 → WAREHOUSE（WH-K，ACTIVE）**：
+- **已点名单一原料/商品名**，问法核心是**普通库存现量/概况**（**不含** cover-days / 关联菜 / 批次明细专问），包括但不限于：
+  - **还有多少库存 / 库存是多少 / 现量多少**（「三黄鸡还有多少库存？」「大米库存是多少？」）
+  - **库存怎么样 / 看看库存 / 现在还有多少**（「大米库存怎么样？」「看看三黄鸡库存」——**单商品现量详情**，不是全库房监督）
+  → **必须** `primaryDomain=WAREHOUSE`，`needClarification=false`，`routeType=EXPLICIT`。
+- **`coverDaysEntityType=GOODS`**，`coverDaysEntityName` = 句中原料/商品名。
+- **`reason` 必须含** `goods_anchor_inventory_bundle`；**禁止** `goods_supported_dish_cover` / `goods_stock_batch_detail`；**禁止** `warehouseInventorySemantics`。
+- 下游合同 **`warehouse.goods_anchor_inventory_bundle.v1`**（wire=`goods_anchor_inventory_bundle`）；同轮输出 cover + batch **双卡**（由 V2 选该合同，Java 按 `planOutputs` 执行，**禁止** WH-H 附带 WH-J）。
+
+34b-bundle-composite. **硬规则 — WH-K 组合输出（库存现量 + 可支撑天数，同一 Bundle）**：
+- **能力边界**：`warehouse.goods_anchor_inventory_bundle.v1` 的 `planOutputs` 已含 **cover-days 子计划**；同一 **`coverDaysEntityName`**、同一 **WAREHOUSE** 域下，用户在一句话中同时问 **当前库存/现量/还有多少** 与 **能支撑多久/够卖几天/还能卖几天** → **一个** Bundle 能力的多项输出，**不是**两个可分离业务问题。
+- **必须** `questionMode=SINGLE_QUESTION`，`primaryDomain=WAREHOUSE`，`needClarification=false`；**禁止** `questionMode=MULTI_QUESTION`、`primaryDomain=MULTI_DOMAIN`、`subQuestions` 拆分、让用户二选一先查哪一个。
+- **`reason` 必须含** `goods_anchor_inventory_bundle`；若句中含显式销量基线修饰（按最近 N 天/按…销量）可并列 `cover_days_sales_baseline`（**Intake 路由辅助**；V2 须正式输出 `salesBaselineWindow`）。
+- **禁止**拆成 WH-H（cover）+ 裸库存两个子问题；**禁止**一个子问题走 `goods_supported_dish_cover`、另一个走 overview/其它合同。
+- **正例（Intake Step 1）**：
+
+「按最近30天的销量，{原料}现在还剩多少库存，能支撑多久？」：
+
+```json
+{
+  "questionMode": "SINGLE_QUESTION",
+  "normalizationType": "PASS_THROUGH",
+  "canonicalUserQuery": "按最近30天的销量，{原料}现在还剩多少库存，能支撑多久？",
+  "isFollowUp": false,
+  "usedPreviousContext": false,
+  "primaryDomain": "WAREHOUSE",
+  "candidateDomains": ["WAREHOUSE"],
+  "routeType": "EXPLICIT",
+  "confidence": 0.93,
+  "needClarification": false,
+  "clarificationQuestion": null,
+  "reason": "goods_anchor_inventory_bundle;cover_days_sales_baseline",
+  "coverDaysEntityType": "GOODS",
+  "coverDaysEntityName": "{原料}",
+  "subQuestions": null
+}
+```
+
+34b-cover. **硬规则 — 原料 → 关联菜品 / cover-days → WAREHOUSE（WH-H）**：
+- **已点名单一原料/商品名**，问法核心是 **cover-days / 关联菜品 / 支撑份数 / 影响哪些菜**，包括但不限于：
+  - **能做哪些菜 / 是哪些菜的配料**（「三黄鸡能做哪些菜？」）
   - **还能做几份**（「三黄鸡还能做几份菜？」）
-  - **够卖几天**（「三黄鸡够卖几天？」）
+  - **够卖几天 / 能卖几天 / 还能卖几天 / 够用几天**（「三黄鸡够卖几天？」）
   - **不够会影响哪些菜**（「三黄鸡不够会影响哪些菜？」）
-  → **必须** `primaryDomain=WAREHOUSE`，`needClarification=false`（系统内多候选同名原料时 `needClarification=true`），`routeType=EXPLICIT`。
-- **一体答复（硬规则）**：上述问法均走 **`goods_supported_dish_cover`**；**禁止**把「只查库存数量」与「查关联菜品」设计成二选一澄清——卡片默认同时给出**当前库存 + 关联菜品 + 销量基线下还能做多少份/够卖几天**。
-- **`reason` 必须含** `goods_supported_dish_cover`；**禁止**填写 `warehouseInventorySemantics`；**禁止** `primaryDomain=DISH_COST`（那是**点菜名**的配料可支撑天数，见 §34a）。
-- **正例**：
-  - 「三黄鸡能做哪些菜？」→ `WAREHOUSE` + `reason=goods_supported_dish_cover`
-  - 「三黄鸡是哪些菜的配料？」→ 同上
-  - 「三黄鸡够卖几天？」→ 同上（含库存 + 关联菜 + 天数）
-  - 「三黄鸡还有多少库存？」→ 同上（含库存 + 关联菜，**不得**仅返回数字而澄清要不要查菜）
-  - 下游合同 `warehouse.goods_supported_dish_cover.v1`（wire=`goods_supported_dish_cover`）
+  - **按…销量推算…能卖几天**（§34d，可并列 `cover_days_sales_baseline`）
+  → **必须** `primaryDomain=WAREHOUSE`，`needClarification=false`。
+- **`coverDaysEntityType=GOODS`**，`coverDaysEntityName` = 句中原料/商品名。
+- **`reason` 必须含** `goods_supported_dish_cover`（可并列 `cover_days_sales_baseline`）；**禁止** `goods_anchor_inventory_bundle` / `goods_stock_batch_detail`。
+- 下游合同 **`warehouse.goods_supported_dish_cover.v1`**（wire=`goods_supported_dish_cover`）。
+
+34c-batch. **硬规则 — 商品库存批次明细 → WAREHOUSE（WH-J）**：
+- **已点名单一原料/商品名**，问法核心是 **批次/入库/每批用量**，包括但不限于：
+  - **还有哪些批次 / 剩下哪些批次**
+  - **哪天入库 / 入库日期**
+  - **每批用了多少 / 各批次剩余**
+  → **必须** `primaryDomain=WAREHOUSE`，`needClarification=false`。
+- **`coverDaysEntityName`** 必填；**`reason` 必须含** `goods_stock_batch_detail`；**禁止** bundle / WH-H reason 并列。
+- 下游合同 **`warehouse.goods_stock_batch_detail.v1`**（wire=`goods_stock_batch_detail`）。
+
 - **反例（仍走 §34a）**：「椒麻鸡配料够用几天？」→ **点菜名** → `DISH_COST` + `dish_ingredient_cover_days`。
 - **反例（仍走 §13a）**：「哪些原料库存偏少？」→ 无点名原料 → `warehouse.inventory_risk_list`。
 - **反例（禁止 WH-C）**：「哪些商品账面库存金额较低？」→ `EXPLICIT_AMOUNT_RANKING_LOW` + `warehouse.goods_amount_ranking_low`。
-- **反例（禁止系统话术当正例）**：「三黄鸡能支撑哪些菜？」→ 仍走 WH-H，但 Harness/示例优先使用老板口语「能做哪些菜」「是哪些菜的配料」，**不要**把「支撑哪些菜」当示范问句。
 
-34c. **硬规则 — 上一轮 WH-H 后的裸库存/现量追问（GOODS 锚继承）**：
-- **前提**：`previousTurn` 已为 `warehouse.goods_supported_dish_cover.v1` / wire=`goods_supported_dish_cover`，且 `resultAnchors` 或 `semanticSlots` 中已有 GOODS 锚（如「三黄鸡」）。
-- **当前句**仅为省略追问（如「库存是多少」「还有多少」「现量多少」），**未**点名新原料、**未**切换全店库存概览、**未**问缺货风险列表。
-- **必须**：`normalizationType=REWRITE`（或保留 REWRITE），`isFollowUp=true`，`usedPreviousContext=true`，`primaryDomain=WAREHOUSE`，`routeType=INHERITED`，`needClarification=false`。
-- **`reason` 必须含** `goods_anchor_stock_follow_up`（可并列 `goods_supported_dish_cover`）；**禁止**仅输出 `warehouse_stock_overview` 或全店概览语义。
-- **正例**：上一轮「三黄鸡能做哪些菜？」→ 本轮「库存是多少」→ 继承三黄鸡，仍走 WH-H 能力（库存快照 + 关联菜，非 7 种商品全店汇总）。
-- **反例**：上一轮 WH-H 后问「店里库存怎么样」→ 全店概览，**不得**继承单原料锚点 → `warehouse.overview`。
+34d. **硬规则 — 销量基线 + 可卖天数（cover-days，非 DISH_SALES，P1）**：
+- **能力本质**：用户问 **「X 能卖几天 / 够卖几天 / 还能卖几天 / 按…销量推算 X 能卖几天 / 库存原料 X 能卖几天」** → **cover-days 能力**（配料/原料支撑天数），**不是**普通菜品销量查询（`dish_sales.single_dish`），**不是**菜品销量排行。
+- **「销量 / 销量推算 / 按一个月 / 按最近 N 月 / 按上周」在 cover-days 句中的含义**：仅指定 **计算可卖天数的销量基线窗口**；**禁止**因出现「销量」二字就路由 `DISH_SALES`。
+- **「一个月」vs「最近一个月」**：在 cover-days 句中二者**同为**销量基线口径修饰，**均**走 cover-days（§34a/§34b），**禁止**把「按一个月销量推算…能卖几天」当成「查某菜一个月卖了多少」。
+- **必须**输出 `coverDaysEntityName` = 句中实体名（如「三黄鸡」）；`needClarification=false`（实体菜/原料歧义时仍不澄清，由 Java 存在性落地）。
+- **`coverDaysEntityType`**：有库存/原料语境可填 `GOODS`；点菜名语境填 `DISH`；不确定填 `UNKNOWN` 或省略。
+- `reason` 仅为 debug/观测；推荐包含 `goods_supported_dish_cover`（原料向）或 `dish_ingredient_cover_days`（点名菜配料向），可并列 `cover_days_sales_baseline` 表示带销量基线修饰。**不得只靠 `cover_days_sales_baseline` 表达业务能力**；必须同时输出 `primaryDomain`、`coverDaysEntityType`、`coverDaysEntityName` 等结构化字段。销量基线起止日与 `timeSource` 由 V2 正式输出，Java **不得**因缺此 marker 覆盖 V2 时间结构。
+- **`primaryDomain`**：原料/歧义/库存语境 → **`WAREHOUSE`**；明确点菜名配料 → **`DISH_COST`**。**禁止** `primaryDomain=DISH_SALES`，**禁止** `reason=named_dish_sales_explicit` / `named_dish_sales_*`。
+- **正例（必须照此输出，勿改 domain）**：
+
+「按一个月销量推算三黄鸡能卖几天」（Intake Step 1 — **常见误路由 DISH_SALES，必须走 cover-days**）：
+
+```json
+{
+  "questionMode": "SINGLE_QUESTION",
+  "normalizationType": "PASS_THROUGH",
+  "canonicalUserQuery": "按一个月销量推算三黄鸡能卖几天",
+  "isFollowUp": false,
+  "usedPreviousContext": false,
+  "primaryDomain": "WAREHOUSE",
+  "candidateDomains": ["WAREHOUSE"],
+  "routeType": "EXPLICIT",
+  "confidence": 0.93,
+  "needClarification": false,
+  "clarificationQuestion": null,
+  "reason": "goods_supported_dish_cover;cover_days_sales_baseline",
+  "coverDaysEntityType": "UNKNOWN",
+  "coverDaysEntityName": "三黄鸡",
+  "subQuestions": null
+}
+```
+
+「按最近一个月销量推算三黄鸡能卖几天」（同上，**禁止**因多了「最近」二字改走 `DISH_SALES`）：
+
+```json
+{
+  "questionMode": "SINGLE_QUESTION",
+  "normalizationType": "PASS_THROUGH",
+  "canonicalUserQuery": "按最近一个月销量推算三黄鸡能卖几天",
+  "isFollowUp": false,
+  "usedPreviousContext": false,
+  "primaryDomain": "WAREHOUSE",
+  "candidateDomains": ["WAREHOUSE"],
+  "routeType": "EXPLICIT",
+  "confidence": 0.93,
+  "needClarification": false,
+  "clarificationQuestion": null,
+  "reason": "goods_supported_dish_cover;cover_days_sales_baseline",
+  "coverDaysEntityType": "UNKNOWN",
+  "coverDaysEntityName": "三黄鸡",
+  "subQuestions": null
+}
+```
+
+「按最近三个月销量推算三黄鸡能卖几天」→ 同上结构（`reason` 含 `goods_supported_dish_cover;cover_days_sales_baseline`）。
+
+- **反例（禁止）**：
+  - 「按一个月销量推算三黄鸡能卖几天」→ **不得** `primaryDomain=DISH_SALES`、`reason=named_dish_sales_explicit`（那是查销量份数，不是可卖天数）。
+  - 「三黄鸡卖了多少」→ **`DISH_SALES`**（查销量，**无**「能卖几天」诉求）。
+  - 「三黄鸡能卖几天」→ cover-days（§34a/§34b），**不是** `DISH_SALES`。
+
+34c. **硬规则 — 上一轮 GOODS 锚点后的裸库存/现量追问**：
+- **前提**：`previousTurn` 已为 WH-H / WH-K / WH-J，且已有 GOODS 锚。
+- **当前句**仅为省略追问（如「库存是多少」「还有多少」「现量多少」），**未**点名新原料、**未**切换全店概览。
+- **必须**：`isFollowUp=true`，`usedPreviousContext=true`，`primaryDomain=WAREHOUSE`，`routeType=INHERITED`，`needClarification=false`。
+- **裸库存追问** → **`reason` 含** `goods_anchor_stock_follow_up`（下游默认 WH-K bundle）；**cover-days 追问** → **`reason` 含** `goods_supported_dish_cover`；**批次追问** → **`reason` 含** `goods_stock_batch_detail`。
+- **正例**：上一轮「三黄鸡能做哪些菜？」→ 本轮「还有多少」→ 若仍问现量，`goods_anchor_stock_follow_up` + WH-K；若问「够卖几天」→ WH-H。
+- **反例**：上一轮 WH-H 后问「店里库存金额一共多少 / 库存商品有多少种」→ 全店数值概览，**不得**继承单原料锚点 → `warehouse.overview` 或对应排行。
+- **正例（监督入口）**：上一轮 WH-H 后问「店里库存现在怎么样 / 有没有问题」→ §13e `SUPERVISION_QUERY` → `warehouse.inventory_supervision.v1`（**不是** `warehouse.overview`）。
 - **反例**：上一轮 WH-H 后问「有没有快不够用的原料？」→ `warehouse.inventory_risk_list`（§13a），**不得**继承 WH-H frame。
 
 35. **硬规则 — 单菜利润处方 → DISH_COST**（`routeType=EXPLICIT`，`needClarification=false`）：
@@ -933,6 +1114,7 @@
 49. 一句话包含**多个可分离的业务问题**时：`questionMode=MULTI_QUESTION`，`primaryDomain=MULTI_DOMAIN`，`routeType=MULTI_DOMAIN`，拆分 `subQuestions`。
 50. 当前阶段：`needClarification=true`，让用户选择先查哪一个；不要在一次 intake 中假定执行顺序。
 51. **硬规则**：「卖得多但不赚钱 / 菜单经营怎么样 / 菜单优化 / 拖后腿的菜」等**单一菜单经营意图** → **`SINGLE_QUESTION` + `MENU_OPERATION`**，**不是** `MULTI_DOMAIN`。
+52. **硬规则 WH-K Bundle 例外（§34b-bundle-composite）**：同一 `coverDaysEntityName` + **WAREHOUSE** + 同时涉及**当前库存现量**与**可支撑天数/cover-days** → **`SINGLE_QUESTION` + `reason=goods_anchor_inventory_bundle`**；**禁止** §49 的 `MULTI_QUESTION` 拆分与二选一澄清（Bundle 内多输出 ≠ 多问题）。
 
 # Prompt 正文
 
@@ -952,7 +1134,7 @@
    - **禁止输出**：`DIRECT`、`SINGLE`、`CLARIFY`、`MULTI_QUESTION` 及任何其它自造值
 4. **多问题协议固定**：`questionMode`=`MULTI_QUESTION`、`primaryDomain`=`MULTI_DOMAIN`、`routeType`=`MULTI_DOMAIN`。
 5. **禁止词→域硬绑定**：不要因为出现"最挣钱""情况怎么样""异常""为什么"等词就绑定到某个域。无法唯一确定域时输出 `UNKNOWN` 或 `AMBIGUOUS` + `needClarification=true`。
-6. **顶层键白名单**：仅允许 `questionMode`、`normalizationType`、`canonicalUserQuery`、`isFollowUp`、`usedPreviousContext`、`primaryDomain`、`candidateDomains`、`routeType`、`confidence`、`needClarification`、`clarificationQuestion`、`reason`、`warehouseInventorySemantics`、`subQuestions`。不得出现任何其它顶层键。
+6. **顶层键白名单**：仅允许 `questionMode`、`normalizationType`、`canonicalUserQuery`、`isFollowUp`、`usedPreviousContext`、`contextRelation`、`primaryDomain`、`candidateDomains`、`routeType`、`confidence`、`needClarification`、`clarificationQuestion`、`reason`、`warehouseInventorySemantics`、`subQuestions`。不得出现任何其它顶层键。
 7. **维度切换 reason token（§38g）**：`reason` 含 `dimension_switch` 时**必须**同时含 `_to_cost_ranking` / `_to_margin_ranking` / `_to_profit_amount_ranking` / `_to_sales_ranking` / `_to_amount_ranking` 之一；**禁止**仅中文 reason。服务端会协议纠错重试。（**过渡方案** — 见 `docs/ai/semantic-intake-schema-evolution.md`）
 8. **老板销量短句（§26a–26h）**：「销量 / 销售量 / 销售数量 / 卖了多少 / 销量高 / 卖得多」→ `primaryDomain=DISH_SALES`，`routeType=EXPLICIT`，`needClarification=false`，`candidateDomains=["DISH_SALES"]` **仅此**；**禁止** `candidateDomains` 含 `BUSINESS_OVERVIEW` 并 `AMBIGUOUS` 澄清。「销售额」→ `DISH_SALES` + `dish_sales_amount_short_phrase`；「今天经营怎么样」→ `BUSINESS_OVERVIEW`。
 9. **裸维度切换（§38e–38g）**：上一轮菜品排行 + 本轮裸换指标（如「成本呢」）→ `primaryDomain` 按目标指标（成本/毛利→`DISH_PROFIT`），`reason` **必须**含 `_to_*_ranking`；**禁止** `DISH_COST` + 多菜排行 canonical；**禁止**无 token（Plan inactive）。`resultAnchors`/Top1 **不得**决定 domain。
@@ -960,7 +1142,9 @@
 ## 输出格式要求
 
 **必须严格输出以下字段名，禁止使用别名字段：**
-`questionMode`、`normalizationType`、`canonicalUserQuery`、`isFollowUp`、`usedPreviousContext`、`primaryDomain`、`candidateDomains`、`routeType`、`confidence`、`needClarification`、`clarificationQuestion`、`reason`、`warehouseInventorySemantics`、`subQuestions`。
+`questionMode`、`normalizationType`、`canonicalUserQuery`、`isFollowUp`、`usedPreviousContext`、`contextRelation`、`primaryDomain`、`candidateDomains`、`routeType`、`confidence`、`needClarification`、`clarificationQuestion`、`reason`、`warehouseInventorySemantics`、`expiryRiskFilter`、`coverDaysEntityType`、`coverDaysEntityName`、`subQuestions`。
+
+`contextRelation` 仅 `NEW_CAPABILITY` 或 `CONTEXT_CONTINUATION`（可选；有 previousTurn 且 capability 切换时 **必须** 输出 `NEW_CAPABILITY`）。
 
 **禁止输出以下别名字段（及其它自造字段名）：**
 `status`、`businessDomain`、`domain`、`isMultiQuestion`、`multiQuestion`、`multiQuery`、`isMultiQuery`、`clarificationNeeded`。
@@ -980,9 +1164,10 @@
 遵守粗域范围与禁止词表硬绑定原则。
 **出库/核销/耗用/退货类问法 → 走 STOCK_REDUCE（出库核销），不是 PURCHASE；「退货金额」是出库 type4，不是采购。**
 **库存现量/库房余额/库存排行 → 走 WAREHOUSE（库存），不是 STOCK_REDUCE。出库是出库，库存是库存，两者互斥。**
-**库存偏少/快缺货/库存报警/临期/保质期/补货风险 → 走 WAREHOUSE + warehouseInventorySemantics（UNDERSTOCK_QUERY/OUT_OF_STOCK/NEAR_EXPIRY）+ needClarification，禁止 PURCHASE 与 warehouse.goods_amount_ranking_low。**
+**库存偏少/快缺货/库存报警/临期/保质期/补货风险 → 走 WAREHOUSE + warehouseInventorySemantics（UNDERSTOCK_QUERY/OUT_OF_STOCK/NEAR_EXPIRY）；NEAR_EXPIRY 须 needClarification=false 并可选 expiryRiskFilter；禁止 PURCHASE 与 warehouse.goods_amount_ranking_low。**
 **「哪些常用原料库存偏少？」→ WAREHOUSE + UNDERSTOCK_QUERY，禁止 PURCHASE（§13c）。**
 **「哪些商品账面库存金额较低？」→ WAREHOUSE + EXPLICIT_AMOUNT_RANKING_LOW（或 INVENTORY_AMOUNT_LOW）+ needClarification=false，禁止 UNDERSTOCK_QUERY / shortage marker（§13d）。**
+**库存监督入口（怎么样/有没有问题/有没有风险/大概情况）→ WAREHOUSE + SUPERVISION_QUERY + reason=warehouse_inventory_supervision（§13e）；禁止 warehouse.overview；「库存金额多少/有多少种」→ overview/排行，禁止 SUPERVISION_QUERY。**
 **具体菜品 + 销量/卖得怎么样/卖了多少 → 走 DISH_SALES（菜品销量），不是 BUSINESS_OVERVIEW；上一轮 REVENUE/经营概览不得覆盖此类完整句。**
 **老板短问「销量/销量高/卖得好/卖得多/销售量/销售数量/卖了多少」（无具体菜名）→ 走 DISH_SALES 菜品销量排行，`routeType=EXPLICIT`，`needClarification=false`，`candidateDomains` 仅 `["DISH_SALES"]`，禁止与 BUSINESS_OVERVIEW 双候选澄清；「销量/销售量」是菜品份数/销量，不是全店营业额。「销售额」→ DISH_SALES 菜品金额排行（`dish_sales_amount_short_phrase`），不是销量份数排行。单独「高吗/怎么样」仍须澄清；「今天经营怎么样」→ BUSINESS_OVERVIEW。**
 **上一轮 DISH_SALES 菜品销量排行后，本轮仅改时间（如「上个月呢」）→ 仍 DISH_SALES + REWRITE 继承排行语义，禁止写入 Top1 菜名。**
@@ -990,8 +1175,13 @@
 **已点名单一菜品 + 价格/配方/售价/按目标毛利率应卖多少/为什么毛利不高 → 走 DISH_COST（单菜利润处方），不是 MENU_OPERATION，不因「怎么优化」误判为菜单优化。**
 **未点菜名 + 成本最高/哪个菜成本最高/实际成本最高排行 → 走 DISH_PROFIT（实际成本排行），不是 DISH_COST。**
 **已点名单一菜品 + 成本怎么样/成本构成/配料成本 → 走 DISH_COST（单菜成本），不是 DISH_PROFIT。**
-**已点名单一菜品 + 配料/原料还能用几天/够用几天/还能卖几天/哪个配料最先不够 → 走 DISH_COST + `reason=dish_ingredient_cover_days`（单菜配料可支撑天数），禁止 PURCHASE / WAREHOUSE（§34a）。**
-**已点名单一原料/商品 + 还有多少库存/能做哪些菜/是哪些菜的配料/还能做几份/够卖几天/不够会影响哪些菜 → 走 WAREHOUSE + `reason=goods_supported_dish_cover`（§34b），禁止与「只查库存」二选一澄清，禁止 dish.ingredient_cover_days。**
+**已点名单一实体 + 能卖几天/够卖几天/还能卖几天/够用几天 → 必须输出 `coverDaysEntityName`；`needClarification=false`；实体类型不明确时 `coverDaysEntityType` 可省略/`UNKNOWN`，由 Java 按数据库存在性选 dish.ingredient_cover_days 或 goods_supported_dish_cover，禁止追问菜/原料二选一。**
+**按…销量/销量推算/按一个月/按最近 N 月 + {实体}能卖几天 → cover-days（§34d），禁止 DISH_SALES / named_dish_sales；必须 `coverDaysEntityName` + `reason` 含 `goods_supported_dish_cover` 或 `dish_ingredient_cover_days`（可并列 `cover_days_sales_baseline`）。「一个月」与「最近一个月」在 cover-days 句中同为基线修饰，均非菜品销量查询。**
+**已点名单一菜品 + 配料/原料还能用几天/哪个配料最先不够 → 走 DISH_COST + `reason=dish_ingredient_cover_days`（§34a），`coverDaysEntityType=DISH`。**
+**已点名单一原料/商品 + 普通库存现量（还有多少/库存怎么样/看看库存）→ WAREHOUSE + `reason=goods_anchor_inventory_bundle`（§34b-bundle）→ `warehouse.goods_anchor_inventory_bundle.v1`。**
+**同一原料 + 库存现量 + 可支撑天数/够卖几天（一句组合）→ SINGLE_QUESTION + `goods_anchor_inventory_bundle`（§34b-bundle-composite）；禁止 MULTI_QUESTION。**
+**已点名单一原料/商品 + cover-days/关联菜/还能做几份/影响哪些菜（无裸库存现量并列）→ WAREHOUSE + `reason=goods_supported_dish_cover`（§34b-cover）→ WH-H。**
+**已点名单一原料/商品 + 批次/入库/每批用量 → WAREHOUSE + `reason=goods_stock_batch_detail`（§34c-batch）→ WH-J。**
 **已点名单一菜品 + 毛利率是多少/毛利怎么样（查当前值）→ 走 DISH_PROFIT；按 X% 目标毛利率应该卖多少钱 → 走 DISH_COST，不是 DISH_PROFIT。**
 **上一轮菜品排行后裸追问换指标（成本呢/毛利呢/利润呢/销量呢/销售额呢，无菜名）→ §38e–38g：`primaryDomain` 按指标（成本/毛利率→DISH_PROFIT+`_to_margin_ranking`；利润/挣钱→DISH_PROFIT+`_to_profit_amount_ranking`；销量/销售额→DISH_SALES）；`reason` 必须含 `_to_cost_ranking` / `_to_margin_ranking` / `_to_profit_amount_ranking` / `_to_sales_ranking` / `_to_amount_ranking` 之一；禁止 DISH_COST 单菜 + 多菜排行 canonical；无 token 则 Plan inactive；resultAnchors/Top1 不得决定 domain。**
 **显式点菜名或指代（如「酸奶碗成本呢」「这个菜成本呢」）→ 仍走 DISH_COST 单菜，`reason=named_dish_*`，不因 §38f 误判为排行。**

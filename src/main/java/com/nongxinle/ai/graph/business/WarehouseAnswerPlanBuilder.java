@@ -6,15 +6,21 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.dto.business.GoodsStockBatchDetailAnswerPlan;
+import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
 import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
 import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
+import com.nongxinle.ai.semantic.contract.SemanticContractPlanOutputSupport;
 import com.nongxinle.ai.inventory.InventoryPresentationTimeSupport;
+import com.nongxinle.ai.inventory.WarehouseInventorySupervisionSupport;
+import com.nongxinle.ai.inventory.WarehouseNearExpiryRiskFilterSupport;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.tool.business.WarehouseInventoryRiskListTool;
+import com.nongxinle.ai.tool.business.WarehouseNearExpiryRiskTool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 
@@ -41,7 +47,10 @@ public final class WarehouseAnswerPlanBuilder {
             return;
         }
         AiResolvedQueryContext rqEarly = state.getResolvedQueryContext();
-        if (ToolRequestContractExecutionParamSupport.isGoodsSupportedDishCoverContract(rqEarly)) {
+        if (SemanticContractPlanOutputSupport.requestsPlanOutput(
+                        rqEarly, GoodsSupportedDishCoverAnswerPlan.TYPE)
+                || SemanticContractPlanOutputSupport.requestsPlanOutput(
+                        rqEarly, GoodsStockBatchDetailAnswerPlan.TYPE)) {
             return;
         }
         if (!warehouseToolPlannedOrExecuted(state)) {
@@ -75,10 +84,7 @@ public final class WarehouseAnswerPlanBuilder {
         }
 
         String planType = resolvePlanType(contractWire);
-        String expectedTool =
-                WarehouseAnswerPlan.TYPE_WAREHOUSE_LOW_STOCK_RISK.equals(planType)
-                        ? AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST
-                        : AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW;
+        String expectedTool = resolveExpectedTool(planType);
 
         LinkedHashMap<String, Object> baseDiag = new LinkedHashMap<>();
         baseDiag.put("attachAttempted", true);
@@ -107,6 +113,22 @@ public final class WarehouseAnswerPlanBuilder {
             payload = extractWarehouseInventoryRisk(dataObj, baseDiag);
             if (payload.isEmpty()) {
                 attachFailure(state, baseDiag, "empty_warehouse_inventory_risk", "warehouseInventoryRisk missing");
+                return;
+            }
+        } else if (WarehouseAnswerPlan.TYPE_WAREHOUSE_NEAR_EXPIRY_RISK.equals(planType)) {
+            payload = extractWarehouseNearExpiryRisk(dataObj, baseDiag);
+            if (payload.isEmpty()) {
+                attachFailure(state, baseDiag, "empty_warehouse_near_expiry_risk", "warehouseNearExpiryRisk missing");
+                return;
+            }
+        } else if (WarehouseAnswerPlan.TYPE_WAREHOUSE_INVENTORY_SUPERVISION.equals(planType)) {
+            payload = extractWarehouseInventorySupervision(dataObj, baseDiag);
+            if (payload.isEmpty()) {
+                attachFailure(
+                        state,
+                        baseDiag,
+                        "empty_warehouse_inventory_supervision",
+                        "warehouseInventorySupervision missing");
                 return;
             }
         } else {
@@ -180,12 +202,6 @@ public final class WarehouseAnswerPlanBuilder {
                     "系统暂不支持严格缺货清单；不能用账面偏低启发式或库存总览代替正式缺货结论。");
             return finishWarehousePlan(state, rq, planType, wo, summary, focus, secondary, dbg);
         }
-        if (WarehouseSemanticCapabilityMatrix.KNOWN_GAP_NEAR_EXPIRY_NOT_IN_TOOL.equals(knownGap)) {
-            summary.put(
-                    "gapMessage",
-                    "系统暂不支持临期/保质期专链；当前库存数据不能给出临期商品清单。");
-            return finishWarehousePlan(state, rq, planType, wo, summary, focus, secondary, dbg);
-        }
 
         Object summaryText = wo.get("summary");
         if (summaryText != null) {
@@ -208,6 +224,28 @@ public final class WarehouseAnswerPlanBuilder {
             if (focus.isEmpty()) {
                 summary.put("emptyRiskList", true);
             }
+        } else if (WarehouseAnswerPlan.TYPE_WAREHOUSE_NEAR_EXPIRY_RISK.equals(planType)) {
+            summary.put("nearExpiryWindowDays", wo.get("nearExpiryWindowDays"));
+            summary.put("dataSources", wo.get("dataSources"));
+            summary.put("normalBatchCount", wo.get("normalBatchCount"));
+            summary.put("unjudgableBatchCount", wo.get("unjudgableBatchCount"));
+            String expiryFilter = WarehouseNearExpiryRiskFilterSupport.resolveFilter(rq);
+            List<Map<String, Object>> allItems = new ArrayList<>();
+            copyListRows(allItems, wo.get("riskItems"), 500);
+            WarehouseNearExpiryRiskFilterSupport.FilterOutcome filtered =
+                    WarehouseNearExpiryRiskFilterSupport.applyFilter(allItems, expiryFilter);
+            copyListRows(focus, filtered.focusRows(), 15);
+            summary.putAll(filtered.summaryExtras());
+            if (focus.isEmpty()) {
+                summary.put("emptyRiskList", true);
+            }
+        } else if (WarehouseAnswerPlan.TYPE_WAREHOUSE_INVENTORY_SUPERVISION.equals(planType)) {
+            summary.put("windowDays", wo.get("windowDays"));
+            summary.put("nearExpiryWindowDays", wo.get("nearExpiryWindowDays"));
+            summary.put("dataSources", wo.get("dataSources"));
+            summary.put("sectionCounts", wo.get("sectionCounts"));
+            List<Map<String, Object>> sections = copySections(wo.get("sections"));
+            return finishSupervisionPlan(state, rq, planType, wo, summary, sections, dbg);
         } else {
             LinkedHashMap<String, Object> row = new LinkedHashMap<>();
             row.put("totalStockAmount", wo.get("totalStockAmount"));
@@ -236,10 +274,87 @@ public final class WarehouseAnswerPlanBuilder {
                 .focusRows(focus)
                 .secondaryRows(secondary)
                 .debug(dbg);
+        Object filterObj = summary.get("expiryRiskFilter");
+        if (filterObj != null && StringUtils.hasText(filterObj.toString())) {
+            planBuilder.expiryRiskFilter(filterObj.toString().trim());
+        }
         InventoryPresentationTimeSupport.applyToWarehousePlanBuilder(planBuilder, planType, state, rq);
         WarehouseAnswerPlan plan = planBuilder.build();
         enrichWarehouseMatrixDebug(plan.getDebug(), rq, planType, wire);
         return plan;
+    }
+
+    private static WarehouseAnswerPlan finishSupervisionPlan(
+            AiRunState state,
+            AiResolvedQueryContext rq,
+            String planType,
+            Map<String, Object> wo,
+            LinkedHashMap<String, Object> summary,
+            List<Map<String, Object>> sections,
+            LinkedHashMap<String, Object> dbg) {
+        List<Map<String, Object>> focus = collectSupervisionFocusRows(sections);
+        WarehouseAnswerPlan.WarehouseAnswerPlanBuilder planBuilder =
+                WarehouseAnswerPlan.builder()
+                        .planType(planType)
+                        .scopeLabel(resolveScopeLabel(wo, rq))
+                        .summary(summary)
+                        .sections(sections)
+                        .focusRows(focus)
+                        .secondaryRows(new ArrayList<>())
+                        .debug(dbg);
+        InventoryPresentationTimeSupport.applyToWarehousePlanBuilder(planBuilder, planType, state, rq);
+        WarehouseAnswerPlan plan = planBuilder.build();
+        enrichWarehouseMatrixDebug(plan.getDebug(), rq, planType, resolveWire(rq));
+        if (org.springframework.util.StringUtils.hasText(plan.getInternalBaselineLabel())) {
+            plan.getDebug().put("internalBaselineLabel", plan.getInternalBaselineLabel().trim());
+        }
+        return plan;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> copySections(Object sectionsObj) {
+        if (!(sectionsObj instanceof List<?> list)) {
+            return new ArrayList<>();
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object o : list) {
+            if (o instanceof Map<?, ?> m) {
+                out.add(new LinkedHashMap<>((Map<String, Object>) m));
+            }
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> collectSupervisionFocusRows(List<Map<String, Object>> sections) {
+        List<Map<String, Object>> focus = new ArrayList<>();
+        if (sections == null) {
+            return focus;
+        }
+        for (String sectionId :
+                List.of(
+                        WarehouseInventorySupervisionSupport.SECTION_URGENT_TODAY,
+                        WarehouseInventorySupervisionSupport.SECTION_URGENT_TOMORROW,
+                        WarehouseInventorySupervisionSupport.SECTION_SHORTAGE_2_3,
+                        WarehouseInventorySupervisionSupport.SECTION_EXPIRY)) {
+            for (Map<String, Object> section : sections) {
+                if (section == null || !sectionId.equals(String.valueOf(section.get("sectionId")))) {
+                    continue;
+                }
+                Object rows = section.get("rows");
+                if (rows instanceof List<?> list) {
+                    for (Object row : list) {
+                        if (row instanceof Map<?, ?> m) {
+                            focus.add(new LinkedHashMap<>((Map<String, Object>) m));
+                        }
+                        if (focus.size() >= 15) {
+                            return focus;
+                        }
+                    }
+                }
+            }
+        }
+        return focus;
     }
 
     private static void enrichWarehouseMatrixDebug(
@@ -306,9 +421,25 @@ public final class WarehouseAnswerPlanBuilder {
             return WarehouseAnswerPlan.TYPE_WAREHOUSE_LOW_STOCK_RISK;
         }
         if (AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_NEAR_EXPIRY.equals(canon)) {
-            return WarehouseAnswerPlan.TYPE_WAREHOUSE_STOCK_OVERVIEW;
+            return WarehouseAnswerPlan.TYPE_WAREHOUSE_NEAR_EXPIRY_RISK;
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_INVENTORY_SUPERVISION.equals(canon)) {
+            return WarehouseAnswerPlan.TYPE_WAREHOUSE_INVENTORY_SUPERVISION;
         }
         return WarehouseAnswerPlan.TYPE_WAREHOUSE_STOCK_OVERVIEW;
+    }
+
+    private static String resolveExpectedTool(String planType) {
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_LOW_STOCK_RISK.equals(planType)) {
+            return AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST;
+        }
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_NEAR_EXPIRY_RISK.equals(planType)) {
+            return AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK;
+        }
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_INVENTORY_SUPERVISION.equals(planType)) {
+            return AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION;
+        }
+        return AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW;
     }
 
     private static AiQuerySemanticParseResult semantic(AiResolvedQueryContext rq) {
@@ -345,6 +476,42 @@ public final class WarehouseAnswerPlanBuilder {
         Object risk = data.get(WarehouseInventoryRiskListTool.PAYLOAD_KEY);
         if (risk instanceof Map<?, ?> rm) {
             diag.put("foundDataPath", "envelope.data." + WarehouseInventoryRiskListTool.PAYLOAD_KEY);
+            return new LinkedHashMap<>((Map<String, Object>) rm);
+        }
+        return Map.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractWarehouseInventorySupervision(Object dataObj, Map<String, Object> diag) {
+        if (!(dataObj instanceof Map<?, ?> raw)) {
+            return Map.of();
+        }
+        Map<String, Object> data = (Map<String, Object>) raw;
+        Object inner = data.get("data");
+        if (inner instanceof Map<?, ?> nested) {
+            data = (Map<String, Object>) nested;
+        }
+        Object supervision = data.get(WarehouseInventorySupervisionSupport.PAYLOAD_KEY);
+        if (supervision instanceof Map<?, ?> sm) {
+            diag.put("foundDataPath", "envelope.data." + WarehouseInventorySupervisionSupport.PAYLOAD_KEY);
+            return new LinkedHashMap<>((Map<String, Object>) sm);
+        }
+        return Map.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractWarehouseNearExpiryRisk(Object dataObj, Map<String, Object> diag) {
+        if (!(dataObj instanceof Map<?, ?> raw)) {
+            return Map.of();
+        }
+        Map<String, Object> data = (Map<String, Object>) raw;
+        Object inner = data.get("data");
+        if (inner instanceof Map<?, ?> nested) {
+            data = (Map<String, Object>) nested;
+        }
+        Object risk = data.get(WarehouseNearExpiryRiskTool.PAYLOAD_KEY);
+        if (risk instanceof Map<?, ?> rm) {
+            diag.put("foundDataPath", "envelope.data." + WarehouseNearExpiryRiskTool.PAYLOAD_KEY);
             return new LinkedHashMap<>((Map<String, Object>) rm);
         }
         return Map.of();
@@ -435,7 +602,11 @@ public final class WarehouseAnswerPlanBuilder {
         return containsTool(plan, AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW)
                 || containsTool(results, AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW)
                 || containsTool(plan, AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST)
-                || containsTool(results, AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST);
+                || containsTool(results, AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST)
+                || containsTool(plan, AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK)
+                || containsTool(results, AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK)
+                || containsTool(plan, AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION)
+                || containsTool(results, AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION);
     }
 
     private static boolean containsTool(List<String> plan, String toolId) {

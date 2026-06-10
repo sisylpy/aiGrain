@@ -3,6 +3,7 @@ package com.nongxinle.ai.semantic.contract;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.dto.business.PurchaseGoodsBusinessAnalysisAnswerPlan;
 import com.nongxinle.ai.semantic.matrix.PurchaseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.PurchaseSemanticCapabilityMatrixRow;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
@@ -29,6 +30,9 @@ public final class PurchaseSemanticCapabilityContractExporter implements Semanti
 
     private static final List<String> PURCHASE_TOOLS = List.of(AiBusinessToolIds.PURCHASE_OVERVIEW);
 
+    private static final List<String> PURCHASE_GOODS_BUSINESS_ANALYSIS_TOOLS =
+            List.of(AiBusinessToolIds.PURCHASE_GOODS_BUSINESS_ANALYSIS);
+
     private PurchaseSemanticCapabilityContractExporter() {
     }
 
@@ -51,6 +55,32 @@ public final class PurchaseSemanticCapabilityContractExporter implements Semanti
         for (PurchaseSemanticCapabilityMatrixRow row : PurchaseSemanticCapabilityMatrix.goodsAnchorRows()) {
             out.add(fromMatrixRow(row));
         }
+        out.add(
+                MatrixBackedContractExporterSupport.build(
+                        MatrixBackedContractExporterSupport.MatrixContractExportSpec.builder()
+                                .contractId(PurchaseGoodsBusinessAnalysisAnswerPlan.CONTRACT_ID)
+                                .domain(DOMAIN_CODE)
+                                .intentCode(AiResolvedQueryIntent.PURCHASE_OVERVIEW)
+                                .pathCode(AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW)
+                                .wire(AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_BUSINESS_ANALYSIS)
+                                .queryObject("GOODS")
+                                .operations(Set.of("DIAGNOSIS", "ANALYSIS", "SUMMARY", "OVERVIEW"))
+                                .metrics(
+                                        Set.of(
+                                                "PURCHASE_AMOUNT",
+                                                "PURCHASE_QUANTITY",
+                                                "PURCHASE_COUNT",
+                                                "UNIT_PRICE"))
+                                .sourceFacet(AiQuerySemanticLexicon.SOURCE_ALL)
+                                .allowedSourceFacet(AiQuerySemanticLexicon.SOURCE_ALL)
+                                .allowedSourceFacet(AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE)
+                                .allowedSourceFacet(AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE)
+                                .answerPlanType(PurchaseGoodsBusinessAnalysisAnswerPlan.TYPE)
+                                .requiresAnchor(true)
+                                .anchorType("GOODS")
+                                .selectedTools(PURCHASE_GOODS_BUSINESS_ANALYSIS_TOOLS)
+                                .status(SemanticCapabilityContractStatus.ACTIVE)
+                                .build()));
         out.addAll(
                 List.of(
                         activeContract(
@@ -105,6 +135,17 @@ public final class PurchaseSemanticCapabilityContractExporter implements Semanti
                                 "GOODS",
                                 Set.of("RANKING"),
                                 Set.of("PURCHASE_COUNT"),
+                                AiQuerySemanticLexicon.SOURCE_ALL,
+                                null,
+                                false),
+                        activeContract(
+                                "purchase.goods_quantity_ranking",
+                                AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_QUANTITY_RANKING,
+                                null,
+                                PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_QUANTITY_RANKING,
+                                "GOODS",
+                                Set.of("RANKING"),
+                                Set.of("PURCHASE_QUANTITY"),
                                 AiQuerySemanticLexicon.SOURCE_ALL,
                                 null,
                                 false),
@@ -167,7 +208,7 @@ public final class PurchaseSemanticCapabilityContractExporter implements Semanti
                                 "purchase.anomaly.price",
                                 AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PRICE_ANOMALY,
                                 null,
-                                PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW,
+                                PurchaseAnswerPlan.TYPE_PURCHASE_ANOMALY,
                                 "GOODS",
                                 Set.of("ANOMALY", "DETAIL"),
                                 Set.of("UNIT_PRICE", "PURCHASE_AMOUNT"),
@@ -178,7 +219,7 @@ public final class PurchaseSemanticCapabilityContractExporter implements Semanti
                                 "purchase.anomaly.frequency",
                                 AiQuerySemanticLexicon.STRUCTURED_PURCHASE_FREQUENCY_ANOMALY,
                                 null,
-                                PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW,
+                                PurchaseAnswerPlan.TYPE_PURCHASE_ANOMALY,
                                 "GOODS",
                                 Set.of("ANOMALY", "DETAIL"),
                                 Set.of("PURCHASE_COUNT"),
@@ -189,7 +230,7 @@ public final class PurchaseSemanticCapabilityContractExporter implements Semanti
                                 "purchase.anomaly.quantity",
                                 AiQuerySemanticLexicon.STRUCTURED_PURCHASE_QUANTITY_ANOMALY,
                                 null,
-                                PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW,
+                                PurchaseAnswerPlan.TYPE_PURCHASE_ANOMALY,
                                 "GOODS",
                                 Set.of("ANOMALY", "DETAIL"),
                                 Set.of("PURCHASE_QUANTITY"),
@@ -200,7 +241,7 @@ public final class PurchaseSemanticCapabilityContractExporter implements Semanti
                                 "purchase.anomaly.amount_spike",
                                 AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE,
                                 null,
-                                PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW,
+                                PurchaseAnswerPlan.TYPE_PURCHASE_ANOMALY,
                                 "GOODS",
                                 Set.of("ANOMALY", "TREND"),
                                 Set.of("PURCHASE_AMOUNT"),

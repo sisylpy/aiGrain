@@ -87,6 +87,7 @@ public final class GbTypeUtils {
     public static final Integer GB_DEPART_GOODS_STOCK_REDUCE_TYPE_LOSS = GbConstants.StockReduceType.LOSS;
     public static final Integer GB_DEPART_GOODS_STOCK_REDUCE_TYPE_RETURN = GbConstants.StockReduceType.RETURN;
     public static final Integer GB_DEPART_GOODS_STOCK_REDUCE_TYPE_STARS = GbConstants.StockReduceType.STARS;
+    public static final Integer GB_DEPART_GOODS_STOCK_REDUCE_TYPE_EMPLOYEE_MEAL = GbConstants.StockReduceType.EMPLOYEE_MEAL;
 
     public static final Integer GB_ORDER_BUY_STATUS_NEW = GbConstants.OrderBuyStatus.NEW;
     public static final Integer GB_ORDER_BUY_STATUS_PROCUREMENT = GbConstants.OrderBuyStatus.SHARED_TO_SUPPLIER;

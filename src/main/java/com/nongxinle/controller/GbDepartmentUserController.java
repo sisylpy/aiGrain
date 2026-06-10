@@ -417,4 +417,18 @@ public class GbDepartmentUserController {
         return supplierEntity;
     }
 
+
+
+    @RequestMapping(value = "/updateDepUserAdminGb", method = RequestMethod.POST)
+    @ResponseBody
+    public R updateDepUserAdminGb(@RequestBody GbDepartmentUserEntity user) {
+        Integer gbDepartmentUserId = user.getGbDepartmentUserId();
+
+        GbDepartmentUserEntity byId = gbDepartmentUserService.getById(gbDepartmentUserId);
+        byId.setGbDuAdmin(GbConstants.DepartmentUserRole.GROUP_MANAGER_APP);
+        gbDepartmentUserService.saveOrUpdate(byId);
+        return R.ok().put("data", byId);
+    }
+
+
 }

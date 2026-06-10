@@ -21,5 +21,14 @@ public enum SemanticSlotInheritanceMode {
      * 同 GOODS 锚点追问：上一轮 {@code warehouse.goods_supported_dish_cover.v1} + 裸库存追问，
      * 恢复上一轮合同与 {@code USE_PREVIOUS_ANCHOR}，禁止 {@code warehouse.overview} 抢主权。
      */
-    INHERIT_SAME_GOODS_ANCHOR_FOLLOWUP
+    INHERIT_SAME_GOODS_ANCHOR_FOLLOWUP,
+    /**
+     * 同 stable contract structured time-only：恢复上一轮合同与锚点，仅保留当前轮 time。
+     */
+    INHERIT_SAME_CAPABILITY_TIME_FOLLOWUP,
+    /**
+     * @deprecated 使用 {@link #INHERIT_SAME_CAPABILITY_TIME_FOLLOWUP}。
+     */
+    @Deprecated
+    INHERIT_COVER_DAYS_SALES_BASELINE_FOLLOWUP
 }

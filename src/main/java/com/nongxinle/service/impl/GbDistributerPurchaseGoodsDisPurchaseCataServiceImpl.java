@@ -7,6 +7,7 @@ import com.nongxinle.service.GbDistributerFatherGoodsService;
 import com.nongxinle.service.GbDistributerPurchaseGoodsDisPurchaseCataService;
 import com.nongxinle.service.GbDistributerPurchaseGoodsService;
 import com.nongxinle.utils.GbConstants;
+import com.nongxinle.utils.GbDepartmentGoodsStockReduceSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -64,14 +65,14 @@ public class GbDistributerPurchaseGoodsDisPurchaseCataServiceImpl implements GbD
 
         Map<String, Object> reduceTotalsAll = gbDepartmentStockReduceService.queryReduceAllTypesTotal(mapDep);
         double totalCost = 0.0;
+        double employeeMealAll = 0.0;
         if (reduceTotalsAll != null) {
-            double produceAll = reduceTotalsAll.get("produceTotal") != null
-                    ? Double.parseDouble(reduceTotalsAll.get("produceTotal").toString()) : 0;
-            double wasteAll = reduceTotalsAll.get("wasteTotal") != null
-                    ? Double.parseDouble(reduceTotalsAll.get("wasteTotal").toString()) : 0;
-            double lossAll = reduceTotalsAll.get("lossTotal") != null
-                    ? Double.parseDouble(reduceTotalsAll.get("lossTotal").toString()) : 0;
-            totalCost = produceAll + wasteAll + lossAll;
+            double produceAll = GbDepartmentGoodsStockReduceSupport.toDouble(reduceTotalsAll.get("produceTotal"));
+            double wasteAll = GbDepartmentGoodsStockReduceSupport.toDouble(reduceTotalsAll.get("wasteTotal"));
+            double lossAll = GbDepartmentGoodsStockReduceSupport.toDouble(reduceTotalsAll.get("lossTotal"));
+            employeeMealAll = GbDepartmentGoodsStockReduceSupport.toDouble(
+                    reduceTotalsAll.get(GbDepartmentGoodsStockReduceSupport.KEY_EMPLOYEE_MEAL_TOTAL));
+            totalCost = produceAll + wasteAll + lossAll + employeeMealAll;
         }
 
         mapDep.put("startDate", startDate);
@@ -142,17 +143,17 @@ public class GbDistributerPurchaseGoodsDisPurchaseCataServiceImpl implements GbD
                 double produceSubtotal = 0.0;
                 double wasteTotal = 0.0;
                 double lossTotal = 0.0;
+                double employeeMealTotal = 0.0;
                 log.debug("cosssoososososointeger4integer4{}", mapDepCost);
                 Map<String, Object> reduceTotalsGreat = gbDepartmentStockReduceService.queryReduceAllTypesTotal(mapDepCost);
                 if (reduceTotalsGreat != null) {
-                    produceSubtotal = reduceTotalsGreat.get("produceTotal") != null
-                            ? Double.parseDouble(reduceTotalsGreat.get("produceTotal").toString()) : 0.0;
+                    produceSubtotal = GbDepartmentGoodsStockReduceSupport.toDouble(reduceTotalsGreat.get("produceTotal"));
                     log.debug("cossisisis{}", produceSubtotal);
-                    wasteTotal = reduceTotalsGreat.get("wasteTotal") != null
-                            ? Double.parseDouble(reduceTotalsGreat.get("wasteTotal").toString()) : 0.0;
-                    lossTotal = reduceTotalsGreat.get("lossTotal") != null
-                            ? Double.parseDouble(reduceTotalsGreat.get("lossTotal").toString()) : 0.0;
-                    add = produceSubtotal + wasteTotal + lossTotal;
+                    wasteTotal = GbDepartmentGoodsStockReduceSupport.toDouble(reduceTotalsGreat.get("wasteTotal"));
+                    lossTotal = GbDepartmentGoodsStockReduceSupport.toDouble(reduceTotalsGreat.get("lossTotal"));
+                    employeeMealTotal = GbDepartmentGoodsStockReduceSupport.toDouble(
+                            reduceTotalsGreat.get(GbDepartmentGoodsStockReduceSupport.KEY_EMPLOYEE_MEAL_TOTAL));
+                    add = produceSubtotal + wasteTotal + lossTotal + employeeMealTotal;
                 }
 
                 Map<String, Object> mapDepCostThis = new HashMap<>();
@@ -195,6 +196,8 @@ public class GbDistributerPurchaseGoodsDisPurchaseCataServiceImpl implements GbD
                 cataMap.put("produceSubtotal", String.format("%.1f", produceSubtotal));
                 cataMap.put("lossTotal", String.format("%.1f", lossTotal));
                 cataMap.put("wasteTotal", String.format("%.1f", wasteTotal));
+                cataMap.put("employeeMealCostTotal", String.format("%.1f", employeeMealTotal));
+                cataMap.put("employeeMealCostAllTotal", String.format("%.1f", employeeMealAll));
 
                 greatEntity.setDailyData(cataMap);
             }

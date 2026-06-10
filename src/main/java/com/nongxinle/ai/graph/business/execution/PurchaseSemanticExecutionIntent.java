@@ -21,6 +21,8 @@ public class PurchaseSemanticExecutionIntent {
     public static final String EXEC_CHANNEL_GOODS_DETAIL = "CHANNEL_GOODS_DETAIL";
     /** 时间窗内采购原料/商品明细清单（无锚点；contract {@code purchase.period_goods_list}）。 */
     public static final String EXEC_PERIOD_GOODS_LIST = "PERIOD_GOODS_LIST";
+    /** GOODS 锚原料采购经营分析（contract {@code purchase.goods_business_analysis.v1}）。 */
+    public static final String EXEC_GOODS_BUSINESS_ANALYSIS = "GOODS_BUSINESS_ANALYSIS";
 
     public static PurchaseSemanticExecutionIntent none() {
         return PurchaseSemanticExecutionIntent.builder()
@@ -54,6 +56,7 @@ public class PurchaseSemanticExecutionIntent {
     public boolean requiresGoodsFocus() {
         return EXEC_GOODS_SOURCE_BREAKDOWN.equals(executionIntentType)
                 || EXEC_GOODS_SUPPLIER_BREAKDOWN.equals(executionIntentType)
-                || EXEC_GOODS_SUPPLIER_UNIT_PRICE.equals(executionIntentType);
+                || EXEC_GOODS_SUPPLIER_UNIT_PRICE.equals(executionIntentType)
+                || EXEC_GOODS_BUSINESS_ANALYSIS.equals(executionIntentType);
     }
 }

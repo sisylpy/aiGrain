@@ -76,9 +76,11 @@ public final class CanonicalContractFrameSupport {
         AiQuerySemanticParseResult.SemanticSlotsPart cur = current.getSemanticSlots();
         String preserveMargin =
                 cur != null ? cur.getRequestedTargetGrossMarginRate() : null;
+        String preserveExpiryFilter =
+                cur != null ? cur.getExpiryRiskFilter() : null;
 
         AiQuerySemanticParseResult.SemanticSlotsPart slots = frame.getSemanticSlots();
-        if (StringUtils.hasText(preserveMargin)) {
+        if (StringUtils.hasText(preserveMargin) || StringUtils.hasText(preserveExpiryFilter)) {
             slots =
                     AiQuerySemanticParseResult.SemanticSlotsPart.builder()
                             .selectedContractId(slots.getSelectedContractId())
@@ -92,6 +94,7 @@ public final class CanonicalContractFrameSupport {
                             .answerPlanType(slots.getAnswerPlanType())
                             .mentionedDishName(slots.getMentionedDishName())
                             .requestedTargetGrossMarginRate(preserveMargin)
+                            .expiryRiskFilter(preserveExpiryFilter)
                             .build();
         }
 

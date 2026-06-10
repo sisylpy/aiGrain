@@ -116,8 +116,9 @@ public final class DomainRoutingContractCatalog {
                     .anchorType("STORE")
                     .crossDomainHint("stock_reduce")
                     .crossDomainHint("purchase")
-                    .routeExample("库房库存概况")
-                    .routeExample("这个月库存情况怎么样")
+                    .routeExample("库存现在怎么样")
+                    .routeExample("帮我看看库存有没有问题")
+                    .routeExample("库存金额一共多少")
                     .routeExample("哪些商品库存偏低")
                     .status(DomainRoutingContractStatus.ACTIVE)
                     .build();

@@ -21,4 +21,7 @@ public class GbDistributerStandardEntity implements Serializable {
     private Integer gbDistributerStandardId;
     private Integer gbDsDisGoodsId;
     private String gbDsStandardName;
+    private String gbDsStandardWeight;
+    private String gbDsStandardScale;
+
 }

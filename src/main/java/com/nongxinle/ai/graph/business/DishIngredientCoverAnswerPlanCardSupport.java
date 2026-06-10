@@ -1,5 +1,6 @@
 package com.nongxinle.ai.graph.business;
 
+import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.dto.business.DishIngredientCoverAnswerPlan;
 
 import java.util.ArrayList;
@@ -12,14 +13,22 @@ public final class DishIngredientCoverAnswerPlanCardSupport {
     private DishIngredientCoverAnswerPlanCardSupport() {}
 
     public static List<Map<String, Object>> buildRunCards(DishIngredientCoverAnswerPlan plan) {
+        return buildRunCards(plan, null);
+    }
+
+    public static List<Map<String, Object>> buildRunCards(
+            DishIngredientCoverAnswerPlan plan, AiResolvedQueryContext rq) {
         if (plan == null || !DishIngredientCoverAnswerPlan.TYPE.equals(plan.getPlanType())) {
             return List.of();
         }
+        String dishName = DishEntityDisplayNameSupport.resolveDisplayDishNameForPlan(rq, plan.getDishName());
+        Integer dishId = DishEntityDisplayNameSupport.resolveDisplayFoodIdForPlan(rq, plan.getDishId());
+
         Map<String, Object> card = new LinkedHashMap<>();
         card.put("cardType", DishIngredientCoverAnswerPlan.CARD_TYPE);
-        String title = plan.getDishName() == null || plan.getDishName().isBlank()
+        String title = dishName == null || dishName.isBlank()
                 ? "单菜配料可支撑天数"
-                : plan.getDishName() + " · 配料可支撑天数";
+                : dishName + " · 配料可支撑天数";
         card.put("title", title);
         String subtitle = plan.getStockSnapshotLabel();
         if (subtitle == null || subtitle.isBlank()) {
@@ -28,8 +37,8 @@ public final class DishIngredientCoverAnswerPlanCardSupport {
         card.put("subtitle", subtitle == null ? "" : subtitle);
         card.put("sourceAnswerPlanType", plan.getPlanType());
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("dishName", plan.getDishName());
-        payload.put("dishId", plan.getDishId());
+        payload.put("dishName", dishName);
+        payload.put("dishId", dishId);
         payload.put("stockSnapshotLabel", plan.getStockSnapshotLabel());
         payload.put("salesBaselineLabel", readSummaryString(plan, "salesBaselineLabel"));
         payload.put("salesBaselineStartDate", readSummaryString(plan, "salesBaselineStartDate"));

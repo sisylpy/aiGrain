@@ -4,7 +4,8 @@ import com.alibaba.fastjson2.JSON;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.capability.dish.DishCostAnalysisCapabilityResult;
 import com.nongxinle.ai.capability.dish.DishSalesAnalysisCapabilityResult;
-import com.nongxinle.ai.graph.business.GoodsSupportedDishCoverAnswerPlanCardSupport;
+import com.nongxinle.ai.graph.business.GoodsStockBatchDetailCardSupport;
+import com.nongxinle.ai.graph.business.WarehouseGoodsAnchorAnswerPlanCardWireSupport;
 import com.nongxinle.ai.graph.business.DishIngredientCoverAnswerPlanCardSupport;
 import com.nongxinle.ai.graph.business.DishProfitAnswerPlanCardSupport;
 import com.nongxinle.ai.graph.business.DishProfitPrescriptionAnswerPlanCardSupport;
@@ -15,11 +16,15 @@ import com.nongxinle.ai.composer.menu.MenuExpertPresentationPlanCardSupport;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
 import com.nongxinle.ai.dto.business.MenuOperationAnswerPlan;
+import com.nongxinle.ai.dto.business.PurchaseGoodsBusinessAnalysisAnswerPlan;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
 import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
 import com.nongxinle.ai.graph.business.BusinessStatusCardTypes;
 import com.nongxinle.ai.graph.business.BusinessStatusCardWireSupport;
-import com.nongxinle.ai.graph.business.PurchaseGoodsDetailCardSupport;
+import com.nongxinle.ai.graph.business.PurchaseAnswerPlanCardSupport;
+import com.nongxinle.ai.graph.business.PurchaseGoodsAnchorDetailCardSupport;
+import com.nongxinle.ai.graph.business.PurchaseSupplierGoodsDetailCardSupport;
+import com.nongxinle.ai.graph.business.PurchaseGoodsBusinessAnalysisCardSupport;
 import com.nongxinle.ai.graph.business.MenuOperationAnswerPlanCardSupport;
 import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import com.nongxinle.ai.history.dto.AiConversationMessageDTO;
@@ -58,6 +63,8 @@ public final class AiCardPayloadWireSupport {
     private static final String TITLE_MENU_ACTION_RECOMMENDATION = "菜单优化方案";
     private static final String TITLE_WAREHOUSE_STOCK_RANKING = "账面库存金额排行";
     private static final String TITLE_WAREHOUSE_INVENTORY_RISK = "库存风险关注列表";
+    private static final String TITLE_WAREHOUSE_NEAR_EXPIRY_RISK = "库存临期/过期风险";
+    private static final String TITLE_WAREHOUSE_INVENTORY_SUPERVISION = "库存监督/诊断";
     private static final String CHART_TYPE_MENU_ACTION_PLAN = "PLAN";
     private static final String SOURCE_ANSWER_PLAN_MENU_OPERATION = "menuOperationAnswerPlan";
     private static final String SOURCE_DATA_REF_MENU_OPTIMIZATION_PLAN = "menuOptimizationPlan";
@@ -75,7 +82,6 @@ public final class AiCardPayloadWireSupport {
         promoteFromDishSalesAnalysisToolEnvelope(state);
         promoteFromDishSalesAnswerPlan(state);
         promoteFromDishProfitAnswerPlan(state);
-        reconcilePurchasePeriodGoodsDetailCards(state);
         if (shouldSuppressLegacyDishCostCard(state)) {
             clearLegacyDishCostCard(state);
         }
@@ -84,7 +90,9 @@ public final class AiCardPayloadWireSupport {
                         ? deepCopyMap(state.getCardPayload())
                         : null;
         if (state != null && (BusinessStatusCardWireSupport.hasBusinessStatusCards(state.getCards())
-                || PurchaseGoodsDetailCardSupport.hasPurchaseGoodsDetailCard(state.getCards()))) {
+                || PurchaseAnswerPlanCardSupport.hasPurchaseAnswerPlanCard(state.getCards())
+                || WarehouseGoodsAnchorAnswerPlanCardWireSupport.hasWarehouseGoodsAnchorAnswerPlanCard(
+                        state.getCards()))) {
             finalizeBusinessStatusCardsOnState(state);
             mirrorCardFieldsToMasterBusinessAgentDebug(state);
             return;
@@ -93,7 +101,7 @@ public final class AiCardPayloadWireSupport {
         mirrorCardFieldsToMasterBusinessAgentDebug(state);
     }
 
-    /** 经营状态 cards[] 已由 {@link BusinessStatusCardWireService} 写入时，只做字段归一化与兼容镜像。 */
+    /** 已投影 cards[]（经营四卡或采购 AnswerPlan 卡）时，只做字段归一化与兼容镜像。 */
     static void finalizeBusinessStatusCardsOnState(AiRunState state) {
         if (state == null || state.getCards() == null || state.getCards().isEmpty()) {
             return;
@@ -159,34 +167,6 @@ public final class AiCardPayloadWireSupport {
             }
         }
         return types;
-    }
-
-    /**
-     * period goods 明细卡优先：Composer 漏挂或 CHECK 卡抢占时，从 AnswerPlan 补挂并剔除 CHECK。
-     */
-    static void reconcilePurchasePeriodGoodsDetailCards(AiRunState state) {
-        if (state == null || !BusinessStatusCardWireSupport.isPurchasePeriodGoodsDetailMainline(state)) {
-            return;
-        }
-        PurchaseAnswerPlan plan = state.getPurchaseAnswerPlan();
-        if (plan == null) {
-            return;
-        }
-        Map<String, Object> detailCard = PurchaseGoodsDetailCardSupport.buildCard(plan);
-        if (detailCard == null || detailCard.isEmpty()) {
-            return;
-        }
-        if (state.getCards() == null || state.getCards().isEmpty()) {
-            state.setCards(List.of(detailCard));
-            state.setCardPayload(buildDeprecatedCardPayloadCompatFromCards(state.getCards()));
-            return;
-        }
-        if (PurchaseGoodsDetailCardSupport.hasPurchaseGoodsDetailCard(state.getCards())
-                && !BusinessStatusCardWireSupport.hasBusinessStatusCards(state.getCards())) {
-            return;
-        }
-        state.setCards(List.of(detailCard));
-        state.setCardPayload(buildDeprecatedCardPayloadCompatFromCards(state.getCards()));
     }
 
     /** GET {@code harnessDebug}：card 字段仅写入 {@code resolvedQueryContextSummary}（与 SSE 同源）。 */
@@ -492,9 +472,10 @@ public final class AiCardPayloadWireSupport {
         }
         List<Map<String, Object>> cards = new ArrayList<>();
 
-        List<Map<String, Object>> fromPrescription = promoteFromDishProfitPrescriptionAnswerPlan(state);
-        if (fromPrescription != null && !fromPrescription.isEmpty()) {
-            for (Map<String, Object> card : fromPrescription) {
+        List<Map<String, Object>> fromGoodsBusinessAnalysis =
+                promoteFromPurchaseGoodsBusinessAnalysisAnswerPlan(state);
+        if (fromGoodsBusinessAnalysis != null && !fromGoodsBusinessAnalysis.isEmpty()) {
+            for (Map<String, Object> card : fromGoodsBusinessAnalysis) {
                 if (card != null && !card.isEmpty()) {
                     cards.add(deepCopyMap(card));
                 }
@@ -502,9 +483,9 @@ public final class AiCardPayloadWireSupport {
         }
 
         if (cards.isEmpty()) {
-            List<Map<String, Object>> fromGoodsDishCover = promoteFromGoodsSupportedDishCoverAnswerPlan(state);
-            if (fromGoodsDishCover != null && !fromGoodsDishCover.isEmpty()) {
-                for (Map<String, Object> card : fromGoodsDishCover) {
+            List<Map<String, Object>> fromPrescription = promoteFromDishProfitPrescriptionAnswerPlan(state);
+            if (fromPrescription != null && !fromPrescription.isEmpty()) {
+                for (Map<String, Object> card : fromPrescription) {
                     if (card != null && !card.isEmpty()) {
                         cards.add(deepCopyMap(card));
                     }
@@ -592,13 +573,14 @@ public final class AiCardPayloadWireSupport {
                 state.getDishProfitPrescriptionAnswerPlan());
     }
 
-    /** 原料可支撑菜品 AnswerPlan → {@code GOODS_SUPPORTED_DISH_COVER_CARD}。 */
-    static List<Map<String, Object>> promoteFromGoodsSupportedDishCoverAnswerPlan(AiRunState state) {
-        if (state == null || state.getGoodsSupportedDishCoverAnswerPlan() == null) {
+    /** GOODS 锚原料采购经营分析 AnswerPlan → {@code PURCHASE_GOODS_BUSINESS_ANALYSIS_CARD}。 */
+    static List<Map<String, Object>> promoteFromPurchaseGoodsBusinessAnalysisAnswerPlan(AiRunState state) {
+        if (state == null || state.getPurchaseGoodsBusinessAnalysisAnswerPlan() == null) {
             return List.of();
         }
-        return GoodsSupportedDishCoverAnswerPlanCardSupport.buildRunCards(
-                state.getGoodsSupportedDishCoverAnswerPlan());
+        return PurchaseGoodsBusinessAnalysisCardSupport.buildRunCards(
+                state.getPurchaseGoodsBusinessAnalysisAnswerPlan(),
+                state.getResolvedQueryContext());
     }
 
     /** 单菜配料可支撑天数 AnswerPlan → {@code DISH_INGREDIENT_COVER_DAYS_CARD}。 */
@@ -606,7 +588,8 @@ public final class AiCardPayloadWireSupport {
         if (state == null || state.getDishIngredientCoverAnswerPlan() == null) {
             return List.of();
         }
-        return DishIngredientCoverAnswerPlanCardSupport.buildRunCards(state.getDishIngredientCoverAnswerPlan());
+        return DishIngredientCoverAnswerPlanCardSupport.buildRunCards(
+                state.getDishIngredientCoverAnswerPlan(), state.getResolvedQueryContext());
     }
 
     /** 库房 AnswerPlan → {@code WAREHOUSE_INVENTORY_RISK_LIST_CARD} / {@code WAREHOUSE_STOCK_RANKING_CARD}。 */
@@ -630,11 +613,16 @@ public final class AiCardPayloadWireSupport {
         if (state.getGoodsSupportedDishCoverAnswerPlan() != null) {
             return true;
         }
+        if (state.getGoodsStockBatchDetailAnswerPlan() != null) {
+            return true;
+        }
         return ToolRequestContractExecutionParamSupport.isDishProfitPrescriptionContract(
                         state.getResolvedQueryContext())
                 || ToolRequestContractExecutionParamSupport.isDishIngredientCoverDaysContract(
                         state.getResolvedQueryContext())
                 || ToolRequestContractExecutionParamSupport.isGoodsSupportedDishCoverContract(
+                        state.getResolvedQueryContext())
+                || ToolRequestContractExecutionParamSupport.isGoodsStockBatchDetailContract(
                         state.getResolvedQueryContext());
     }
 
@@ -761,12 +749,18 @@ public final class AiCardPayloadWireSupport {
             case "MENU_HIGH_SALES_LOW_MARGIN_CARD" -> TITLE_MENU_HIGH_SALES_LOW_MARGIN;
             case "MENU_ACTION_RECOMMENDATION_CARD" -> TITLE_MENU_ACTION_RECOMMENDATION;
             case WarehouseAnswerPlanCardSupport.CARD_TYPE_INVENTORY_RISK -> TITLE_WAREHOUSE_INVENTORY_RISK;
+            case WarehouseAnswerPlanCardSupport.CARD_TYPE_NEAR_EXPIRY_RISK -> TITLE_WAREHOUSE_NEAR_EXPIRY_RISK;
+            case WarehouseAnswerPlanCardSupport.CARD_TYPE_INVENTORY_SUPERVISION ->
+                    TITLE_WAREHOUSE_INVENTORY_SUPERVISION;
             case WarehouseAnswerPlan.CARD_TYPE_STOCK_RANKING -> TITLE_WAREHOUSE_STOCK_RANKING;
             case BusinessStatusCardTypes.REVENUE_REPORT_CARD -> "营业额";
             case BusinessStatusCardTypes.PURCHASE_CHECK_CARD -> "采购";
             case BusinessStatusCardTypes.STOCK_RECONCILE_CARD -> "库存 / 销货核对";
             case BusinessStatusCardTypes.REORDER_REMINDER_CARD -> "订货";
             case "PURCHASE_GOODS_DETAIL_CARD" -> "原料采购";
+            case PurchaseAnswerPlan.CARD_TYPE_PURCHASE_GOODS_ANCHOR_DETAIL -> PurchaseGoodsAnchorDetailCardSupport.CARD_TITLE;
+            case PurchaseSupplierGoodsDetailCardSupport.CARD_TYPE -> PurchaseSupplierGoodsDetailCardSupport.CARD_TITLE;
+            case "GOODS_STOCK_BATCH_DETAIL_CARD" -> GoodsStockBatchDetailCardSupport.CARD_TITLE;
             default -> "";
         };
     }

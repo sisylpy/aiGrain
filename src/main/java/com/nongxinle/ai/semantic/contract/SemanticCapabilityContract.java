@@ -28,8 +28,16 @@ public class SemanticCapabilityContract {
     @Singular("metric")
     Set<String> metrics;
     String sourceFacet;
+    /** 非空时 {@code sourceFacet} 为 completion 默认值，LLM 槽位须落在此集合内。 */
+    @Singular("allowedSourceFacet")
+    Set<String> allowedSourceFacets;
     String detailWanted;
     String answerPlanType;
+    /**
+     * 本轮应产出的 AnswerPlan 类型键（可多值，如 bundle 双卡）；空则执行层回退 {@link #answerPlanType}。
+     */
+    @Singular("planOutput")
+    List<String> planOutputs;
     boolean requiresAnchor;
     String anchorType;
     @Singular("selectedTool")

@@ -2,18 +2,16 @@ package com.nongxinle.ai.semantic;
 
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.semantic.contract.SemanticCapabilityContract;
 import com.nongxinle.ai.semantic.contract.SemanticContractAnchorInheritanceSupport;
 import com.nongxinle.ai.semantic.inheritance.SemanticContractFamilySupport;
 import com.nongxinle.ai.semantic.inheritance.SemanticSlotInheritanceApplier;
-import com.nongxinle.ai.semantic.contract.SemanticContractCatalog;
 import org.springframework.util.StringUtils;
 
 import java.util.*;
 
 /**
- * 仅做 currentTurnStructuredIntentDetailWire 镜像、会话记忆落库对齐、结构化 dish anchor reconcile、
- * 单菜 contract 主权补齐；<b>不是</b>多轮 Business Frame 继承主链。
+ * 仅做 currentTurnStructuredIntentDetailWire 镜像、会话记忆落库对齐、结构化 dish anchor reconcile；
+ * <b>不是</b>多轮 Business Frame 继承主链，也不是 contract canonical fields 落地入口。
  *
  * <p>多轮继承主链：{@link com.nongxinle.ai.semantic.inheritance.SemanticSlotInheritancePolicy} →
  * {@link com.nongxinle.ai.semantic.inheritance.SemanticSlotInheritanceApplier} →
@@ -35,10 +33,6 @@ public final class AiQuerySemanticSlotMerge {
 
     public static final String ANCHOR_USE_PREVIOUS = "USE_PREVIOUS_ANCHOR";
     public static final String ANCHOR_IGNORE_PREVIOUS = "IGNORE_PREVIOUS_ANCHOR";
-
-    /** Catalog ACTIVE：单菜销量合同；不得被「仅改时间」排行追问恢复逻辑覆盖。 */
-    public static final String CONTRACT_DISH_SALES_SINGLE_DISH = "dish_sales.single_dish";
-    public static final String CONTRACT_DISH_SALES_STORE_SINGLE_DISH = "dish_sales.store_single_dish";
 
     private AiQuerySemanticSlotMerge() {
     }
@@ -112,6 +106,7 @@ public final class AiQuerySemanticSlotMerge {
                         .answerPlanType(base.getAnswerPlanType())
                         .mentionedDishName(base.getMentionedDishName())
                         .mentionedGoodsName(base.getMentionedGoodsName())
+                        .expiryRiskFilter(base.getExpiryRiskFilter())
                         .build();
         String canonSlot =
                 StringUtils.hasText(base.getStructuredIntentDetailWire())
@@ -137,6 +132,7 @@ public final class AiQuerySemanticSlotMerge {
                     .answerPlanType(null)
                     .mentionedDishName(base.getMentionedDishName())
                     .mentionedGoodsName(base.getMentionedGoodsName())
+                    .expiryRiskFilter(base.getExpiryRiskFilter())
                     .build();
         }
         return merged;
@@ -214,79 +210,6 @@ public final class AiQuerySemanticSlotMerge {
     }
 
     /**
-     * 本轮已选单菜合同：以 catalog entry 为准覆盖 wire/execution 槽位，禁止残留上一轮排行 wire。
-     * 不读 rawMessage；不猜菜名。
-     */
-    public static AiQuerySemanticParseResult reconcileDishSalesSingleDishContractSovereignty(
-            AiQuerySemanticParseResult sem) {
-        if (sem == null || sem.isParseMissing() || !isDishSalesSingleDishContractSelection(sem)) {
-            return sem;
-        }
-        String contractId = trimToken(sem.getSemanticSlots().getSelectedContractId());
-        SemanticCapabilityContract contract =
-                SemanticContractCatalog.findActiveCapabilityContractById(contractId, "DISH_SALES");
-        if (contract == null) {
-            return sem;
-        }
-        AiQuerySemanticParseResult.SemanticSlotsPart prev = sem.getSemanticSlots();
-        String dish = trimToken(firstNonBlank(sem.getMentionedDishName(), prev.getMentionedDishName()));
-        String wire = authoritativeDishSalesContractWire(contract);
-        String answerPlanType =
-                StringUtils.hasText(contract.getAnswerPlanType())
-                        ? normalizeToken(contract.getAnswerPlanType())
-                        : prev.getAnswerPlanType();
-        AiQuerySemanticParseResult.SemanticSlotsPart slots =
-                AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                        .selectedContractId(contract.getContractId())
-                        .queryObject(coalesceContractSlot(prev.getQueryObject(), contract.getQueryObjects()))
-                        .operation(coalesceContractSlot(prev.getOperation(), contract.getOperations()))
-                        .metric(coalesceContractSlot(prev.getMetric(), contract.getMetrics()))
-                        .sourceFacet(coalesceContractScalarSlot(prev.getSourceFacet(), contract.getSourceFacet()))
-                        .anchorPolicy(prev.getAnchorPolicy())
-                        .detailWanted(coalesceContractScalarSlot(prev.getDetailWanted(), contract.getDetailWanted()))
-                        .structuredIntentDetailWire(wire)
-                        .answerPlanType(normalizeToken(answerPlanType))
-                        .mentionedDishName(dish)
-                        .requestedTargetGrossMarginRate(prev.getRequestedTargetGrossMarginRate())
-                        .build();
-        AiQuerySemanticParseResult.AiQuerySemanticParseResultBuilder b =
-                sem.toBuilder().semanticSlots(slots).currentTurnStructuredIntentDetailWire(wire);
-        if (StringUtils.hasText(dish)) {
-            b.mentionedDishName(dish);
-        }
-        return b.build();
-    }
-
-    private static String authoritativeDishSalesContractWire(SemanticCapabilityContract contract) {
-        if (contract == null || !StringUtils.hasText(contract.getWire())) {
-            return null;
-        }
-        return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(contract.getWire().trim());
-    }
-
-    private static String coalesceContractSlot(String llmValue, java.util.Set<String> allowed) {
-        if (allowed == null || allowed.isEmpty()) {
-            return llmValue;
-        }
-        String token = normalizeToken(llmValue);
-        if (StringUtils.hasText(token)) {
-            for (String a : allowed) {
-                if (token.equals(normalizeToken(a))) {
-                    return a;
-                }
-            }
-        }
-        return allowed.iterator().next();
-    }
-
-    private static String coalesceContractScalarSlot(String llmValue, String contractValue) {
-        if (StringUtils.hasText(llmValue)) {
-            return normalizeToken(llmValue);
-        }
-        return StringUtils.hasText(contractValue) ? contractValue.trim() : null;
-    }
-
-    /**
      * 当前轮显式菜名优先于 slots / 上一轮 anchor：顶层 {@code mentionedDishName} 覆盖 slots 内陈旧继承；
      * 本轮 structured 菜名与 {@code previousTurn.lastMentionedDishName} 不一致时视为换菜，同步 slots 并
      * 置 {@link #ANCHOR_IGNORE_PREVIOUS}。不读 rawMessage。
@@ -356,6 +279,7 @@ public final class AiQuerySemanticSlotMerge {
                         .answerPlanType(s.getAnswerPlanType())
                         .mentionedDishName(resolvedDish)
                         .requestedTargetGrossMarginRate(s.getRequestedTargetGrossMarginRate())
+                        .expiryRiskFilter(s.getExpiryRiskFilter())
                         .build();
 
         AiQuerySemanticParseResult.AiQuerySemanticParseResultBuilder b =
@@ -394,20 +318,6 @@ public final class AiQuerySemanticSlotMerge {
         return SemanticContractFamilySupport.wasPreviousPurchasePeriodGoodsList(previousTurn);
     }
 
-    private static boolean isDishSalesSingleDishContractSlots(
-            AiQuerySemanticParseResult.SemanticSlotsPart slots) {
-        if (slots == null) {
-            return false;
-        }
-        String contractId = trimToken(slots.getSelectedContractId());
-        return CONTRACT_DISH_SALES_SINGLE_DISH.equals(contractId)
-                || CONTRACT_DISH_SALES_STORE_SINGLE_DISH.equals(contractId);
-    }
-
-    private static boolean isDishSalesSingleDishContractSelection(AiQuerySemanticParseResult sem) {
-        return sem != null && isDishSalesSingleDishContractSlots(sem.getSemanticSlots());
-    }
-
     /**
      * @deprecated 主链已迁移至 {@link com.nongxinle.ai.semantic.inheritance.SemanticSlotInheritancePolicy}。
      */
@@ -424,16 +334,6 @@ public final class AiQuerySemanticSlotMerge {
     public static AiQuerySemanticParseResult reconcileDishCostStructuredFollowUpSlots(
             AiQuerySemanticParseResult sem, AiConversationTurnMemory previousTurn) {
         return sem;
-    }
-
-    private static String firstNonBlank(String a, String b) {
-        if (StringUtils.hasText(a)) {
-            return a.trim();
-        }
-        if (StringUtils.hasText(b)) {
-            return b.trim();
-        }
-        return null;
     }
 
     /**

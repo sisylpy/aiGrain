@@ -3,6 +3,9 @@ package com.nongxinle.ai.composer;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
+import com.nongxinle.ai.graph.business.DishIngredientCoverSalesBaselineSupport;
+import com.nongxinle.ai.inventory.CoverDaysSalesBaselinePresentationSupport;
+import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import com.nongxinle.ai.resolver.AiMultiTurnOrgScopePolicy;
 import com.nongxinle.ai.context.AiResolvedTimeWindowDisplaySupport;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
@@ -32,6 +35,15 @@ public final class AnswerBoundaryNoteComposer {
      * 修正 {@link AiResolvedTimeWindowDisplaySupport#buildCombinedBoundaryNote} 在「仅时间继承、本句已点名门店」等场景下误用的统一 suffix。
      */
     public static String refineUserFacingBoundaryNote(AiResolvedQueryContext ctx, String rawNote) {
+        if (ToolRequestContractExecutionParamSupport.isInventoryCoverDaysCapability(ctx)) {
+            return refineInventoryCoverDaysBoundaryNote(ctx, rawNote);
+        }
+        if (ToolRequestContractExecutionParamSupport.isWarehouseNearExpiryContract(ctx)) {
+            return refineWarehouseNearExpiryBoundaryNote(ctx, rawNote);
+        }
+        if (ToolRequestContractExecutionParamSupport.isWarehouseInventorySupervisionContract(ctx)) {
+            return refineWarehouseInventorySupervisionBoundaryNote(ctx, rawNote);
+        }
         if (ctx == null || !StringUtils.hasText(rawNote) || !rawNote.contains(RESOLVER_COMBINED_BAD_SUFFIX)) {
             return rawNote;
         }
@@ -141,6 +153,58 @@ public final class AnswerBoundaryNoteComposer {
             sb.append("「").append(names.get(i)).append("」");
         }
         return sb.toString();
+    }
+
+    private static String refineInventoryCoverDaysBoundaryNote(
+            AiResolvedQueryContext ctx, String rawNote) {
+        boolean scopeInherited = "INHERITED_PREVIOUS".equals(ctx.getEffectiveScopeSource());
+        boolean explicitBaseline = DishIngredientCoverSalesBaselineSupport.isExplicitSalesBaseline(ctx);
+        String baselinePhrase =
+                explicitBaseline
+                        ? "销量基线按"
+                                + CoverDaysSalesBaselinePresentationSupport.formatPeriodPhraseFromContext(ctx)
+                        : "销量基线按最近7天";
+        String core = "当前库存 + " + baselinePhrase;
+        if (scopeInherited) {
+            String storeHint =
+                    AiMultiTurnOrgScopePolicy.singleVisibleStoreName(ctx.getOrgScope())
+                            .orElse("上文门店");
+            return "门店沿用上文「" + storeHint + "」；" + core + "。若需调整请直接说明。";
+        }
+        if (explicitBaseline) {
+            return core + "。若需调整请直接说明。";
+        }
+        if (!StringUtils.hasText(rawNote)) {
+            return null;
+        }
+        if ("INHERITED_PREVIOUS".equals(ctx.getEffectiveTimeWindowSource())
+                || "DEFAULT_MONTH_TO_DATE".equals(ctx.getEffectiveTimeWindowSource())) {
+            return null;
+        }
+        return rawNote;
+    }
+
+    /** warehouse.near_expiry：CURRENT_SNAPSHOT，boundary 不展示期间/继承时间。 */
+    private static String refineWarehouseNearExpiryBoundaryNote(
+            AiResolvedQueryContext ctx, String rawNote) {
+        return refineWarehouseCurrentSnapshotBoundaryNote(ctx);
+    }
+
+    /** warehouse.inventory_supervision：CURRENT_SNAPSHOT，boundary 不展示期间/继承时间。 */
+    private static String refineWarehouseInventorySupervisionBoundaryNote(
+            AiResolvedQueryContext ctx, String rawNote) {
+        return refineWarehouseCurrentSnapshotBoundaryNote(ctx);
+    }
+
+    private static String refineWarehouseCurrentSnapshotBoundaryNote(AiResolvedQueryContext ctx) {
+        boolean scopeInherited = "INHERITED_PREVIOUS".equals(ctx.getEffectiveScopeSource());
+        if (scopeInherited) {
+            String storeHint =
+                    AiMultiTurnOrgScopePolicy.singleVisibleStoreName(ctx.getOrgScope())
+                            .orElse("上文门店");
+            return "门店沿用上文「" + storeHint + "」；当前库存（截至当前）。若需调整请直接说明。";
+        }
+        return null;
     }
 
     private static String explicitTimePhraseForBoundary(AiResolvedQueryContext ctx, AiResolvedTimeWindow tw) {

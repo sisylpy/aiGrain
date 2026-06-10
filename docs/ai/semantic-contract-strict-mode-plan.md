@@ -1,6 +1,10 @@
 # Semantic Contract Strict Mode Plan
 
-> P2.6 前置设计：**strict 仍未开启**；主链 `SemanticContractValidator` 保持 **observe-only**。  
+> **状态：Partial / Historical Planning**
+> 本文是 strict-mode 切换规划与违例码边界说明，保留为设计背景。文中 “strict 仍未开启 / Validator observe-only 当前状态” 不得单独作为当前运行事实依据。当前合同主链以 `.cursor/rules/harness-java-boundary.md`、`docs/ai/contract-entry-validation-p2-summary.md`、`docs/AI_MAINLINE_INDEX.md` 与代码事实为准。
+> **不得**用本文恢复 Matrix 推 wire、slot merge 改合同、alias、fallback 或 Completion 后 Java 后置切换合同。后置合同/实体/槽位冲突只能澄清、失败或 known gap。
+
+> P2.6 前置设计：**strict 仍未开启**；主链 `SemanticContractValidator` 保持 **observe-only**。
 > 本文描述 P3/P4 切换 strict 时的边界、拦截条件与澄清策略。
 
 ---

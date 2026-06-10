@@ -5,7 +5,11 @@ import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeDishIngredientCoverDaysSupport;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeFollowUpIntent;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeFollowUpKind;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeGoodsSupportedDishCoverSupport;
 import com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport;
+import com.nongxinle.ai.inventory.WarehouseNearExpiryRiskFilterSupport;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeNormalizationType;
 import com.nongxinle.ai.semantic.intake.SemanticIntakePrimaryDomain;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeQuestionMode;
@@ -69,7 +73,12 @@ public final class LlmSemanticIntakeJsonParser {
         String reason = trimToNull(o.getStr("reason"));
         String warehouseSemanticsNormalized = null;
         if (SemanticIntakeDishIngredientCoverDaysSupport.rawWarehouseSemanticsDeclaresDishCoverMislabel(
-                warehouseSemanticsRaw)) {
+                        warehouseSemanticsRaw)
+                && !SemanticIntakeGoodsSupportedDishCoverSupport.reasonDeclaresGoodsSupportedDishCover(
+                        reason)
+                && !hasCoverDaysEntityFields(o)
+                && !SemanticIntakePrimaryDomain.WAREHOUSE.equals(
+                        SemanticIntakePrimaryDomain.normalize(trimToNull(o.getStr("primaryDomain"))))) {
             reason = SemanticIntakeDishIngredientCoverDaysSupport.appendDishCoverReasonMarker(reason);
             warehouseSemanticsNormalized = warehouseSemanticsRaw;
         } else if (StringUtils.hasText(warehouseSemanticsRaw)) {
@@ -92,8 +101,38 @@ public final class LlmSemanticIntakeJsonParser {
                 .clarificationQuestion(trimToNull(o.getStr("clarificationQuestion")))
                 .reason(reason)
                 .warehouseInventorySemantics(warehouseSemanticsNormalized)
+                .expiryRiskFilter(
+                        WarehouseNearExpiryRiskFilterSupport.normalizeFilter(
+                                trimToNull(o.getStr("expiryRiskFilter"))))
+                .coverDaysEntityType(trimToNull(o.getStr("coverDaysEntityType")))
+                .coverDaysEntityName(trimToNull(o.getStr("coverDaysEntityName")))
+                .followUpIntent(parseFollowUpIntent(o.getJSONObject("followUpIntent")))
+                .contextRelation(trimToNull(o.getStr("contextRelation")))
                 .subQuestions(subQuestions)
                 .build();
+    }
+
+    private static SemanticIntakeFollowUpIntent parseFollowUpIntent(JSONObject fi) {
+        if (fi == null || fi.isEmpty()) {
+            return null;
+        }
+        SemanticIntakeFollowUpKind kind =
+                SemanticIntakeFollowUpKind.normalize(trimToNull(fi.getStr("kind")));
+        if (kind == SemanticIntakeFollowUpKind.NONE) {
+            return null;
+        }
+        return SemanticIntakeFollowUpIntent.builder()
+                .kind(kind)
+                .targetContractId(trimToNull(fi.getStr("targetContractId")))
+                .targetStructuredIntentDetailWire(trimToNull(fi.getStr("targetStructuredIntentDetailWire")))
+                .anchorPolicy(trimToNull(fi.getStr("anchorPolicy")))
+                .build();
+    }
+
+    private static boolean hasCoverDaysEntityFields(JSONObject o) {
+        return o != null
+                && (StringUtils.hasText(trimToNull(o.getStr("coverDaysEntityType")))
+                        || StringUtils.hasText(trimToNull(o.getStr("coverDaysEntityName"))));
     }
 
     /**

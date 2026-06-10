@@ -39,7 +39,9 @@ public class GbDepartmentGoodsStockReduceCostQueryServiceImpl implements GbDepar
         double produce = GbDepartmentGoodsStockReduceSupport.toDouble(totals.get("produceTotal"));
         double waste = GbDepartmentGoodsStockReduceSupport.toDouble(totals.get("wasteTotal"));
         double loss = GbDepartmentGoodsStockReduceSupport.toDouble(totals.get("lossTotal"));
-        double all = produce + loss + waste;
+        double employeeMeal = GbDepartmentGoodsStockReduceSupport.toDouble(
+                totals.get(GbDepartmentGoodsStockReduceSupport.KEY_EMPLOYEE_MEAL_TOTAL));
+        double all = produce + loss + waste + employeeMeal;
 
         Map<String, Object> countMap = new HashMap<>(map0);
         countMap.remove("types");
@@ -49,15 +51,20 @@ public class GbDepartmentGoodsStockReduceCostQueryServiceImpl implements GbDepar
         Integer lossCount = gbDepartmentGoodsStockReduceService.queryReduceDistinctGoodsCount(countMap);
         countMap.put("type", GbConstants.StockReduceType.WASTE);
         Integer wasteCount = gbDepartmentGoodsStockReduceService.queryReduceDistinctGoodsCount(countMap);
+        countMap.put("type", GbConstants.StockReduceType.EMPLOYEE_MEAL);
+        Integer employeeMealCount = gbDepartmentGoodsStockReduceService.queryReduceDistinctGoodsCount(countMap);
 
         Map<String, Object> mapR = new HashMap<>();
-        mapR.put("allTotal", BigDecimal.valueOf(all).setScale(1, RoundingMode.HALF_UP));
-        mapR.put("salesTotal", BigDecimal.valueOf(produce).setScale(1, RoundingMode.HALF_UP));
-        mapR.put("lossTotal", BigDecimal.valueOf(loss).setScale(1, RoundingMode.HALF_UP));
-        mapR.put("wasteTotal", BigDecimal.valueOf(waste).setScale(1, RoundingMode.HALF_UP));
+        mapR.put("allTotal", BigDecimal.valueOf(all).setScale(2, RoundingMode.HALF_UP));
+        System.out.println("saleTotalproduce" + produce);
+        mapR.put("salesTotal", BigDecimal.valueOf(produce).setScale(2, RoundingMode.HALF_UP));
+        mapR.put("lossTotal", BigDecimal.valueOf(loss).setScale(2, RoundingMode.HALF_UP));
+        mapR.put("wasteTotal", BigDecimal.valueOf(waste).setScale(2, RoundingMode.HALF_UP));
+        mapR.put("employeeMealTotal", BigDecimal.valueOf(employeeMeal).setScale(2, RoundingMode.HALF_UP));
         mapR.put("produceCount", produceCount != null ? produceCount : 0);
         mapR.put("lossCount", lossCount != null ? lossCount : 0);
         mapR.put("wasteCount", wasteCount != null ? wasteCount : 0);
+        mapR.put("employeeMealCount", employeeMealCount != null ? employeeMealCount : 0);
         return mapR;
     }
 
@@ -89,6 +96,10 @@ public class GbDepartmentGoodsStockReduceCostQueryServiceImpl implements GbDepar
             case "waste":
                 orderType = "waste";
                 reduceTypeFilter = GbConstants.StockReduceType.WASTE;
+                break;
+            case "employeeMeal":
+                orderType = "employeeMeal";
+                reduceTypeFilter = GbConstants.StockReduceType.EMPLOYEE_MEAL;
                 break;
             default:
                 orderType = "cost";

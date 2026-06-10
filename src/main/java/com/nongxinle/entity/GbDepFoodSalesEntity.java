@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 
 
 @Data
@@ -28,6 +29,14 @@ public class GbDepFoodSalesEntity implements Serializable {
 	private String gbDfsYear;
 	private String gbDfsSubtotal;
 	private Integer gbDfsDistributerId;
+	/** 消费类型：1正常 2折扣 3会员 4赠送 5员工餐 */
+	private Integer gbDfsType;
+	/** 标价快照（元/份） */
+	private BigDecimal gbDfsOriginalUnitPrice;
+	/** 实际成交价（元/份） */
+	private BigDecimal gbDfsActualUnitPrice;
+	/** 折扣率（展示用） */
+	private BigDecimal gbDfsDiscountRate;
 
 	/**
 	 *  星期几

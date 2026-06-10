@@ -14,6 +14,7 @@ import com.nongxinle.ai.util.AiTimeWindowTextFormatter;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Locale;
 import java.util.Map;
 
@@ -32,7 +33,9 @@ public final class InventoryPresentationTimeSupport {
             case WarehouseAnswerPlan.TYPE_WAREHOUSE_STOCK_OVERVIEW,
                     WarehouseAnswerPlan.TYPE_WAREHOUSE_LOW_STOCK_RISK ->
                     InventoryQueryTimeKind.HYBRID_SNAPSHOT_WITH_PERIOD_BASELINE;
-            case WarehouseAnswerPlan.TYPE_WAREHOUSE_STORE_AMOUNT_RANKING,
+            case WarehouseAnswerPlan.TYPE_WAREHOUSE_INVENTORY_SUPERVISION,
+                    WarehouseAnswerPlan.TYPE_WAREHOUSE_NEAR_EXPIRY_RISK,
+                    WarehouseAnswerPlan.TYPE_WAREHOUSE_STORE_AMOUNT_RANKING,
                     WarehouseAnswerPlan.TYPE_WAREHOUSE_GOODS_AMOUNT_RANKING_HIGH,
                     WarehouseAnswerPlan.TYPE_WAREHOUSE_GOODS_AMOUNT_RANKING_LOW ->
                     InventoryQueryTimeKind.CURRENT_SNAPSHOT;
@@ -45,6 +48,10 @@ public final class InventoryPresentationTimeSupport {
     public static InventoryQueryTimeKind resolveWarehouseToolKind(String toolId) {
         if (AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(toolId)) {
             return InventoryQueryTimeKind.HYBRID_SNAPSHOT_WITH_PERIOD_BASELINE;
+        }
+        if (AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION.equals(toolId)
+                || AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK.equals(toolId)) {
+            return InventoryQueryTimeKind.CURRENT_SNAPSHOT;
         }
         if (AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)) {
             return InventoryQueryTimeKind.HYBRID_SNAPSHOT_WITH_PERIOD_BASELINE;
@@ -64,7 +71,46 @@ public final class InventoryPresentationTimeSupport {
 
     public static InventoryPlanTimeFields buildForWarehousePlan(
             String planType, AiRunState state, AiResolvedQueryContext rq) {
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_NEAR_EXPIRY_RISK.equals(planType)) {
+            return buildForNearExpiryRiskPlan(state, rq);
+        }
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_INVENTORY_SUPERVISION.equals(planType)) {
+            return buildForInventorySupervisionPlan(state, rq);
+        }
         return buildFields(resolveWarehousePlanKind(planType), state, rq);
+    }
+
+    /** warehouse.near_expiry：CURRENT_SNAPSHOT，不继承经营统计月/期间文案。 */
+    public static InventoryPlanTimeFields buildForNearExpiryRiskPlan(
+            AiRunState state, AiResolvedQueryContext rq) {
+        return buildCurrentStockSnapshotPlanFields(state, rq, null);
+    }
+
+    /**
+     * warehouse.inventory_supervision：对用户仅展示当前库存快照；销量基线仅 internalBaselineLabel（debug）。
+     */
+    public static InventoryPlanTimeFields buildForInventorySupervisionPlan(
+            AiRunState state, AiResolvedQueryContext rq) {
+        DishIngredientCoverSalesBaseline baseline = DishIngredientCoverSalesBaselineSupport.resolve(state, rq);
+        String internalBaseline =
+                baseline != null && StringUtils.hasText(baseline.getDisplayLabel())
+                        ? baseline.getDisplayLabel().trim()
+                        : null;
+        return buildCurrentStockSnapshotPlanFields(state, rq, internalBaseline);
+    }
+
+    private static InventoryPlanTimeFields buildCurrentStockSnapshotPlanFields(
+            AiRunState state, AiResolvedQueryContext rq, String internalBaselineLabel) {
+        String asOf = resolveCoverStockSnapshotAsOfDateIso(state, rq);
+        String label = formatStockSnapshotLabel(asOf);
+        return InventoryPlanTimeFields.builder()
+                .inventoryQueryTimeKind(InventoryQueryTimeKind.CURRENT_SNAPSHOT)
+                .asOfDate(asOf)
+                .stockSnapshotLabel(label)
+                .periodFlowLabel(null)
+                .internalBaselineLabel(blankToNull(internalBaselineLabel))
+                .timeLabel(label)
+                .build();
     }
 
     public static InventoryPlanTimeFields buildForGoodsSupportedDishCover(
@@ -72,10 +118,10 @@ public final class InventoryPresentationTimeSupport {
         DishIngredientCoverSalesBaseline baseline = DishIngredientCoverSalesBaselineSupport.resolve(state, rq);
         return InventoryPlanTimeFields.builder()
                 .inventoryQueryTimeKind(InventoryQueryTimeKind.HYBRID_SNAPSHOT_WITH_PERIOD_BASELINE)
-                .asOfDate(resolveAsOfDateIso(state, rq))
-                .stockSnapshotLabel(formatStockSnapshotLabel(resolveAsOfDateIso(state, rq)))
+                .asOfDate(resolveCoverStockSnapshotAsOfDateIso(state, rq))
+                .stockSnapshotLabel(formatDishCoverStockSnapshotLabel())
                 .periodFlowLabel(blankToNull(baseline.getDisplayLabel()))
-                .timeLabel(formatStockSnapshotLabel(resolveAsOfDateIso(state, rq)))
+                .timeLabel(formatDishCoverStockSnapshotLabel())
                 .build();
     }
 
@@ -83,7 +129,7 @@ public final class InventoryPresentationTimeSupport {
         DishIngredientCoverSalesBaseline baseline = DishIngredientCoverSalesBaselineSupport.resolve(state, rq);
         return InventoryPlanTimeFields.builder()
                 .inventoryQueryTimeKind(resolveDishIngredientCoverKind())
-                .asOfDate(LocalDate.now().toString())
+                .asOfDate(resolveCoverStockSnapshotAsOfDateIso(state, rq))
                 .stockSnapshotLabel(formatDishCoverStockSnapshotLabel())
                 .periodFlowLabel(blankToNull(baseline.getDisplayLabel()))
                 .timeLabel(formatDishCoverStockSnapshotLabel())
@@ -105,6 +151,45 @@ public final class InventoryPresentationTimeSupport {
                 .periodFlowLabel(blankToNull(periodLabel))
                 .timeLabel(snapshotLabel)
                 .build();
+    }
+
+    /**
+     * 库存快照类「今天」锚点：Resolver {@code today} / Harness {@code frozenClockDate}；
+     * 不读 timeWindow/statEndDate，避免继承上一轮经营统计窗。
+     */
+    public static LocalDate resolveSemanticQueryAnchorDate(AiRunState state, AiResolvedQueryContext rq) {
+        AiResolvedQueryContext effective = rq;
+        if (effective == null && state != null) {
+            effective = state.getResolvedQueryContext();
+        }
+        if (effective != null && effective.getQuerySemanticV2InputPreview() != null) {
+            LocalDate fromPreview =
+                    parseIsoDate(effective.getQuerySemanticV2InputPreview().get("today"));
+            if (fromPreview != null) {
+                return fromPreview;
+            }
+        }
+        return LocalDate.now();
+    }
+
+    /** 库存快照类 asOfDate（ISO yyyy-MM-dd）。 */
+    public static String resolveCoverStockSnapshotAsOfDateIso(AiRunState state, AiResolvedQueryContext rq) {
+        if (rq != null && org.springframework.util.StringUtils.hasText(rq.getStockAsOfDate())) {
+            return rq.getStockAsOfDate().trim();
+        }
+        return resolveSemanticQueryAnchorDate(state, rq).toString();
+    }
+
+    public static String resolveStockAsOfDateIsoForWarehouseTool(
+            String toolId, AiRunState state, AiResolvedQueryContext rq) {
+        if (AiBusinessToolIds.WAREHOUSE_GOODS_SUPPORTED_DISH_COVER.equals(toolId)) {
+            return resolveCoverStockSnapshotAsOfDateIso(state, rq);
+        }
+        if (AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK.equals(toolId)
+                || AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION.equals(toolId)) {
+            return resolveCoverStockSnapshotAsOfDateIso(state, rq);
+        }
+        return resolveAsOfDateIso(state, rq);
     }
 
     public static String resolveAsOfDateIso(AiRunState state, AiResolvedQueryContext rq) {
@@ -169,6 +254,7 @@ public final class InventoryPresentationTimeSupport {
                 .asOfDate(fields.getAsOfDate())
                 .stockSnapshotLabel(fields.getStockSnapshotLabel())
                 .periodFlowLabel(fields.getPeriodFlowLabel())
+                .internalBaselineLabel(fields.getInternalBaselineLabel())
                 .timeLabel(fields.getTimeLabel());
     }
 
@@ -185,7 +271,7 @@ public final class InventoryPresentationTimeSupport {
             AiResolvedQueryContext rq,
             DishIngredientCoverSalesBaseline salesBaseline) {
         builder.inventoryQueryTimeKind(resolveDishIngredientCoverKind().name())
-                .asOfDate(LocalDate.now().toString())
+                .asOfDate(resolveCoverStockSnapshotAsOfDateIso(state, rq))
                 .stockSnapshotLabel(formatDishCoverStockSnapshotLabel())
                 .periodFlowLabel(
                         salesBaseline != null && StringUtils.hasText(salesBaseline.getDisplayLabel())
@@ -251,5 +337,20 @@ public final class InventoryPresentationTimeSupport {
 
     private static String blankToNull(String s) {
         return StringUtils.hasText(s) ? s.trim() : null;
+    }
+
+    private static LocalDate parseIsoDate(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        String text = raw.toString().trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(text);
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
     }
 }

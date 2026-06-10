@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.nongxinle.ai.semantic.frame.ContractLockedSemanticFrame;
+import com.nongxinle.ai.semantic.frame.SchemaValidatedSemanticDraft;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -35,7 +37,39 @@ public class AiQuerySemanticParseResult {
         private String endDate;
         private String timeSource;
         private Boolean needInheritFromPrevious;
-        /** LLM 对时间窗如何得出的简短说明（Harness 观测）。 */
+        /** Harness 观测；不参与 Time Layer / Tool 路由。 */
+        private String reason;
+    }
+
+    /**
+     * Cover-days 族销量基线（与 {@link #time} / 库存快照分离）。V2 结构化输出；Java 只读 action/source/起止日。
+     */
+    @Data
+    @Builder(toBuilder = true)
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SalesBaselineWindowPart {
+        /** {@code DEFAULT} | {@code EXPLICIT} */
+        private String action;
+        /** {@code DEFAULT_LAST_7_DAYS} | {@code USER_EXPLICIT_TIME_WINDOW} */
+        private String source;
+        private String startDate;
+        private String endDate;
+        /** 展示用 timeType（如 ROLLING_7 / LAST_MONTH / CUSTOM）；可选。 */
+        private String timeType;
+        /** Harness 观测；不参与路由。 */
+        private String reason;
+    }
+
+    /** Cover-days 族库存快照时点（与销量基线、经营统计 time 分离）。 */
+    @Data
+    @Builder(toBuilder = true)
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class StockSnapshotPart {
+        /** ISO yyyy-MM-dd；缺省由执行层锚定 today。 */
+        private String asOfDate;
+        /** Harness 观测；不参与路由。 */
         private String reason;
     }
 
@@ -138,6 +172,15 @@ public class AiQuerySemanticParseResult {
          * 用户显式给出的目标毛利率（百分数，如 "55"）；仅 LLM 输出，Java 不得从原文 parse。
          */
         private String requestedTargetGrossMarginRate;
+        /**
+         * warehouse.near_expiry 风险子意图：{@code NEAR_EXPIRY} / {@code EXPIRED} / {@code DUE_TODAY} / {@code ALL_RISK}。
+         */
+        private String expiryRiskFilter;
+        /**
+         * 用户是否已明确指定当前 capability 子类型：{@code EXPLICIT} | {@code UNSPECIFIED}。
+         * 采购异常等多子合同族由 V2 输出；Java 只校验与 {@code selectedContractId} 一致。
+         */
+        private String capabilitySpecificity;
 
         /** 拷贝全部槽位字段（含 {@code mentionedDishName} / {@code mentionedGoodsName}）；normalizer / contract completion 复用。 */
         public static SemanticSlotsPart copyOf(SemanticSlotsPart from) {
@@ -157,6 +200,8 @@ public class AiQuerySemanticParseResult {
                     .mentionedDishName(from.getMentionedDishName())
                     .mentionedGoodsName(from.getMentionedGoodsName())
                     .requestedTargetGrossMarginRate(from.getRequestedTargetGrossMarginRate())
+                    .expiryRiskFilter(from.getExpiryRiskFilter())
+                    .capabilitySpecificity(from.getCapabilitySpecificity())
                     .build();
         }
     }
@@ -182,6 +227,16 @@ public class AiQuerySemanticParseResult {
     private TimePart time;
     private RequestedScopePart requestedScope;
     private MetricPart metric;
+
+    /** Cover-days 族：结构化销量基线（SSOT）；与 {@link #time} 分离。 */
+    private SalesBaselineWindowPart salesBaselineWindow;
+    /** Cover-days 族：结构化库存快照 as-of（SSOT）。 */
+    private StockSnapshotPart stockSnapshot;
+
+    /** V2 raw JSON 经 schema/协议适配后的结构化草稿；旧 flat 字段仅为兼容投影。 */
+    private SchemaValidatedSemanticDraft semanticDraft;
+    /** Contract Completion 成功后的不可变语义帧；Planner / ToolRequest 的语义 SSOT。 */
+    private ContractLockedSemanticFrame contractLockedFrame;
 
     /** 可选；与 {@link #metric} 并存时以槽位与 metric 互校准 {@code purchaseSourceType}。 */
     private SemanticSlotsPart semanticSlots;
@@ -350,6 +405,68 @@ public class AiQuerySemanticParseResult {
             return ss.getMentionedGoodsName().trim();
         }
         return null;
+    }
+
+    /**
+     * Legacy bridge getter：cover-days 新代码应读 {@link #effectiveSalesBaselineWindow()}。
+     * Parser 后该值从 Draft 投影，避免旧 flat 字段成为独立 SSOT。
+     */
+    public SalesBaselineWindowPart getSalesBaselineWindow() {
+        if (semanticDraftDeclares("domainExtensions.salesBaselineWindow")) {
+            return semanticDraft != null ? semanticDraft.salesBaselineWindow() : null;
+        }
+        return salesBaselineWindow;
+    }
+
+    /**
+     * Legacy bridge getter：cover-days 新代码应读 {@link #effectiveStockSnapshot()}。
+     * Parser 后该值从 Draft 投影，避免旧 flat 字段成为独立 SSOT。
+     */
+    public StockSnapshotPart getStockSnapshot() {
+        if (semanticDraftDeclares("domainExtensions.stockSnapshot")) {
+            return semanticDraft != null ? semanticDraft.stockSnapshot() : null;
+        }
+        return stockSnapshot;
+    }
+
+    /** @deprecated cover-days 结构化字段由 SchemaValidatedSemanticDraft 承载，禁止继续写旧 flat 字段。 */
+    @Deprecated
+    public void setSalesBaselineWindow(SalesBaselineWindowPart ignored) {
+        throw new UnsupportedOperationException("salesBaselineWindow is projected from semanticDraft");
+    }
+
+    /** @deprecated cover-days 结构化字段由 SchemaValidatedSemanticDraft 承载，禁止继续写旧 flat 字段。 */
+    @Deprecated
+    public void setStockSnapshot(StockSnapshotPart ignored) {
+        throw new UnsupportedOperationException("stockSnapshot is projected from semanticDraft");
+    }
+
+    /** Cover-days 销量基线：locked frame 优先，其次 draft，最后兼容 flat 字段。 */
+    public SalesBaselineWindowPart effectiveSalesBaselineWindow() {
+        if (contractLockedFrame != null && contractLockedFrame.salesBaselineWindow() != null) {
+            return contractLockedFrame.salesBaselineWindow();
+        }
+        if (semanticDraftDeclares("domainExtensions.salesBaselineWindow")) {
+            return semanticDraft.salesBaselineWindow();
+        }
+        return salesBaselineWindow;
+    }
+
+    /** Cover-days 库存快照：locked frame 优先，其次 draft，最后兼容 flat 字段。 */
+    public StockSnapshotPart effectiveStockSnapshot() {
+        if (contractLockedFrame != null && contractLockedFrame.stockSnapshot() != null) {
+            return contractLockedFrame.stockSnapshot();
+        }
+        if (semanticDraftDeclares("domainExtensions.stockSnapshot")) {
+            return semanticDraft.stockSnapshot();
+        }
+        return stockSnapshot;
+    }
+
+    private boolean semanticDraftDeclares(String fieldPath) {
+        return semanticDraft != null
+                && semanticDraft.getPresence() != null
+                && semanticDraft.getPresence().containsKey(fieldPath);
     }
 
     /** 仅读 semanticSlots.requestedTargetGrossMarginRate；Java 不得从原文 parse。 */

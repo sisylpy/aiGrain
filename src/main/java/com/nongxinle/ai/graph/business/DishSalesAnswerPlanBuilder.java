@@ -8,8 +8,6 @@ import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.DishSalesAnswerPlan;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
-import com.nongxinle.ai.graph.business.execution.EffectiveDishAnchor;
-import com.nongxinle.ai.graph.business.execution.EffectiveDishAnchorSupport;
 import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.matrix.DishSalesSemanticCapabilityMatrix;
@@ -577,23 +575,25 @@ public final class DishSalesAnswerPlanBuilder {
     }
 
     private static String resolveMentionedDishName(AiRunState state, AiResolvedQueryContext rq) {
-        if (rq != null) {
-            EffectiveDishAnchor anchor = EffectiveDishAnchorSupport.resolve(rq);
-            if (StringUtils.hasText(anchor.getDishName())) {
-                return anchor.getDishName().trim();
-            }
-        }
-        Object env = state.getToolResults() == null ? null : state.getToolResults().get(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
+        Map<String, Object> toolData = new LinkedHashMap<>();
+        Object env =
+                state.getToolResults() == null
+                        ? null
+                        : state.getToolResults().get(AiBusinessToolIds.DISH_PROFIT_ANALYSIS);
         if (env instanceof Map<?, ?> tm) {
             Object data = tm.get("data");
             if (data instanceof Map<?, ?> dm) {
                 Object hint = dm.get("dishNameFocusHint");
                 if (hint != null && StringUtils.hasText(hint.toString())) {
-                    return hint.toString().trim();
+                    toolData.put("dishName", hint.toString().trim());
+                }
+                Object dishName = dm.get("dishName");
+                if (dishName != null && StringUtils.hasText(dishName.toString())) {
+                    toolData.put("dishName", dishName.toString().trim());
                 }
             }
         }
-        return null;
+        return DishEntityDisplayNameSupport.resolveDisplayDishName(rq, toolData);
     }
 
     private static void enrichDishSalesMatrixDebug(

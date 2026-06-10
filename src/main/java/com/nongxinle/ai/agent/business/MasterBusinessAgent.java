@@ -476,6 +476,8 @@ public class MasterBusinessAgent {
 
             AgentResultEnvelope env = agent.execute(request);
             envelopes.add(env);
+            com.nongxinle.ai.identity.BusinessEntityIdentityHarnessDebugSupport.mirrorIdentityDebugToHarnessSummary(
+                    dbg, state);
 
             dbg.put("purchaseSelectedAgents", List.of(agent.agentName()));
             dbg.put("purchaseAgentResults", summarizeEnvelopes(envelopes));
@@ -490,7 +492,7 @@ public class MasterBusinessAgent {
                         + "_or_tool_success_" + env.getPurchaseOverviewToolSuccess());
                 dbg.put("legacyPurchaseSkipped", true);
                 dbg.put("purchaseToolExecutedByMasterPath", true);
-                dbg.put("masterPurchaseToolResultKey", AiBusinessToolIds.PURCHASE_OVERVIEW);
+                dbg.put("masterPurchaseToolResultKey", resolveMasterPurchaseToolResultKey(state));
                 dbg.put("masterPurchaseToolResultSuccess", env.getPurchaseOverviewToolSuccess());
                 trace = buildTrace(state, rq, dispatchPlan, envelopes, startedAt, Instant.now(),
                         semanticSummary(rq), resolvedSummary(rq));
@@ -513,7 +515,7 @@ public class MasterBusinessAgent {
             dbg.put("purchaseFallbackReason", null);
             dbg.put("legacyPurchaseSkipped", true);
             dbg.put("purchaseToolExecutedByMasterPath", true);
-            dbg.put("masterPurchaseToolResultKey", AiBusinessToolIds.PURCHASE_OVERVIEW);
+            dbg.put("masterPurchaseToolResultKey", resolveMasterPurchaseToolResultKey(state));
             dbg.put("masterPurchaseToolResultSuccess", env.getPurchaseOverviewToolSuccess());
             Instant finishedAt = Instant.now();
             trace = buildTrace(state, rq, dispatchPlan, envelopes, startedAt, finishedAt,
@@ -536,7 +538,7 @@ public class MasterBusinessAgent {
             dbg.put("purchaseFallbackReason", "master_exception:" + ex.getClass().getSimpleName());
             dbg.put("legacyPurchaseSkipped", true);
             dbg.put("purchaseToolExecutedByMasterPath", true);
-            dbg.put("masterPurchaseToolResultKey", AiBusinessToolIds.PURCHASE_OVERVIEW);
+            dbg.put("masterPurchaseToolResultKey", resolveMasterPurchaseToolResultKey(state));
             dbg.put("masterPurchaseToolResultSuccess", null);
             putSupplierAnalysisHarnessContract(dbg, null);
             dbg.put("purchaseSelectedAgents", List.of(BusinessAgentNames.PURCHASE_OVERVIEW));
@@ -574,7 +576,7 @@ public class MasterBusinessAgent {
         dbg.put("purchaseDegraded", false);
         dbg.put("legacyPurchaseSkipped", true);
         dbg.put("purchaseToolExecutedByMasterPath", true);
-        dbg.put("masterPurchaseToolResultKey", AiBusinessToolIds.PURCHASE_OVERVIEW);
+        dbg.put("masterPurchaseToolResultKey", resolveMasterPurchaseToolResultKey(state));
         dbg.put("masterPurchaseToolResultSuccess", null);
         dbg.put("purchaseDispatchPlan", summarizeDispatchPlan(dispatchPlan));
         Instant finishedAt = Instant.now();
@@ -1166,6 +1168,8 @@ public class MasterBusinessAgent {
         String tool = plan.get(0);
         if (!AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(tool)
                 && !AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(tool)
+                && !AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK.equals(tool)
+                && !AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION.equals(tool)
                 && !AiBusinessToolIds.WAREHOUSE_GOODS_SUPPORTED_DISH_COVER.equals(tool)) {
             return false;
         }
@@ -1422,7 +1426,12 @@ public class MasterBusinessAgent {
             return false;
         }
         List<String> plan = state.getDataPlanTools();
-        if (plan == null || plan.size() != 1 || !AiBusinessToolIds.PURCHASE_OVERVIEW.equals(plan.get(0))) {
+        if (plan == null || plan.size() != 1) {
+            return false;
+        }
+        String tool = plan.get(0);
+        if (!AiBusinessToolIds.PURCHASE_OVERVIEW.equals(tool)
+                && !AiBusinessToolIds.PURCHASE_GOODS_BUSINESS_ANALYSIS.equals(tool)) {
             return false;
         }
         AiResolvedQueryContext rq = state.getResolvedQueryContext();
@@ -1433,6 +1442,17 @@ public class MasterBusinessAgent {
         String ep = rq.getEffectivePathCode();
         return AiResolvedQueryIntent.PURCHASE_OVERVIEW.equals(ei)
                 && AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(ep);
+    }
+
+    private static String resolveMasterPurchaseToolResultKey(AiRunState state) {
+        if (state == null || state.getDataPlanTools() == null || state.getDataPlanTools().isEmpty()) {
+            return AiBusinessToolIds.PURCHASE_OVERVIEW;
+        }
+        String tool = state.getDataPlanTools().get(0);
+        if (AiBusinessToolIds.PURCHASE_GOODS_BUSINESS_ANALYSIS.equals(tool)) {
+            return AiBusinessToolIds.PURCHASE_GOODS_BUSINESS_ANALYSIS;
+        }
+        return AiBusinessToolIds.PURCHASE_OVERVIEW;
     }
 
     private static BusinessAgentDispatchPlan buildPurchaseDispatchPlan() {

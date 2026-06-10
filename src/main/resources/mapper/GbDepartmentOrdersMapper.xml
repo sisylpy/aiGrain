@@ -652,6 +652,12 @@
             <if test="purGoodsId != null">
                 and dor.gb_DO_purchase_goods_id = #{purGoodsId}
             </if>
+            <if test="disGoodsId != null">
+                and dor.gb_DO_dis_goods_id = #{disGoodsId}
+            </if>
+            <if test="status != null">
+                and dor.gb_DO_status &lt; #{status}
+            </if>
         </where>
     </select>
 

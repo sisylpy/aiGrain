@@ -184,6 +184,7 @@ public class DishProfitAnalysisTool implements AiTool {
             data.put("dishProfitStoreCoverage", insight.get("dishProfitStoreCoverage"));
             data.put("scopeOutboundSubtotals", insight.get("scopeOutboundSubtotals"));
             data.put("bossColumnHintsZh", insight.get("bossColumnHintsZh"));
+            data.put("businessInsightSummaryChinese", insight.get("businessInsightSummaryChinese"));
 
             Map<String, Object> bir = new LinkedHashMap<>();
             bir.put("storeRootDepartmentFatherId", depFatherIdInt);

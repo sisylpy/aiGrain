@@ -4,6 +4,9 @@ import com.nongxinle.ai.gateway.LlmGateway;
 import com.nongxinle.ai.prompt.AiPromptIds;
 import com.nongxinle.ai.prompt.AiPromptService;
 import com.nongxinle.ai.semantic.intake.*;
+import com.nongxinle.ai.inventory.WarehouseNearExpiryRiskFilterSupport;
+import com.nongxinle.ai.semantic.intake.grounding.CoverDaysEntityGroundingService;
+import com.nongxinle.ai.semantic.intake.grounding.CoverDaysEntityType;
 import com.nongxinle.ai.semantic.dimension.BareRankingDimensionSwitchSupport;
 import com.nongxinle.ai.semantic.inheritance.StructuredRankingTimeOnlyIntakeSupport;
 import com.nongxinle.ai.semantic.SemanticLlmFailureClassification;
@@ -29,6 +32,7 @@ public class LlmSemanticIntakeParser {
 
     private final LlmGateway llmGateway;
     private final AiPromptService aiPromptService;
+    private final CoverDaysEntityGroundingService coverDaysEntityGroundingService;
 
     @Value("${ai.agent.semanticIntakeLlm.minConfidence:0.55}")
     private double minConfidence;
@@ -97,7 +101,10 @@ public class LlmSemanticIntakeParser {
         if (!LlmSemanticIntakeJsonParser.isValidPrimaryDomain(parsed.getPrimaryDomain())) {
             return invalidFromParsed(parsed, promptId, rawObs, "invalid_primary_domain");
         }
-        if (parsed.getConfidence() == null || parsed.getConfidence() < minConfidence) {
+        boolean deferClarificationToGrounding =
+                CoverDaysEntityGroundingService.signalsCoverDaysParsed(parsed);
+        if (!deferClarificationToGrounding
+                && (parsed.getConfidence() == null || parsed.getConfidence() < minConfidence)) {
             return needClarificationFromParsed(
                     parsed,
                     promptId,
@@ -106,7 +113,9 @@ public class LlmSemanticIntakeParser {
                     firstNonBlank(
                             parsed.getClarificationQuestion(), "能再具体说一下您想问的内容吗？"));
         }
-        if (parsed.isNeedClarification() && StringUtils.hasText(parsed.getClarificationQuestion())) {
+        if (!deferClarificationToGrounding
+                && parsed.isNeedClarification()
+                && StringUtils.hasText(parsed.getClarificationQuestion())) {
             return needClarificationFromParsed(
                     parsed, promptId, rawObs, parsed.getReason(), parsed.getClarificationQuestion().trim());
         }
@@ -132,21 +141,26 @@ public class LlmSemanticIntakeParser {
                     .needClarification(true)
                     .clarificationQuestion(question)
                     .reason(firstNonBlank(parsed.getReason(), "multi_question"))
+                    .contextRelation(contextRelationFromParsed(parsed))
                     .warehouseInventorySemantics(warehouseSemanticsFromParsed(parsed))
-                    .subQuestions(parsed.getSubQuestions())
-                    .promptId(promptId)
-                    .llmRawText(rawObs)
-                    .build();
+                .expiryRiskFilter(parsed.getExpiryRiskFilter())
+                .coverDaysEntityType(coverDaysEntityTypeForIntake(parsed.getCoverDaysEntityType()))
+                .coverDaysEntityName(trimCoverDaysEntityName(parsed.getCoverDaysEntityName()))
+                .subQuestions(parsed.getSubQuestions())
+                .promptId(promptId)
+                .llmRawText(rawObs)
+                .build();
         }
 
         String routeType = parsed.getRouteType().trim().toUpperCase();
         String primary = SemanticIntakePrimaryDomain.normalize(parsed.getPrimaryDomain());
-        if ("AMBIGUOUS".equals(routeType)
-                || "UNKNOWN".equals(routeType)
-                || "MULTI_DOMAIN".equals(routeType)
-                || SemanticIntakePrimaryDomain.MULTI_DOMAIN.equals(primary)
-                || SemanticIntakePrimaryDomain.UNKNOWN.equals(primary)
-                || !SemanticIntakePrimaryDomain.isExecutable(primary)) {
+        if (!deferClarificationToGrounding
+                && ("AMBIGUOUS".equals(routeType)
+                        || "UNKNOWN".equals(routeType)
+                        || "MULTI_DOMAIN".equals(routeType)
+                        || SemanticIntakePrimaryDomain.MULTI_DOMAIN.equals(primary)
+                        || SemanticIntakePrimaryDomain.UNKNOWN.equals(primary)
+                        || !SemanticIntakePrimaryDomain.isExecutable(primary))) {
             String question =
                     StringUtils.hasText(parsed.getClarificationQuestion())
                             ? parsed.getClarificationQuestion().trim()
@@ -155,6 +169,24 @@ public class LlmSemanticIntakeParser {
                     parsed, promptId, rawObs, firstNonBlank(parsed.getReason(), routeType), question);
         }
 
+        if (deferClarificationToGrounding
+                && (!SemanticIntakePrimaryDomain.isExecutable(primary)
+                        || SemanticIntakePrimaryDomain.UNKNOWN.equals(primary)
+                        || SemanticIntakePrimaryDomain.MULTI_DOMAIN.equals(primary))) {
+            primary = SemanticIntakePrimaryDomain.DISH_COST;
+            routeType = "EXPLICIT";
+        }
+
+        return buildReadyIntakeFromParsed(parsed, promptId, rawObs, questionMode, routeType, primary);
+    }
+
+    private SemanticIntakeResult buildReadyIntakeFromParsed(
+            LlmSemanticIntakeParsed parsed,
+            String promptId,
+            String rawObs,
+            SemanticIntakeQuestionMode questionMode,
+            String routeType,
+            String primary) {
         return SemanticIntakeResult.builder()
                 .status(SemanticIntakeStatus.READY)
                 .questionMode(questionMode)
@@ -169,19 +201,32 @@ public class LlmSemanticIntakeParser {
                 .needClarification(false)
                 .clarificationQuestion(null)
                 .reason(parsed.getReason())
+                .contextRelation(contextRelationFromParsed(parsed))
                 .warehouseInventorySemantics(warehouseSemanticsFromParsed(parsed))
+                .expiryRiskFilter(parsed.getExpiryRiskFilter())
+                .coverDaysEntityType(
+                        coverDaysEntityTypeForIntake(parsed.getCoverDaysEntityType()))
+                .coverDaysEntityName(trimCoverDaysEntityName(parsed.getCoverDaysEntityName()))
+                .followUpIntent(
+                        parsed.getFollowUpIntent() != null
+                                ? parsed.getFollowUpIntent()
+                                : SemanticIntakeFollowUpIntentNormalizer.fromParsedJson(parsed))
                 .subQuestions(parsed.getSubQuestions())
                 .promptId(promptId)
                 .llmRawText(rawObs)
                 .build();
     }
 
-    private static String warehouseSemanticsFromParsed(LlmSemanticIntakeParsed parsed) {
-        if (parsed == null) {
-            return null;
+    private static String coverDaysEntityTypeForIntake(String rawType) {
+        if (!StringUtils.hasText(rawType)) {
+            return CoverDaysEntityType.UNKNOWN;
         }
-        return WarehouseInventoryShortageSemanticsSupport.normalizeSemantics(
-                parsed.getWarehouseInventorySemantics());
+        String normalized = CoverDaysEntityType.normalize(rawType);
+        return normalized != null ? normalized : CoverDaysEntityType.UNKNOWN;
+    }
+
+    private static String warehouseSemanticsFromParsed(LlmSemanticIntakeParsed parsed) {
+        return WarehouseInventoryShortageSemanticsSupport.resolveEffectiveSemanticsFromParsed(parsed);
     }
 
     private static SemanticIntakeResult invalidFromParsed(
@@ -200,6 +245,7 @@ public class LlmSemanticIntakeParser {
                 .confidence(parsed.getConfidence())
                 .needClarification(false)
                 .reason(reason)
+                .contextRelation(contextRelationFromParsed(parsed))
                 .subQuestions(parsed.getSubQuestions())
                 .promptId(promptId)
                 .llmRawText(rawObs)
@@ -232,7 +278,11 @@ public class LlmSemanticIntakeParser {
                 .needClarification(true)
                 .clarificationQuestion(clarificationQuestion)
                 .reason(reason)
+                .contextRelation(contextRelationFromParsed(parsed))
                 .warehouseInventorySemantics(warehouseSemanticsFromParsed(parsed))
+                .expiryRiskFilter(parsed.getExpiryRiskFilter())
+                .coverDaysEntityType(coverDaysEntityTypeForIntake(parsed.getCoverDaysEntityType()))
+                .coverDaysEntityName(trimCoverDaysEntityName(parsed.getCoverDaysEntityName()))
                 .subQuestions(parsed.getSubQuestions())
                 .promptId(promptId)
                 .llmRawText(rawObs)
@@ -286,6 +336,7 @@ public class LlmSemanticIntakeParser {
     static List<String> collectEnumErrors(LlmSemanticIntakeParsed parsed, SemanticIntakeInput input) {
         List<String> errors = new ArrayList<>();
         collectEnumFieldErrors(parsed, errors);
+        SemanticIntakeContextRelationSupport.collectContextRelationProtocolErrors(parsed, errors);
         collectDimensionSwitchReasonProtocolErrors(parsed, errors);
         collectDishSalesBossShortPhraseProtocolErrors(parsed, errors);
         collectBareRankingDimensionSwitchIntakeProtocolErrors(parsed, input, errors);
@@ -294,6 +345,11 @@ public class LlmSemanticIntakeParser {
                 parsed, errors);
         SemanticIntakeGoodsSupportedDishCoverSupport.collectGoodsSupportedDishCoverProtocolErrors(
                 parsed, errors);
+        SemanticIntakeGoodsStockBatchDetailSupport.collectGoodsStockBatchDetailProtocolErrors(
+                parsed, errors);
+        SemanticIntakeGoodsAnchorInventoryBundleSupport.collectGoodsAnchorInventoryBundleProtocolErrors(
+                parsed, errors);
+        CoverDaysEntityGroundingService.collectCoverDaysEntityProtocolErrors(parsed, errors);
         collectWarehouseInventoryShortageProtocolErrors(parsed, errors);
         return errors;
     }
@@ -312,13 +368,33 @@ public class LlmSemanticIntakeParser {
         if (SemanticIntakeGoodsSupportedDishCoverSupport.parsedDeclaresGoodsSupportedDishCover(parsed)) {
             return;
         }
+        if (SemanticIntakeGoodsAnchorInventoryBundleSupport.parsedDeclaresGoodsAnchorInventoryBundle(
+                parsed)) {
+            return;
+        }
+        if (SemanticIntakeGoodsStockBatchDetailSupport.parsedDeclaresGoodsStockBatchDetail(parsed)) {
+            return;
+        }
+        if (WarehouseInventorySupervisionSemanticsSupport.parsedDeclaresSupervision(parsed)) {
+            if (StringUtils.hasText(parsed.getWarehouseInventorySemantics())
+                    && WarehouseInventorySupervisionSemanticsSupport.normalizeSemantics(
+                                    parsed.getWarehouseInventorySemantics())
+                            == null) {
+                errors.add(
+                        "warehouseInventorySemantics: got \""
+                                + parsed.getWarehouseInventorySemantics().trim()
+                                + "\", allowed SUPERVISION_QUERY (aliases INVENTORY_STATUS/CURRENT_STATUS/"
+                                + "STOCK_HEALTH_OVERVIEW normalize to SUPERVISION_QUERY) for §13e");
+            }
+            return;
+        }
         if (WarehouseInventoryShortageSemanticsSupport.normalizeSemantics(
                         parsed.getWarehouseInventorySemantics())
                 == null) {
             errors.add(
                     "warehouseInventorySemantics: got \""
                             + parsed.getWarehouseInventorySemantics().trim()
-                            + "\", allowed UNDERSTOCK_QUERY, OUT_OF_STOCK, NEAR_EXPIRY, "
+                            + "\", allowed UNDERSTOCK_QUERY, OUT_OF_STOCK, NEAR_EXPIRY, SUPERVISION_QUERY, "
                             + "EXPLICIT_AMOUNT_RANKING_LOW, INVENTORY_AMOUNT_LOW (§13d); "
                             + "dish cover days use DISH_COST + reason=dish_ingredient_cover_days (§34a)");
         }
@@ -359,6 +435,18 @@ public class LlmSemanticIntakeParser {
             return;
         }
         if (!WarehouseInventoryShortageSemanticsSupport.parsedDeclaresInventoryRisk(parsed)) {
+            if (WarehouseInventorySupervisionSemanticsSupport.parsedDeclaresSupervision(parsed)) {
+                if ("PURCHASE".equals(parsed.getPrimaryDomain())) {
+                    errors.add(
+                            "warehouse_inventory_supervision: inventory supervision must "
+                                    + "primaryDomain=WAREHOUSE, never PURCHASE (§13e)");
+                }
+                if ("WAREHOUSE".equals(parsed.getPrimaryDomain()) && parsed.isNeedClarification()) {
+                    errors.add(
+                            "warehouse_inventory_supervision: must needClarification=false "
+                                    + "and route to warehouse.inventory_supervision.v1 (§13e)");
+                }
+            }
             return;
         }
         if ("PURCHASE".equals(parsed.getPrimaryDomain())) {
@@ -367,12 +455,19 @@ public class LlmSemanticIntakeParser {
                             + "primaryDomain=WAREHOUSE, never PURCHASE (§13b)");
         }
         String riskSemantics =
-                WarehouseInventoryShortageSemanticsSupport.normalizeSemantics(semanticsRaw);
+                WarehouseInventoryShortageSemanticsSupport.resolveEffectiveSemanticsFromParsed(parsed);
         if (WarehouseInventoryShortageSemanticsSupport.SEMANTICS_NEAR_EXPIRY.equals(riskSemantics)) {
-            if ("WAREHOUSE".equals(parsed.getPrimaryDomain()) && !parsed.isNeedClarification()) {
+            if ("WAREHOUSE".equals(parsed.getPrimaryDomain()) && parsed.isNeedClarification()) {
                 errors.add(
-                        "warehouse_inventory_near_expiry: must needClarification=true; "
-                                + "near_expiry not in P1 ACTIVE (§13a)");
+                        "warehouse_inventory_near_expiry: must needClarification=false "
+                                + "and route to warehouse.near_expiry (§13a)");
+            }
+            if (StringUtils.hasText(parsed.getExpiryRiskFilter())
+                    && !WarehouseNearExpiryRiskFilterSupport.isKnownFilter(
+                            parsed.getExpiryRiskFilter())) {
+                errors.add(
+                        "expiryRiskFilter: invalid for NEAR_EXPIRY; allowed NEAR_EXPIRY, EXPIRED, "
+                                + "DUE_TODAY, ALL_RISK (§13a)");
             }
             return;
         }
@@ -383,14 +478,34 @@ public class LlmSemanticIntakeParser {
         }
     }
 
-    private static SemanticIntakeResult applyIntakeReconcilers(
+    private SemanticIntakeResult applyIntakeReconcilers(
             SemanticIntakeInput input, SemanticIntakeResult mapped) {
-        mapped = SemanticIntakeDishIngredientCoverDaysSupport.reconcile(input, mapped);
+        mapped = SemanticIntakeGoodsStockBatchDetailSupport.reconcile(input, mapped);
+        mapped = SemanticIntakeGoodsAnchorInventoryBundleSupport.reconcile(input, mapped);
+        mapped = SemanticIntakeGoodsSupportedDishCoverSupport.reconcile(input, mapped);
+        mapped = coverDaysEntityGroundingService.reconcileIntake(input, mapped);
         mapped = SemanticIntakeGoodsAnchorFollowUpSupport.reconcile(input, mapped);
+        mapped = SemanticIntakeDishIngredientCoverDaysSupport.reconcile(input, mapped);
         mapped = SemanticIntakeDishFollowUpInheritanceSupport.reconcile(input, mapped);
         mapped = SemanticIntakeMultiDishRankingSupport.reconcileExplicitMultiDishRankingDomain(input, mapped);
         mapped = BareRankingDimensionSwitchSupport.reconcileIntakeDomain(input, mapped);
-        return WarehouseInventoryShortageSemanticsSupport.reconcileIntake(input, mapped);
+        mapped = WarehouseInventorySupervisionSemanticsSupport.reconcileIntake(input, mapped);
+        mapped = WarehouseInventoryShortageSemanticsSupport.reconcileIntake(input, mapped);
+        return SemanticIntakeFollowUpIntentNormalizer.reconcile(input, mapped);
+    }
+
+    private static String trimCoverDaysEntityName(String name) {
+        if (!StringUtils.hasText(name)) {
+            return null;
+        }
+        return name.trim();
+    }
+
+    private static String contextRelationFromParsed(LlmSemanticIntakeParsed parsed) {
+        if (parsed == null) {
+            return null;
+        }
+        return SemanticIntakeContextRelation.normalize(parsed.getContextRelation());
     }
 
     private static void collectEnumFieldErrors(LlmSemanticIntakeParsed parsed, List<String> errors) {
@@ -702,6 +817,7 @@ public class LlmSemanticIntakeParser {
                 .confidence(originalParsed.getConfidence())
                 .needClarification(false)
                 .reason(reasonCode)
+                .contextRelation(contextRelationFromParsed(originalParsed))
                 .subQuestions(originalParsed.getSubQuestions())
                 .promptId(promptId)
                 .llmRawText(rawObs)

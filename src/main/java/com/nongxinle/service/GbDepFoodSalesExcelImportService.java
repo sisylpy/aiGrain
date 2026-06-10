@@ -1,6 +1,9 @@
 package com.nongxinle.service;
 
 import com.nongxinle.dto.GbDepFoodDailySalesSubmitRequest;
+import com.nongxinle.dto.GbDepFoodDishDailySalesBatchSaveRequest;
+import com.nongxinle.dto.GbDepFoodDishDailySalesRangeQueryRequest;
+import com.nongxinle.dto.GbDepFoodDishSalesLineRequest;
 import com.nongxinle.entity.GbDepartmentEntity;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -33,11 +36,32 @@ public interface GbDepFoodSalesExcelImportService {
      * 查询某日（默认中国时区当天）菜品销售行 + 同日 {@code gb_ai_daily_revenue} 非堂食等字段，
      * 返回体可直接作为 {@link #submitDailyFoodSalesAndRevenue} / {@link #updateDailyFoodSalesAndRevenue} 编辑回传的参考结构。
      */
-    Map<String, Object> getDailyFoodSalesAndRevenue(Integer depFatherId, Integer distributerId, String recordDate,
-            Integer subDepId);
+    Map<String, Object> getDailyFoodSalesAndRevenue(Integer depFatherId, Integer distributerId, String recordDate);
 
     /** 覆盖/更新某日销售与营业额指标：与 {@link #submitDailyFoodSalesAndRevenue} 同一套写入逻辑。 */
     Map<String, Object> updateDailyFoodSalesAndRevenue(GbDepFoodDailySalesSubmitRequest request);
+
+    /**
+     * 单条菜品销量 upsert：不删除当日其它行。默认 {@code quantityMode=ADD} 累加份数；
+     * type 1～5 均支持；经营型同步 {@code gb_ai_daily_revenue}。
+     */
+    Map<String, Object> upsertDishSalesLine(GbDepFoodDishSalesLineRequest request);
+
+    /**
+     * 删除单条 {@code (depId, foodId, recordDate, type)} 菜品销量及配料明细；
+     * 若删除的是经营型销量，同步重算堂食。
+     */
+    Map<String, Object> deleteDishSalesLine(GbDepFoodDishSalesLineRequest request);
+
+    /**
+     * 单菜日期区间内每日五类销量明细 + 区间汇总（菜品每日销量页）。
+     */
+    Map<String, Object> getDishDailySalesRange(GbDepFoodDishDailySalesRangeQueryRequest request);
+
+    /**
+     * 单菜单日五类销量批量保存：按 type 分别 upsert，份数为 0 时删除；复用 {@code GbDepFoodSalesWriteSupport} 与堂食同步。
+     */
+    Map<String, Object> saveDishDailySalesBatch(GbDepFoodDishDailySalesBatchSaveRequest request);
 
     /**
      * 从上传的 Excel 完整处理：校验文件、部门、解析表格并调用 {@link #importFoodSales}。
@@ -51,5 +75,13 @@ public interface GbDepFoodSalesExcelImportService {
      */
     Map<String, Object> importFoodSalesFromExcelMultipart(MultipartFile file, Integer departmentId, Integer distributerId,
             int sheetIndex, boolean allowEmptyFoodSheet)
+            throws IOException;
+
+    /**
+     * 合并模板「打折菜品销售」Sheet：写入 type=2/5 销量；经营型（折扣）同步堂食营业额。
+     * {@code sheetIndex} 为 -1 或 Sheet 无有效行且 {@code allowEmptyDiscountSheet} 为 true 时跳过。
+     */
+    Map<String, Object> importDiscountFoodSalesFromCombinedSheet(MultipartFile file, Integer departmentId,
+            Integer distributerId, int sheetIndex, boolean allowEmptyDiscountSheet)
             throws IOException;
 }

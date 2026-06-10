@@ -81,7 +81,7 @@ final class SemanticCapabilityContractMatcher {
         if (!metricMatches(contract.getMetrics(), slots.metric())) {
             return false;
         }
-        if (!sourceFacetMatches(contract.getSourceFacet(), slots.sourceFacet())) {
+        if (!sourceFacetMatches(contract, slots.sourceFacet())) {
             return false;
         }
         if (!detailWantedMatches(contract.getDetailWanted(), slots.detailWanted())) {
@@ -112,7 +112,8 @@ final class SemanticCapabilityContractMatcher {
                 && !StringUtils.hasText(slots.metric())) {
             missing.add("metric");
         }
-        if (StringUtils.hasText(contract.getSourceFacet()) && !StringUtils.hasText(slots.sourceFacet())) {
+        if (ContractSourceFacetSupport.requiresExplicitSourceFacet(contract)
+                && !StringUtils.hasText(slots.sourceFacet())) {
             missing.add("sourceFacet");
         }
         if (StringUtils.hasText(contract.getDetailWanted()) && !StringUtils.hasText(slots.detailWanted())) {
@@ -164,14 +165,8 @@ final class SemanticCapabilityContractMatcher {
         return false;
     }
 
-    private static boolean sourceFacetMatches(String contractFacet, String slotFacet) {
-        if (!StringUtils.hasText(contractFacet)) {
-            return true;
-        }
-        if (!StringUtils.hasText(slotFacet)) {
-            return false;
-        }
-        return normalizeToken(contractFacet).equals(normalizeToken(slotFacet));
+    private static boolean sourceFacetMatches(SemanticCapabilityContract contract, String slotFacet) {
+        return ContractSourceFacetSupport.slotSourceFacetMatches(contract, slotFacet);
     }
 
     private static boolean detailWantedMatches(String contractDetail, String slotDetail) {

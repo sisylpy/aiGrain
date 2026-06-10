@@ -218,7 +218,10 @@ public class AiConversationTurnMemory {
                 .lastMentionedStore(trimSummary(resolveMentionedStoreDisplay(ctx)))
                 .lastMentionedDishName(dishForMemory)
                 .lastHarnessMultiStoreMatchedStores(copyHarnessStoreList(ctx.getHarnessMultiStoreMatchedStores()))
-                .lastResultAnchors(copyAnchorsFromCompletedPlans(state))
+                .lastResultAnchors(TurnMemoryResultAnchorSupport.resolveForTurnMemory(
+                        state,
+                        ctx != null ? ctx.getPreviousTurn() : null,
+                        copyAnchorsFromCompletedPlans(state)))
                 .lastSemanticSlots(lastSlots)
                 .build();
     }
@@ -367,6 +370,7 @@ public class AiConversationTurnMemory {
                 .mentionedDishName(base.getMentionedDishName())
                 .mentionedGoodsName(goodsName.trim())
                 .requestedTargetGrossMarginRate(base.getRequestedTargetGrossMarginRate())
+                .expiryRiskFilter(base.getExpiryRiskFilter())
                 .build();
     }
 

@@ -4421,11 +4421,9 @@ public final class AiHarnessBuiltinCases {
                 List.of("偏少", "风险"),
                 true));
 
-        list.add(warehouseMatrixRound(
+        list.add(warehouseNearExpiryMatrixRound(
                 m0, m1, "GROUP", 2, null,
-                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.NEAR_EXPIRY,
                 List.of("临期"),
-                com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.KNOWN_GAP_NEAR_EXPIRY_NOT_IN_TOOL,
                 true));
 
         list.add(warehouseMatrixRound(
@@ -4619,6 +4617,32 @@ public final class AiHarnessBuiltinCases {
                 com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport
                         .CONTRACT_INVENTORY_RISK_LIST);
         r.getAnswerPreviewMustNotContainAnyOf().add("账面库存金额较低");
+        return r;
+    }
+
+    private static AiHarnessReplayExpectedRound warehouseNearExpiryMatrixRound(
+            String startDate,
+            String endDate,
+            String scopeType,
+            Integer visibleStoreRootCountMin,
+            String mentionedStore,
+            List<String> answerPreviewContainsAnyOf,
+            boolean inheritTime) {
+        AiHarnessReplayExpectedRound r =
+                warehouseMatrixRound(
+                        startDate,
+                        endDate,
+                        scopeType,
+                        visibleStoreRootCountMin,
+                        mentionedStore,
+                        com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix.NEAR_EXPIRY,
+                        answerPreviewContainsAnyOf,
+                        null,
+                        inheritTime,
+                        AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK);
+        r.setSelectedContractIdExpected(
+                com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport
+                        .CONTRACT_NEAR_EXPIRY);
         return r;
     }
 

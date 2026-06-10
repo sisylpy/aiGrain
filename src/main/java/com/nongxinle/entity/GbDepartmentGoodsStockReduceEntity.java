@@ -9,6 +9,7 @@ import lombok.Setter;
 import lombok.ToString;
 
 import java.io.Serializable;
+import java.util.Map;
 
 
 @Setter@Getter@ToString
@@ -56,7 +57,7 @@ public class GbDepartmentGoodsStockReduceEntity implements Serializable {
 	// loss_weight、loss_subtotal、return_weight、return_subtotal、produce_weight、produce_subtotal
 	// 
 	// 现已统一使用 gb_dgsr_weight 和 gb_dgsr_subtotal 字段
-	// 通过 gb_dgsr_type 区分：1=生产耗用；2=废弃；3=损耗（口语常称报损）；4=退货（与 {@link com.nongxinle.utils.GbConstants.StockReduceType} 一致）
+	// 通过 gb_dgsr_type 区分：1=生产耗用；2=废弃；3=损耗（口语常称报损）；4=退货；6=员工餐（与 {@link com.nongxinle.utils.GbConstants.StockReduceType} 一致）
 	// 
 	// 这一变化简化了表结构，提高代码可维护性，避免字段重复冗余
 	// 在业务逻辑中通过type参数区分不同业务场景的重量和金额计算
@@ -78,6 +79,10 @@ public class GbDepartmentGoodsStockReduceEntity implements Serializable {
 	private String gbDgsrReturnWeight;
 	@TableField(exist = false)
 	private String gbDgsrReturnSubtotal;
+	@TableField(exist = false)
+	private String gbDgsrEmployeeMealWeight;
+	@TableField(exist = false)
+	private String gbDgsrEmployeeMealSubtotal;
 
     @TableField(exist = false)
     private GbDepartmentEntity gbDepartmentEntity;
@@ -93,5 +98,9 @@ public class GbDepartmentGoodsStockReduceEntity implements Serializable {
 	private GbDepartmentGoodsStockEntity gbDepartmentGoodsStockEntity;
     @TableField(exist = false)
 	private GbDepartmentGoodsStockRecordEntity gbDepartmentGoodsStockRecordEntity;
+
+    /** 出库对应库存批次的采购来源摘要（采购日、采购员/供货商、采购总量、出库前剩余）。 */
+    @TableField(exist = false)
+    private Map<String, Object> purchaseBatchInfo;
 
 }

@@ -1,5 +1,6 @@
 package com.nongxinle.ai.semantic.intake.llm;
 
+import com.nongxinle.ai.semantic.intake.SemanticIntakeFollowUpIntent;
 import lombok.Builder;
 import lombok.Value;
 
@@ -33,5 +34,14 @@ public class LlmSemanticIntakeParsed {
     String clarificationQuestion;
     String reason;
     String warehouseInventorySemantics;
+    String expiryRiskFilter;
+    String coverDaysEntityType;
+    String coverDaysEntityName;
+    SemanticIntakeFollowUpIntent followUpIntent;
+    /**
+     * 与上一轮的业务上下文关系：{@code NEW_CAPABILITY} / {@code CONTEXT_CONTINUATION}。
+     * Java 仅做枚举与字段一致性校验，不读 {@link #reason}。
+     */
+    String contextRelation;
     List<SemanticIntakeSubQuestion> subQuestions;
 }

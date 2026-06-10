@@ -1,8 +1,14 @@
 # Semantic Allowed Output Contract — Harness Engineering 设计
 
-> **状态**：Router + ContractSelector + v2 parser + ContractValidator（observe-only）已接入主链；`semantic.contract.strict.enabled=false`（默认）；DomainSemanticParser 尚未全量替代 v2。  
-> **日期**：2026-05-22  
-> **目标**：**Domain Routing Contract（Step 1）** + **Domain SemanticCapabilityContract 小合同（Step 2）**，使 LLM 分阶段从已登记能力中选择域与 wire/slots。  
+> **状态：Partial / Historical Design（2026-05-22 早期合同设计）**
+> 本文保留两段式合同设计背景，但其中 “Router + ContractValidator observe-only 当前状态”、旧主链顺序、合同多源问题描述不一定等于当前运行事实。当前实现与修改规则以 `.cursor/rules/harness-java-boundary.md`、`docs/ai/contract-entry-validation-p2-summary.md`、`docs/ai/semantic-inheritance-architecture.md`、`docs/AI_MAINLINE_INDEX.md` 为准。
+> **不得**用本文恢复 alias、contains、Java semantic fallback、slots→wire、LLM wire 主导、V1 或 legacy fallback。
+>
+> **Current 合同主权**：V2 在 `allowedContracts` 内选择 `selectedContractId`；Completion 成功后 canonical wire / `answerPlanType` / `selectedTools` / execution path 来自同一 ACTIVE contract entry。V2 之后 Java 无权重新选择业务合同，后置冲突只能澄清、失败或 known gap。
+
+> **状态**：Router + ContractSelector + v2 parser + ContractValidator（observe-only）已接入主链；`semantic.contract.strict.enabled=false`（默认）；DomainSemanticParser 尚未全量替代 v2。
+> **日期**：2026-05-22
+> **目标**：**Domain Routing Contract（Step 1）** + **Domain SemanticCapabilityContract 小合同（Step 2）**，使 LLM 分阶段从已登记能力中选择域与 wire/slots。
 > **现网规则**：合同外 Parser 输出 → **不 Java 兜底归一、不猜、不补 semantic wire alias** → `model_contract_violation` / `unsupported_wire` / `needClarification`（strict=true 时 enforce 澄清）。
 
 ---
@@ -73,7 +79,7 @@ LLM 输出自造 `structuredIntentDetailWire`，例如：
 
 **P4-A 前**：Java Lexicon switch 曾 silent 映射为 `purchase_source_goods_query`（已删除）。
 
-**P4-A 后**：合同外 wire 不再 silent 归一；Validator 报 `UNSUPPORTED_WIRE`（strict=true → clarification）。  
+**P4-A 后**：合同外 wire 不再 silent 归一；Validator 报 `UNSUPPORTED_WIRE`（strict=true → clarification）。
 registered wire `purchase_source_goods_query` + GOODS 锚槽位形状仍可通过 Matrix `matchesGoodsAnchorSupplierBreakdownFrame`（合同帧补全）补 `detailWanted` 等槽位。
 
 ### 3.2 根因
@@ -629,11 +635,11 @@ Step 1 Router 结果 **不** 走 wire Validator；仅校验 `primaryDomain ∈ r
 
 **下一步扩展顺序（Capability + runtime 切换）**
 
-1. Revenue  
-2. StockReduce  
-3. Warehouse  
-4. DishSales / DishProfit  
-5. BusinessDiagnosis  
+1. Revenue
+2. StockReduce
+3. Warehouse
+4. DishSales / DishProfit
+5. BusinessDiagnosis
 
 **多域状态表（Catalog 只读；Runtime switched = DomainContractSelector 对该域注入 ACTIVE allowedWires）**
 
@@ -670,12 +676,12 @@ Step 1 Router 结果 **不** 走 wire Validator；仅校验 `primaryDomain ∈ r
 
 **下一步扩展顺序（Capability + runtime 切换）**
 
-1. Revenue  
-2. StockReduce  
-3. Warehouse  
-4. ~~DishSales / DishProfit~~ ✅ Catalog  
-5. ~~BusinessDiagnosis~~ ✅ Catalog  
-6. P3：域级 DomainSemanticParser + strict 试点  
+1. Revenue
+2. StockReduce
+3. Warehouse
+4. ~~DishSales / DishProfit~~ ✅ Catalog
+5. ~~BusinessDiagnosis~~ ✅ Catalog
+6. P3：域级 DomainSemanticParser + strict 试点
 
 **Revenue ACTIVE（3）**：`revenue_overview_summary`、`revenue_store_amount_ranking`、`revenue_single_store_overview`
 
@@ -732,10 +738,10 @@ Step 1 Router 结果 **不** 走 wire Validator；仅校验 `primaryDomain ∈ r
 
 **Strict 前置条件（P4 checklist）**
 
-1. 目标域 Runtime switched = yes（ContractSelector 注入 ACTIVE）  
-2. Validator combo 观测误报率可接受（Harness 回归）  
-3. v2 / DomainSemanticParser 按 entry 输出完整槽位  
-4. `semantic.contract.strict=true` 开关 + enforce 路径  
+1. 目标域 Runtime switched = yes（ContractSelector 注入 ACTIVE）
+2. Validator combo 观测误报率可接受（Harness 回归）
+3. v2 / DomainSemanticParser 按 entry 输出完整槽位
+4. `semantic.contract.strict=true` 开关 + enforce 路径
 
 **Strict blockers（ACTIVE only）**
 
@@ -864,12 +870,12 @@ flowchart TB
 
 ## 13. 下一步行动
 
-1. ~~**P1**：DomainRoutingContract Catalog + Purchase 小合同 + SemanticContractCatalog~~ ✅  
-2. ~~**P2**：Router + ContractSelector 主链接入 + v2 allowedOutputContract 注入~~ ✅  
+1. ~~**P1**：DomainRoutingContract Catalog + Purchase 小合同 + SemanticContractCatalog~~ ✅
+2. ~~**P2**：Router + ContractSelector 主链接入 + v2 allowedOutputContract 注入~~ ✅
 3. **文档**：[`purchase-answer-plan.md`](./purchase-answer-plan.md) 补齐 GOODS 锚 execution 场景
-4. **P3**：Purchase `DomainSemanticParser` 小合同注入，切换 Step 2 LLM  
-5. **P4**：Strict Validator + alias 冻结  
-6. **治理**：PR template — 新 wire 须 Step 2 Catalog entry + 无 alias    
+4. **P3**：Purchase `DomainSemanticParser` 小合同注入，切换 Step 2 LLM
+5. **P4**：Strict Validator + alias 冻结
+6. **治理**：PR template — 新 wire 须 Step 2 Catalog entry + 无 alias
 
 ---
 

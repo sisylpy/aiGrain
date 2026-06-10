@@ -4,6 +4,7 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
@@ -18,8 +19,10 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 在 {@link BusinessToolExecutionNode} 完成 {@link AiBusinessToolIds#PURCHASE_OVERVIEW} 后，
@@ -96,11 +99,11 @@ public final class PurchaseAnswerPlanBuilder {
                     .build();
         }
 
-        boolean overviewFourDomainAttach =
-                BusinessOverviewSubPlanAttachSupport.isFourDomainSubPlanAttach(state, rq);
+        boolean multiDomainOrchestrationAttach =
+                BusinessOverviewSubPlanAttachSupport.isMultiDomainOrchestrationSubPlanAttach(state, rq);
 
         String wire = resolveStructuredWireForPlan(rq);
-        if (!overviewFourDomainAttach && !StringUtils.hasText(wire)) {
+        if (!multiDomainOrchestrationAttach && !StringUtils.hasText(wire)) {
             debug.put("earlyReturnReason", "missing_contract_completed_wire");
             return PurchaseAnswerPlan.builder()
                     .planType("")
@@ -114,7 +117,7 @@ public final class PurchaseAnswerPlanBuilder {
                     .resultAnchors(List.of())
                     .build();
         }
-        if (!overviewFourDomainAttach && !AiQuerySemanticLexicon.isPurchaseOverviewDomainCanonicalWire(wire)) {
+        if (!multiDomainOrchestrationAttach && !AiQuerySemanticLexicon.isPurchaseOverviewDomainCanonicalWire(wire)) {
             debug.put("earlyReturnReason", "contract_wire_not_accepted_purchase_matrix");
             debug.put("rejectedWire", wire);
             return PurchaseAnswerPlan.builder()
@@ -129,7 +132,7 @@ public final class PurchaseAnswerPlanBuilder {
                     .resultAnchors(List.of())
                     .build();
         }
-        if (overviewFourDomainAttach) {
+        if (multiDomainOrchestrationAttach) {
             debug.put("attachMode", BusinessOverviewSubPlanAttachSupport.ATTACH_MODE);
             debug.put("orchestrationSubPlanWire",
                     BusinessOverviewSubPlanAttachSupport.contractCompletedWire(rq));
@@ -146,9 +149,9 @@ public final class PurchaseAnswerPlanBuilder {
             pst = executionIntent.getSourceFacet().trim();
         }
 
-        String planType = overviewFourDomainAttach
+        String planType = multiDomainOrchestrationAttach
                 ? PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW
-                : resolvePlanType(wire, pst);
+                : resolvePlanTypeFromContractOrWire(rq, wire, pst);
         if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING.equals(planType)) {
             if (pst == null
                     || pst.isBlank()
@@ -174,7 +177,13 @@ public final class PurchaseAnswerPlanBuilder {
         }
         List<Map<String, Object>> focusRows = new ArrayList<>();
         List<Map<String, Object>> secondaryRows = new ArrayList<>();
-        fillRows(planType, overview, focusRows, secondaryRows);
+        fillRows(planType, wire, overview, focusRows, secondaryRows);
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_ANOMALY.equals(planType)) {
+            appendPurchaseAnomalyPlanObservation(debug, wire, overview, focusRows);
+        }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_QUANTITY_RANKING.equals(planType)) {
+            appendPurchaseGoodsQuantityRankingCaliberObservation(debug, focusRows, secondaryRows);
+        }
 
         debug.put("structuredIntentDetailWire", wire.isEmpty() ? null : wire);
         debug.put("resolvedPlanType", planType);
@@ -201,6 +210,9 @@ public final class PurchaseAnswerPlanBuilder {
             debug.put("sortDirection", "DESC");
         } else if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_COUNT_RANKING.equals(planType)) {
             debug.put("sortKey", "purchaseTimes");
+            debug.put("sortDirection", "DESC");
+        } else if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_QUANTITY_RANKING.equals(planType)) {
+            debug.put("sortKey", "purchaseQuantity");
             debug.put("sortDirection", "DESC");
         } else if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN.equals(planType)) {
             debug.put("sortKey", null);
@@ -315,6 +327,23 @@ public final class PurchaseAnswerPlanBuilder {
     /**
      * 仅依据解析层下发的 structuredIntentDetail wire（及采购来源枚举），禁止读取用户原文推断排行语义。
      */
+    /**
+     * contract-locked 时 AnswerPlanType 仅来自 completed semanticSlots（由 selectedContractId 命中的合同写入）；
+     * 非 contract 路径才回退 wire 确定性映射。
+     */
+    static String resolvePlanTypeFromContractOrWire(
+            AiResolvedQueryContext rq, String structuredWire, String purchaseSourceType) {
+        if (rq != null
+                && rq.getQuerySemanticParse() != null
+                && SemanticContractCompletionEngine.isContractLockedParse(rq.getQuerySemanticParse())) {
+            AiQuerySemanticParseResult.SemanticSlotsPart slots = rq.getQuerySemanticParse().getSemanticSlots();
+            if (slots != null && StringUtils.hasText(slots.getAnswerPlanType())) {
+                return slots.getAnswerPlanType().trim();
+            }
+        }
+        return resolvePlanType(structuredWire, purchaseSourceType);
+    }
+
     public static String resolvePlanType(String structuredWire, String purchaseSourceType) {
         String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(structuredWire);
         String wire = canon != null ? canon.trim() : (structuredWire == null ? "" : structuredWire.trim());
@@ -335,6 +364,14 @@ public final class PurchaseAnswerPlanBuilder {
         if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_COUNT_RANKING.equals(wire)) {
             return PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_COUNT_RANKING;
         }
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_QUANTITY_RANKING.equals(wire)) {
+            return PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_QUANTITY_RANKING;
+        }
+
+        if (AiQuerySemanticLexicon.isPurchaseAnomalyDetectionWire(wire)) {
+            return PurchaseAnswerPlan.TYPE_PURCHASE_ANOMALY;
+        }
+
         if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST.equals(wire)) {
             return PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL;
         }
@@ -342,15 +379,8 @@ public final class PurchaseAnswerPlanBuilder {
         boolean self = AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE.equals(pst);
         boolean sup = AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equals(pst);
 
-        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_ANOMALY.equals(wire)
-                || AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE.equals(wire)) {
-            if (self) {
-                return PurchaseAnswerPlan.TYPE_PURCHASE_SELF_OVERVIEW;
-            }
-            if (sup) {
-                return PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_OVERVIEW;
-            }
-            return PurchaseAnswerPlan.TYPE_PURCHASE_OVERVIEW;
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_ANOMALY.equals(wire)) {
+            return PurchaseAnswerPlan.TYPE_PURCHASE_ANOMALY;
         }
 
         if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_SOURCE_AMOUNT_QUERY.equals(wire)) {
@@ -518,7 +548,10 @@ public final class PurchaseAnswerPlanBuilder {
     }
 
     private static AiResultAnchor resolveInheritedGoodsAnchor(AiResolvedQueryContext rq) {
-        if (rq == null) {
+        if (rq == null || GoodsEntityDisplayNameSupport.hasCurrentTurnExplicitGoodsMention(rq)) {
+            return null;
+        }
+        if (!GoodsEntityDisplayNameSupport.allowsPreviousGoodsAnchor(rq)) {
             return null;
         }
         AiConversationTurnMemory prev = rq.getPreviousTurn();
@@ -555,9 +588,9 @@ public final class PurchaseAnswerPlanBuilder {
             goodsId = emptyToNull(intent.getFocusGoodsId());
         }
         if (goodsId == null && rq != null) {
-            AiResultAnchor inherited = resolveInheritedGoodsAnchor(rq);
-            if (inherited != null) {
-                goodsId = emptyToNull(inherited.getEntityId());
+            Integer fromDisplay = GoodsEntityDisplayNameSupport.resolveDisplayDisGoodsId(rq, focusRow);
+            if (fromDisplay != null) {
+                goodsId = String.valueOf(fromDisplay);
             }
         }
         return goodsId;
@@ -571,15 +604,12 @@ public final class PurchaseAnswerPlanBuilder {
             goodsName = emptyToNull(intent.getFocusGoodsName());
         }
         if (goodsName == null && rq != null) {
-            AiResultAnchor inherited = resolveInheritedGoodsAnchor(rq);
-            if (inherited != null) {
-                goodsName = emptyToNull(inherited.getEntityName());
-            }
+            goodsName = GoodsEntityDisplayNameSupport.resolveDisplayGoodsName(rq, focusRow);
         }
         return goodsName;
     }
 
-    private static void fillRows(String planType, Map<String, Object> overview,
+    private static void fillRows(String planType, String wire, Map<String, Object> overview,
             List<Map<String, Object>> focusRows, List<Map<String, Object>> secondaryRows) {
         switch (planType) {
             case PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING ->
@@ -599,6 +629,18 @@ public final class PurchaseAnswerPlanBuilder {
                             "goodsPurchaseCountTop",
                             "purchaseGoodsFrequencyTop"),
                             focusRows, secondaryRows);
+            case PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_QUANTITY_RANKING ->
+                    splitTopRows(
+                            filterValidPurchaseQuantityRankingRows(
+                                    firstNonEmptyRowList(
+                                            overview,
+                                            "goodsPurchaseQuantityTop",
+                                            "goodsQuantityTop",
+                                            "purchaseGoodsQuantityTop")),
+                            focusRows,
+                            secondaryRows);
+            case PurchaseAnswerPlan.TYPE_PURCHASE_ANOMALY ->
+                    fillAnomalyRows(wire, overview, focusRows, secondaryRows);
             case PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL,
                     PurchaseAnswerPlan.TYPE_PURCHASE_SELF_GOODS_DETAIL -> {
                 List<Map<String, Object>> detailRows = castRowList(overview.get("purchaseSupplierGoodsDetailRows"));
@@ -613,6 +655,9 @@ public final class PurchaseAnswerPlanBuilder {
                     Map<String, Object> typed = (Map<String, Object>) bm;
                     focusRows.add(copyRowShallow(typed));
                 }
+                List<Map<String, Object>> lineRows =
+                        castRowList(overview.get("purchaseGoodsAnchorLineRows"));
+                appendAllRows(lineRows, secondaryRows);
             }
             case PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL -> {
                 List<Map<String, Object>> detailRows =
@@ -626,6 +671,113 @@ public final class PurchaseAnswerPlanBuilder {
                 focusRows.add(core);
             }
         }
+    }
+
+    private static void fillAnomalyRows(
+            String wire,
+            Map<String, Object> overview,
+            List<Map<String, Object>> focusRows,
+            List<Map<String, Object>> secondaryRows) {
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire);
+        List<Map<String, Object>> rows = List.of();
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PRICE_ANOMALY.equals(canon)) {
+            rows = firstNonEmptyRowList(overview, "unitPriceChangedItems", "priceChangeItems");
+        } else if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE.equals(canon)) {
+            rows = firstNonEmptyRowList(overview, "purchaseAmountSpikeItems", "amountSpikeItems");
+        } else if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_FREQUENCY_ANOMALY.equals(canon)) {
+            rows = firstNonEmptyRowList(overview, "purchaseFrequencyAnomalyItems", "frequencyAnomalyItems");
+        } else if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_QUANTITY_ANOMALY.equals(canon)) {
+            rows = firstNonEmptyRowList(overview, "purchaseQuantityAnomalyItems", "quantityAnomalyItems");
+        }
+        splitTopRows(rows, focusRows, secondaryRows);
+    }
+
+    private static void appendPurchaseAnomalyPlanObservation(
+            LinkedHashMap<String, Object> debug,
+            String wire,
+            Map<String, Object> overview,
+            List<Map<String, Object>> focusRows) {
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire);
+        debug.put("anomalySubtype", purchaseAnomalySubtypeToken(canon));
+        boolean factsAvailable = purchaseAnomalyFactsPayloadPresent(canon, overview);
+        debug.put("anomalyFactsAvailable", factsAvailable);
+        debug.put("anomalyFocusRowsSize", focusRows == null ? 0 : focusRows.size());
+        if (!factsAvailable) {
+            debug.put("anomalyProjectionGapReason", "PURCHASE_ANOMALY_FACTS_PAYLOAD_MISSING");
+        }
+    }
+
+    /** 数量排行：无统一基础单位换算时，跨商品单位不可严格可比（仅记录口径限制，不阻断执行）。 */
+    private static void appendPurchaseGoodsQuantityRankingCaliberObservation(
+            LinkedHashMap<String, Object> debug,
+            List<Map<String, Object>> focusRows,
+            List<Map<String, Object>> secondaryRows) {
+        List<Map<String, Object>> all = new ArrayList<>();
+        if (focusRows != null) {
+            all.addAll(focusRows);
+        }
+        if (secondaryRows != null) {
+            all.addAll(secondaryRows);
+        }
+        Set<String> distinctUnits = new LinkedHashSet<>();
+        int rowsWithUnit = 0;
+        for (Map<String, Object> row : all) {
+            if (row == null) {
+                continue;
+            }
+            Object unit = row.get("unit");
+            if (unit != null && StringUtils.hasText(unit.toString())) {
+                distinctUnits.add(unit.toString().trim());
+                rowsWithUnit++;
+            }
+        }
+        boolean mixedOrUnknownUnits =
+                distinctUnits.size() > 1 || (all.size() > 1 && rowsWithUnit < all.size());
+        debug.put("quantityRankingUnitComparable", !mixedOrUnknownUnits);
+        if (mixedOrUnknownUnits) {
+            debug.put(
+                    "quantityRankingCaliberGapReason",
+                    "PURCHASE_QUANTITY_RANKING_MIXED_UNIT_NO_BASE_CONVERSION");
+            debug.put("quantityRankingDistinctUnitCount", distinctUnits.size());
+        }
+    }
+
+    static String purchaseAnomalySubtypeToken(String canonicalWire) {
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PRICE_ANOMALY.equals(canonicalWire)) {
+            return "PRICE";
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_FREQUENCY_ANOMALY.equals(canonicalWire)) {
+            return "FREQUENCY";
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_QUANTITY_ANOMALY.equals(canonicalWire)) {
+            return "QUANTITY";
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE.equals(canonicalWire)) {
+            return "AMOUNT_SPIKE";
+        }
+        return "UNSPECIFIED";
+    }
+
+    private static boolean purchaseAnomalyFactsPayloadPresent(String canonicalWire, Map<String, Object> overview) {
+        if (overview == null || canonicalWire == null) {
+            return false;
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PRICE_ANOMALY.equals(canonicalWire)) {
+            return overview.containsKey("unitPriceChangedItems") || overview.containsKey("priceChangeItems");
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE.equals(canonicalWire)) {
+            return !firstNonEmptyRowList(overview, "purchaseAmountSpikeItems", "amountSpikeItems")
+                    .isEmpty();
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_FREQUENCY_ANOMALY.equals(canonicalWire)) {
+            return !firstNonEmptyRowList(overview, "purchaseFrequencyAnomalyItems", "frequencyAnomalyItems")
+                    .isEmpty();
+        }
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_QUANTITY_ANOMALY.equals(canonicalWire)) {
+            return !firstNonEmptyRowList(overview, "purchaseQuantityAnomalyItems", "quantityAnomalyItems")
+                    .isEmpty();
+        }
+        return false;
     }
 
     private static boolean isUnifiedPurchaseGoodsDetailPlan(String planType) {
@@ -838,6 +990,7 @@ public final class PurchaseAnswerPlanBuilder {
             return;
         }
         putPurchaseExecutionHarnessDebug(PurchaseSemanticExecutionIntentResolver.resolve(rq), debug);
+        com.nongxinle.ai.identity.BusinessEntityIdentityBridge.appendGoodsIdentityHarnessDebug(rq, debug);
         Object toolSid = overview == null ? null : overview.get("purchaseSupplierGoodsDetailFocusSupplierId");
         if (toolSid != null) {
             debug.put("toolFocusSupplierId", toolSid);
@@ -908,6 +1061,8 @@ public final class PurchaseAnswerPlanBuilder {
             }
             debug.put("noDataReason", overview.get("purchaseGoodsSourceBreakdownNoDataReason"));
             debug.put("goodsAnchorIdMissing", overview.get("purchaseGoodsSourceBreakdownGoodsAnchorIdMissing"));
+            debug.put("purchaseGoodsAnchorLineRowsCount", overview.get("purchaseGoodsAnchorLineRowsCount"));
+            debug.put("purchaseGoodsAnchorLineQueryMethod", overview.get("purchaseGoodsAnchorLineQueryMethod"));
         }
     }
 
@@ -972,6 +1127,25 @@ public final class PurchaseAnswerPlanBuilder {
         summary.put("supplierPurchaseAmount", parseDoubleLoose(row.get("supplierPurchaseAmount")));
         summary.put("selfPurchaseLineCount", parseIntLoose(row.get("selfPurchaseLineCount")));
         summary.put("supplierPurchaseLineCount", parseIntLoose(row.get("supplierPurchaseLineCount")));
+        Object tq = row.get("totalPurchaseQuantity");
+        if (tq != null) {
+            summary.put("totalPurchaseQuantity", tq);
+        }
+        Object unit = row.get("unit");
+        if (unit != null && !unit.toString().isBlank()) {
+            summary.put("unit", unit.toString().trim());
+        }
+        int lineCount =
+                parseIntLoose(row.get("selfPurchaseLineCount"))
+                        + parseIntLoose(row.get("supplierPurchaseLineCount"))
+                        + parseIntLoose(row.get("otherPurchaseLineCount"));
+        // 优先逐笔行数（按 purchaseGoodsId 去重），与卡片 lines[] 一致。
+        if (overview != null && overview.get("purchaseGoodsAnchorLineRowsCount") != null) {
+            lineCount = parseIntLoose(overview.get("purchaseGoodsAnchorLineRowsCount"));
+        }
+        if (lineCount > 0) {
+            summary.put("purchaseLineCount", lineCount);
+        }
     }
 
     /** Phase2-A：GOODS 来源拆桶锚 execution，摊平 execution intent / 继承 GOODS 锚。 */
@@ -984,6 +1158,7 @@ public final class PurchaseAnswerPlanBuilder {
             return;
         }
         putPurchaseExecutionHarnessDebug(PurchaseSemanticExecutionIntentResolver.resolve(rq), debug);
+        com.nongxinle.ai.identity.BusinessEntityIdentityBridge.appendGoodsIdentityHarnessDebug(rq, debug);
         if (overview != null) {
             Object fid = overview.get("purchaseGoodsSourceBreakdownFocusDisGoodsId");
             if (fid != null) {
@@ -1068,6 +1243,35 @@ public final class PurchaseAnswerPlanBuilder {
         for (int i = 1; i < ordered.size(); i++) {
             secondaryRows.add(copyRowShallow(ordered.get(i)));
         }
+    }
+
+    /** 数量排行：剔除无有效 purchaseQuantity/quantity 的行（null/空/非正数不得进入排行）。 */
+    private static List<Map<String, Object>> filterValidPurchaseQuantityRankingRows(
+            List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            if (row != null && hasValidPurchaseQuantityRankingValue(row)) {
+                out.add(row);
+            }
+        }
+        return out;
+    }
+
+    private static boolean hasValidPurchaseQuantityRankingValue(Map<String, Object> row) {
+        Object qty = row.get("purchaseQuantity");
+        if (qty == null) {
+            qty = row.get("quantity");
+        }
+        if (qty == null) {
+            qty = row.get("buyQuantity");
+        }
+        if (qty == null || !StringUtils.hasText(qty.toString())) {
+            return false;
+        }
+        return parseDoubleLoose(qty) > 0;
     }
 
     private static void appendAllRows(List<Map<String, Object>> ordered, List<Map<String, Object>> focusRows) {

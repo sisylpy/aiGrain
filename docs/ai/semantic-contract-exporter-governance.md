@@ -1,8 +1,9 @@
 # Semantic Capability Contract Exporter 全局治理
 
-> **状态**：P0 + P2 + P3 + **P4（Java boundary hints 收口）** 已落地  
-> **目标**：杜绝「第三套语义规则」——Java 合同导出层不得复制 `semantic_intake.v1.md` / `query_semantic_parser.v2.md` 的中文 Prompt。  
+> **状态：Current Baseline（Contract Exporter 边界）**：P0 + P2 + P3 + **P4（Java boundary hints 收口）** 已落地
+> **目标**：杜绝「第三套语义规则」——Java 合同导出层不得复制 `semantic_intake.v1.md` / `query_semantic_parser.v2.md` 的中文 Prompt。
 > **关联**：`.cursor/rules/semantic-contract-exporter.mdc`、`MatrixBackedContractExporterSupport`
+> **合同主权补充**：Exporter 只导出 ACTIVE / KNOWN_GAP / PLANNED 的机器合同字段；不得用 hint/examples/中文问法影响 V2 选合同。Completion 成功后执行主权来自同一 ACTIVE entry，后置 Java support 不得改合同。
 
 ---
 

@@ -3,9 +3,8 @@ package com.nongxinle.ai.graph.business;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.DishIngredientCoverAnswerPlan;
-import com.nongxinle.ai.graph.business.execution.EffectiveDishAnchor;
-import com.nongxinle.ai.graph.business.execution.EffectiveDishAnchorSupport;
 import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
+import com.nongxinle.ai.inventory.CoverDaysSalesBaselinePresentationSupport;
 import com.nongxinle.ai.inventory.InventoryPresentationTimeSupport;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import lombok.extern.slf4j.Slf4j;
@@ -72,17 +71,8 @@ public final class DishIngredientCoverAnswerPlanBuilder {
             AiResolvedQueryContext rq,
             Map<String, Object> costData,
             LinkedHashMap<String, Object> debug) {
-        String dishName = str(costData.get("dishName"));
-        if (!StringUtils.hasText(dishName)) {
-            dishName = resolveDishNameFallback(rq);
-        }
-        Integer dishId = toInt(costData.get("dishId"));
-        if (dishId == null && rq != null) {
-            EffectiveDishAnchor anchor = EffectiveDishAnchorSupport.resolve(rq);
-            if (anchor != null && anchor.getFoodId() != null) {
-                dishId = anchor.getFoodId();
-            }
-        }
+        String dishName = DishEntityDisplayNameSupport.resolveDisplayDishName(rq, costData);
+        Integer dishId = DishEntityDisplayNameSupport.resolveDisplayFoodId(rq, costData);
         String reasonCode = str(costData.get("reasonCode"));
         debug.put("costReasonCode", StringUtils.hasText(reasonCode) ? reasonCode : null);
         BigDecimal salesPortions = parseDecimal(costData.get("salesPortions"));
@@ -161,6 +151,9 @@ public final class DishIngredientCoverAnswerPlanBuilder {
         summary.put("salesBaselineDays", baselineDays);
         summary.put("salesBaselineSource", salesBaseline.getBaselineSource());
         summary.put("salesBaselineLabel", salesBaseline.getDisplayLabel());
+        summary.put(
+                "salesBaselinePeriodPhrase",
+                CoverDaysSalesBaselinePresentationSupport.formatPeriodPhrase(rq, salesBaseline));
         summary.put("windowDays", baselineDays);
         if (dailySales != null) {
             summary.put("dailySalesPortions", dailySales.setScale(2, RoundingMode.HALF_UP).toPlainString());
@@ -176,9 +169,8 @@ public final class DishIngredientCoverAnswerPlanBuilder {
         if (dailySales == null || dailySales.compareTo(BigDecimal.ZERO) <= 0) {
             summary.put(
                     "noSalesBaselineNote",
-                    String.format(
-                            "最近 %d 天没有该菜销量，暂不能按销售节奏估算可用天数。",
-                            baselineDays));
+                    CoverDaysSalesBaselinePresentationSupport.composeNoSalesCannotEstimateNote(
+                            dishName, rq, salesBaseline));
         }
         Object inventoryDebug = costData.get("dishIngredientCoverInventoryDebug");
         if (inventoryDebug != null) {
@@ -267,24 +259,12 @@ public final class DishIngredientCoverAnswerPlanBuilder {
                         .planType(DishIngredientCoverAnswerPlan.TYPE)
                         .contractId(DishIngredientCoverAnswerPlan.CONTRACT_ID)
                         .status(status)
+                        .dishName(
+                                DishEntityDisplayNameSupport.resolveDisplayDishName(
+                                        state.getResolvedQueryContext(), Map.of()))
                         .summary(Map.of("message", message == null ? "" : message))
                         .debug(debug)
                         .build());
-    }
-
-    private static String resolveDishNameFallback(AiResolvedQueryContext rq) {
-        if (rq == null) {
-            return "";
-        }
-        if (StringUtils.hasText(rq.getMentionedDishName())) {
-            return rq.getMentionedDishName().trim();
-        }
-        EffectiveDishAnchor anchor = EffectiveDishAnchorSupport.resolve(rq);
-        if (anchor != null && StringUtils.hasText(anchor.getDishName())) {
-            return anchor.getDishName().trim();
-        }
-        String focus = ToolRequestContractExecutionParamSupport.resolveDishNameFocusHint(rq);
-        return StringUtils.hasText(focus) ? focus.trim() : "";
     }
 
     private static String resolveScopeLabel(AiResolvedQueryContext rq) {
@@ -310,20 +290,6 @@ public final class DishIngredientCoverAnswerPlanBuilder {
         }
         try {
             return new BigDecimal(s);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    private static Integer toInt(Object o) {
-        if (o == null) {
-            return null;
-        }
-        if (o instanceof Number n) {
-            return n.intValue();
-        }
-        try {
-            return Integer.parseInt(o.toString().trim());
         } catch (NumberFormatException e) {
             return null;
         }

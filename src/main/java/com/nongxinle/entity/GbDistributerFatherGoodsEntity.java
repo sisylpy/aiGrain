@@ -165,5 +165,13 @@ public class GbDistributerFatherGoodsEntity implements Serializable, Comparable<
     @JSONField(name = "fatherCostSubtotalPercentString")
     private String fatherCostSubtotalPercentString; // 过期商品数量字符串
 
+    @TableField(exist = false)
+    @JSONField(name = "fatherEmployeeMealSubtotalString")
+    private String fatherEmployeeMealSubtotalString;
+
+    @TableField(exist = false)
+    @JSONField(name = "fatherEmployeeMealWeightString")
+    private String fatherEmployeeMealWeightString;
+
 
 }

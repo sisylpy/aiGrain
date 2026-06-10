@@ -56,6 +56,13 @@
             <if test="stopDate != null">
                 AND gdgs.gb_dgs_date &lt;= #{stopDate}
             </if>
+            <if test="reduceDate != null">
+                AND EXISTS (
+                    SELECT 1 FROM gb_department_goods_stock_reduce r
+                    WHERE r.gb_dgsr_gb_goods_stock_id = gdgs.gb_department_goods_stock_id
+                      AND r.gb_dgsr_date = #{reduceDate}
+                )
+            </if>
         </where>
     </select>
 
@@ -65,7 +72,8 @@
         gdg.gb_dg_goods_name as 'goodsName',
         gdg.gb_dg_goods_standardname as 'goodsStandardName',
         gdg.gb_dg_goods_standard_weight as 'goodsStandard',
-        gdg.gb_dg_goods_price as 'goodsPrice'
+        gdg.gb_dg_goods_price as 'goodsPrice',
+        gdg.gb_dg_quantity_days as 'gbDgQuantityDays'
         FROM gb_department_goods_stock AS gdgs
         LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gdgs.gb_dgs_gb_dis_goods_id
         LEFT JOIN gb_department AS gd ON gd.gb_department_id = gdgs.gb_dgs_gb_department_father_id
@@ -549,11 +557,14 @@
              AND gdgs2.gb_dgs_date = #{date}
          </if>
          ) as 'goodsStockWeightTotal',
-        (SELECT IFNULL(SUM(gdgs2.gb_dgs_waste_subtotal), 0)
+        (SELECT ROUND(SUM(gdgs2.gb_dgs_rest_subtotal), 1)
          FROM gb_department_goods_stock gdgs2
          WHERE gdgs2.gb_dgs_gb_dis_goods_id = dg.gb_distributer_goods_id
+         AND gdgs2.gb_dgs_waste_time_quantum_name &lt; #{nowTimeWaste}
+         AND gdgs2.gb_dgs_waste_time_quantum_name IS NOT NULL
+         AND TRIM(gdgs2.gb_dgs_waste_time_quantum_name) != ''
          <if test="startDate != null">
-             AND gdgs2.gb_dgs_date >= #{startDate}
+             AND gdgs2.gb_dgs_date &gt;= #{startDate}
          </if>
          <if test="stopDate != null">
              AND gdgs2.gb_dgs_date &lt;= #{stopDate}
@@ -658,6 +669,11 @@
                     #{id}
                 </foreach>
             </if>
+            <if test="nowTimeWaste != null">
+                AND gdgs.gb_dgs_waste_time_quantum_name &lt; #{nowTimeWaste}
+            </if>
+            AND gdgs.gb_dgs_waste_time_quantum_name IS NOT NULL
+            AND TRIM(gdgs.gb_dgs_waste_time_quantum_name) != ''
         </where>
     </select>
 

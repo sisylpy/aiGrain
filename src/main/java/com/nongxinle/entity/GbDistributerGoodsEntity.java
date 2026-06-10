@@ -60,6 +60,14 @@ public class GbDistributerGoodsEntity implements Serializable, Comparable {
     private Integer goodsGreatSort;
     private Integer gbDgNxGrandId;
     private Integer gbDgQuantityDays;
+    /**
+     * 外箱名称
+     */
+    private String gbDgCartonUnit;
+    /**
+     * 外箱装数量（与库 varchar 一致，如 9.5）
+     */
+    private String gbDgItemsPerCarton;
     private Integer gbDgIsFranchisePrice;
     private Integer gbDgNxGreatGrandId;
     private Integer gbDgPullOff;
@@ -264,6 +272,17 @@ public class GbDistributerGoodsEntity implements Serializable, Comparable {
     private String goodsReturnTotalString = "0";
     @TableField(exist = false)
     private String goodsReturnPercent = "0";
+
+    @TableField(exist = false)
+    private Double goodsEmployeeMealWeightTotal = 0.0;
+    @TableField(exist = false)
+    private String goodsEmployeeMealWeightTotalString = "0";
+    @TableField(exist = false)
+    private Double goodsEmployeeMealTotal = 0.0;
+    @TableField(exist = false)
+    private String goodsEmployeeMealTotalString = "0";
+    @TableField(exist = false)
+    private String goodsEmployeeMealPercent = "0";
 
     /** Mapper {@code queryStockSubtotalTopTimes}：未限定 type 时汇总的出库 subtotal（元）。 */
     @TableField(exist = false)

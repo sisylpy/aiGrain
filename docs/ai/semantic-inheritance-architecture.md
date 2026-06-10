@@ -1,5 +1,10 @@
 # Semantic Inheritance / Business Frame 架构
 
+> **状态：Current Baseline（多轮 Business Frame 继承）**
+> 本文描述当前多轮语义继承 invariant。与早期 FollowUpRewrite / Matrix / slots→wire / observe-only 设计文档冲突时，以本文、`.cursor/rules/harness-java-boundary.md` 与当前代码事实为准。
+>
+> **合同主权补充**：当前轮 V2 `selectedContractId` 命中 ACTIVE contract 并经 Completion 成功后，该 Business Frame 拥有主权；后续 support 不得把上一轮或后置实体落地结果 merge 成另一条业务合同。冲突只能澄清、失败或 known gap。
+
 本文档固化多轮对话中 **previousTurn → 当前轮** 的语义继承规则，供 Cursor / Codex 及后续开发者在新窗口中直接查阅。**业务逻辑以代码为准；本文描述设计意图与 invariant。**
 
 相关 Cursor 硬规则：`.cursor/rules/harness-java-boundary.md` §6.1–§6.2。
@@ -133,7 +138,7 @@ V2 Raw Parse
 
 ### 5.4 Invariant
 
-> 只要 `selectedContractId` 命中 ACTIVE contract，上述字段必须全部可追溯到**同一条** catalog entry。  
+> 只要 `selectedContractId` 命中 ACTIVE contract，上述字段必须全部可追溯到**同一条** catalog entry。
 > **不允许：** contractId 来自 previous、sourceFacet 来自 current raw 的半旧半新状态。
 
 ---

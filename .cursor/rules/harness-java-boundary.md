@@ -96,6 +96,17 @@ Java 只允许做三件事：
 
 完整治理见 `.cursor/rules/semantic-contract-exporter.mdc` 与 `docs/ai/semantic-contract-exporter-governance.md`。
 
+### 错误 8：多处重复决策 / 下游补挂替换卡片
+
+禁止在多个节点对**同一业务决定**重复判断或后置修复，例如：
+
+* PlanType + executionIntent + contractId + wire + 已有 cards 分别推导 CardType
+* Composer / refresh 阶段 `reconcile` 漏挂补挂、错卡替换
+* Service 层 duplicate early-return / suppress，与投影层各写一套
+* 从 Tool 全量结果或 cards 内容事后筛选目标实体
+
+**完整规则见 §12（单一主权与单一投影）。** 业务映射只允许一个 SSOT + 一个执行入口；下游只消费，不修正业务含义。
+
 ---
 
 ## 1. 最核心原则
@@ -113,7 +124,7 @@ Java 只允许做三件事：
 
 1. LLM 不允许自定义业务 wire。
 
-2. selectedContractId 是语义合同主键。
+2. V2 只在单域 `allowedContracts` 内选择 `semanticSlots.selectedContractId`；`selectedContractId` 是语义合同主键。
 
 3. selectedContractId 一旦命中 ACTIVE Capability Contract entry：
 
@@ -130,11 +141,26 @@ Java 只允许做三件事：
 
 7. Tool / AnswerPlan / Composer 只能读取 contract-locked frame，不能读取 raw LLM wire。
 
+8. Java 可以在 V2 前做确定性实体存在性落地，用于缩小 `allowedContracts` 或触发澄清；**V2 之后 Java 没有重新选择业务合同的权力**。
+
+9. `SemanticContractCompletionEngine.complete()` 成功后，任何 support / repair / normalize / slot merge / scope / planner / tool / AnswerPlan / Composer 层都不得修改：
+
+    * `selectedContractId`
+    * canonical wire / `structuredIntentDetailWire`
+    * `answerPlanType`
+    * `selectedTools`
+    * execution path / tool metadata
+
+10. 后置发现合同、实体或槽位冲突时，只能澄清、失败或 known gap；即使重新经过 Completion / Validation，也不能用来合法化 Java 后置切换合同。
+
+11. Time、Scope、Business Contract 主权相互独立：时间继承不由合同切换决定，scope 不决定合同/wire/tools/path，合同不改写时间或权限范围。
+
 发现以下情况必须主动指出或清理：
 
 * structuredIntentDetailWire 参与主链 hard blocker
 * selectedContractId 已命中合同后仍使用 LLM wire
 * applyContractToParse 里 LLM wire 优先于 contract wire
+* Completion 成功后 support 再调用 `applyActiveContractById` 或等价方法切换合同
 * CurrentSemanticFrame 主 wire 来自 raw LLM
 * Matrix / SlotMerge / Canonicalize 根据 scope 或 slots 改写主链 wire
 * metric.rankingType / rawStructuredIntentDetail / 旧 wire 字段抢主链
@@ -588,3 +614,89 @@ SemanticTimeContractCheck 只能做：
 如果必须处理语义不明确的情况，优先返回 clarification / known gap，而不是 Java 猜。
 
 如果当前问题需要动已稳定主链，请先停止修改并汇报，不要直接改。
+
+---
+
+## 12. 单一主权与单一投影原则
+
+修改 AnswerPlan / Card / Composer / Wire 链路时，**同一个业务决定只能有一个权威来源和一个决策入口**。下游节点只消费结果，不得重新判断、补挂、替换、修复或改变业务含义。
+
+### 12.1 单一主权（SSOT）
+
+每类业务信息必须明确唯一主权字段或对象：
+
+| 决定 | 主权 |
+|------|------|
+| 语义能力 | `selectedContractId` 命中的 ACTIVE Contract |
+| wire / AnswerPlanType / Tool / 执行模式 | Contract 派生（contract-locked frame） |
+| 卡片类型 | 最终 `AnswerPlan.planType`（或该域独立 AnswerPlan 的 `planType`） |
+| 时间 | Time Layer（`timeSource` / `effectiveTimeWindowSource` 等，见 time-layer 规则） |
+| 组织 / 权限范围 | `AiResolvedQueryContext` 中 scope / dataScope |
+
+禁止多个字段**并行抢占同一决定**，例如同时读取 `contractId`、`wire`、`executionIntent`、raw LLM 字段、关键词、已有 `cardType`，再分别推导同一 CardType 或执行路径。
+
+### 12.2 单一决策入口
+
+同一业务映射只允许**一个**统一入口，例如：
+
+`AnswerPlan.planType → CardType`（采购域参考：`PurchaseAnswerPlanCardSupport` → `PurchaseAnswerPlanCardWireService.attachCardsIfApplicable`）
+
+后续 Service、Composer、`AiCardPayloadWireSupport.refresh` 等**只能消费**该决策结果，不得再次做 PlanType / executionIntent / wire / contract 判断来决定卡片。
+
+禁止在多个位置重复添加：PlanType 判断、executionIntent 判断、wire 判断、contract 判断、early-return、suppress 条件、卡片替换逻辑。
+
+### 12.3 禁止后置修复
+
+禁止用以下方式掩盖上游设计问题：
+
+* 漏挂后补挂（reconcile）
+* 错卡生成后替换
+* refresh 阶段重新选择卡片类型
+* Composer 根据 cards / Tool 原始结果重新改业务类型或从全量数据筛选实体
+* fallback 到另一套旧逻辑
+* 为单个 case 增加 if/else、`contains`、alias 或关键词判断
+
+上游产生非法状态时，应在**权威边界 fail closed**（澄清、known gap、明确 noDataReason），不得由下游偷偷修正业务含义。
+
+**允许**：协议归一化（字段名、deprecated `cardPayload` 镜像、title 补齐）——这是 wire 格式，不是业务重决策。
+
+### 12.4 Composer 职责边界
+
+Composer **只负责表达**已确定的事实：
+
+* 消费 AnswerPlan
+* 消费已生成的 cards
+* 生成自然语言说明（可据 `planType` 选择短引导话术，**不得**据此补挂或替换卡片）
+
+Composer **不负责**：选合同、决定执行模式、决定卡片类型、修改事实、补挂/替换卡片、从 Tool 原始结果重新拼业务答案。
+
+### 12.5 新能力接入
+
+新增能力前先检查现有 Contract / Tool / AnswerPlan / CardType / Projection / Composer，确认是**映射缺失**还是系统确实缺少正式能力。
+
+不得在未梳理链路前直接新增重复 Contract、PlanType、CardType 或 WireService。
+
+### 12.6 旧逻辑清理
+
+新统一入口替代旧逻辑后，必须从主链**删除或摘掉**：
+
+* 重复判断
+* 旧投影入口
+* 后置 reconcile
+* fallback / 兼容分支
+* 已失效 helper
+* Composer 中的业务跳过逻辑
+
+不能长期保留两套决策链路作为「保险」。
+
+Harness 只读探针（mirror debug）可保留，但**不得**参与挂载或互斥决策。
+
+### 12.7 修改流程
+
+1. 定位当前业务决定的真正主权入口
+2. 检查整条链路是否存在重复决策
+3. 在统一入口解决问题
+4. 删除被替代的旧逻辑
+5. 检查同类能力是否存在相同隐患
+6. 不针对单个测试问法写补丁
+7. 汇报：根因、唯一主权入口、修改范围、删除的重复逻辑

@@ -2,10 +2,13 @@ package com.nongxinle.ai.context;
 
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiFollowUpResolution;
+import com.nongxinle.ai.graph.business.DishIngredientCoverSalesBaseline;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
+import com.nongxinle.ai.semantic.frame.ContractLockedSemanticFrame;
+import com.nongxinle.ai.semantic.intake.grounding.CoverDaysSalesBaselineTimeSupport;
 import com.nongxinle.ai.scope.AiConversationScopeMode;
 import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
@@ -72,6 +75,15 @@ public class AiResolvedQueryContext {
      */
     private Boolean purchaseSemanticFramePrimaryMerge;
 
+    /** Cover-days 族：结构化库存快照 as-of（与 timeWindow / 销量基线分离）。 */
+    private String stockAsOfDate;
+    /** Cover-days 族：结构化销量基线投影（与 timeWindow / effectiveTimeWindowSource 分离）。 */
+    private DishIngredientCoverSalesBaseline resolvedSalesBaseline;
+    /** Cover-days 族：销量基线展示 timeType（来自 V2 salesBaselineWindow.timeType）。 */
+    private String salesBaselineTimeType;
+    /** Contract Completion 后不可变语义帧；cover-days 执行语义从这里投影。 */
+    private ContractLockedSemanticFrame contractLockedFrame;
+
     /**
      * 菜品毛利：用户话术中点名的菜名（或多轮继承）；仅用于收窄 Tool/答复，非 SQL 部门列表。
      */
@@ -89,6 +101,25 @@ public class AiResolvedQueryContext {
      * LLM 「用户语义」解析快照（仅存 intent/口述范围/指标等）；不含 queryStoreIds 等可由权限推导的字段。
      */
     private AiQuerySemanticParseResult querySemanticParse;
+
+    public String getStockAsOfDate() {
+        CoverDaysSalesBaselineTimeSupport.DualTimePlan plan = lockedCoverDaysPlan();
+        return plan != null ? plan.stockAsOfDate() : null;
+    }
+
+    public DishIngredientCoverSalesBaseline getResolvedSalesBaseline() {
+        CoverDaysSalesBaselineTimeSupport.DualTimePlan plan = lockedCoverDaysPlan();
+        return plan != null ? plan.baseline() : null;
+    }
+
+    public String getSalesBaselineTimeType() {
+        CoverDaysSalesBaselineTimeSupport.DualTimePlan plan = lockedCoverDaysPlan();
+        return plan != null ? plan.salesBaselineTimeType() : null;
+    }
+
+    private CoverDaysSalesBaselineTimeSupport.DualTimePlan lockedCoverDaysPlan() {
+        return CoverDaysSalesBaselineTimeSupport.resolveDualTimePlan(contractLockedFrame, null);
+    }
 
     /** Harness：语义解析所用 promptId（{@link AiQuerySemanticParseResult#getPromptRegistryId()} 镜像）；未启用时为 null。 */
     private String semanticPromptRegistryId;
@@ -208,6 +239,8 @@ public class AiResolvedQueryContext {
     private String rewriteInheritedAnchorType;
     /** rewrite 补全引用的实体名（debug）；非 wire/Tool。 */
     private String rewriteInheritedAnchorName;
+    /** rewrite 结构化 provenance：被 Intake 选中的 canonical entityId。 */
+    private String rewriteInheritedAnchorEntityId;
     /** rewrite 层 clarification（未 canRewrite 时观测）。 */
     private String followUpRewriteClarificationQuestion;
     /** LLM rewrite 引用的锚点（观测）。 */
@@ -222,6 +255,10 @@ public class AiResolvedQueryContext {
 
     private SemanticDomainRouteResult semanticDomainRoute;
     private DomainContractSelectionResult domainContractSelection;
+    /** Grounding / Adoption 后 effective 域路由；Intake 初判见 {@link #semanticDomainRoute}。 */
+    private SemanticDomainRouteResult effectiveSemanticDomainRoute;
+    /** Grounding / Adoption 后 effective 合同目录；Intake 初判见 {@link #domainContractSelection}。 */
+    private DomainContractSelectionResult effectiveDomainContractSelection;
     private SemanticContractValidationDebug semanticContractValidation;
     /** P3：合同 strict 统一决策（observe / enforce 共用；默认 strict=false 不阻断）。 */
     private SemanticContractStrictDecision semanticContractStrictDecision;

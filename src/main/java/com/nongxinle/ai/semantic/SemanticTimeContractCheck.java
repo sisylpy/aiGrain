@@ -365,6 +365,11 @@ public final class SemanticTimeContractCheck {
         if (sem == null) {
             return false;
         }
+        TimeLayerContextSignals signals =
+                contextSignals != null ? contextSignals : TimeLayerContextSignals.empty();
+        if (signals.suppressPreviousTurnTimeInheritance()) {
+            return false;
+        }
         if (StructuredTimeFollowUpSupport.isStructuredTimeOnlyFollowUp(sem)) {
             return false;
         }
@@ -385,8 +390,6 @@ public final class SemanticTimeContractCheck {
         if (Boolean.TRUE.equals(sem.getFollowUp())) {
             return true;
         }
-        TimeLayerContextSignals signals =
-                contextSignals != null ? contextSignals : TimeLayerContextSignals.empty();
         return signals.contextContinuesFromPreviousTurn();
     }
 

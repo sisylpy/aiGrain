@@ -27,9 +27,12 @@ public interface GbDishCostAnalysisService {
 
     /**
      * 配料分析：销售汇总、按菜按配方( q×u )实收口径，type2/3 在扣减无菜品关联时按「本行 type1 占全店 type1」同比分摊到本菜本料。
+     * <p>{@code scopeSalesSubtotals}：{@code actualCostTotal}、{@code theoreticalCostTotal}、{@code costDeviationTotal}、{@code costDeviationRate}。</p>
      *
      * @param stopDate 区间结束日，同 {@link #buildReport} 的 {@code stopDate}
-     * @param sortBy  {@code sales|salesAmount|销量} 实收销售额；{@code diff|diffCostPerPortion|成本差异} 每份成本差异绝对值；{@code actualCost|actualCostPerPortion} 每道菜<strong>单份</strong>实际成本（type1+2+3，{@code actualCostPerPortion}）；空则同 sales
+     * @param sortBy  {@code sales|salesAmount|销量} 实收销售额；{@code diff|diffCostPerPortion|成本差异} 每份成本差异绝对值；
+     *                {@code diffRate|diffRatePerPortion|成本偏差率} 每份成本偏差率；{@code actualCost|actualCostPerPortion} 每道菜<strong>单份</strong>实际成本（type1+2+3）；
+     *                {@code ingredientCount|配料数量} 配料行数；空则同 sales
      * @param sortOrder {@code desc|asc|降序|升序}，默认 {@code desc}
      */
     Map<String, Object> buildIngredientAnalysisReport(String startDate, String stopDate, Integer disId, String searchDepId,
@@ -72,11 +75,13 @@ public interface GbDishCostAnalysisService {
      *             {@code wasteloss|waste2loss3|损耗损失} 本商品 type2+type3 出库**重量**合计。空为 outbound。
      * @param sortOrder {@code desc|asc|降序|升序}，默认 {@code desc}，与 {@code sortBy} 组合控制升降序
      * @param goodsNameSearch 按分销商商品名称模糊匹配（含规格名、配方侧名称提示）；空则不过滤
+     * @param verificationStatus 核销状态筛选：{@code all}（默认全量）、{@code verified}（已核销）、{@code unverified}（未核销）
      * @param page 页码，从 1 起；仅当 {@code pageSize} 有效时参与分页
      * @param pageSize 每页条数，{@code null} 或 ≤0 表示不分页（返回全部匹配行，兼容旧调用）
      */
     Map<String, Object> buildOutboundIngredientAnalysisReport(String startDate, String stopDate, Integer disId, String searchDepId,
-            Integer depFatherId, String sortBy, String sortOrder, String goodsNameSearch, Integer page, Integer pageSize);
+            Integer depFatherId, String sortBy, String sortOrder, String goodsNameSearch, String verificationStatus,
+            Integer page, Integer pageSize);
 
     /**
      * 按 {@code /ingredientAnalysis} 同一口径生成各菜的 {@code ingredientRows}（Map 列表），供部门菜品列表等复用。
@@ -141,4 +146,17 @@ public interface GbDishCostAnalysisService {
      *         {@code dishIngredientDayBreakdown} 为按菜行列表（实销份数、实收、本料配方用量、理论总用量、标价分摊收入、1+2+3 分摊成本、毛利贡献；金额类两位小数）
      */
     Map<String, Object> summarizeDisGoodsDayForReduceCurve(String day, Integer disId, Integer disGoodsId, String searchDepId);
+
+    /**
+     * 单菜配料消耗排查：区间内累计销量、各配料理论/实际消耗、type1 分摊及关联菜品累计分摊；不含日趋势。
+     * <p>{@code dishId} 与 {@code foodId} 同义；区间结束日参数 {@code stopDate} 与 {@code endDate} 二选一。</p>
+     */
+    default Map<String, Object> buildDishIngredientConsumptionAudit(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, Integer foodId) {
+        return buildDishIngredientConsumptionAudit(startDate, stopDate, disId, depFatherId, null, foodId, null);
+    }
+
+    Map<String, Object> buildDishIngredientConsumptionAudit(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, String searchDepId, Integer foodId,
+            Collection<Integer> scopeDepartmentIdsAllowFilter);
 }

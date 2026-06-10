@@ -66,6 +66,29 @@ class DishIngredientCoverSalesBaselineSupportTest {
     }
 
     @Test
+    void inheritedPrevious_defaultBaselineAnchorsToTodayNotInheritedEnd() {
+        AiRunState state = new AiRunState();
+        state.setStatEndDate("2026-04-30");
+        AiResolvedQueryContext rq =
+                AiResolvedQueryContext.builder()
+                        .effectiveTimeWindowSource(SemanticTimeContractCheck.SOURCE_INHERITED_PREVIOUS)
+                        .timeWindow(
+                                AiResolvedTimeWindow.builder()
+                                        .startDate(LocalDate.of(2026, 4, 1))
+                                        .endDate(LocalDate.of(2026, 4, 30))
+                                        .build())
+                        .build();
+
+        DishIngredientCoverSalesBaseline baseline = DishIngredientCoverSalesBaselineSupport.resolve(state, rq);
+
+        LocalDate today = LocalDate.now();
+        assertEquals(today.minusDays(6).toString(), baseline.getStartDateIso());
+        assertEquals(today.toString(), baseline.getStopDateIso());
+        assertEquals(
+                DishIngredientCoverSalesBaseline.SOURCE_DEFAULT_LAST_7_DAYS, baseline.getBaselineSource());
+    }
+
+    @Test
     void isUserExplicit_onlyCurrentMessageExplicit() {
         AiResolvedQueryContext inherited =
                 AiResolvedQueryContext.builder()

@@ -35,7 +35,7 @@ public class IngredientDashboardModuleRenderer implements AiDashboardModuleRende
 
             Map<String, Object> report = dishCostAnalysisService.buildOutboundIngredientAnalysisReport(
                     startDate, endDate, disId, null, depFatherId,
-                    "outbound", "desc", null, null, null);
+                    "outbound", "desc", null, null, null, null);
 
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("summary", report.get("summary"));

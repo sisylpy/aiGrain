@@ -58,9 +58,13 @@ public interface GbDepartmentGoodsStockReduceService extends IService<GbDepartme
 
     Double queryReduceReturnWeightTotal(Map<String, Object> map);
 
+    Double queryReduceEmployeeMealTotal(Map<String, Object> map);
+
+    Double queryReduceEmployeeMealWeightTotal(Map<String, Object> map);
+
     /**
      * 与 {@link #queryReduceTypeCount} 条件一致，按类型汇总 reduce 重量（单日或区间）。
-     * 返回键：produceWeight、lossWeight、wasteWeight、returnWeight。
+     * 返回键：produceWeight、lossWeight、wasteWeight、returnWeight、employeeMealWeight。
      */
     Map<String, Object> queryReduceTypeWeightTotalsByScope(Map<String, Object> map);
 
@@ -110,6 +114,13 @@ public interface GbDepartmentGoodsStockReduceService extends IService<GbDepartme
     List<GbDistributerGoodsEntity> queryGoodsCostGoodsPageWithDetails(Map<String, Object> map);
 
     /**
+     * 为出库明细回填库存批次、采购行，并计算每条出库前的批次剩余量（{@code purchaseBatchInfo}）。
+     *
+     * @param unit 展示单位（如商品规格名），可空
+     */
+    void enrichReducesWithStockAndPurchaseBatch(List<GbDepartmentGoodsStockReduceEntity> rows, String unit);
+
+    /**
      * 根据ID查询记录（老项目兼容方法）
      * @param id 记录ID
      * @return 实体
@@ -138,8 +149,23 @@ public interface GbDepartmentGoodsStockReduceService extends IService<GbDepartme
     List<Map<String, Object>> queryProduceLossWasteReduceAggByDisGoods(Map<String, Object> map);
 
     /**
-     * 指定 type（1/2/3）按商品汇总的出库重量、金额，条件与 {@link #queryProductionReduceAggByDisGoods} 相同。
+     * 同 {@link #queryProduceLossWasteReduceAggByDisGoods}，且仅计入已有日营业额上传的自然日出库。
+     */
+    List<Map<String, Object>> queryProduceLossWasteReduceAggByDisGoodsOnDailyRevenueDays(Map<String, Object> map);
+
+    /** type1+2+3 按商品 + 出库日汇总，供配料核销按销售宽限期拆分。 */
+    List<Map<String, Object>> queryProduceLossWasteReduceAggByDisGoodsAndDate(Map<String, Object> map);
+
+    /**
+     * 指定 type（1/2/3/4/6 等）按商品汇总的出库重量、金额，条件与 {@link #queryProductionReduceAggByDisGoods} 相同。
      */
     List<Map<String, Object>> queryReduceAggByDisGoodsByType(Map<String, Object> map, Integer stockReduceType);
+
+    /**
+     * 员工餐（type=6）按商品汇总（重量、金额）；等价于 {@link #queryReduceAggByDisGoodsByType} 且 type={@link com.nongxinle.utils.GbConstants.StockReduceType#EMPLOYEE_MEAL}。
+     */
+    default List<Map<String, Object>> queryEmployeeMealReduceAggByDisGoods(Map<String, Object> map) {
+        return queryReduceAggByDisGoodsByType(map, com.nongxinle.utils.GbConstants.StockReduceType.EMPLOYEE_MEAL);
+    }
 
 }

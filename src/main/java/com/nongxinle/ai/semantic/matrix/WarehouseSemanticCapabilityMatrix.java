@@ -4,6 +4,7 @@ import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.dto.business.GoodsStockBatchDetailAnswerPlan;
 import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
 import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
@@ -31,9 +32,16 @@ public final class WarehouseSemanticCapabilityMatrix {
     public static final String STOCK_FACET_LOW_STOCK = "LOW_STOCK";
     public static final String STOCK_FACET_NEAR_EXPIRY = "NEAR_EXPIRY";
     public static final String STOCK_FACET_GOODS_DISH_COVER = "GOODS_DISH_COVER";
+    public static final String STOCK_FACET_GOODS_BATCH_DETAIL = "GOODS_BATCH_DETAIL";
+    public static final String STOCK_FACET_GOODS_ANCHOR_INVENTORY_BUNDLE = "GOODS_INVENTORY_BUNDLE";
+    public static final String STOCK_FACET_INVENTORY_SUPERVISION = "INVENTORY_SUPERVISION";
 
     public static final String CONTRACT_GOODS_SUPPORTED_DISH_COVER =
             GoodsSupportedDishCoverAnswerPlan.CONTRACT_ID;
+    public static final String CONTRACT_GOODS_STOCK_BATCH_DETAIL =
+            GoodsStockBatchDetailAnswerPlan.CONTRACT_ID;
+    public static final String CONTRACT_GOODS_ANCHOR_INVENTORY_BUNDLE =
+            "warehouse.goods_anchor_inventory_bundle.v1";
 
     /** 缺货：仅有启发式 lowStockItems，无严格缺货口径 SQL。 */
     public static final String KNOWN_GAP_OUT_OF_STOCK_STRICT_NOT_SUPPORTED =
@@ -52,6 +60,7 @@ public final class WarehouseSemanticCapabilityMatrix {
                     "SUMMARY",
                     "STOCK_AMOUNT",
                     STOCK_FACET_OVERVIEW,
+                    null,
                     null);
 
     public static final WarehouseSemanticCapabilityMatrixRow GOODS_AMOUNT_RANKING_HIGH =
@@ -63,6 +72,7 @@ public final class WarehouseSemanticCapabilityMatrix {
                     "RANKING",
                     "STOCK_AMOUNT",
                     STOCK_FACET_GOODS_RANKING_HIGH,
+                    null,
                     null);
 
     public static final WarehouseSemanticCapabilityMatrixRow GOODS_AMOUNT_RANKING_LOW =
@@ -74,6 +84,7 @@ public final class WarehouseSemanticCapabilityMatrix {
                     "RANKING",
                     "STOCK_AMOUNT",
                     STOCK_FACET_GOODS_RANKING_LOW,
+                    null,
                     null);
 
     public static final WarehouseSemanticCapabilityMatrixRow STORE_AMOUNT_RANKING =
@@ -85,6 +96,7 @@ public final class WarehouseSemanticCapabilityMatrix {
                     "RANKING",
                     "STOCK_AMOUNT",
                     STOCK_FACET_STORE_RANKING,
+                    null,
                     null);
 
     public static final WarehouseSemanticCapabilityMatrixRow SINGLE_STORE_OVERVIEW =
@@ -96,6 +108,7 @@ public final class WarehouseSemanticCapabilityMatrix {
                     "SUMMARY",
                     "STOCK_AMOUNT",
                     STOCK_FACET_OVERVIEW,
+                    null,
                     null);
 
     public static final WarehouseSemanticCapabilityMatrixRow INVENTORY_RISK_LIST =
@@ -107,18 +120,20 @@ public final class WarehouseSemanticCapabilityMatrix {
                     "RISK",
                     "LOW_STOCK",
                     STOCK_FACET_LOW_STOCK,
+                    null,
                     null);
 
     public static final WarehouseSemanticCapabilityMatrixRow NEAR_EXPIRY =
             firstTurnRow(
                     "WH-G",
                     AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_NEAR_EXPIRY,
-                    WarehouseAnswerPlan.TYPE_WAREHOUSE_STOCK_OVERVIEW,
+                    WarehouseAnswerPlan.TYPE_WAREHOUSE_NEAR_EXPIRY_RISK,
                     "GOODS",
                     "RISK",
                     "NEAR_EXPIRY",
                     STOCK_FACET_NEAR_EXPIRY,
-                    KNOWN_GAP_NEAR_EXPIRY_NOT_IN_TOOL);
+                    null,
+                    null);
 
     public static final WarehouseSemanticCapabilityMatrixRow GOODS_SUPPORTED_DISH_COVER =
             firstTurnRow(
@@ -129,6 +144,45 @@ public final class WarehouseSemanticCapabilityMatrix {
                     "DETAIL",
                     "SUPPORTED_DISH_COVER",
                     STOCK_FACET_GOODS_DISH_COVER,
+                    null,
+                    List.of(GoodsSupportedDishCoverAnswerPlan.TYPE));
+
+    public static final WarehouseSemanticCapabilityMatrixRow GOODS_STOCK_BATCH_DETAIL =
+            firstTurnRow(
+                    "WH-J",
+                    AiQuerySemanticLexicon.STRUCTURED_GOODS_STOCK_BATCH_DETAIL,
+                    GoodsStockBatchDetailAnswerPlan.TYPE,
+                    "GOODS",
+                    "DETAIL",
+                    "STOCK_BATCH_DETAIL",
+                    STOCK_FACET_GOODS_BATCH_DETAIL,
+                    null,
+                    List.of(GoodsStockBatchDetailAnswerPlan.TYPE));
+
+    public static final WarehouseSemanticCapabilityMatrixRow GOODS_ANCHOR_INVENTORY_BUNDLE =
+            firstTurnRow(
+                    "WH-K",
+                    AiQuerySemanticLexicon.STRUCTURED_GOODS_ANCHOR_INVENTORY_BUNDLE,
+                    GoodsSupportedDishCoverAnswerPlan.TYPE,
+                    "GOODS",
+                    "DETAIL",
+                    "GOODS_INVENTORY_BUNDLE",
+                    STOCK_FACET_GOODS_ANCHOR_INVENTORY_BUNDLE,
+                    null,
+                    List.of(
+                            GoodsSupportedDishCoverAnswerPlan.TYPE,
+                            GoodsStockBatchDetailAnswerPlan.TYPE));
+
+    public static final WarehouseSemanticCapabilityMatrixRow INVENTORY_SUPERVISION =
+            firstTurnRow(
+                    "WH-I",
+                    AiQuerySemanticLexicon.STRUCTURED_WAREHOUSE_INVENTORY_SUPERVISION,
+                    WarehouseAnswerPlan.TYPE_WAREHOUSE_INVENTORY_SUPERVISION,
+                    "ALL",
+                    "DIAGNOSIS",
+                    "INVENTORY_SUPERVISION",
+                    STOCK_FACET_INVENTORY_SUPERVISION,
+                    null,
                     null);
 
 
@@ -152,7 +206,10 @@ public final class WarehouseSemanticCapabilityMatrix {
                 SINGLE_STORE_OVERVIEW,
                 INVENTORY_RISK_LIST,
                 NEAR_EXPIRY,
-                GOODS_SUPPORTED_DISH_COVER);
+                GOODS_SUPPORTED_DISH_COVER,
+                GOODS_STOCK_BATCH_DETAIL,
+                GOODS_ANCHOR_INVENTORY_BUNDLE,
+                INVENTORY_SUPERVISION);
     }
 
 
@@ -242,7 +299,7 @@ public final class WarehouseSemanticCapabilityMatrix {
     private static WarehouseSemanticCapabilityMatrixRow firstTurnRow(
             String rowId, String wire, String planType,
             String queryObject, String operation, String metric,
-            String stockFacet, String knownGap) {
+            String stockFacet, String knownGap, List<String> planOutputs) {
         return WarehouseSemanticCapabilityMatrixRow.builder()
                 .rowId(rowId)
                 .queryObject(queryObject)
@@ -251,6 +308,7 @@ public final class WarehouseSemanticCapabilityMatrix {
                 .stockFacet(stockFacet)
                 .structuredIntentDetailWire(wire)
                 .targetWarehousePlanType(planType)
+                .planOutputs(planOutputs)
                 .knownGapCode(knownGap)
                 .build();
     }

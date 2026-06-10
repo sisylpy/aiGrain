@@ -1,16 +1,15 @@
 package com.nongxinle.ai.semantic.inheritance;
 
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
-import com.nongxinle.ai.semantic.SemanticParserAllowedOutputContract;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticCapabilityContract;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
-import java.util.Locale;
 
 /**
- * 当前轮合同主权：ACTIVE + allowed 仅为必要条件；time-only 同 family 弱选不算 sovereign。
+ * 当前轮合同主权：须先经 {@link SemanticContractTransitionPolicy} 判定合法 transition；
+ * 已注册 transition 时 V2 弱选不得夺取 Business Frame 主权。
  */
 public final class SemanticContractSovereigntySupport {
 
@@ -30,8 +29,10 @@ public final class SemanticContractSovereigntySupport {
     }
 
     /**
-     * 当前轮是否对业务 semanticSlots 拥有主权（previousTurn 不得覆盖业务 frame）。
+     * @deprecated 请使用 {@link #hasSovereignActiveContract(SemanticSlotInheritanceRequest)} 或传入
+     *     {@link SemanticContractTransitionDecision}。
      */
+    @Deprecated
     public static boolean hasSovereignActiveContract(
             AiQuerySemanticParseResult current,
             String currentContractId,
@@ -53,34 +54,14 @@ public final class SemanticContractSovereigntySupport {
                 structuredTimeFollowUp,
                 explicitEntityFollowUp,
                 false,
+                false,
                 false);
     }
 
-    public static boolean hasSovereignActiveContract(
-            AiQuerySemanticParseResult current,
-            String currentContractId,
-            String previousContractId,
-            String currentFamily,
-            String previousFamily,
-            String domainHint,
-            DomainContractSelectionResult selection,
-            boolean structuredTimeFollowUp,
-            boolean explicitEntityFollowUp,
-            boolean sameCapabilityNamedEntityFollowUp) {
-        return hasSovereignActiveContract(
-                current,
-                currentContractId,
-                previousContractId,
-                currentFamily,
-                previousFamily,
-                domainHint,
-                selection,
-                structuredTimeFollowUp,
-                explicitEntityFollowUp,
-                sameCapabilityNamedEntityFollowUp,
-                false);
-    }
-
+    /**
+     * @deprecated 请使用 {@link #hasSovereignActiveContract(SemanticContractTransitionDecision)}。
+     */
+    @Deprecated
     public static boolean hasSovereignActiveContract(
             AiQuerySemanticParseResult current,
             String currentContractId,
@@ -92,14 +73,66 @@ public final class SemanticContractSovereigntySupport {
             boolean structuredTimeFollowUp,
             boolean explicitEntityFollowUp,
             boolean sameCapabilityNamedEntityFollowUp,
-            boolean goodsAnchorSameEntityFollowUp) {
+            boolean goodsAnchorSameEntityFollowUp,
+            boolean coverDaysSalesBaselineFollowUp) {
+        if (goodsAnchorSameEntityFollowUp || coverDaysSalesBaselineFollowUp) {
+            return false;
+        }
+        if (sameCapabilityNamedEntityFollowUp) {
+            return false;
+        }
+        SemanticContractTransitionDecision synthetic =
+                coverDaysSalesBaselineFollowUp
+                        ? SemanticContractTransitionDecision.builder()
+                                .transitionType(
+                                        SemanticContractTransitionType.SAME_CAPABILITY_TIME_OVERRIDE)
+                                .build()
+                        : null;
+        if (synthetic != null && synthetic.suppressesV2BusinessFrameSovereignty()) {
+            return false;
+        }
+        return legacySovereignWithoutTransition(
+                current,
+                currentContractId,
+                previousContractId,
+                currentFamily,
+                previousFamily,
+                domainHint,
+                selection,
+                structuredTimeFollowUp,
+                explicitEntityFollowUp);
+    }
+
+    public static boolean hasSovereignActiveContract(SemanticSlotInheritanceRequest request) {
+        SemanticContractTransitionDecision transition =
+                SemanticSlotInheritancePolicy.resolveTransition(request);
+        return hasSovereignActiveContract(transition);
+    }
+
+    public static boolean hasSovereignActiveContract(SemanticContractTransitionDecision transition) {
+        if (transition == null) {
+            return false;
+        }
+        if (transition.suppressesV2BusinessFrameSovereignty()) {
+            return false;
+        }
+        return transition.currentTurnHasSovereignBusinessFrame();
+    }
+
+    private static boolean legacySovereignWithoutTransition(
+            AiQuerySemanticParseResult current,
+            String currentContractId,
+            String previousContractId,
+            String currentFamily,
+            String previousFamily,
+            String domainHint,
+            DomainContractSelectionResult selection,
+            boolean structuredTimeFollowUp,
+            boolean explicitEntityFollowUp) {
         if (!isCatalogValidActiveContract(currentContractId, domainHint, selection)) {
             return false;
         }
-        if (goodsAnchorSameEntityFollowUp) {
-            return false;
-        }
-        if (explicitEntityFollowUp && !sameCapabilityNamedEntityFollowUp) {
+        if (explicitEntityFollowUp) {
             return true;
         }
         if (SemanticContractFamilySupport.crossFamily(currentFamily, previousFamily)) {
@@ -118,12 +151,7 @@ public final class SemanticContractSovereigntySupport {
                 && !StringUtils.hasText(current.effectiveMentionedDishName())) {
             return false;
         }
-        if (StringUtils.hasText(previousContractId)
-                && StringUtils.hasText(currentContractId)
-                && !currentContractId.equals(previousContractId)) {
-            return false;
-        }
-        return true;
+        return false;
     }
 
     private static boolean allowedContractsContain(
@@ -131,13 +159,13 @@ public final class SemanticContractSovereigntySupport {
         if (selection == null || selection.getParserAllowedOutputContract() == null) {
             return true;
         }
-        List<SemanticParserAllowedOutputContract.AllowedContractEntry> entries =
-                selection.getParserAllowedOutputContract().getAllowedContracts();
+        List<com.nongxinle.ai.semantic.SemanticParserAllowedOutputContract.AllowedContractEntry>
+                entries = selection.getParserAllowedOutputContract().getAllowedContracts();
         if (entries == null || entries.isEmpty()) {
             return true;
         }
         String normalized = contractId.trim();
-        for (SemanticParserAllowedOutputContract.AllowedContractEntry entry : entries) {
+        for (var entry : entries) {
             if (entry != null
                     && StringUtils.hasText(entry.getContractId())
                     && normalized.equals(entry.getContractId().trim())) {

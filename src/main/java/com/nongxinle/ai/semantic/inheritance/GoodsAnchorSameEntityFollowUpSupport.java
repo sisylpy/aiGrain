@@ -5,6 +5,7 @@ import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeGoodsAnchorFollowUpSupport;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeFollowUpIntent;
 import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrixRow;
@@ -34,8 +35,39 @@ public final class GoodsAnchorSameEntityFollowUpSupport {
         if (!GoodsSupportedDishCoverAnswerPlan.CONTRACT_ID.equals(previousContractId)) {
             return false;
         }
-        if (!SemanticIntakeGoodsAnchorFollowUpSupport.intakeSignalsGoodsAnchorStockFollowUp(
-                intake, previousTurn)) {
+        SemanticIntakeFollowUpIntent intent = intake != null ? intake.getFollowUpIntent() : null;
+        if (intent != null
+                && intent.getKind() == com.nongxinle.ai.semantic.intake.SemanticIntakeFollowUpKind.GOODS_ANCHOR_STOCK) {
+            return true;
+        }
+        if (intake == null) {
+            return false;
+        }
+        if (!Boolean.TRUE.equals(intake.getIsFollowUp())
+                || !Boolean.TRUE.equals(intake.getUsedPreviousContext())) {
+            return false;
+        }
+        if (!com.nongxinle.ai.semantic.intake.SemanticIntakePrimaryDomain.WAREHOUSE.equals(
+                com.nongxinle.ai.semantic.intake.SemanticIntakePrimaryDomain.normalize(
+                        intake.getPrimaryDomain()))) {
+            return false;
+        }
+        if (com.nongxinle.ai.semantic.intake.SemanticIntakeGoodsSupportedDishCoverSupport
+                .intakeDeclaresGoodsSupportedDishCover(intake)) {
+            return false;
+        }
+        if (com.nongxinle.ai.semantic.intake.SemanticIntakeGoodsStockBatchDetailSupport
+                .intakeDeclaresGoodsStockBatchDetail(intake)) {
+            return false;
+        }
+        if (com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport
+                .intakeHasAuthoritativeInventoryRisk(intake)) {
+            return false;
+        }
+        String currentContractId = SemanticContractFamilySupport.contractIdFromParse(current);
+        if (StringUtils.hasText(currentContractId)
+                && StringUtils.hasText(previousContractId)
+                && !currentContractId.equals(previousContractId)) {
             return false;
         }
         if (StringUtils.hasText(current.effectiveMentionedGoodsName())

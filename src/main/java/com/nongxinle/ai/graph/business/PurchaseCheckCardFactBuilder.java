@@ -2,7 +2,6 @@ package com.nongxinle.ai.graph.business;
 
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.tool.business.PurchaseOverviewTool;
-import com.nongxinle.dto.PurchaseMethodLegacyAggRow;
 import com.nongxinle.service.GbDistributerPurchaseGoodsService;
 import org.springframework.util.StringUtils;
 
@@ -111,7 +110,11 @@ final class PurchaseCheckCardFactBuilder {
         return new FactResult(List.of(), mode, subtitle, purchaseSummary == null ? Map.of() : purchaseSummary);
     }
 
-    /** 采购卡基础统计：与 {@link PurchaseOverviewTool} 同源 SQL，按卡片查询周期聚合。 */
+    /**
+     * 采购卡基础统计：与 {@link PurchaseOverviewTool} 同源 scope；
+     * 自采/订货拆分与 {@code GbDistributerPurchaseGoodsController#getGbPurGoodsStatisticsSeachDate} 一致
+     * （{@code supplierBuy} + 订货 {@code batchDayuStatus}）。
+     */
     static Map<String, Object> buildPurchaseSummary(
             Map<String, Object> base, GbDistributerPurchaseGoodsService purchaseGoodsService) {
         LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
@@ -124,28 +127,65 @@ final class PurchaseCheckCardFactBuilder {
         Double total = purchaseGoodsService.queryGbPurchaseGoodsBuySubtotalSum(base);
         BigDecimal totalBd =
                 total == null ? BigDecimal.ZERO : BigDecimal.valueOf(total).setScale(1, RoundingMode.HALF_UP);
-        BigDecimal selfAmt = BigDecimal.ZERO;
-        BigDecimal supAmt = BigDecimal.ZERO;
-        List<PurchaseMethodLegacyAggRow> methodRows =
-                purchaseGoodsService.queryGbPurchaseGoodsAggByLegacyPurchaseMethod(base);
-        if (methodRows != null) {
-            for (PurchaseMethodLegacyAggRow row : methodRows) {
-                if (row == null) {
-                    continue;
-                }
-                BigDecimal amt = row.getLineSubtotal() == null ? BigDecimal.ZERO : row.getLineSubtotal();
-                String bucket = row.getMethodBucket();
-                if ("supplier_channel".equals(bucket)) {
-                    supAmt = supAmt.add(amt);
-                } else if ("self_strict".equals(bucket)) {
-                    selfAmt = selfAmt.add(amt);
-                }
-            }
+
+        Integer focusedSupplierBuy = toIntegerSupplierBuy(base.get("supplierBuy"));
+        if (focusedSupplierBuy != null && focusedSupplierBuy == -1) {
+            summary.put("totalPurchaseAmount", totalBd.doubleValue());
+            summary.put("selfPurchaseAmount", totalBd.doubleValue());
+            summary.put("supplierPurchaseAmount", 0.0);
+            return summary;
         }
+        if (focusedSupplierBuy != null && focusedSupplierBuy == 1) {
+            summary.put("totalPurchaseAmount", totalBd.doubleValue());
+            summary.put("selfPurchaseAmount", 0.0);
+            summary.put("supplierPurchaseAmount", totalBd.doubleValue());
+            return summary;
+        }
+
+        Map<String, Object> selfQuery = copyBaseForSupplierBuySplit(base);
+        selfQuery.put("supplierBuy", -1);
+        BigDecimal selfAmt = queryPurchaseSubtotalScaled(purchaseGoodsService, selfQuery);
+
+        Map<String, Object> supplierQuery = copyBaseForSupplierBuySplit(base);
+        supplierQuery.put("supplierBuy", 1);
+        supplierQuery.put("batchDayuStatus", 2);
+        BigDecimal supAmt = queryPurchaseSubtotalScaled(purchaseGoodsService, supplierQuery);
+
         summary.put("totalPurchaseAmount", totalBd.doubleValue());
-        summary.put("selfPurchaseAmount", selfAmt.setScale(1, RoundingMode.HALF_UP).doubleValue());
-        summary.put("supplierPurchaseAmount", supAmt.setScale(1, RoundingMode.HALF_UP).doubleValue());
+        summary.put("selfPurchaseAmount", selfAmt.doubleValue());
+        summary.put("supplierPurchaseAmount", supAmt.doubleValue());
         return summary;
+    }
+
+    private static Integer toIntegerSupplierBuy(Object supplierBuy) {
+        if (supplierBuy == null) {
+            return null;
+        }
+        if (supplierBuy instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(supplierBuy.toString().trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static Map<String, Object> copyBaseForSupplierBuySplit(Map<String, Object> base) {
+        return PurchaseOverviewTool.copyBaseWithoutLegacyPurchaseMethodFocus(base);
+    }
+
+    private static BigDecimal queryPurchaseSubtotalScaled(
+            GbDistributerPurchaseGoodsService purchaseGoodsService, Map<String, Object> query) {
+        Integer count = purchaseGoodsService.queryGbPurchaseGoodsCount(query);
+        if (count == null || count <= 0) {
+            return BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP);
+        }
+        Double subtotal = purchaseGoodsService.queryPurchaseGoodsSubTotal(query);
+        if (subtotal == null) {
+            return BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.valueOf(subtotal).setScale(1, RoundingMode.HALF_UP);
     }
 
     static boolean hasPurchaseSummaryData(Map<String, Object> purchaseSummary) {

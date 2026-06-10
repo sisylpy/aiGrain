@@ -88,7 +88,7 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         BigDecimal lossCost = toDecimal(costStats.get("lossTotal"));
         BigDecimal returnCost = toDecimal(costStats.get("returnTotal"));
         BigDecimal productionCost = produceCost.add(wasteCost).add(lossCost);
-        BigDecimal totalCost = productionCost.add(returnCost);
+        BigDecimal totalCost = productionCost;
         BigDecimal wasteLossCost = wasteCost.add(lossCost);
 
         BigDecimal produceShareOfReduce = BigDecimal.ZERO;
@@ -325,7 +325,7 @@ public class GbAiDailyRevenueDashboardServiceImpl implements GbAiDailyRevenueDas
         BigDecimal lossCost = toDecimal(costStats.get("lossTotal"));
         BigDecimal returnCost = toDecimal(costStats.get("returnTotal"));
         BigDecimal productionCost = produceCost.add(wasteCost).add(lossCost);
-        BigDecimal totalCost = productionCost.add(returnCost);
+        BigDecimal totalCost = productionCost;
         BigDecimal wasteLossCost = wasteCost.add(lossCost);
 
         BigDecimal produceShareOfReduce = BigDecimal.ZERO;

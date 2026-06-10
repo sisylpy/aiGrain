@@ -10,6 +10,8 @@ import com.nongxinle.ai.tool.ToolResult;
 import com.nongxinle.dto.DepartmentPurchaseAggRow;
 import com.nongxinle.dto.PurchaseMethodLegacyAggRow;
 import com.nongxinle.entity.GbDistributerGoodsEntity;
+import com.nongxinle.entity.GbDistributerPurchaseGoodsEntity;
+import com.nongxinle.ai.graph.business.PurchaseGoodsAnchorLineRowSupport;
 import com.nongxinle.service.GbAiDailyRevenueService;
 import com.nongxinle.service.GbDistributerPurchaseGoodsService;
 import com.nongxinle.utils.GbConstants;
@@ -165,10 +167,11 @@ public class PurchaseOverviewTool implements AiTool {
             }
 
             PurchaseMethodSection methodSection = hasRows
-                    ? resolvePurchaseMethodSection(
-                            purchaseGoodsService.queryGbPurchaseGoodsAggByLegacyPurchaseMethod(base),
+                    ? resolvePurchaseMethodSectionForScope(
+                            base,
                             rowCount == null ? 0 : rowCount,
-                            totalAmountBd)
+                            totalAmountBd,
+                            purchaseSourceFocus)
                     : PurchaseMethodSection.empty();
             methodSection = applyPurchaseSourceFocus(methodSection, purchaseSourceFocus, periodPhrases);
 
@@ -273,6 +276,9 @@ public class PurchaseOverviewTool implements AiTool {
             List<GbDistributerGoodsEntity> topBySub = hasRows
                     ? nullToEmpty(purchaseGoodsService.queryGbPurchaseGoodsTopSubtotalMerged(topBase))
                     : List.of();
+            List<GbDistributerGoodsEntity> topByQuantity = hasRows
+                    ? nullToEmpty(purchaseGoodsService.queryGbPurchaseGoodsTopQuantityMerged(topBase))
+                    : List.of();
             Map<String, Object> unitPriceBase = new HashMap<>(base);
             unitPriceBase.put("limit", 20);
             List<Map<String, Object>> unitPriceChanged = hasRows
@@ -298,7 +304,7 @@ public class PurchaseOverviewTool implements AiTool {
                         request.getRunId(),
                         purchaseSourceFocus.isEmpty() ? "-" : purchaseSourceFocus,
                         narrativeMode,
-                        base.get("legacyPurchaseMethodFocus") == null ? "none" : base.get("legacyPurchaseMethodFocus"),
+                        describePurchaseSourceSqlFacet(base),
                         rowCount == null ? 0 : rowCount,
                         formatDecimal(subtotal),
                         start,
@@ -307,6 +313,7 @@ public class PurchaseOverviewTool implements AiTool {
 
             List<Map<String, Object>> goodsFrequencyTop = mapGoodsFrequencyTop(topByTimes);
             List<Map<String, Object>> goodsAmountTop = mapGoodsAmountTop(topBySub);
+            List<Map<String, Object>> goodsQuantityTop = mapGoodsQuantityTop(topByQuantity);
 
             PurchaseAnchorExecutionExtras anchorExecution =
                     resolvePurchaseAnchorExecution(
@@ -329,6 +336,7 @@ public class PurchaseOverviewTool implements AiTool {
             purchaseOverview.put("purchaseMethodSummaryFragment", methodSection.narrativeFragment);
             purchaseOverview.put("goodsPurchaseFrequencyTop", goodsFrequencyTop);
             purchaseOverview.put("goodsPurchaseAmountTop", goodsAmountTop);
+            purchaseOverview.put("goodsPurchaseQuantityTop", goodsQuantityTop);
             if (anchorExecution.active) {
                 if (anchorExecution.goodsSourceBreakdown) {
                     purchaseOverview.put("purchaseGoodsSourceBreakdownActive", Boolean.TRUE);
@@ -352,6 +360,20 @@ public class PurchaseOverviewTool implements AiTool {
                             anchorExecution.sourceBreakdownBuckets == null || anchorExecution.sourceBreakdownBuckets.isEmpty()
                                     ? List.of()
                                     : new ArrayList<>(anchorExecution.sourceBreakdownBuckets));
+                    purchaseOverview.put(
+                            "purchaseGoodsAnchorLineRows",
+                            anchorExecution.anchorLineRows == null || anchorExecution.anchorLineRows.isEmpty()
+                                    ? List.of()
+                                    : new ArrayList<>(anchorExecution.anchorLineRows));
+                    purchaseOverview.put(
+                            "purchaseGoodsAnchorLineRowsCount",
+                            anchorExecution.anchorLineRows == null ? 0 : anchorExecution.anchorLineRows.size());
+                    purchaseOverview.put(
+                            "purchaseGoodsAnchorLineQueryMethod",
+                            anchorExecution.anchorLineQueryMethod == null
+                                            || anchorExecution.anchorLineQueryMethod.isBlank()
+                                    ? "queryPurchaseGoodsWithDetailByParams"
+                                    : anchorExecution.anchorLineQueryMethod);
                     Object scopePids = base.get("purDepIds");
                     if (scopePids instanceof List<?> l && !l.isEmpty()) {
                         purchaseOverview.put(
@@ -435,6 +457,10 @@ public class PurchaseOverviewTool implements AiTool {
             purchaseOverview.put("unitPriceChangedItems", new ArrayList<>(unitPriceChanged));
             purchaseOverview.put("priceChangeItems", mapUnitPriceChangedRows(unitPriceChanged));
             purchaseOverview.put("highAmountItems", mapHighAmount(topBySub));
+            purchaseOverview.put("purchaseFrequencyAnomalyItems", List.of());
+            purchaseOverview.put("frequencyAnomalyItems", List.of());
+            purchaseOverview.put("purchaseQuantityAnomalyItems", List.of());
+            purchaseOverview.put("quantityAnomalyItems", List.of());
             purchaseOverview.put("purchaseWithoutSalesItems", List.of());
             purchaseOverview.put("recommendations", buildRecommendations(hasRows, periodPhrases));
 
@@ -461,11 +487,16 @@ public class PurchaseOverviewTool implements AiTool {
             failOverview.put("purchaseMethodSummaryFragment", null);
             failOverview.put("goodsPurchaseFrequencyTop", List.of());
             failOverview.put("goodsPurchaseAmountTop", List.of());
+            failOverview.put("goodsPurchaseQuantityTop", List.of());
             failOverview.put("topGoods", List.of());
             failOverview.put("topSuppliers", List.of());
             failOverview.put("unitPriceChangedItems", List.of());
             failOverview.put("priceChangeItems", List.of());
             failOverview.put("highAmountItems", List.of());
+            failOverview.put("purchaseFrequencyAnomalyItems", List.of());
+            failOverview.put("frequencyAnomalyItems", List.of());
+            failOverview.put("purchaseQuantityAnomalyItems", List.of());
+            failOverview.put("quantityAnomalyItems", List.of());
             failOverview.put("purchaseWithoutSalesItems", List.of());
             failOverview.put("recommendations", List.of(periodPhrases.getDisplayTimeRange()
                     + "暂未查询到有效采购记录（查询异常降级），请确认采购入库数据是否已录入。"));
@@ -658,11 +689,28 @@ public class PurchaseOverviewTool implements AiTool {
         row.put("supplierPurchaseLineCount", supLines);
         row.put("otherPurchaseLineCount", otherLines);
         out.sourceBreakdownRow = row;
+
+        Map<String, Object> lineQueryBase = new HashMap<>(executionBase);
+        lineQueryBase.remove("legacyPurchaseMethodFocus");
+        List<GbDistributerPurchaseGoodsEntity> rawLines =
+                nullToEmptyPurchaseEntities(
+                        purchaseGoodsService.queryPurchaseGoodsWithDetailByParams(lineQueryBase));
+        out.anchorLineRows = PurchaseGoodsAnchorLineRowSupport.mapDistinctPurchaseLines(rawLines);
+        out.anchorLineQueryMethod = "queryPurchaseGoodsWithDetailByParams";
+        String defaultUnit = PurchaseGoodsAnchorLineRowSupport.resolveDefaultUnit(out.anchorLineRows);
+        if (StringUtils.hasText(defaultUnit)) {
+            row.put("unit", defaultUnit);
+        }
         return out;
     }
 
     private static List<PurchaseMethodLegacyAggRow> nullToEmptyPurchaseMethodAgg(
             List<PurchaseMethodLegacyAggRow> list) {
+        return list == null ? List.of() : list;
+    }
+
+    private static List<GbDistributerPurchaseGoodsEntity> nullToEmptyPurchaseEntities(
+            List<GbDistributerPurchaseGoodsEntity> list) {
         return list == null ? List.of() : list;
     }
 
@@ -787,8 +835,8 @@ public class PurchaseOverviewTool implements AiTool {
         }
         Map<String, Object> executionBase = new HashMap<>(base);
         executionBase.put("disGoodsId", disGoodsId);
-        Map<String, Object> selfBase = new HashMap<>(executionBase);
-        selfBase.put("legacyPurchaseMethodFocus", "self_strict");
+        Map<String, Object> selfBase = copyBaseWithoutLegacyPurchaseMethodFocus(executionBase);
+        selfBase.put("supplierBuy", -1);
         Integer selfCnt = purchaseGoodsService.queryGbPurchaseGoodsCount(selfBase);
         out.alternativeHasData = Boolean.valueOf(selfCnt != null && selfCnt > 0);
         LinkedHashMap<String, Object> alt = new LinkedHashMap<>();
@@ -866,6 +914,8 @@ public class PurchaseOverviewTool implements AiTool {
         String targetGoodsName = "";
         Integer targetGoodsId;
         List<Map<String, Object>> detailRows = List.of();
+        List<Map<String, Object>> anchorLineRows = List.of();
+        String anchorLineQueryMethod;
         Map<String, Object> sourceBreakdownRow;
         List<Map<String, Object>> sourceBreakdownBuckets = List.of();
         String noDataReason;
@@ -898,6 +948,40 @@ public class PurchaseOverviewTool implements AiTool {
      * 将旧版供货属性桶（{@link com.nongxinle.dto.PurchaseMethodLegacyAggRow}）汇总为「供货商采购 / 自采 / 其它方式」，
      * 并与总笔数、总金额 reconcile。
      */
+    private PurchaseMethodSection resolvePurchaseMethodSectionForScope(
+            Map<String, Object> base, int rowCount, BigDecimal totalAmountBd, String purchaseSourceFocus) {
+        if (AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equals(purchaseSourceFocus)) {
+            return singlePurchaseMethodBucketSection("供货商采购", rowCount, totalAmountBd);
+        }
+        if (AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE.equals(purchaseSourceFocus)) {
+            return singlePurchaseMethodBucketSection("自采", rowCount, totalAmountBd);
+        }
+        return resolvePurchaseMethodSection(
+                purchaseGoodsService.queryGbPurchaseGoodsAggByLegacyPurchaseMethod(base),
+                rowCount,
+                totalAmountBd);
+    }
+
+    private static PurchaseMethodSection singlePurchaseMethodBucketSection(
+            String label, int rowCount, BigDecimal totalAmountBd) {
+        if (rowCount <= 0) {
+            return PurchaseMethodSection.empty();
+        }
+        BigDecimal total = totalAmountBd == null ? BigDecimal.ZERO : totalAmountBd;
+        LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+        row.put("label", label);
+        row.put("lineCount", rowCount);
+        row.put("amountYuan", formatScaleOnePlain(total));
+        String frag =
+                String.format(
+                        Locale.CHINA,
+                        "%s%d笔、金额%s元",
+                        label,
+                        rowCount,
+                        formatScaleOnePlain(total));
+        return new PurchaseMethodSection(true, List.of(row), null, frag);
+    }
+
     private static PurchaseMethodSection resolvePurchaseMethodSection(List<PurchaseMethodLegacyAggRow> rawRows, int rowCount,
             BigDecimal totalAmountBd) {
         if (rawRows == null || rawRows.isEmpty()) {
@@ -1034,7 +1118,7 @@ public class PurchaseOverviewTool implements AiTool {
         } else if (purDep != null) {
             base.put("purDepId", purDep.intValue());
         }
-        applyLegacySourceFocusToQueryParams(base, purchaseSourceFocus);
+        applyPurchaseSourceFacetToQueryParams(base, purchaseSourceFocus);
         return base;
     }
 
@@ -1214,6 +1298,45 @@ public class PurchaseOverviewTool implements AiTool {
                 row.put("disGoodsId", g.getGbDistributerGoodsId());
             }
             out.add(row);
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> mapGoodsQuantityTop(List<GbDistributerGoodsEntity> byQuantity) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (byQuantity == null || byQuantity.isEmpty()) {
+            return out;
+        }
+        for (GbDistributerGoodsEntity g : byQuantity) {
+            if (g == null) {
+                continue;
+            }
+            String qtyRaw = g.getGbDgSelfPrice();
+            if (qtyRaw == null || qtyRaw.isBlank()) {
+                continue;
+            }
+            double qtyVal;
+            try {
+                qtyVal = Double.parseDouble(qtyRaw.trim());
+            } catch (Exception e) {
+                continue;
+            }
+            if (qtyVal <= 0) {
+                continue;
+            }
+            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+            row.put("goodsName", g.getGbDgGoodsName());
+            row.put("purchaseQuantity", qtyRaw.trim());
+            if (g.getGbDgGoodsStandardname() != null && !g.getGbDgGoodsStandardname().isBlank()) {
+                row.put("unit", g.getGbDgGoodsStandardname().trim());
+            }
+            if (g.getGbDistributerGoodsId() != null) {
+                row.put("disGoodsId", g.getGbDistributerGoodsId());
+            }
+            out.add(row);
+            if (out.size() >= 5) {
+                break;
+            }
         }
         return out;
     }
@@ -1469,18 +1592,42 @@ public class PurchaseOverviewTool implements AiTool {
     }
 
     /**
-     * 与 Mapper {@code purGoodsWhereLegacyPurchaseMethodFocus} 一致：count/金额/Top/按店汇总与拆分同一过滤口径。
+     * 自采/订货 SQL 口径与 {@code GbDistributerPurchaseGoodsController#getGbPurGoodsStatisticsSeachDate} 一致：
+     * 自采 {@code supplierBuy=-1}；订货 {@code supplierBuy=1} + {@code batchDayuStatus=2}。
      */
-    private static void applyLegacySourceFocusToQueryParams(Map<String, Object> base, String purchaseSourceFocus) {
+    static void applyPurchaseSourceFacetToQueryParams(Map<String, Object> base, String purchaseSourceFocus) {
         if (base == null || purchaseSourceFocus == null || purchaseSourceFocus.isBlank()
                 || AiQuerySemanticLexicon.SOURCE_ALL.equalsIgnoreCase(purchaseSourceFocus)) {
             return;
         }
+        base.remove("legacyPurchaseMethodFocus");
         if (AiQuerySemanticLexicon.SOURCE_SELF_PURCHASE.equals(purchaseSourceFocus)) {
-            base.put("legacyPurchaseMethodFocus", "self_strict");
+            base.put("supplierBuy", -1);
+            base.remove("batchDayuStatus");
         } else if (AiQuerySemanticLexicon.SOURCE_SUPPLIER_PURCHASE.equals(purchaseSourceFocus)) {
-            base.put("legacyPurchaseMethodFocus", "supplier_channel");
+            base.put("supplierBuy", 1);
+            base.put("batchDayuStatus", 2);
         }
+    }
+
+    public static Map<String, Object> copyBaseWithoutLegacyPurchaseMethodFocus(Map<String, Object> base) {
+        Map<String, Object> query = new HashMap<>(base);
+        query.remove("legacyPurchaseMethodFocus");
+        return query;
+    }
+
+    private static String describePurchaseSourceSqlFacet(Map<String, Object> base) {
+        if (base == null || base.isEmpty()) {
+            return "none";
+        }
+        Object supplierBuy = base.get("supplierBuy");
+        if (supplierBuy == null) {
+            return "none";
+        }
+        Object batchDayuStatus = base.get("batchDayuStatus");
+        return batchDayuStatus == null
+                ? "supplierBuy=" + supplierBuy
+                : "supplierBuy=" + supplierBuy + ",batchDayuStatus=" + batchDayuStatus;
     }
 
     /**

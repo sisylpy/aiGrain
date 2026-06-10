@@ -16,6 +16,7 @@ import com.nongxinle.ai.semantic.intake.SemanticIntakeStatus;
 import com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResultDebugSerializer;
+import com.nongxinle.ai.semantic.intake.grounding.CoverDaysSalesBaselineTimeSupport;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
@@ -28,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDate;
 
 /**
  * 仅负责 {@link AiResolvedQueryContext#builder()} 字段写入；不含 org/编排/收窄策略判断。
@@ -79,15 +81,27 @@ public final class AiResolvedQueryContextBuilderSupport {
             int rewritePromptResultAnchorsCount,
             SemanticDomainRouteResult semanticDomainRoute,
             DomainContractSelectionResult domainContractSelection,
+            SemanticDomainRouteResult effectiveSemanticDomainRoute,
+            DomainContractSelectionResult effectiveDomainContractSelection,
             SemanticContractValidationDebug semanticContractValidation,
             SemanticContractStrictDecision semanticContractStrictDecision,
             AiQuerySemanticParseResult querySemanticV2Raw,
             String semanticFailureCode,
             String semanticFailureStage,
             ScopeResolutionTrace scopeResolutionTrace,
-            BareRankingDimensionSwitchPlan bareRankingDimensionSwitchPlan) {}
+            BareRankingDimensionSwitchPlan bareRankingDimensionSwitchPlan,
+            String rewriteInheritedAnchorType,
+            String rewriteInheritedAnchorName,
+            String rewriteInheritedAnchorEntityId,
+            List<Map<String, String>> rewriteUsedAnchors) {}
 
     public static AiResolvedQueryContext build(BuildPayload p) {
+        LocalDate anchor = resolveSemanticAnchorDate(p);
+        CoverDaysSalesBaselineTimeSupport.DualTimePlan dualTime =
+                p.semanticLlm() != null && p.semanticLlm().getContractLockedFrame() != null
+                        ? CoverDaysSalesBaselineTimeSupport.resolveDualTimePlan(
+                                p.semanticLlm().getContractLockedFrame(), anchor)
+                        : CoverDaysSalesBaselineTimeSupport.resolveDualTimePlan(p.semanticLlm(), anchor);
         SemanticOrchestrationDecisionReconciler.OrchestrationAssemblyFields orch = p.orchestration();
         return AiResolvedQueryContext.builder()
                 .runId(p.runId())
@@ -110,6 +124,10 @@ public final class AiResolvedQueryContextBuilderSupport {
                 .effectiveTimeWindowSource(p.effectiveTimeSource())
                 .effectiveScopeSource(p.followUp().getEffectiveScopeSource())
                 .effectiveIntentSource(p.followUp().getEffectiveIntentSource())
+                .stockAsOfDate(dualTime != null ? dualTime.stockAsOfDate() : null)
+                .resolvedSalesBaseline(dualTime != null ? dualTime.baseline() : null)
+                .salesBaselineTimeType(dualTime != null ? dualTime.salesBaselineTimeType() : null)
+                .contractLockedFrame(p.semanticLlm() != null ? p.semanticLlm().getContractLockedFrame() : null)
                 .mentionedDishName(p.mentionedDishName())
                 .dishProfitMetricType(p.dishProfitMetricType())
                 .querySemanticParse(p.semanticLlm())
@@ -239,15 +257,25 @@ public final class AiResolvedQueryContextBuilderSupport {
                         p.semanticIntake() != null ? p.semanticIntake().toDebugMap() : null)
                 .rewriteInheritedTime(null)
                 .rewriteInheritedScope(null)
-                .rewriteInheritedAnchorType(null)
-                .rewriteInheritedAnchorName(null)
+                .rewriteInheritedAnchorType(
+                        AiResolvedQueryContextDebugFactory.blankToNullSemantic(p.rewriteInheritedAnchorType()))
+                .rewriteInheritedAnchorName(
+                        AiResolvedQueryContextDebugFactory.blankToNullSemantic(p.rewriteInheritedAnchorName()))
+                .rewriteInheritedAnchorEntityId(
+                        AiResolvedQueryContextDebugFactory.blankToNullSemantic(
+                                p.rewriteInheritedAnchorEntityId()))
                 .followUpRewriteClarificationQuestion(resolveIntakeClarificationQuestion(p.semanticIntake()))
-                .rewriteUsedAnchors(null)
+                .rewriteUsedAnchors(
+                        p.rewriteUsedAnchors() == null || p.rewriteUsedAnchors().isEmpty()
+                                ? null
+                                : new ArrayList<>(p.rewriteUsedAnchors()))
                 .previousTurnResultAnchorsCount(p.previousTurnResultAnchorsCount())
                 .rewritePromptResultAnchorsCount(p.rewritePromptResultAnchorsCount())
                 .semanticIntake(p.semanticIntake())
                 .semanticDomainRoute(p.semanticDomainRoute())
                 .domainContractSelection(p.domainContractSelection())
+                .effectiveSemanticDomainRoute(p.effectiveSemanticDomainRoute())
+                .effectiveDomainContractSelection(p.effectiveDomainContractSelection())
                 .semanticContractValidation(p.semanticContractValidation())
                 .semanticContractStrictDecision(p.semanticContractStrictDecision())
                 .querySemanticV2Domain(
@@ -257,10 +285,16 @@ public final class AiResolvedQueryContextBuilderSupport {
                                 : null)
                 .routeParserDomainMismatch(
                         AiResolvedQueryContextDebugFactory.observeRouteParserDomainMismatch(
-                                p.semanticDomainRoute(), p.querySemanticV2Raw()))
+                                p.effectiveSemanticDomainRoute() != null
+                                        ? p.effectiveSemanticDomainRoute()
+                                        : p.semanticDomainRoute(),
+                                p.querySemanticV2Raw()))
                 .routeParserDomainMismatchReason(
                         AiResolvedQueryContextDebugFactory.observeRouteParserDomainMismatchReason(
-                                p.semanticDomainRoute(), p.querySemanticV2Raw()))
+                                p.effectiveSemanticDomainRoute() != null
+                                        ? p.effectiveSemanticDomainRoute()
+                                        : p.semanticDomainRoute(),
+                                p.querySemanticV2Raw()))
                 .semanticFailureCode(
                         AiResolvedQueryContextDebugFactory.blankToNullSemantic(p.semanticFailureCode()))
                 .semanticFailureStage(
@@ -270,6 +304,20 @@ public final class AiResolvedQueryContextBuilderSupport {
                         buildBareRankingDimensionSwitchDebug(
                                 p.bareRankingDimensionSwitchPlan(), p.semanticLlm()))
                 .build();
+    }
+
+    private static LocalDate resolveSemanticAnchorDate(AiResolvedQueryContextBuilderSupport.BuildPayload p) {
+        if (p.querySemanticV2InputPreview() != null) {
+            Object today = p.querySemanticV2InputPreview().get("today");
+            if (today != null) {
+                try {
+                    return LocalDate.parse(today.toString().trim());
+                } catch (Exception ignored) {
+                    // fall through
+                }
+            }
+        }
+        return LocalDate.now();
     }
 
     private static Map<String, Object> buildBareRankingDimensionSwitchDebug(

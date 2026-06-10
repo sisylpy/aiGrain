@@ -12,6 +12,7 @@ import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.DishIngredientCoverAnswerPlan;
+import com.nongxinle.ai.dto.business.GoodsStockBatchDetailAnswerPlan;
 import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
 import com.nongxinle.ai.dto.business.DishProfitPrescriptionAnswerPlan;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
@@ -213,6 +214,7 @@ final class AiHarnessAnswerPlanSummaryAppender {
         appendDishProfitPrescriptionAnswerPlan(out, state);
         appendDishIngredientCoverAnswerPlan(out, state);
         appendGoodsSupportedDishCoverAnswerPlan(out, state);
+        appendGoodsStockBatchDetailAnswerPlan(out, state);
         appendPurchaseAnswerPlan(out, state);
         appendStockReduceAnswerPlan(out, state);
         appendRevenueAnswerPlan(out, state);
@@ -471,6 +473,28 @@ final class AiHarnessAnswerPlanSummaryAppender {
         } else {
             out.put("goodsSupportedDishCoverAnswerPlan", null);
             out.put("goodsSupportedDishCoverAnswerPlanPresent", false);
+        }
+    }
+
+    private static void appendGoodsStockBatchDetailAnswerPlan(
+            LinkedHashMap<String, Object> out, AiRunState state) {
+        GoodsStockBatchDetailAnswerPlan plan = state.getGoodsStockBatchDetailAnswerPlan();
+        if (plan != null) {
+            try {
+                out.put("goodsStockBatchDetailAnswerPlan", JSON.parseObject(JSON.toJSONString(plan)));
+                out.put("goodsStockBatchDetailAnswerPlanPresent", true);
+                out.put("goodsStockBatchDetailAnswerPlanType", plan.getPlanType());
+                out.put("goodsStockBatchDetailAnswerPlanStatus", plan.getStatus());
+                out.put("goodsStockBatchDetailGoodsName", plan.getGoodsName());
+                List<Map<String, Object>> batchRows = plan.getBatchRows();
+                int rowCount = batchRows == null ? 0 : batchRows.size();
+                out.put("goodsStockBatchDetailBatchRowsCount", rowCount > 0 ? rowCount : null);
+            } catch (Exception ex) {
+                out.put("goodsStockBatchDetailAnswerPlanPresent", false);
+            }
+        } else {
+            out.put("goodsStockBatchDetailAnswerPlan", null);
+            out.put("goodsStockBatchDetailAnswerPlanPresent", false);
         }
     }
 
@@ -851,6 +875,13 @@ final class AiHarnessAnswerPlanSummaryAppender {
         }
         if (AiResolvedQueryIntent.PATH_WAREHOUSE_STOCK.equals(pathEff)
                 || state.isWarehouseStockOverviewPath()) {
+            if (state.getGoodsSupportedDishCoverAnswerPlan() != null
+                    && state.getGoodsStockBatchDetailAnswerPlan() != null) {
+                return "goodsAnchorInventoryBundleAnswerPlans";
+            }
+            if (state.getGoodsStockBatchDetailAnswerPlan() != null) {
+                return "goodsStockBatchDetailAnswerPlan";
+            }
             if (state.getGoodsSupportedDishCoverAnswerPlan() != null) {
                 return "goodsSupportedDishCoverAnswerPlan";
             }

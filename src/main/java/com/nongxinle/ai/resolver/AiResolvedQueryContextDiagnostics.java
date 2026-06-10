@@ -43,11 +43,23 @@ public class AiResolvedQueryContextDiagnostics {
         return "v2_no_routable_path";
     }
 
+    /**
+     * V2 模型在 {@code needClarification=true} 时已给出的业务澄清句；无则 null（不含固定模板 fallback）。
+     */
+    public static String resolveModelExplicitClarificationQuestion(
+            AiQuerySemanticParseResult semantic) {
+        if (semantic != null
+                && Boolean.TRUE.equals(semantic.getNeedClarification())
+                && StringUtils.hasText(semantic.getClarificationQuestion())) {
+            return semantic.getClarificationQuestion().trim();
+        }
+        return null;
+    }
+
     public static String resolveSemanticClarificationQuestion(AiQuerySemanticParseResult semanticLlm) {
-        if (semanticLlm != null
-                && Boolean.TRUE.equals(semanticLlm.getNeedClarification())
-                && StringUtils.hasText(semanticLlm.getClarificationQuestion())) {
-            return semanticLlm.getClarificationQuestion().trim();
+        String explicit = resolveModelExplicitClarificationQuestion(semanticLlm);
+        if (StringUtils.hasText(explicit)) {
+            return explicit;
         }
         return SemanticParseClarificationPolicy.clarificationQuestion();
     }

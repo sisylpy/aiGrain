@@ -1,6 +1,8 @@
 package com.nongxinle.ai.graph.business;
 
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,6 +17,7 @@ final class PurchaseCheckCardSupport {
 
     static Map<String, Object> build(
             AiRunState state, BusinessStatusCardBuildRequest req, BusinessStatusCardBuildDeps deps) {
+        PurchaseAnswerPlan plan = state != null ? state.getPurchaseAnswerPlan() : null;
         Map<String, Object> payload = new LinkedHashMap<>();
         BusinessStatusCardShellSupport.putRangeFields(payload, req);
 
@@ -33,10 +36,14 @@ final class PurchaseCheckCardSupport {
         payload.put(
                 "priceCompareDescription",
                 PurchaseCheckCardFactBuilder.priceCompareDescription(fact.priceCompareMode(), req));
-        Map<String, Object> purchaseSummary = fact.purchaseSummary();
+        Map<String, Object> purchaseSummary =
+                PurchaseCheckCardSummaryProjection.resolve(plan, fact.purchaseSummary());
         payload.put("totalPurchaseAmount", purchaseSummary.get("totalPurchaseAmount"));
         payload.put("selfPurchaseAmount", purchaseSummary.get("selfPurchaseAmount"));
         payload.put("supplierPurchaseAmount", purchaseSummary.get("supplierPurchaseAmount"));
+        if (plan != null && StringUtils.hasText(plan.getPurchaseSourceType())) {
+            payload.put("purchaseSourceType", plan.getPurchaseSourceType().trim());
+        }
         List<Map<String, Object>> unitPriceChanged = fact.unitPriceChangedItems();
         boolean hasSummary = PurchaseCheckCardFactBuilder.hasPurchaseSummaryData(purchaseSummary);
         boolean hasPriceChanges = !unitPriceChanged.isEmpty();
@@ -49,14 +56,18 @@ final class PurchaseCheckCardSupport {
         }
         payload.put("warnings", List.of());
 
-        return shell(req, fact.subtitle(), payload);
+        return shell(req, plan, fact.subtitle(), payload);
     }
 
     private static Map<String, Object> shell(
-            BusinessStatusCardBuildRequest req, String subtitle, Map<String, Object> payload) {
+            BusinessStatusCardBuildRequest req,
+            PurchaseAnswerPlan plan,
+            String subtitle,
+            Map<String, Object> payload) {
+        String titleSuffix = PurchaseCheckCardSummaryProjection.titleSuffix(plan);
         return BusinessStatusCardShellSupport.buildCard(
                 BusinessStatusCardTypes.PURCHASE_CHECK_CARD,
-                BusinessStatusCardShellSupport.titled(req.getReportLabel(), "·采购"),
+                BusinessStatusCardShellSupport.titled(req.getReportLabel(), "·" + titleSuffix),
                 subtitle,
                 BusinessStatusCardShellSupport.CHART_TABLE,
                 payload,

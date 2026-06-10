@@ -10,8 +10,12 @@ import java.util.Locale;
  */
 public final class StructuredRankingTimeOnlyIntakeSupport {
 
-    public static final String FOLLOW_UP_PATH_TIME_ONLY = "STRUCTURED_RANKING_TIME_ONLY";
+    public static final String FOLLOW_UP_PATH_RANKING_TIME_ONLY = "RANKING_STRUCTURED_TIME_ONLY";
     public static final String FOLLOW_UP_PATH_DIMENSION_SWITCH = "BARE_RANKING_DIMENSION_SWITCH";
+
+    /** @deprecated 使用 {@link #FOLLOW_UP_PATH_RANKING_TIME_ONLY}。 */
+    @Deprecated
+    public static final String FOLLOW_UP_PATH_TIME_ONLY = FOLLOW_UP_PATH_RANKING_TIME_ONLY;
 
     private StructuredRankingTimeOnlyIntakeSupport() {}
 

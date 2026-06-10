@@ -6,8 +6,13 @@ import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import org.junit.jupiter.api.Test;
 
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
 import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -878,7 +883,7 @@ class AiQuerySemanticLlmMergeHelperTest {
                                         .timeSource("DEFAULT_MONTH_TO_DATE")
                                         .build())
                         .build();
-        TimeLayerContextSignals signals = new TimeLayerContextSignals(true, true);
+        TimeLayerContextSignals signals = new TimeLayerContextSignals(true, true, false);
         LocalDate anchor = LocalDate.of(2026, 6, 1);
         AiQuerySemanticParseResult reconciled =
                 SemanticTimeContractCheck.reconcileTimePartForContract(sem, prev, anchor, signals);
@@ -941,6 +946,42 @@ class AiQuerySemanticLlmMergeHelperTest {
         AiQuerySemanticParseResult reconciled =
                 SemanticTimeContractCheck.reconcileTimePartForContract(sem, prev, anchor);
         assertThat(reconciled).isSameAs(sem);
+    }
+
+    /**
+     * V2 销售分析类问句的时间合同：锚定相对型 + {@link AiResolvedTimeWindow#CUSTOM} 自由区间，
+     * 须通过 {@link SemanticTimeContractCheck#check}（{@code today=2026-06-02}）。
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("salesAnalysisTimeContractCases")
+    void semanticTimeContractCheck_salesAnalysisTimeOutputs(
+            String scenario, String timeType, String startDate, String endDate) {
+        AiQuerySemanticParseResult sem =
+                revenueSemWithTime(
+                        timeType,
+                        startDate,
+                        endDate,
+                        SemanticTimeContractCheck.SOURCE_CURRENT_MESSAGE_EXPLICIT,
+                        false);
+        SemanticTimeContractCheck.Result r =
+                SemanticTimeContractCheck.check(sem, null, LocalDate.of(2026, 6, 2));
+        assertThat(r.valid())
+                .as("scenario=%s timeType=%s %s~%s", scenario, timeType, startDate, endDate)
+                .isTrue();
+        assertThat(r.normalizedTimeSource())
+                .isEqualTo(SemanticTimeContractCheck.SOURCE_CURRENT_MESSAGE_EXPLICIT);
+        assertThat(r.normalizedStartDate()).isEqualTo(LocalDate.parse(startDate));
+        assertThat(r.normalizedEndDate()).isEqualTo(LocalDate.parse(endDate));
+    }
+
+    static Stream<Arguments> salesAnalysisTimeContractCases() {
+        return Stream.of(
+                Arguments.of("这个月销售分析", "THIS_MONTH", "2026-06-01", "2026-06-02"),
+                Arguments.of("上个月销售分析", "LAST_MONTH", "2026-05-01", "2026-05-31"),
+                Arguments.of("5月销售分析", "CUSTOM", "2026-05-01", "2026-05-31"),
+                Arguments.of("4月销售分析", "CUSTOM", "2026-04-01", "2026-04-30"),
+                Arguments.of("上个月最后一周销售分析", "CUSTOM", "2026-05-25", "2026-05-31"),
+                Arguments.of("近7天销售分析", "ROLLING_7", "2026-05-27", "2026-06-02"));
     }
 
     private static AiQuerySemanticParseResult revenueSemWithTime(

@@ -45,6 +45,9 @@
         <result property="gbDfgFoodId" column="gb_dfg_food_id"/>
         <result property="gbDfgDisGoodsId" column="gb_dfg_dis_goods_id"/>
         <result property="gbDfgStatus" column="gb_dfg_status"/>
+        <result property="gbDfgPortionAmount" column="gb_dfg_portion_amount"/>
+        <result property="gbDfgPortionUnit" column="gb_dfg_portion_unit"/>
+        <result property="gbDfgPackQtyInMin" column="gb_dfg_pack_qty_in_min"/>
         <result property="gbDfgGoodsAmount" column="gb_dfg_goods_amount"/>
         <result property="gbDfgGoodsName" column="gb_dfg_goods_name"/>
         <result property="gbDfgGoodsStandardname" column="gb_dfg_goods_standardname"/>
@@ -75,6 +78,9 @@
             <result property="gbDgPullOff" column="gb_dg_pull_off"/>
             <result property="gbDgGoodsSonsSort" column="gb_dg_goods_sons_sort"/>
             <result property="gbDgSellingPrice" column="gb_dg_selling_price"/>
+            <result property="gbDgGoodsStandardWeight" column="gb_dg_goods_standard_weight"/>
+            <result property="gbDgCartonUnit" column="gb_dg_carton_unit"/>
+            <result property="gbDgItemsPerCarton" column="gb_dg_items_per_carton"/>
         </association>
     </resultMap>
 
@@ -90,19 +96,20 @@
                dg.gb_dg_nx_goods_id, dg.gb_dg_nx_father_img, dg.gb_dg_nx_father_img_large,
                dg.gb_dg_nx_distributer_goods_price,
                dg.gb_dg_gb_department_id, dg.gb_dg_goods_is_weight, dg.gb_dg_pull_off,
-               dg.gb_dg_goods_sons_sort, dg.gb_dg_selling_price
+               dg.gb_dg_goods_sons_sort, dg.gb_dg_selling_price, dg.gb_dg_goods_standard_weight,
+               dg.gb_dg_carton_unit, dg.gb_dg_items_per_carton
         from gb_distributer_food_goods fg
         left join gb_distributer_goods dg on dg.gb_distributer_goods_id = fg.gb_dfg_dis_goods_id
         left join (
             SELECT gb_dgs_gb_dis_goods_id,
                    gb_dgs_gb_distributer_id,
-                   CAST(ROUND(AVG(CAST(gb_dgs_price AS DECIMAL(10, 2))), 2) AS CHAR) AS gb_dfg_goods_average_price
+                   CAST(ROUND(AVG(CAST(gb_dgs_price AS DECIMAL(10, 4))), 4) AS CHAR) AS gb_dfg_goods_average_price
             FROM gb_department_goods_stock
             WHERE gb_dgs_date &gt;= #{stockAvgStartDate}
               AND gb_dgs_date &lt;= #{stockAvgStopDate}
               AND gb_dgs_price IS NOT NULL
               AND TRIM(gb_dgs_price) &lt;&gt; ''
-              AND CAST(gb_dgs_price AS DECIMAL(10, 2)) &gt; 0
+              AND CAST(gb_dgs_price AS DECIMAL(10, 4)) &gt; 0
             GROUP BY gb_dgs_gb_dis_goods_id, gb_dgs_gb_distributer_id
         ) AS priceStats
             ON priceStats.gb_dgs_gb_dis_goods_id = fg.gb_dfg_dis_goods_id
@@ -121,9 +128,11 @@
 
     <insert id="save" parameterType="com.nongxinle.entity.GbDistributerFoodGoodsEntity" useGeneratedKeys="true" keyProperty="gbDistributerFoodGoodsId">
         insert into gb_distributer_food_goods
-        (gb_dfg_dis_id, gb_dfg_food_id, gb_dfg_dis_goods_id, gb_dfg_goods_amount, gb_dfg_goods_name, gb_dfg_goods_standardname, gb_dfg_status)
+        (gb_dfg_dis_id, gb_dfg_food_id, gb_dfg_dis_goods_id, gb_dfg_goods_amount, gb_dfg_goods_name, gb_dfg_goods_standardname, gb_dfg_status,
+         gb_dfg_portion_amount, gb_dfg_portion_unit, gb_dfg_pack_qty_in_min)
         values
-        (#{gbDfgDisId}, #{gbDfgFoodId}, #{gbDfgDisGoodsId}, #{gbDfgGoodsAmount}, #{gbDfgGoodsName}, #{gbDfgGoodsStandardname}, #{gbDfgStatus})
+        (#{gbDfgDisId}, #{gbDfgFoodId}, #{gbDfgDisGoodsId}, #{gbDfgGoodsAmount}, #{gbDfgGoodsName}, #{gbDfgGoodsStandardname}, #{gbDfgStatus},
+         #{gbDfgPortionAmount}, #{gbDfgPortionUnit}, #{gbDfgPackQtyInMin})
     </insert>
 
     <update id="update" parameterType="com.nongxinle.entity.GbDistributerFoodGoodsEntity">
@@ -136,6 +145,9 @@
             <if test="gbDfgGoodsName != null">`gb_dfg_goods_name` = #{gbDfgGoodsName},</if>
             <if test="gbDfgGoodsStandardname != null">`gb_dfg_goods_standardname` = #{gbDfgGoodsStandardname},</if>
             <if test="gbDfgStatus != null">`gb_dfg_status` = #{gbDfgStatus},</if>
+            <if test="gbDfgPortionAmount != null">`gb_dfg_portion_amount` = #{gbDfgPortionAmount},</if>
+            <if test="gbDfgPortionUnit != null">`gb_dfg_portion_unit` = #{gbDfgPortionUnit},</if>
+            <if test="gbDfgPackQtyInMin != null">`gb_dfg_pack_qty_in_min` = #{gbDfgPackQtyInMin},</if>
         </set>
         where gb_distributer_food_goods_id = #{gbDistributerFoodGoodsId}
     </update>

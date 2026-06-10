@@ -642,6 +642,38 @@
         LIMIT 10
     </select>
 
+    <select id="queryGbPurchaseGoodsTopQuantityMerged" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
+        SELECT CASE
+                   WHEN agg.name_key &lt;&gt; '' THEN agg.name_key
+                   WHEN agg.std_key &lt;&gt; '' THEN agg.std_key
+                   ELSE '（未命名商品）'
+                   END AS gb_dg_goods_name,
+               CAST(ROUND(agg.total_quantity, 1) AS CHAR) AS gb_dg_self_price,
+               agg.std_key AS gb_dg_goods_standardname,
+               agg.gb_distributer_goods_id AS gb_distributer_goods_id
+        FROM (
+                 SELECT TRIM(IFNULL(dg.gb_dg_goods_name, ''))         AS name_key,
+                        TRIM(IFNULL(dg.gb_dg_goods_standardname, '')) AS std_key,
+                        SUM(CAST(gdpg.gb_DPG_buy_quantity AS DECIMAL(24, 6))) AS total_quantity,
+                        MIN(dg.gb_distributer_goods_id) AS gb_distributer_goods_id
+                 FROM gb_distributer_purchase_goods AS gdpg
+                          INNER JOIN gb_distributer_goods AS dg
+                                     ON dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
+                          LEFT JOIN gb_distributer_purchase_batch AS gdpb
+                                    ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
+                 <where>
+                     gdpg.gb_DPG_buy_subtotal &gt; 0
+                     <include refid="purGoodsWhereJoinBatchAsGbCount"/>
+                 </where>
+                 GROUP BY TRIM(IFNULL(dg.gb_dg_goods_name, '')),
+                          TRIM(IFNULL(dg.gb_dg_goods_standardname, ''))
+             ) agg
+        WHERE agg.total_quantity &gt; 0
+        ORDER BY agg.total_quantity DESC,
+                 gb_dg_goods_name ASC
+        LIMIT 10
+    </select>
+
     <!-- 与 queryGbPurchaseGoodsCount 同一筛选；按入库采购门店/部门分列汇总金额 -->
     <select id="sumPurchaseSubtotalGroupedByPurDepartmentId" resultType="com.nongxinle.dto.DepartmentPurchaseAggRow">
         SELECT gdpg.gb_DPG_purchase_department_id AS departmentId,
@@ -883,6 +915,8 @@
         FROM gb_distributer_purchase_goods AS gdpg
         LEFT JOIN gb_distributer_goods AS dg
         ON dg.gb_distributer_goods_id = gdpg.gb_DPG_dis_goods_id
+        LEFT JOIN gb_distributer_purchase_batch AS gdpb
+        ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
         <where>
             <if test="purType != null">
                 AND gdpg.gb_DPG_purchase_type = #{purType}
@@ -895,6 +929,12 @@
            </if>
             <if test="purDepId != null">
                 AND gdpg.gb_DPG_purchase_department_id = #{purDepId}
+            </if>
+            <if test="purDepIds != null and purDepIds.size() &gt; 0">
+                AND gdpg.gb_DPG_purchase_department_id IN
+                <foreach item="id" collection="purDepIds" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
             </if>
             <if test="purUserId != null">
                 AND gdpg.gb_DPG_pur_user_id = #{purUserId}
@@ -930,6 +970,9 @@
             </if>
             <if test="batchId != null">
                 AND gdpg.gb_DPG_batch_id = #{batchId}
+            </if>
+            <if test="batchDayuStatus != null">
+                AND gdpb.gb_DPB_status &gt; #{batchDayuStatus}
             </if>
             <include refid="purGoodsWhereLegacyPurchaseMethodFocus"/>
         </where>
@@ -1429,6 +1472,7 @@
             gdpg.gb_DPG_dis_goods_id AS dpg_gb_DPG_dis_goods_id,
             gdpg.gb_DPG_stock_finish_date AS dpg_gb_DPG_stock_finish_date,
             gdpg.gb_DPG_buy_quantity AS dpg_gb_DPG_buy_quantity,
+            gdpg.gb_DPG_standard AS dpg_gb_DPG_standard,
             gdpg.gb_DPG_buy_price AS dpg_gb_DPG_buy_price,
             gdpg.gb_DPG_buy_subtotal AS dpg_gb_DPG_buy_subtotal,
             gdpg.gb_DPG_pur_user_id AS dpg_gb_DPG_pur_user_id,
@@ -1561,6 +1605,7 @@
         <result property="gbDpgBatchId" column="dpg_gb_DPG_batch_id"/>
         <result property="gbDpgStockFinishDate" column="dpg_gb_DPG_stock_finish_date"/>
         <result property="gbDpgBuyQuantity" column="dpg_gb_DPG_buy_quantity"/>
+        <result property="gbDpgStandard" column="dpg_gb_DPG_standard"/>
         <result property="gbDpgBuyPrice" column="dpg_gb_DPG_buy_price"/>
         <result property="gbDpgBuySubtotal" column="dpg_gb_DPG_buy_subtotal"/>
         <result property="gbDpgPurUserId" column="dpg_gb_DPG_pur_user_id"/>

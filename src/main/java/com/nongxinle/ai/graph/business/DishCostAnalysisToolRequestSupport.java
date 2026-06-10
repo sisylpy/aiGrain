@@ -5,6 +5,9 @@ import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import com.nongxinle.ai.mapping.AiRoleMapper;
+import com.nongxinle.ai.semantic.frame.ContractLockedSemanticFrame;
+import com.nongxinle.ai.semantic.intake.grounding.CoverDaysSalesBaselineTimeSupport;
+import com.nongxinle.ai.semantic.matrix.DishCostAnalysisSemanticCapabilityMatrix;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.constants.AiInsightDishProfitScope;
 import com.nongxinle.service.GbAiDailyRevenueService;
@@ -52,6 +55,28 @@ public class DishCostAnalysisToolRequestSupport {
         } else if (dept != null) {
             m.put(AiBusinessToolIds.ARG_DEPARTMENT_FATHER_ID, dept);
         }
+        AiResolvedQueryContext rqCtx = state != null ? state.getResolvedQueryContext() : null;
+        boolean lockedCoverDays = isLockedDishIngredientCoverDaysContract(rqCtx);
+        if (!lockedCoverDays && ToolRequestContractExecutionParamSupport.isDishIngredientCoverDaysContract(rqCtx)) {
+            throw new IllegalStateException("dish.ingredient_cover_days.v1 requires ContractLockedSemanticFrame");
+        }
+        if (lockedCoverDays) {
+            CoverDaysSalesBaselineTimeSupport.DualTimePlan dualTime =
+                    CoverDaysSalesBaselineTimeSupport.resolveDualTimePlan(
+                            rqCtx != null ? rqCtx.getContractLockedFrame() : null, null);
+            if (dualTime == null || dualTime.baseline() == null) {
+                throw new IllegalStateException("missing cover-days locked dual time plan");
+            }
+            if (dualTime != null && dualTime.baseline() != null
+                    && StringUtils.hasText(dualTime.baseline().getStartDateIso())
+                    && StringUtils.hasText(dualTime.baseline().getStopDateIso())) {
+                start = dualTime.baseline().getStartDateIso();
+                stop = dualTime.baseline().getStopDateIso();
+            }
+            if (StringUtils.hasText(dualTime.stockAsOfDate())) {
+                m.put(AiBusinessToolIds.ARG_STOCK_AS_OF_DATE, dualTime.stockAsOfDate());
+            }
+        }
         if (start != null) {
             m.put(AiBusinessToolIds.ARG_START_DATE, start);
         }
@@ -84,14 +109,18 @@ public class DishCostAnalysisToolRequestSupport {
             }
         }
 
-        AiResolvedQueryContext rqCtx = state != null ? state.getResolvedQueryContext() : null;
-        String dishFocus = ToolRequestContractExecutionParamSupport.resolveDishNameFocusHint(rqCtx);
+        String dishFocus =
+                lockedCoverDays
+                        ? dishNameFromLockedFrame(rqCtx != null ? rqCtx.getContractLockedFrame() : null)
+                        : ToolRequestContractExecutionParamSupport.resolveDishNameFocusHint(rqCtx);
         if (StringUtils.hasText(dishFocus)) {
             m.put(AiBusinessToolIds.ARG_DISH_NAME_FOCUS_HINT, dishFocus.trim());
         }
-        Integer foodId = ToolRequestContractExecutionParamSupport.resolveDishFoodIdFromContract(rqCtx);
-        if (foodId != null) {
-            m.put(AiBusinessToolIds.ARG_DISH_COST_FOOD_ID, foodId);
+        if (!lockedCoverDays) {
+            Integer foodId = ToolRequestContractExecutionParamSupport.resolveDishFoodIdFromContract(rqCtx);
+            if (foodId != null) {
+                m.put(AiBusinessToolIds.ARG_DISH_COST_FOOD_ID, foodId);
+            }
         }
 
         AiUserContext ctxSnap = state != null ? state.getAiUserContext() : null;
@@ -107,5 +136,20 @@ public class DishCostAnalysisToolRequestSupport {
             }
         }
         return m;
+    }
+
+    private static boolean isLockedDishIngredientCoverDaysContract(AiResolvedQueryContext rqCtx) {
+        ContractLockedSemanticFrame frame = rqCtx != null ? rqCtx.getContractLockedFrame() : null;
+        return frame != null
+                && frame.getContractFields() != null
+                && DishCostAnalysisSemanticCapabilityMatrix.CONTRACT_DISH_INGREDIENT_COVER_DAYS.equals(
+                        frame.getContractFields().getSelectedContractId());
+    }
+
+    private static String dishNameFromLockedFrame(ContractLockedSemanticFrame frame) {
+        if (frame == null || frame.getEntitySlots() == null) {
+            return null;
+        }
+        return frame.getEntitySlots().getMentionedDishName();
     }
 }

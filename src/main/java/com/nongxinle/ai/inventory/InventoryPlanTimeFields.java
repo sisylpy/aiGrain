@@ -24,6 +24,11 @@ public class InventoryPlanTimeFields {
     String periodFlowLabel;
 
     /**
+     * 内部销量/耗用基线（debug / summary）；不对用户主文案与 contextBar 展示。
+     */
+    String internalBaselineLabel;
+
+    /**
      * 兼容字段：对用户展示时等同 {@link #stockSnapshotLabel}，不再写入查询时间窗「起至止」。
      */
     String timeLabel;

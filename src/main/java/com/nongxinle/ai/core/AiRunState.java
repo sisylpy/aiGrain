@@ -8,6 +8,7 @@ import com.nongxinle.ai.dto.business.AiDishProfitOverviewResult;
 import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.dto.business.PurchaseGoodsBusinessAnalysisAnswerPlan;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
 import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
@@ -247,9 +248,19 @@ public class AiRunState {
     private com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan goodsSupportedDishCoverAnswerPlan;
 
     /**
+     * 指定商品当前仍有剩余的库存批次明细：contract {@code warehouse.goods_stock_batch_detail.v1}。
+     */
+    private com.nongxinle.ai.dto.business.GoodsStockBatchDetailAnswerPlan goodsStockBatchDetailAnswerPlan;
+
+    /**
      * 采购概览：本轮 AnswerPlan（{@link com.nongxinle.ai.graph.business.PurchaseOverviewTool} 结果衍生；Composer 后续只读）。
      */
     private PurchaseAnswerPlan purchaseAnswerPlan;
+
+    /**
+     * GOODS 锚点原料采购经营分析（{@code purchase.goods_business_analysis.v1}）。
+     */
+    private PurchaseGoodsBusinessAnalysisAnswerPlan purchaseGoodsBusinessAnalysisAnswerPlan;
 
     /**
      * 出库/核销专线：本轮 AnswerPlan（{@link com.nongxinle.ai.tool.business.StockReduceQueryTool} 结果衍生）。

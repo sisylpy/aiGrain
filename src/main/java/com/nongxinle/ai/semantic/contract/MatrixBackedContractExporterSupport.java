@@ -38,6 +38,9 @@ public final class MatrixBackedContractExporterSupport {
                         .anchorType(spec.anchorType)
                         .status(spec.status)
                         .gapMarker(spec.gapMarker);
+        if (spec.planOutputs != null) {
+            spec.planOutputs.forEach(b::planOutput);
+        }
         if (spec.queryObjects != null) {
             spec.queryObjects.forEach(b::queryObject);
         }
@@ -49,6 +52,9 @@ public final class MatrixBackedContractExporterSupport {
         }
         if (spec.selectedTools != null) {
             b.selectedTools(spec.selectedTools);
+        }
+        if (spec.allowedSourceFacets != null) {
+            spec.allowedSourceFacets.forEach(b::allowedSourceFacet);
         }
         return b.build();
     }
@@ -71,8 +77,12 @@ public final class MatrixBackedContractExporterSupport {
         @Singular("metric")
         Set<String> metrics;
         String sourceFacet;
+        @Singular("allowedSourceFacet")
+        Set<String> allowedSourceFacets;
         String detailWanted;
         String answerPlanType;
+        @Singular("planOutput")
+        List<String> planOutputs;
         boolean requiresAnchor;
         String anchorType;
         List<String> selectedTools;

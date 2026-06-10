@@ -8,12 +8,18 @@ public final class AiBusinessToolIds {
     public static final String REVENUE_QUERY = "revenue_query";
     /** 采购概览：多门店/单门店聚合 + Top 商品与供货商（{@code purchase_overview_path}）。 */
     public static final String PURCHASE_OVERVIEW = "purchase_overview";
+    /** GOODS 锚点原料采购经营分析（{@code purchase.goods_business_analysis.v1}）。 */
+    public static final String PURCHASE_GOODS_BUSINESS_ANALYSIS = "purchase_goods_business_analysis";
     /** 库房库存概览：聚合库存 + 入库 + 核销分型 + 简易预警列表（{@code warehouse_stock_overview_path}）。 */
     public static final String WAREHOUSE_STOCK_OVERVIEW = "warehouse_stock_overview";
     /** 库存风险列表：偏少/快缺货/需关注（非账面金额低排行）。 */
     public static final String WAREHOUSE_INVENTORY_RISK_LIST = "warehouse_inventory_risk_list";
+    /** 库存批次临期/过期风险（warehouse.near_expiry）。 */
+    public static final String WAREHOUSE_NEAR_EXPIRY_RISK = "warehouse_near_expiry_risk";
     /** 原料 → 受影响菜品可支撑分析（{@code warehouse.goods_supported_dish_cover.v1}）。 */
     public static final String WAREHOUSE_GOODS_SUPPORTED_DISH_COVER = "warehouse_goods_supported_dish_cover";
+    /** 库存监督/诊断（{@code warehouse.inventory_supervision.v1}）。 */
+    public static final String WAREHOUSE_INVENTORY_SUPERVISION = "warehouse_inventory_supervision";
     public static final String STOCK_REDUCE_QUERY = "stock_reduce_query";
     public static final String DISH_PROFIT_ANALYSIS = "dish_profit_analysis";
     /**
@@ -120,8 +126,20 @@ public final class AiBusinessToolIds {
             WAREHOUSE_INVENTORY_RISK_LIST
     );
 
+    public static final List<String> DEFAULT_WAREHOUSE_NEAR_EXPIRY_TOOLS = List.of(
+            WAREHOUSE_NEAR_EXPIRY_RISK
+    );
+
     public static final List<String> DEFAULT_WAREHOUSE_GOODS_SUPPORTED_DISH_COVER_TOOLS = List.of(
             WAREHOUSE_GOODS_SUPPORTED_DISH_COVER
+    );
+
+    public static final List<String> DEFAULT_WAREHOUSE_GOODS_STOCK_BATCH_DETAIL_TOOLS = List.of(
+            WAREHOUSE_GOODS_SUPPORTED_DISH_COVER
+    );
+
+    public static final List<String> DEFAULT_WAREHOUSE_INVENTORY_SUPERVISION_TOOLS = List.of(
+            WAREHOUSE_INVENTORY_SUPERVISION
     );
 
     /** ToolRequest.args / payload 共用键（第一版契约）。 */
@@ -133,6 +151,8 @@ public final class AiBusinessToolIds {
     public static final String ARG_STOP_DATE = "stopDate";
     /** 库存快照锚定日（ISO）；现量查询口径，不等同于流水统计区间。 */
     public static final String ARG_STOCK_AS_OF_DATE = "stockAsOfDate";
+    /** 临期窗口 N（天）：到期日在锚定日之后 N 天内视为 near_expiry。 */
+    public static final String ARG_NEAR_EXPIRY_WINDOW_DAYS = "nearExpiryWindowDays";
     /** 销量基线起止（与库存快照分离；默认近 7 天由 Executor 写入）。 */
     public static final String ARG_SALES_BASELINE_START_DATE = "salesBaselineStartDate";
     public static final String ARG_SALES_BASELINE_STOP_DATE = "salesBaselineStopDate";
@@ -176,6 +196,10 @@ public final class AiBusinessToolIds {
     public static final String ARG_PURCHASE_EXECUTION_DETAIL_WANTED = "executionDetailWanted";
     /** P4-B：{@link com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntent#getExecutionIntentType()}。 */
     public static final String ARG_PURCHASE_EXECUTION_INTENT_TYPE = "executionIntentType";
+    /**
+     * contract locked 时本轮应产出的 AnswerPlan 类型键（来自 {@link com.nongxinle.ai.semantic.contract.SemanticCapabilityContract#getPlanOutputs()}）。
+     */
+    public static final String ARG_REQUESTED_PLAN_OUTPUTS = "requestedPlanOutputs";
 
     /**
      * D-13.1：供货商金额排行锚 execution（由 {@link com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionArgs} 写入）；

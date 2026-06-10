@@ -2,6 +2,9 @@
 
 > 任何涉及组织范围、门店、部门、集团汇总、权限范围、经营看板查询的改动，必须先阅读 `docs/DOMAIN_ORG_MODEL.md`。本项目中 `distributerId` 是集团/配送商主体 ID；`gb_department.gbDepartmentFatherId = 0` 的记录才是门店；子部门需要归一化到所属门店。
 
+> **状态：Handoff / Technical Debt Index（非语义主权规则）**
+> 本文是长期交接、阶段记录和技术债索引，包含大量 Historical / removed / classic 链路。修改语义合同主链时，不得把本文中的旧实现、旧 Tool、legacy fallback 或阶段性 TODO 当作现行实现依据。当前合同主权规则以 `.cursor/rules/harness-java-boundary.md`、`docs/ai/contract-entry-validation-p2-summary.md`、`docs/AI_MAINLINE_INDEX.md` 为准。
+
 > 本 TODO 是多智能体平台重构的长期开发清单。每次 Agent 或人工修改代码后，都需要同步更新本文件状态，避免任务丢失。
 >
 > **协作规则**：以本文件为节拍器 — **先做 TODO 勾选项 → 勾选完成项**；有 **REST / 数据结构**变化改 **`docs/API_INTEGRATION.md`**；**权限 `admin`/`roleCode`/能力码** 变更改 **`docs/PERMISSION_MODEL.md`**；有 **SSE 字段/事件**变化改 **`docs/SSE_BACKEND_EVENT_CONTRACT.md`**；有 **新增或行为变更的单测** 在变更记录或 §八中 **补一句测试结果**。**不要**在未解除阶段冻结说明的前提下扩 ReportGraph/MarketingGraph。**阶段收口约定**：任一 **`*_path` / 业务主线** 在本文档勾选 **阶段收口** 或与 PR 等同款「链路可交付」结论时，**须同步** 更新 **`docs/API_INTEGRATION.md`**（至少覆盖该链对应的 **`answer_delta.data.*` 契约**、相关端点与验收说明，字段以 Java DTO 为准）。**整机前台联调与勾选验收**：默认由 **负责人/产品在业务环境** 完成；仓库内 IDE Agent（含 Cursor）**未要求** 代为执行前台测试 —— 除非本条 TODO 或 PR 明确写出了「须 Agent 代跑」的例外。**当前（2026-05-15）**：**§「MasterBusinessAgent 单领域专线」** + **BusinessOverview 四域 MultiAgent** + **DiagnosisAgent v1** + **四条单域 `*_AGENT_GRAPH_CORE`（各 3 轮）**；**Harness** 门卫集与 **D-10 GraphRun 探针**见 **`docs/AI_HARNESS_REPLAY_CASES.md`** · **§D-10**。**下一阶段**：**Composer 提示语小修**；**PlannerExecutor v1**；**Human-in-the-loop DTO**；**D-11** 权限 / 角色（**`sqlQueryDepartmentIds` / `finalAnswerText`** 无越权泄露 — **`docs/PERMISSION_MODEL.md`**）。**OrchestrationDecision** 仍以 v2 为第一来源；**OrchestrationDecisionService** backlog 见 **`docs/HARNESS_ORCHESTRATION_DECISION.md`** §**16**。
@@ -14,9 +17,9 @@
 
 ## MasterBusinessAgent 单领域专线 + MultiAgent / Diagnosis（阶段收口 · 2026-05-13）
 
-> **设计契约**：**`docs/ai/master-business-agent-design.md`** — **「当前已接入：四条 DomainAgent + BusinessOverview MultiAgent + DiagnosisAgent v1」** 专节。  
-> **Replay**：**`docs/AI_HARNESS_REPLAY_CASES.md`** — **核心回归**：**`V2_SEMANTIC_MAINLINE_CORE_10`**；**`GRAPH_RUN`**：**`BUSINESS_DIAGNOSIS_V1_CORE_3`**、**`BUSINESS_OVERVIEW_MULTI_AGENT_CORE_3`**、**`REVENUE_AGENT_GRAPH_CORE`** / **`PURCHASE_AGENT_GRAPH_CORE`** / **`STOCK_REDUCE_AGENT_GRAPH_CORE`** / **`DISH_PROFIT_AGENT_GRAPH_CORE`**（**D-10「长期门卫集」**，见该文档 **§D-10**）。  
-> **编排决策（OrchestrationDecision）**：**`docs/HARNESS_ORCHESTRATION_DECISION.md`**（含 **§16 taskMode 落地状态**）。  
+> **设计契约**：**`docs/ai/master-business-agent-design.md`** — **「当前已接入：四条 DomainAgent + BusinessOverview MultiAgent + DiagnosisAgent v1」** 专节。
+> **Replay**：**`docs/AI_HARNESS_REPLAY_CASES.md`** — **核心回归**：**`V2_SEMANTIC_MAINLINE_CORE_10`**；**`GRAPH_RUN`**：**`BUSINESS_DIAGNOSIS_V1_CORE_3`**、**`BUSINESS_OVERVIEW_MULTI_AGENT_CORE_3`**、**`REVENUE_AGENT_GRAPH_CORE`** / **`PURCHASE_AGENT_GRAPH_CORE`** / **`STOCK_REDUCE_AGENT_GRAPH_CORE`** / **`DISH_PROFIT_AGENT_GRAPH_CORE`**（**D-10「长期门卫集」**，见该文档 **§D-10**）。
+> **编排决策（OrchestrationDecision）**：**`docs/HARNESS_ORCHESTRATION_DECISION.md`**（含 **§16 taskMode 落地状态**）。
 > **全局时间（V2-only，D-CLEAN-V1）**：显式时间由 V2 JSON `time` / `timeAction` / `timeSource` 表达，经 **`SemanticTimeContractCheck`** 校验后落地；**Historical removed**：`AiQuerySemanticTimeLexicon`、`AiMultiTurnTimeWindowPolicy`。 **禁止**在 Agent / Tool / Composer / Resolver 主流程 / Master 分散写用户原文关键词决定 **intent/path**。
 
 **本阶段结论**
@@ -427,7 +430,7 @@ POST /api/ai/runs
 
 ## `stock_reduce_query_path` 出库 / 核销 Harness（StockReduceAnswerPlan）
 
-> **设计文档**：`docs/ai/stock-reduce-answer-plan.md`（目标架构、**planType**、Debug 字段、验收问句、冻结约定）。  
+> **设计文档**：`docs/ai/stock-reduce-answer-plan.md`（目标架构、**planType**、Debug 字段、验收问句、冻结约定）。
 > **原则**：Tool（`StockReduceQueryTool`）只查数；**StockReduceAnswerPlan** 定核心事实（含 **type1～4** 不混淆）；Composer **优先**宣读计划；**不扰动采购 / 菜品毛利 / 经营诊断主链路**。
 
 **AnswerPlan + Composer 收口（2026-05-12）**：**`StockReduceAnswerPlanBuilder`** → **`stockReduceAnswerPlan`**；**`StubAnswerComposerNode`** 在 **`stock_reduce_query_path`** 下计划可用时 **优先宣读 AnswerPlan**；旧 deterministic summary 仅兜底。**前台验收**（含全部下列 planType、排行类门店收窄/恢复集团、**次数排行多轮继承 `outboundTimes`**）由 **负责人勾选完成**；本仓库 Agent **不要求** 代跑前台测试。**后续**：出库链路 **仅修 bug / 小补丁**，**不做** 路由、计划构建或 Composer 层级的架构级大改（除非产品重新立项）。
@@ -441,7 +444,7 @@ POST /api/ai/runs
 
 ## `revenue_overview_path` 日营业额 / 营收 Harness（DailyRevenueAnswerPlan）
 
-> **设计文档**：`docs/ai/revenue-answer-plan.md`（定位、Tool / Builder / Composer 边界、**planType**、**focusRows / secondaryRows**、Debug / Replay、`§11` 已知限制、仓库单测）。  
+> **设计文档**：`docs/ai/revenue-answer-plan.md`（定位、Tool / Builder / Composer 边界、**planType**、**focusRows / secondaryRows**、Debug / Replay、`§11` 已知限制、仓库单测）。
 > **原则**：**`RevenueQueryTool`**（**`revenue_query`**）只查数；**DailyRevenueAnswerPlan** 定核心事实；**Composer** 只宣读计划（不重算）；Debug / Replay 可复盘。**经营诊断**须在边界内消费 **子域 AnswerPlan** 聚合为 **DiagnosisPlan**，**不替代**本条直连问答契约（详见 **`docs/ai/diagnosis-answer-plan.md`**）。**勿动**：**`PurchaseAnswerPlan`** / **`StockReduceAnswerPlan`** / **`DishProfitAnswerPlan`** 主线。
 
 **状态（2026-05-12）**：**核心 Harness 已收口**（Builder + Summarizer + Composer + **`docs/API_INTEGRATION.md`** 契约）；已知限制（外卖无平台分列、单日高低日期依赖 Tool、门店排行 rollup 性能）见 **`revenue-answer-plan.md` §11**。
@@ -454,7 +457,7 @@ POST /api/ai/runs
 
 ## 经营诊断 DiagnosisPlan（Harness 阶段一 · 设计）
 
-> **设计文档**：**`docs/ai/diagnosis-answer-plan.md`**（DiagnosisPlan 定位、`type` / `diagnosisLevel`、`focusFindings` / `evidenceRows` / `riskRows` / `actionSuggestions` / `debug`、Composer 边界、阶段一不做项）。  
+> **设计文档**：**`docs/ai/diagnosis-answer-plan.md`**（DiagnosisPlan 定位、`type` / `diagnosisLevel`、`focusFindings` / `evidenceRows` / `riskRows` / `actionSuggestions` / `debug`、Composer 边界、阶段一不做项）。
 > **原则**：**Purchase / StockReduce / DishProfit / DailyRevenue** 四域 **AnswerPlan** 为唯一事实来源；**DiagnosisPlanBuilder** 只读聚合；**Composer** 只表达；Debug / Replay 可复盘。
 
 - [x] **阶段二（骨架）**：**`DiagnosisPlan`** DTO + **`DiagnosisPlanBuilder.attachIfApplicable`**（**`StubOutcomeReviewNode`**）+ **`AiRunState#diagnosisPlan`**；**`OVERALL_BUSINESS_DIAGNOSIS`**；Harness **`diagnosisPlan*`**；**Historical removed**：**`BusinessDiagnosisPlan`** / **`BusinessDiagnosisPlanNode`**（现网 **`DiagnosisPlan`** + **`DiagnosisPlanBuilder`**）；**`StubAnswerComposerNode`** + **`DiagnosisDeterministicRenderer`**；单测 **`DiagnosisPlanBuilderTest`**
@@ -479,10 +482,46 @@ POST /api/ai/runs
 
 **工程已实现（本节上方）**：**`AiConversationTurnMemory`** + **`AiConversationMemoryService`**（Run 成功后 `rememberCompletedTurn`）、**`AiFollowUpHintSupport`**（Resolver）。省略追问由 **`LlmFollowUpQueryRewriter`** 补全。**Phase1-J** 已删 write-only 的 **`AiFollowUpIntentSnapshot`** / **`AiFollowUpConversationMemory`** / **`FollowUpPathKind`** 及规则型 **`FollowUpRewriter`** 链。**（2026-05-17**：**`BusinessFollowUpIntentResolveNode`** 已删；**2026-05-18**：**`FollowUpIntentResolveService`** 已拆为上述 support 并删除。）
 
+---
+
+## 当前架构技术债与待补验
+
+> **统一入口**：本节为当前架构层技术债与 Matrix P1 待补验的**总清单**；其它文档中的同类条目（如 **`docs/ai/semantic-intake-schema-evolution.md`**、**`docs/ai/contract-entry-validation-p2-summary.md`** §8.1、**`docs/ai/harness-composer-architecture.md`** §Matrix P1）仅作交叉引用，**以本节为准**更新状态。
+>
+> **约束**：下列「已收口」项已通过 Replay / 契约验收，**勿再当作开放技术债重复修改**（除非产品重新立项）。
+
+### 待收口技术债（9 项）
+
+| 编号 | 技术债 | 当前状态 | 当前安全措施 | 后续收口方向 | 是否阻塞当前主流程 |
+|------|--------|----------|--------------|--------------|-------------------|
+| TD-01 | **双时间合同仍保留 legacy 全局 `timeWindow`**：WH-K / WH-H 已使用 `stockSnapshot` + `salesBaselineWindow`，但顶层 `timeWindow` 仍可能进入 Turn Memory、通用上下文或其它消费者 | 已知未收口 | Tool / Composer / WH-K 双时间主链**不消费** legacy `timeWindow` 作销量基线；双时间结构化字段为 SSOT | 在 Matrix / Contract 层标记 placeholder 或 deprecated；Turn Memory 与继承链禁止业务侧再读 legacy `timeWindow` 作 cover-days 基线 | **否** |
+| TD-02 | **WH-K Bundle 合同元数据仍是单一 `answerPlanType` / `selectedTools`**：实际产出 `GOODS_SUPPORTED_DISH_COVER` + `GOODS_STOCK_BATCH_DETAIL` 两个 Plan / 两张卡 | 契约与运行时分叉 | Bundle 执行链按 WH-K 合同 ID + wire 正确生成双 AnswerPlan / 双卡；不依赖单一 Matrix 行元数据表达组合 | 设计正式**组合合同元数据**或 **Bundle AnswerPlan** SSOT（Matrix / Exporter / Tool 映射一致） | **否** |
+| TD-03 | **Intake `contextRelation` 协议一致性**：存在 `isFollowUp=false`、`usedPreviousContext=false`，但 `contextRelation=CONTEXT_CONTINUATION` 的组合 | 观测到不一致 | 当前执行不依赖该组合做分支；Transition / Adoption 以结构化 follow-up 与其它 Intake 字段为准 | 在 Intake schema 层统一结构校验（互斥 / 蕴含规则）；**禁止**靠 Transition 兜底掩盖协议冲突。参见 **`docs/ai/semantic-intake-schema-evolution.md`** | **否** |
+| TD-04 | **采购数量排行缺少统一基础单位换算**：斤 / 袋 / 桶等不能严格横向比较 | 已知能力边界 | `quantityRankingUnitComparable=false` + Composer 文案提示不可跨单位直接比大小 | 引入基础单位与 `conversionRate`，或按单位分组分别排行 | **否**（边界内可交付） |
+| TD-05 | **采购异常真实判定事实未完整接入**：次数异常、数量异常、金额突增等缺少完整结构化检测事实 | 能力未完整 | **禁止**用普通排行结果冒充异常诊断；Hard Gate / 澄清路径阻断误导性结论 | Tool 输出 `baseline`、`changeRate`、`threshold`、`anomalyReason` 等结构化事实后再接 AnswerPlan / Card | **否**（未宣称的能力不交付） |
+| TD-06 | **`capabilitySpecificity` 协议稳定性**：泛化采购异常理论上应 `UNSPECIFIED` + clarification，模型仍可能选具体异常合同 | 语义协议 known gap | **Purchase Capability Boundary Hard Gate** 阻断不可信具体合同；用户侧已安全澄清 | 收紧 V2 / Intake 合同输出协议与验收；**不**在 Java / Prompt 追加问句补丁 | **否** |
+| TD-07 | **`AGGREGATED_DISH_PORTFOLIO_FALLBACK` 正式 PlanType SSOT 未统一**：仍被 Matrix / Contract / Prompt / 运行时使用，非纯残留；命名与 `BUSINESS_DIAGNOSIS_DISH_OVERVIEW` 不对称 | 运行中、文档未统一 | 现网路径仍按既有 PlanType 执行；Harness 与 Matrix 行已登记 | 专项确定统一 overview PlanType 命名后，Matrix / Contract / Prompt / Builder **整体替换** | **否** |
+| TD-08 | **`metric.rankingType` deprecated 清理**：主链不得消费，仅 debug / 兼容观测 | 已标记 deprecated，未删字段 | 主链 Composer / Merge / AnswerPlanBuilder **不读** `metric.rankingType` 定 wire（见 **`docs/ai/harness-composer-architecture.md`** D-CLEAN 条目） | 专项扫描 Java 消费者，确认无主链读取后删除字段与兼容路径 | **否** |
+| TD-09 | **Matrix P1 待数据库稳定后补验**：StockReduce、Warehouse、DishSales Replay 尚需跑通 | 待补验 | 代码与契约已合入；**数据库连接 500 不算业务失败**，不回滚代码 | 跑 **`scripts/harness/replay-*-matrix-p1.sh`**（见 **`docs/ai/harness-composer-architecture.md`** §Matrix P1）。DishSales 重点：**R4 / R6 / R8 / R9**、`failureCount=0`、**不消费** `DishProfitAnswerPlan`、**无** `AGGREGATED_DISH_PORTFOLIO_FALLBACK` | **否**（环境就绪后补验） |
+
+### 已收口 — 勿重复修改
+
+以下项已通过 Replay / 契约 / Hard Gate 验收，**不要**再列为开放技术债或重复改协议 / Tool / 展示链（除非产品重新立项）：
+
+- **WH-K Bundle 合同主权**已通过（V2 选 WH-K 后 Grounding / Adoption 不得降为 WH-H）
+- **WH-K 双时间主权**已通过（`stockSnapshot` + `salesBaselineWindow`；Tool / AnswerPlan / Card / Composer 消费正确基线）
+- **WH-K 双 AnswerPlan / 双卡**已通过（`GOODS_SUPPORTED_DISH_COVER` + `GOODS_STOCK_BATCH_DETAIL`）
+- **采购数量 vs 次数合同互斥**已通过
+- **Purchase Capability Boundary Hard Gate**已通过
+- **泛化采购异常**当前用户结果已**安全澄清**（Hard Gate，非真实异常事实）
+
+---
+
 ## 变更记录
 
 | 日期 | 说明 |
 |------|------|
+| 2026-06-05 | **架构技术债总清单**：新增 **`## 当前架构技术债与待补验`**（待收口 9 项表格 + **已收口勿重复修改** 6 条）；统一入口，交叉引用 **`semantic-intake-schema-evolution.md`**、**`contract-entry-validation-p2-summary.md`**、**`harness-composer-architecture.md`**。**仅文档**；未改 Java / Prompt / test。 |
 | 2026-05-20 | **D-AI-FILE-INVENTORY-CLEANUP-P3**：Harness 诊断 **deprecated compat** 键收口 — **`AiHarnessResolvedContextSummarizer`** 显式镜像 **`businessDiagnosisPlan*`** / **`harnessReplayBusinessDiagnosisPlan*`** / **`storePriorityRanking*`**（与 **`diagnosisPlan*`** 同义）；Comparator / ExpectedRound / ProbeView 注释；**未**改业务主链 / Composer / SQL。**文档**：**`AI_HARNESS_REPLAY_CASES.md`** · D-10、**`D12_HARNESS_MINIMAL_GATES.md`**、**`diagnosis-answer-plan.md` §3.1**（旧 `BusinessDiagnosisPlan` 已删，Harness 键 **`diagnosisPlan*`** 为现网）。 |
 | 2026-05-20 | **D-AI-FILE-INVENTORY-CLEANUP-P2**：诊断链引用审计；**`diagnosis-answer-plan.md` §0b** 三条链；**`BusinessDiagnosisAgentV1`** 类注释标明现网 enrich（非 Graph 节点）；Composite 明确非 `finalAnswerText` 主链。旧 `BusinessDiagnosisPlan` 已删，现网以 semantic contract + AnswerPlan 为准。 |
 | 2026-05-13 | **阶段收口（BusinessOverview MultiAgent · DiagnosisAgent v1 · `GRAPH_RUN`）**：本节更新 **Replay 双轨**（**`V2_SEMANTIC_MAINLINE_CORE_10`** + **`BUSINESS_OVERVIEW_MULTI_AGENT_CORE_3`** / **`BUSINESS_DIAGNOSIS_V1_CORE_3`**）；勾选 **四条 DomainAgent + MultiAgent/Diagnosis/GRAPH_RUN**；**下一阶段 TODO** 收紧为 **A～D + OrchestrationDecisionService backlog**。同步 **`docs/ai/master-business-agent-design.md`**、**`docs/AI_HARNESS_REPLAY_CASES.md`**、**`docs/HARNESS_ORCHESTRATION_DECISION.md`** §**16**。 |
@@ -519,4 +558,3 @@ POST /api/ai/runs
 | 2026-05-10 | **（Historical）** **集团经营概览回答格式收口（classic）**：**`BusinessOverviewAgentNode`（已删）**；单测 **`GroupManagerBusinessOverviewAnswerFormatRegressionTest`** / **`BusinessOverviewAgentGroupScopeSmokeTest`**（已删）。 |
 | 2026-05-10 | **菜品毛利支线（第一版）**：**`looksLikeDishProfitInsight`** → **`dish_profit_path`**（单 Tool **`dish_profit_analysis`**）；**`DishProfitAnalysisTool`** + **`DishProfitAgentNode`**；SSE **`answer_delta.data.dishProfitOverview`**；**`AiPermissionGuard`** 菜品毛利：采购/库房/配送/优惠券等拒答话术；Composer **`DISH_PROFIT_COMPOSER_SYSTEM`**；文档 **`AI_MAINLINE_INDEX`** §菜品毛利、`API_INTEGRATION`、`PERMISSION_MODEL`。**真机勾选**仍以业务库为准。 |
 | 2026-05-10 | **追问继承（第一版）**：多轮由 **`AiConversationTurnMemory`** + **`AiFollowUpHintSupport`** 承担（旧 **`FollowUpIntentResolveService`** 已删除）；曾含 **`BusinessFollowUpIntentResolveNode`**（已删）。Phase1-J 已删 write-only **`AiFollowUpIntentSnapshot`** / **`AiFollowUpConversationMemory`**；**`TODO_MULTI_AGENT`** §多轮上下文追问；DDL **`intent` MEDIUMTEXT** 与 **`sql/gb_ai_agent_run_intent_extend.sql`**。 |
-

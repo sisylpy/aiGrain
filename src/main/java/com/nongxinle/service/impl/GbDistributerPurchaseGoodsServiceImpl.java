@@ -246,6 +246,11 @@ public class GbDistributerPurchaseGoodsServiceImpl extends ServiceImpl<GbDistrib
     }
 
     @Override
+    public List<GbDistributerGoodsEntity> queryGbPurchaseGoodsTopQuantityMerged(Map<String, Object> map) {
+        return baseMapper.queryGbPurchaseGoodsTopQuantityMerged(map);
+    }
+
+    @Override
     public Double queryPurchaseGoodsWeightTotal(Map<String, Object> map) {
         return baseMapper.queryPurchaseGoodsWeightTotal(map);
     }

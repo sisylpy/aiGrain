@@ -357,12 +357,14 @@ public class GbDepartmentDisGoodsController {
     }
 
     /**
-     * 订货端部门库存调整（制作 / 损耗 / 退货 / 废弃），替代原四个独立接口。
-     * <p>请求体：{@code { "kind": "produce|loss|return|waste", "stock": { ...GbDepartmentGoodsStockEntity 字段 } }}</p>
-     * <p>成功时 {@code data} 统一为 Map：{@code disGoods} 必有，且与 {@link #depGetDepGoodsGbPage} 返回的 {@code page.list} 中单条
-     * 部门商品结构一致（同一套 depQueryDepGoodsWithOrderForAi）；{@code id}（库存减少记录主键）仅在 loss、return 时返回。</p>
+     * 订货端部门库存调整（制作 / 损耗 / 退货 / 废弃 / 员工餐），替代原四个独立接口。
+     * <p>请求体：{@code { "kind": "produce|loss|return|waste|employee_meal", "stock": { ...GbDepartmentGoodsStockEntity 字段 } }}</p>
+     * <p>员工餐须传 {@code stock.gbDgsMyEmployeeMealWeight}（本次使用数量，基础单位）。</p>
+     * <p>成功时 {@code data} 统一为 Map：{@code disGoods} 必有；{@code stock} 为更新后的批次（含
+     * {@code goodsStockReduceEntityList}，type=6 员工餐含 {@code gbDgsrEmployeeMealWeight}）；
+     * {@code id}（库存减少记录主键）在 loss、return、employee_meal 时返回。</p>
      */
-    @Operation(summary = "部门库存调整（统一）", description = "kind：produce 制作、loss 损耗、return 退货、waste 废弃；stock 为部门库存实体。")
+    @Operation(summary = "部门库存调整（统一）", description = "kind：produce 制作、loss 损耗、return 退货、waste 废弃、employee_meal 员工餐；stock 为部门库存实体。")
     @RequestMapping(value = "/saveDepGoodsStockAdjust", method = RequestMethod.POST)
     public R saveDepGoodsStockAdjust(@RequestBody GbDepGoodsStockAdjustRequest request) {
         GbDepGoodsStockAdjustResult result = gbDepGoodsStockService.adjustDepGoodsStock(request);

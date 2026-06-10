@@ -64,6 +64,8 @@ public class BusinessToolExecutionNode implements AgentNode {
     public boolean shouldRun(AiRunState state) {
         boolean purchaseOverviewToolPlanned = state.getDataPlanTools() != null
                 && state.getDataPlanTools().contains(AiBusinessToolIds.PURCHASE_OVERVIEW);
+        boolean purchaseGoodsBusinessAnalysisToolPlanned = state.getDataPlanTools() != null
+                && state.getDataPlanTools().contains(AiBusinessToolIds.PURCHASE_GOODS_BUSINESS_ANALYSIS);
         boolean revenueToolPlanned = state.getDataPlanTools() != null
                 && state.getDataPlanTools().contains(AiBusinessToolIds.REVENUE_QUERY);
         boolean planned = state.isCostInsightPath()
@@ -77,8 +79,9 @@ public class BusinessToolExecutionNode implements AgentNode {
                 || state.isStockReduceQueryPath()
                 || state.isBusinessDiagnosisPath()
                 || state.isRevenueOverviewPath()
-                // 编排层已列入 purchase_overview 时，即使 path 布尔位异常也必须执行 Tool 链并 attach PurchaseAnswerPlan
+                // 编排层已列入 purchase_overview / purchase_goods_business_analysis 时，即使 path 布尔位异常也必须执行 Tool 链
                 || purchaseOverviewToolPlanned
+                || purchaseGoodsBusinessAnalysisToolPlanned
                 || revenueToolPlanned;
         return planned && state.getDataPlanTools() != null && !state.getDataPlanTools().isEmpty();
     }
@@ -193,7 +196,9 @@ public class BusinessToolExecutionNode implements AgentNode {
                     continue;
                 }
 
-                if (purchaseHandledByMaster && AiBusinessToolIds.PURCHASE_OVERVIEW.equals(toolId)) {
+                if (purchaseHandledByMaster
+                        && (AiBusinessToolIds.PURCHASE_OVERVIEW.equals(toolId)
+                                || AiBusinessToolIds.PURCHASE_GOODS_BUSINESS_ANALYSIS.equals(toolId))) {
                     continue;
                 }
 
@@ -291,9 +296,11 @@ public class BusinessToolExecutionNode implements AgentNode {
         } finally {
             // 与 usedBuildInsight 无关：只要本轮 toolResults 中有采购信封即尝试 attach（含后续工具抛错但采购已成功写入的情形）
             PurchaseAnswerPlanBuilder.attachIfApplicable(state);
+            PurchaseGoodsBusinessAnalysisAnswerPlanBuilder.attachIfApplicable(state);
             StockReduceAnswerPlanBuilder.attachIfApplicable(state);
             DailyRevenueAnswerPlanBuilder.attachIfApplicable(state);
             GoodsSupportedDishCoverAnswerPlanBuilder.attachIfApplicable(state);
+            GoodsStockBatchDetailAnswerPlanBuilder.attachIfApplicable(state);
             WarehouseAnswerPlanBuilder.attachIfApplicable(state);
         }
         return state;
@@ -346,6 +353,13 @@ public class BusinessToolExecutionNode implements AgentNode {
                     planned.put(
                             toolId,
                             HarnessPlannedToolArgsCapture.snapshotPurchase(state, rq, toolId, args, ctx));
+                    continue;
+                }
+                if (AiBusinessToolIds.PURCHASE_GOODS_BUSINESS_ANALYSIS.equals(toolId)) {
+                    Map<String, Object> args =
+                            PurchaseGoodsBusinessAnalysisToolExecutor.buildToolArgs(
+                                    deptForScopedTools, dis, start, stop, state);
+                    planned.put(toolId, HarnessPlannedToolArgsCapture.snapshotToolRequest(state, rq, toolId, args));
                     continue;
                 }
                 Map<String, Object> args = toolArgs(
@@ -510,6 +524,8 @@ public class BusinessToolExecutionNode implements AgentNode {
     static boolean isWarehouseToolOwnedByMasterAgent(String toolId) {
         return AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)
                 || AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(toolId)
+                || AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK.equals(toolId)
+                || AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION.equals(toolId)
                 || AiBusinessToolIds.WAREHOUSE_GOODS_SUPPORTED_DISH_COVER.equals(toolId);
     }
 
@@ -578,14 +594,34 @@ public class BusinessToolExecutionNode implements AgentNode {
             return warehouseStockOverviewToolExecutor.buildGoodsSupportedDishCoverToolArgs(
                     deptScoped, dis, state);
         }
+        if (AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK.equals(toolId) && state != null) {
+            Long deptScoped =
+                    toolDepartmentResolutionSupport.resolveToolDepartmentFatherId(state, state.getDepartmentId());
+            return warehouseStockOverviewToolExecutor.buildWarehouseNearExpiryToolArgs(
+                    deptScoped, dis, start, stop, state);
+        }
+        if (AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION.equals(toolId) && state != null) {
+            Long deptScoped =
+                    toolDepartmentResolutionSupport.resolveToolDepartmentFatherId(state, state.getDepartmentId());
+            return warehouseStockOverviewToolExecutor.buildWarehouseInventorySupervisionToolArgs(
+                    deptScoped, dis, start, stop, state);
+        }
         Map<String, Object> m = new HashMap<>(8);
         if (AiBusinessToolIds.REVENUE_QUERY.equals(toolId)
                 || AiBusinessToolIds.STOCK_REDUCE_QUERY.equals(toolId)
                 || AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)
-                || AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(toolId)) {
+                || AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(toolId)
+                || AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK.equals(toolId)
+                || AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION.equals(toolId)) {
             boolean warehouseOverviewTool = AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId);
             boolean warehouseRiskTool = AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(toolId);
-            if ((warehouseOverviewTool || warehouseRiskTool) && state.isGroupWarehouseStockOverview()) {
+            boolean warehouseNearExpiryTool = AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK.equals(toolId);
+            boolean warehouseSupervisionTool = AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION.equals(toolId);
+            if ((warehouseOverviewTool
+                            || warehouseRiskTool
+                            || warehouseNearExpiryTool
+                            || warehouseSupervisionTool)
+                    && state.isGroupWarehouseStockOverview()) {
                 m.put(AiBusinessToolIds.ARG_GROUP_WAREHOUSE_STOCK_AGGREGATION, Boolean.TRUE);
                 if (dis != null) {
                     m.put(AiBusinessToolIds.ARG_DIS_ID, dis);
@@ -610,10 +646,15 @@ public class BusinessToolExecutionNode implements AgentNode {
                 }
                 if (dis != null
                         && (AiBusinessToolIds.WAREHOUSE_STOCK_OVERVIEW.equals(toolId)
-                                || AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(toolId))) {
+                                || AiBusinessToolIds.WAREHOUSE_INVENTORY_RISK_LIST.equals(toolId)
+                                || AiBusinessToolIds.WAREHOUSE_NEAR_EXPIRY_RISK.equals(toolId)
+                                || AiBusinessToolIds.WAREHOUSE_INVENTORY_SUPERVISION.equals(toolId))) {
                     m.put(AiBusinessToolIds.ARG_DIS_ID, dis);
                 }
-                if (warehouseOverviewTool || warehouseRiskTool) {
+                if (warehouseOverviewTool
+                        || warehouseRiskTool
+                        || warehouseNearExpiryTool
+                        || warehouseSupervisionTool) {
                     putWarehouseResolvedScopeArgs(m, state);
                 }
             }
@@ -645,12 +686,22 @@ public class BusinessToolExecutionNode implements AgentNode {
                 m.put(AiBusinessToolIds.ARG_STOP_DATE, stop);
             }
             if (state != null
-                    && (warehouseOverviewTool || warehouseRiskTool)) {
+                    && (warehouseOverviewTool
+                            || warehouseRiskTool
+                            || warehouseNearExpiryTool
+                            || warehouseSupervisionTool)) {
                 WarehouseStockOverviewToolExecutor.enrichInventorySnapshotToolArgs(m, toolId, state);
+            }
+            if (warehouseNearExpiryTool || warehouseSupervisionTool) {
+                m.put(
+                        AiBusinessToolIds.ARG_NEAR_EXPIRY_WINDOW_DAYS,
+                        com.nongxinle.ai.inventory.WarehouseNearExpiryRiskSupport.DEFAULT_NEAR_EXPIRY_WINDOW_DAYS);
             }
         } else if (AiBusinessToolIds.PURCHASE_OVERVIEW.equals(toolId)) {
             m.putAll(PurchaseOverviewToolExecutor.buildPurchaseOverviewToolArgs(dept, dis, start, stop, state));
             logPurchaseOverviewToolArgs(state, m);
+        } else if (AiBusinessToolIds.PURCHASE_GOODS_BUSINESS_ANALYSIS.equals(toolId)) {
+            m.putAll(PurchaseGoodsBusinessAnalysisToolExecutor.buildToolArgs(dept, dis, start, stop, state));
         }
         return m;
     }

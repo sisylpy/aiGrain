@@ -8,6 +8,7 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.core.AgentNode;
 import com.nongxinle.ai.core.AiRunState;
+import com.nongxinle.ai.identity.BusinessEntityIdentityOutcomeSupport;
 import com.nongxinle.ai.dto.business.BusinessOverviewAnswerPlan;
 import com.nongxinle.ai.dto.business.DishProfitAnswerPlan;
 import com.nongxinle.ai.dto.business.DishIngredientCoverAnswerPlan;
@@ -17,8 +18,11 @@ import com.nongxinle.ai.dto.business.DailyRevenueAnswerPlan;
 import com.nongxinle.ai.dto.business.DiagnosisPlan;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.dto.business.MenuOperationAnswerPlan;
+import com.nongxinle.ai.composer.purchase.PurchaseGoodsBusinessAnalysisCardCompanionAnswerPreviewSupport;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.dto.business.PurchaseGoodsBusinessAnalysisAnswerPlan;
 import com.nongxinle.ai.dto.business.StockReduceAnswerPlan;
+import com.nongxinle.ai.dto.business.GoodsStockBatchDetailAnswerPlan;
 import com.nongxinle.ai.dto.business.WarehouseAnswerPlan;
 import com.nongxinle.ai.composer.AiAnswerContextSummarySupport;
 import com.nongxinle.ai.composer.AnswerBoundaryNoteComposer;
@@ -26,12 +30,16 @@ import com.nongxinle.ai.composer.menu.MenuExpertPresentationComposeResult;
 import com.nongxinle.ai.composer.menu.MenuOperationExpertNarrativeComposer;
 import com.nongxinle.ai.composer.DishProfitRankingCardCompanionAnswerPreviewSupport;
 import com.nongxinle.ai.composer.DishSalesRankingCardCompanionAnswerPreviewSupport;
+import com.nongxinle.ai.composer.warehouse.GoodsAnchorInventoryBundleCardCompanionAnswerPreviewSupport;
+import com.nongxinle.ai.composer.warehouse.GoodsStockBatchDetailCardCompanionAnswerPreviewSupport;
 import com.nongxinle.ai.composer.warehouse.GoodsSupportedDishCoverCardCompanionAnswerPreviewSupport;
 import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
 import com.nongxinle.ai.composer.menu.DishIngredientCoverCardCompanionAnswerPreviewSupport;
 import com.nongxinle.ai.composer.menu.DishProfitPrescriptionCardCompanionAnswerPreviewSupport;
 import com.nongxinle.ai.composer.menu.MenuOperationCardCompanionAnswerPreviewSupport;
 import com.nongxinle.ai.composer.warehouse.WarehouseInventoryRiskCardCompanionAnswerPreviewSupport;
+import com.nongxinle.ai.composer.warehouse.WarehouseInventorySupervisionCardCompanionAnswerPreviewSupport;
+import com.nongxinle.ai.composer.warehouse.WarehouseNearExpiryRiskCardCompanionAnswerPreviewSupport;
 import com.nongxinle.ai.composer.warehouse.WarehouseStockRankingCardCompanionAnswerPreviewSupport;
 import com.nongxinle.ai.composer.renderer.DiagnosisDeterministicRenderer;
 import com.nongxinle.ai.composer.renderer.DeterministicAnswerRenderer;
@@ -40,7 +48,8 @@ import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionPar
 import com.nongxinle.ai.security.AiAnswerBoundary;
 import com.nongxinle.ai.platform.AiCardPayloadWireSupport;
 import com.nongxinle.ai.platform.BusinessStatusCardWireService;
-import com.nongxinle.ai.platform.PurchaseGoodsDetailCardWireService;
+import com.nongxinle.ai.platform.PurchaseAnswerPlanCardWireService;
+import com.nongxinle.ai.platform.WarehouseGoodsAnchorAnswerPlanCardWireService;
 import com.nongxinle.ai.graph.business.BusinessStatusCardProjection;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
@@ -84,7 +93,10 @@ public class StubAnswerComposerNode implements AgentNode {
     private BusinessStatusCardWireService businessStatusCardWireService;
 
     @Autowired(required = false)
-    private PurchaseGoodsDetailCardWireService purchaseGoodsDetailCardWireService;
+    private PurchaseAnswerPlanCardWireService purchaseAnswerPlanCardWireService;
+
+    @Autowired(required = false)
+    private WarehouseGoodsAnchorAnswerPlanCardWireService warehouseGoodsAnchorAnswerPlanCardWireService;
 
     @Override
     public String name() {
@@ -123,11 +135,13 @@ public class StubAnswerComposerNode implements AgentNode {
             coreToolPermissionOnlyBody = null;
         }
 
-        if (purchaseGoodsDetailCardWireService != null) {
-            purchaseGoodsDetailCardWireService.attachPurchaseGoodsDetailCardIfApplicable(state);
+        if (purchaseAnswerPlanCardWireService != null) {
+            purchaseAnswerPlanCardWireService.attachCardsIfApplicable(state);
         }
-        if (businessStatusCardWireService != null
-                && !BusinessStatusCardWireSupport.isPurchasePeriodGoodsDetailMainline(state)) {
+        if (warehouseGoodsAnchorAnswerPlanCardWireService != null) {
+            warehouseGoodsAnchorAnswerPlanCardWireService.attachCardsIfApplicable(state);
+        }
+        if (businessStatusCardWireService != null) {
             businessStatusCardWireService.attachBusinessStatusCardsIfApplicable(state);
         }
 
@@ -282,12 +296,26 @@ public class StubAnswerComposerNode implements AgentNode {
                     });
         } else if (isWarehouseStockComposerMainline(state)) {
             GoodsSupportedDishCoverAnswerPlan goodsCoverPlan = state.getGoodsSupportedDishCoverAnswerPlan();
-            if (goodsCoverPlan != null
+            GoodsStockBatchDetailAnswerPlan goodsBatchPlan = state.getGoodsStockBatchDetailAnswerPlan();
+            if (GoodsAnchorInventoryBundleCardCompanionAnswerPreviewSupport.shouldUseShortPreview(
+                    goodsCoverPlan, goodsBatchPlan)) {
+                answer =
+                        GoodsAnchorInventoryBundleCardCompanionAnswerPreviewSupport.composeCardCompanionHint(
+                                goodsCoverPlan, goodsBatchPlan);
+            } else if (goodsBatchPlan != null
+                    && GoodsStockBatchDetailCardCompanionAnswerPreviewSupport.shouldUseShortPreview(
+                            goodsBatchPlan)) {
+                answer =
+                        GoodsStockBatchDetailCardCompanionAnswerPreviewSupport.composeCardCompanionHint(
+                                goodsBatchPlan);
+            } else if (goodsCoverPlan != null
                     && GoodsSupportedDishCoverCardCompanionAnswerPreviewSupport.shouldUseShortPreview(
                             goodsCoverPlan)) {
                 answer =
                         GoodsSupportedDishCoverCardCompanionAnswerPreviewSupport.composeCardCompanionHint(
                                 goodsCoverPlan);
+            } else if (WarehouseGoodsAnchorAnswerPlanCardWireSupport.ownsAnyCardProjection(state)) {
+                answer = composeWarehouseGoodsAnchorDedicatedMinimalHint(goodsCoverPlan, goodsBatchPlan);
             } else {
                 AiTimeWindowTextFormatter.UserPhrases twWarehouse = AiTimeWindowTextFormatter.forAnswer(state);
                 WarehouseAnswerPlan warehousePlan = state.getWarehouseAnswerPlan();
@@ -296,6 +324,18 @@ public class StubAnswerComposerNode implements AgentNode {
                                 warehousePlan)) {
                     answer =
                             WarehouseInventoryRiskCardCompanionAnswerPreviewSupport.composeCardCompanionHint(
+                                    warehousePlan);
+                } else if (warehousePlan != null
+                        && WarehouseInventorySupervisionCardCompanionAnswerPreviewSupport.shouldUseShortPreview(
+                                warehousePlan)) {
+                    answer =
+                            WarehouseInventorySupervisionCardCompanionAnswerPreviewSupport.composeCardCompanionHint(
+                                    warehousePlan);
+                } else if (warehousePlan != null
+                        && WarehouseNearExpiryRiskCardCompanionAnswerPreviewSupport.shouldUseShortPreview(
+                                warehousePlan)) {
+                    answer =
+                            WarehouseNearExpiryRiskCardCompanionAnswerPreviewSupport.composeCardCompanionHint(
                                     warehousePlan);
                 } else if (warehousePlan != null
                         && WarehouseStockRankingCardCompanionAnswerPreviewSupport.shouldUseShortPreview(
@@ -328,25 +368,53 @@ public class StubAnswerComposerNode implements AgentNode {
                         return composeStockReduceNoPlanFallback(state);
                     });
         } else if (isPurchaseOverviewComposerMainline(state)) {
-            if (hasPurchaseGoodsDetailCardAttached(state)) {
-                answer = composePurchaseGoodsDetailCardShortIntro(state);
+            AiResolvedQueryContext purchaseRq = state.getResolvedQueryContext();
+            if (BusinessEntityIdentityOutcomeSupport.blocksSuccessfulGoodsAnchoredPresentation(purchaseRq)) {
+                answer = BusinessEntityIdentityOutcomeSupport.composeGoodsIdentityFailureAnswer(state);
             } else {
-                answer =
-                        composeBusinessStatusAnswerWithLegacyFallback(state, "采购情况", () -> {
-                            AiTimeWindowTextFormatter.UserPhrases twPurchaseMainline =
-                                    AiTimeWindowTextFormatter.forAnswer(state);
-                            PurchaseAnswerPlan purchasePlan = state.getPurchaseAnswerPlan();
-                            if (purchasePlan != null) {
-                                String purchaseFromPlan =
-                                        composePurchaseDeterministicFromAnswerPlan(
-                                                purchasePlan, twPurchaseMainline, state.getResolvedQueryContext());
-                                if (purchaseFromPlan != null && !purchaseFromPlan.isBlank()) {
-                                    return purchaseFromPlan;
+            PurchaseAnswerPlan purchasePlanForCard = state.getPurchaseAnswerPlan();
+            if (purchasePlanForCard != null
+                    && PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL.equals(
+                            purchasePlanForCard.getPlanType())) {
+                answer = composePurchaseGoodsDetailCardShortIntro(state);
+            } else if (purchasePlanForCard != null
+                    && PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN.equals(
+                            purchasePlanForCard.getPlanType())) {
+                answer = composePurchaseGoodsAnchorDetailCardShortIntro(state);
+            } else if (purchasePlanForCard != null
+                    && PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_GOODS_DETAIL.equals(
+                            purchasePlanForCard.getPlanType())) {
+                answer = composePurchaseSupplierGoodsDetailFromAnswerPlan(state);
+            } else {
+                PurchaseGoodsBusinessAnalysisAnswerPlan goodsBusinessPlan =
+                        state.getPurchaseGoodsBusinessAnalysisAnswerPlan();
+                if (goodsBusinessPlan != null
+                        && PurchaseGoodsBusinessAnalysisCardCompanionAnswerPreviewSupport.shouldUseShortPreview(
+                                goodsBusinessPlan)) {
+                    answer =
+                            PurchaseGoodsBusinessAnalysisCardCompanionAnswerPreviewSupport.composeCardCompanionHint(
+                                    goodsBusinessPlan);
+                } else {
+                    answer =
+                            composeBusinessStatusAnswerWithLegacyFallback(state, "采购情况", () -> {
+                                AiTimeWindowTextFormatter.UserPhrases twPurchaseMainline =
+                                        AiTimeWindowTextFormatter.forAnswer(state);
+                                PurchaseAnswerPlan purchasePlan = state.getPurchaseAnswerPlan();
+                                if (purchasePlan != null) {
+                                    String purchaseFromPlan =
+                                            composePurchaseDeterministicFromAnswerPlan(
+                                                    purchasePlan,
+                                                    twPurchaseMainline,
+                                                    state.getResolvedQueryContext());
+                                    if (purchaseFromPlan != null && !purchaseFromPlan.isBlank()) {
+                                        return purchaseFromPlan;
+                                    }
+                                    return composePurchaseOverviewNoPlanFallback(state);
                                 }
                                 return composePurchaseOverviewNoPlanFallback(state);
-                            }
-                            return composePurchaseOverviewNoPlanFallback(state);
-                        });
+                            });
+                }
+            }
             }
         } else if (genericChatBlockedForDishReasonInDiagnosisContext(state)) {
             answer = "这类问题需要对照菜品毛利与成本数据作答。当前未走通数据查询链路，请改用完整提问（例如点明菜名并说明为什么毛利偏低或成本高），"
@@ -546,6 +614,22 @@ public class StubAnswerComposerNode implements AgentNode {
         return "库房库存分析计划暂未生成，请稍后重试或缩小范围。";
     }
 
+    /** 专属 GOODS 锚点 Plan 已挂载但短引导未命中时的兜底（禁止误落 {@code warehouse_stock_overview_no_plan}）。 */
+    private static String composeWarehouseGoodsAnchorDedicatedMinimalHint(
+            GoodsSupportedDishCoverAnswerPlan coverPlan, GoodsStockBatchDetailAnswerPlan batchPlan) {
+        if (coverPlan != null && batchPlan != null) {
+            return GoodsAnchorInventoryBundleCardCompanionAnswerPreviewSupport.composeCardCompanionHint(
+                    coverPlan, batchPlan);
+        }
+        if (batchPlan != null) {
+            return GoodsStockBatchDetailCardCompanionAnswerPreviewSupport.composeCardCompanionHint(batchPlan);
+        }
+        if (coverPlan != null) {
+            return GoodsSupportedDishCoverCardCompanionAnswerPreviewSupport.composeCardCompanionHint(coverPlan);
+        }
+        return "原料库存详情见下方卡片。";
+    }
+
     private static String composeWarehouseDeterministicFromAnswerPlan(
             WarehouseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw) {
         if (plan == null || plan.getPlanType() == null || plan.getPlanType().isBlank()) {
@@ -569,6 +653,18 @@ public class StubAnswerComposerNode implements AgentNode {
         }
         if (WarehouseAnswerPlan.TYPE_WAREHOUSE_LOW_STOCK_RISK.equals(type)) {
             return composeWarehouseLowStockFromPlan(plan, p);
+        }
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_NEAR_EXPIRY_RISK.equals(type)) {
+            if (WarehouseNearExpiryRiskCardCompanionAnswerPreviewSupport.shouldUseShortPreview(plan)) {
+                return WarehouseNearExpiryRiskCardCompanionAnswerPreviewSupport.composeCardCompanionHint(plan);
+            }
+            return composeWarehouseNearExpiryFromPlan(plan, p);
+        }
+        if (WarehouseAnswerPlan.TYPE_WAREHOUSE_INVENTORY_SUPERVISION.equals(type)) {
+            if (WarehouseInventorySupervisionCardCompanionAnswerPreviewSupport.shouldUseShortPreview(plan)) {
+                return WarehouseInventorySupervisionCardCompanionAnswerPreviewSupport.composeCardCompanionHint(plan);
+            }
+            return composeWarehouseOverviewFromPlan(plan, p);
         }
         if (WarehouseAnswerPlan.TYPE_WAREHOUSE_STOCK_OVERVIEW.equals(type)) {
             return composeWarehouseOverviewFromPlan(plan, p);
@@ -706,6 +802,22 @@ public class StubAnswerComposerNode implements AgentNode {
         return sb.toString();
     }
 
+    private static String composeWarehouseNearExpiryFromPlan(
+            WarehouseAnswerPlan plan, AiTimeWindowTextFormatter.UserPhrases tw) {
+        Map<String, Object> summary = plan.getSummary();
+        String narrative = summary != null && summary.get("narrative") != null
+                ? summary.get("narrative").toString().trim()
+                : "";
+        StringBuilder sb = new StringBuilder();
+        sb.append(warehouseSnapshotBracketLine(plan)).append('\n');
+        if (!narrative.isEmpty()) {
+            sb.append(narrative);
+        } else {
+            sb.append(warehousePlanLead(plan, tw)).append("，临期/过期风险批次列表已返回，详见下方卡片。");
+        }
+        return sb.toString();
+    }
+
     private static String nz(String s) {
         return s == null ? "" : s;
     }
@@ -750,19 +862,68 @@ public class StubAnswerComposerNode implements AgentNode {
         return legacy == null ? "" : legacy.trim();
     }
 
-    private static boolean hasPurchaseGoodsDetailCardAttached(AiRunState state) {
-        if (state == null || !state.isCardsPresent()) {
-            return false;
-        }
-        return PurchaseGoodsDetailCardSupport.hasPurchaseGoodsDetailCard(state.getCards());
-    }
-
     private static String composePurchaseGoodsDetailCardShortIntro(AiRunState state) {
         AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
         String label = tw != null && StringUtils.hasText(tw.getTimeSubjectText())
                 ? tw.getTimeSubjectText().trim()
                 : "本期";
         return "已整理 " + label + " 原料采购清单，详见下方卡片。";
+    }
+
+    private static String composePurchaseGoodsAnchorDetailCardShortIntro(AiRunState state) {
+        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
+        String label = tw != null && StringUtils.hasText(tw.getTimeSubjectText())
+                ? tw.getTimeSubjectText().trim()
+                : "本期";
+        String goodsHint = "";
+        PurchaseAnswerPlan plan = state != null ? state.getPurchaseAnswerPlan() : null;
+        if (plan != null && plan.getSummary() != null) {
+            Object name = plan.getSummary().get("goodsName");
+            if (name == null && plan.getFocusRows() != null && !plan.getFocusRows().isEmpty()) {
+                name = plan.getFocusRows().get(0).get("goodsName");
+            }
+            if (name != null && StringUtils.hasText(name.toString())) {
+                goodsHint = name.toString().trim() + " ";
+            }
+        }
+        return "已整理 " + label + " " + goodsHint + "采购明细，详见下方卡片。";
+    }
+
+    private String composePurchaseSupplierGoodsDetailFromAnswerPlan(AiRunState state) {
+        PurchaseAnswerPlan plan = state != null ? state.getPurchaseAnswerPlan() : null;
+        if (plan == null) {
+            return "";
+        }
+        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        String fromPlan = composePurchaseDeterministicFromAnswerPlan(plan, tw, rq);
+        if (fromPlan != null && !fromPlan.isBlank()) {
+            return fromPlan;
+        }
+        if (state != null && PurchaseAnswerPlanCardSupport.hasPurchaseAnswerPlanCard(state.getCards())) {
+            return composePurchaseSupplierGoodsDetailCardShortIntro(state);
+        }
+        return composePurchaseOverviewNoPlanFallback(state);
+    }
+
+    private static String composePurchaseSupplierGoodsDetailCardShortIntro(AiRunState state) {
+        AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
+        String label = tw != null && StringUtils.hasText(tw.getTimeSubjectText())
+                ? tw.getTimeSubjectText().trim()
+                : "本期";
+        String goodsHint = "";
+        PurchaseAnswerPlan plan = state != null ? state.getPurchaseAnswerPlan() : null;
+        Map<String, Object> debug = plan != null ? plan.getDebug() : null;
+        if (debug != null) {
+            Object name = debug.get("requestedGoodsName");
+            if (name == null) {
+                name = debug.get("focusEntityName");
+            }
+            if (name != null && StringUtils.hasText(name.toString())) {
+                goodsHint = name.toString().trim() + " ";
+            }
+        }
+        return "已整理 " + label + " " + goodsHint + "供货商采购明细，详见下方卡片。";
     }
 
     private static boolean hasBusinessStatusCardsAttached(AiRunState state) {
@@ -1571,6 +1732,12 @@ public class StubAnswerComposerNode implements AgentNode {
         if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_COUNT_RANKING.equals(type)) {
             return composePurchaseGoodsCountRankingFromPlan(plan, p);
         }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_QUANTITY_RANKING.equals(type)) {
+            return composePurchaseGoodsQuantityRankingFromPlan(plan, p);
+        }
+        if (PurchaseAnswerPlan.TYPE_PURCHASE_ANOMALY.equals(type)) {
+            return composePurchaseAnomalyFromPlan(plan, p);
+        }
         if (PurchaseAnswerPlan.TYPE_PURCHASE_SUPPLIER_AMOUNT_RANKING.equals(type)) {
             return composePurchaseSupplierAmountRankingFromPlan(plan, p);
         }
@@ -1581,7 +1748,7 @@ public class StubAnswerComposerNode implements AgentNode {
             return composePurchaseSelfGoodsDetailFromPlan(plan, p);
         }
         if (PurchaseAnswerPlan.TYPE_PURCHASE_STORE_AMOUNT_RANKING.equals(type)) {
-            return composePurchaseStoreAmountRankingFromPlan(plan, p);
+            return composePurchaseStoreAmountRankingFromPlan(plan, p, rq);
         }
         if (PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN.equals(type)) {
             return composePurchaseGoodsSourceBreakdownFromPlan(plan, p, rq);
@@ -1721,15 +1888,25 @@ public class StubAnswerComposerNode implements AgentNode {
 
     /** 并排门店采购金额（AnswerPlan Builder 已定序）。 */
     private static String composePurchaseStoreAmountRankingFromPlan(PurchaseAnswerPlan plan,
-            AiTimeWindowTextFormatter.UserPhrases tw) {
+            AiTimeWindowTextFormatter.UserPhrases tw, AiResolvedQueryContext rq) {
         List<Map<String, Object>> focus = plan.getFocusRows();
         List<Map<String, Object>> sec =
                 plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
         StringBuilder sb = new StringBuilder();
         sb.append(tw.getBracketTimeRangeLine()).append("\n");
         if (focus == null || focus.isEmpty()) {
-            sb.append(tw.getDisplayTimeRange()).append(
-                    "，当前未能按门店对比采购入库金额范围（请在问题中并排点到具体门店并保持可见范围）。");
+            int visible =
+                    rq != null && rq.getOrgScope() != null
+                            ? PurchaseCapabilityBoundarySupport.countEligibleCrossStoreRankingStores(
+                                    rq.getOrgScope())
+                            : 0;
+            if (visible < 2) {
+                sb.append(tw.getDisplayTimeRange()).append(
+                        "，当前权限范围内仅有一家可见门店，无法生成跨店采购金额排行或对比；请确认门店范围。");
+            } else {
+                sb.append(tw.getDisplayTimeRange()).append(
+                        "，当前未能按门店对比采购入库金额（请在问题中并排点到具体门店并保持可见范围）。");
+            }
             return sb.toString();
         }
         Map<String, Object> top = focus.get(0);
@@ -2152,6 +2329,150 @@ public class StubAnswerComposerNode implements AgentNode {
         if (!restParts.isEmpty()) {
             sb.append("其后依次为：").append(String.join("；", restParts)).append("。");
         }
+        return sb.toString();
+    }
+
+    private static String composePurchaseGoodsQuantityRankingFromPlan(PurchaseAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        List<Map<String, Object>> sec =
+                plan.getSecondaryRows() != null ? plan.getSecondaryRows() : Collections.emptyList();
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append("\n");
+        if (focus == null || focus.isEmpty()) {
+            sb.append(tw.getDisplayTimeRange()).append("暂未查询到采购商品数量排行数据。");
+            return sb.toString();
+        }
+        List<Map<String, Object>> ordered = new ArrayList<>(focus.size() + sec.size());
+        ordered.addAll(focus);
+        ordered.addAll(sec);
+        Object topQtyObj = purchaseGoodsQuantityFromPlanRow(ordered.get(0));
+        String topQtyDisp = formatPurchaseQuantityWithUnit(ordered.get(0), topQtyObj);
+        int i = 0;
+        while (i < ordered.size() && purchasePlanRowQuantitiesEqual(ordered.get(i), topQtyObj)) {
+            i++;
+        }
+        List<String> tieNames = new ArrayList<>();
+        for (int k = 0; k < i; k++) {
+            String nm = nz(goodsNameFromPurchasePlanRow(ordered.get(k)));
+            if (!nm.isBlank()) {
+                tieNames.add(nm);
+            }
+        }
+        if (tieNames.isEmpty()) {
+            return null;
+        }
+        String range = tw.getDisplayTimeRange();
+        if (tieNames.size() > 1) {
+            sb.append(range).append("，采购数量最多的商品包括").append(String.join("、", tieNames)).append("，均为")
+                    .append(topQtyDisp).append("。");
+        } else {
+            sb.append(range).append("，采购数量最多的商品为").append(tieNames.get(0)).append("，合计")
+                    .append(topQtyDisp).append("。");
+        }
+        List<String> restParts = new ArrayList<>();
+        while (i < ordered.size()) {
+            Map<String, Object> r = ordered.get(i);
+            restParts.add(
+                    nz(goodsNameFromPurchasePlanRow(r))
+                            + "合计"
+                            + formatPurchaseQuantityWithUnit(r, purchaseGoodsQuantityFromPlanRow(r)));
+            i++;
+        }
+        if (!restParts.isEmpty()) {
+            sb.append("其后依次为：").append(String.join("；", restParts)).append("。");
+        }
+        appendPurchaseGoodsQuantityRankingCaliberNote(sb, plan);
+        return sb.toString();
+    }
+
+    private static void appendPurchaseGoodsQuantityRankingCaliberNote(StringBuilder sb, PurchaseAnswerPlan plan) {
+        if (plan == null || plan.getDebug() == null) {
+            return;
+        }
+        if (!Boolean.FALSE.equals(plan.getDebug().get("quantityRankingUnitComparable"))) {
+            return;
+        }
+        sb.append("\n说明：当前数量排行按各商品原始采购单位合计，系统未做统一基础单位换算，跨单位数值不宜直接比较。");
+    }
+
+    private static Object purchaseGoodsQuantityFromPlanRow(Map<String, Object> row) {
+        if (row == null) {
+            return null;
+        }
+        Object v = row.get("purchaseQuantity");
+        if (v == null) {
+            v = row.get("quantity");
+        }
+        if (v == null) {
+            v = row.get("buyQuantity");
+        }
+        return v;
+    }
+
+    private static String formatPurchaseQuantityWithUnit(Map<String, Object> row, Object qtyObj) {
+        String qty = plainNumericHint(qtyObj);
+        if (row == null || !StringUtils.hasText(qty)) {
+            return qty;
+        }
+        Object unit = row.get("unit");
+        if (unit != null && StringUtils.hasText(unit.toString())) {
+            return qty + unit.toString().trim();
+        }
+        return qty;
+    }
+
+    private static boolean purchasePlanRowQuantitiesEqual(Map<String, Object> row, Object topQtyObj) {
+        return Objects.equals(plainNumericHint(purchaseGoodsQuantityFromPlanRow(row)), plainNumericHint(topQtyObj));
+    }
+
+    private static String composePurchaseAnomalyFromPlan(PurchaseAnswerPlan plan,
+            AiTimeWindowTextFormatter.UserPhrases tw) {
+        Map<String, Object> dbg = plan.getDebug();
+        String wire = dbg != null && dbg.get("structuredIntentDetailWire") != null
+                ? dbg.get("structuredIntentDetailWire").toString()
+                : null;
+        String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire);
+        String kind;
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PRICE_ANOMALY.equals(canon)) {
+            kind = "单价波动";
+        } else if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_FREQUENCY_ANOMALY.equals(canon)) {
+            kind = "采购次数异常";
+        } else if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_QUANTITY_ANOMALY.equals(canon)) {
+            kind = "采购数量异常";
+        } else if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE.equals(canon)) {
+            kind = "采购金额突增";
+        } else {
+            kind = "采购异常";
+        }
+
+        List<Map<String, Object>> focus = plan.getFocusRows();
+        StringBuilder sb = new StringBuilder();
+        sb.append(tw.getBracketTimeRangeLine()).append("\n");
+        sb.append(tw.getDisplayTimeRange()).append("，按「").append(kind).append("」口径");
+        if (dbg != null && Boolean.FALSE.equals(dbg.get("anomalyFactsAvailable"))) {
+            sb.append("：当前缺少结构化异常判定结果，无法用普通采购排行替代。");
+            return sb.toString();
+        }
+        if (focus == null || focus.isEmpty()) {
+            sb.append("未检出异常项。");
+            return sb.toString();
+        }
+        sb.append("检出 ").append(focus.size()).append(" 项需关注：");
+        List<String> parts = new ArrayList<>();
+        int cap = Math.min(focus.size(), 5);
+        for (int i = 0; i < cap; i++) {
+            Map<String, Object> row = focus.get(i);
+            String name = nz(goodsNameFromPurchasePlanRow(row));
+            if (name.isBlank()) {
+                name = nz(supplierNameFromPurchasePlanRow(row));
+            }
+            if (name.isBlank()) {
+                name = "未命名项";
+            }
+            parts.add(name);
+        }
+        sb.append(String.join("、", parts)).append("。");
         return sb.toString();
     }
 

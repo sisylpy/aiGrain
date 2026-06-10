@@ -4,12 +4,15 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.nongxinle.ai.semantic.frame.SchemaValidatedSemanticDraft;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import static java.util.Set.of;
@@ -138,7 +141,9 @@ public final class AiQuerySemanticParseResultJsonParser {
                     "anchorPolicy",
                     "detailWanted",
                     "structuredIntentDetailWire",
-                    "answerPlanType");
+                    "answerPlanType",
+                    "expiryRiskFilter",
+                    "capabilitySpecificity");
 
     static ProtocolRelocateResult normalizeProtocolFieldPlacement(JSONObject o) {
         List<String> moves = new ArrayList<>();
@@ -214,7 +219,8 @@ public final class AiQuerySemanticParseResultJsonParser {
             return true;
         }
         return StringUtils.hasText(top.getStr("mentionedDishName"))
-                || StringUtils.hasText(top.getStr("mentionedGoodsName"));
+                || StringUtils.hasText(top.getStr("mentionedGoodsName"))
+                || StringUtils.hasText(top.getStr("expiryRiskFilter"));
     }
 
     private static void promoteStringFieldIntoSemanticSlots(
@@ -749,6 +755,22 @@ public final class AiQuerySemanticParseResultJsonParser {
                     .build();
         }
 
+        JSONObject slotsJo = safeGetJSONObject(o, "semanticSlots");
+        Map<String, SchemaValidatedSemanticDraft.FieldPresence> presence = new LinkedHashMap<>();
+        List<String> protocolErrors = new ArrayList<>();
+
+        LocatedObject salesBaselineLocation =
+                locateCanonicalOrNestedObject(o, slotsJo, "salesBaselineWindow", protocolErrors);
+        AiQuerySemanticParseResult.SalesBaselineWindowPart salesBaselineWindow =
+                parseSalesBaselineWindowPart(salesBaselineLocation.object());
+        recordPresence(presence, "domainExtensions.salesBaselineWindow", salesBaselineLocation);
+
+        LocatedObject stockSnapshotLocation =
+                locateCanonicalOrNestedObject(o, slotsJo, "stockSnapshot", protocolErrors);
+        AiQuerySemanticParseResult.StockSnapshotPart stockSnapshot =
+                parseStockSnapshotPart(stockSnapshotLocation.object());
+        recordPresence(presence, "domainExtensions.stockSnapshot", stockSnapshotLocation);
+
         AiQuerySemanticParseResult.RequestedScopePart scope = null;
         JSONObject sjo = safeGetJSONObject(o, "requestedScope");
         if (sjo != null && !sjo.isEmpty()) {
@@ -795,6 +817,18 @@ public final class AiQuerySemanticParseResultJsonParser {
         }
 
         AiQuerySemanticParseResult.SemanticSlotsPart semanticSlots = parseSemanticSlots(o);
+        SchemaValidatedSemanticDraft semanticDraft =
+                buildSemanticDraft(
+                        semanticSlots,
+                        metric,
+                        time,
+                        scope,
+                        salesBaselineWindow,
+                        stockSnapshot,
+                        orchestration,
+                        o,
+                        presence,
+                        protocolErrors);
 
         return AiQuerySemanticParseResult.builder()
                 .intent(trimToNull(o.getStr("intent")))
@@ -811,6 +845,7 @@ public final class AiQuerySemanticParseResultJsonParser {
                 .requestedScope(scope)
                 .metric(metric)
                 .semanticSlots(semanticSlots)
+                .semanticDraft(semanticDraft)
                 .orchestrationDecisionCandidate(orchestration)
                 .needClarification(parseNullableBool(o.get("needClarification")))
                 .clarificationQuestion(trimToNull(o.getStr("clarificationQuestion")))
@@ -818,6 +853,200 @@ public final class AiQuerySemanticParseResultJsonParser {
                 .rawJsonDigest(digest)
                 .parseMissing(false)
                 .build();
+    }
+
+    private record LocatedObject(
+            JSONObject object,
+            SchemaValidatedSemanticDraft.PresenceState state,
+            Set<String> rawLocations,
+            String protocolError) {}
+
+    private static LocatedObject locateCanonicalOrNestedObject(
+            JSONObject top,
+            JSONObject slots,
+            String key,
+            List<String> protocolErrors) {
+        JSONObject canonical = safeGetJSONObject(top, key);
+        JSONObject nested = safeGetJSONObject(slots, key);
+        boolean canonicalKeyPresent = top != null && top.containsKey(key);
+        boolean nestedKeyPresent = slots != null && slots.containsKey(key);
+        boolean hasCanonical = canonical != null && !canonical.isEmpty();
+        boolean hasNested = nested != null && !nested.isEmpty();
+        if (canonicalKeyPresent && !hasCanonical) {
+            String code = "protocol_invalid:" + key + ":top_level_not_non_empty_object";
+            protocolErrors.add(code);
+            return new LocatedObject(
+                    null,
+                    SchemaValidatedSemanticDraft.PresenceState.PROTOCOL_ERROR,
+                    Set.of(key),
+                    code);
+        }
+        if (nestedKeyPresent && !hasNested) {
+            String code = "protocol_invalid:" + key + ":semanticSlots_not_non_empty_object";
+            protocolErrors.add(code);
+            return new LocatedObject(
+                    null,
+                    SchemaValidatedSemanticDraft.PresenceState.PROTOCOL_ERROR,
+                    Set.of("semanticSlots." + key),
+                    code);
+        }
+        if (hasCanonical && hasNested) {
+            if (!jsonEquals(canonical, nested)) {
+                String code = "protocol_conflict:" + key + ":top_level_vs_semanticSlots";
+                protocolErrors.add(code);
+                return new LocatedObject(
+                        canonical,
+                        SchemaValidatedSemanticDraft.PresenceState.PROTOCOL_ERROR,
+                        Set.of(key, "semanticSlots." + key),
+                        code);
+            }
+            return new LocatedObject(
+                    canonical,
+                    SchemaValidatedSemanticDraft.PresenceState.RAW_PRESENT,
+                    Set.of(key, "semanticSlots." + key),
+                    null);
+        }
+        if (hasCanonical) {
+            return new LocatedObject(
+                    canonical,
+                    SchemaValidatedSemanticDraft.PresenceState.RAW_PRESENT,
+                    Set.of(key),
+                    null);
+        }
+        if (hasNested) {
+            return new LocatedObject(
+                    nested,
+                    SchemaValidatedSemanticDraft.PresenceState.CANONICALIZED_FROM_NESTED,
+                    Set.of("semanticSlots." + key),
+                    null);
+        }
+        return new LocatedObject(
+                null,
+                SchemaValidatedSemanticDraft.PresenceState.MISSING,
+                Set.of(),
+                null);
+    }
+
+    private static AiQuerySemanticParseResult.SalesBaselineWindowPart parseSalesBaselineWindowPart(
+            JSONObject jo) {
+        if (jo == null || jo.isEmpty()) {
+            return null;
+        }
+        stripForbiddenKeysRecursive(jo);
+        return AiQuerySemanticParseResult.SalesBaselineWindowPart.builder()
+                .action(trimToNull(jo.getStr("action")))
+                .source(trimToNull(jo.getStr("source")))
+                .startDate(trimToNull(jo.getStr("startDate")))
+                .endDate(trimToNull(jo.getStr("endDate")))
+                .timeType(trimToNull(jo.getStr("timeType")))
+                .reason(trimToNull(jo.getStr("reason")))
+                .build();
+    }
+
+    private static AiQuerySemanticParseResult.StockSnapshotPart parseStockSnapshotPart(JSONObject jo) {
+        if (jo == null || jo.isEmpty()) {
+            return null;
+        }
+        stripForbiddenKeysRecursive(jo);
+        return AiQuerySemanticParseResult.StockSnapshotPart.builder()
+                .asOfDate(trimToNull(jo.getStr("asOfDate")))
+                .reason(trimToNull(jo.getStr("reason")))
+                .build();
+    }
+
+    private static void recordPresence(
+            Map<String, SchemaValidatedSemanticDraft.FieldPresence> presence,
+            String fieldPath,
+            LocatedObject located) {
+        if (presence == null || fieldPath == null || located == null) {
+            return;
+        }
+        presence.put(
+                fieldPath,
+                SchemaValidatedSemanticDraft.FieldPresence.builder()
+                        .state(located.state())
+                        .rawLocations(located.rawLocations())
+                        .protocolError(located.protocolError())
+                        .build());
+    }
+
+    private static SchemaValidatedSemanticDraft buildSemanticDraft(
+            AiQuerySemanticParseResult.SemanticSlotsPart semanticSlots,
+            AiQuerySemanticParseResult.MetricPart metric,
+            AiQuerySemanticParseResult.TimePart time,
+            AiQuerySemanticParseResult.RequestedScopePart scope,
+            AiQuerySemanticParseResult.SalesBaselineWindowPart salesBaselineWindow,
+            AiQuerySemanticParseResult.StockSnapshotPart stockSnapshot,
+            AiQuerySemanticParseResult.OrchestrationDecisionCandidatePart orchestration,
+            JSONObject raw,
+            Map<String, SchemaValidatedSemanticDraft.FieldPresence> presence,
+            List<String> protocolErrors) {
+        return SchemaValidatedSemanticDraft.builder()
+                .contractFields(
+                        SchemaValidatedSemanticDraft.ContractFields.builder()
+                                .selectedContractId(
+                                        semanticSlots != null
+                                                ? trimToNull(semanticSlots.getSelectedContractId())
+                                                : null)
+                                .llmStructuredIntentDetailWire(
+                                        semanticSlots != null
+                                                ? trimToNull(semanticSlots.getStructuredIntentDetailWire())
+                                                : null)
+                                .llmAnswerPlanType(
+                                        semanticSlots != null
+                                                ? trimToNull(semanticSlots.getAnswerPlanType())
+                                                : null)
+                                .llmSelectedTools(
+                                        orchestration != null ? orchestration.getSelectedTools() : null)
+                                .build())
+                .businessSlots(
+                        SchemaValidatedSemanticDraft.BusinessSlots.builder()
+                                .semanticSlots(semanticSlots)
+                                .metric(metric)
+                                .build())
+                .timeSlots(SchemaValidatedSemanticDraft.TimeSlots.builder().time(time).build())
+                .scopeSlots(SchemaValidatedSemanticDraft.ScopeSlots.builder().requestedScope(scope).build())
+                .entitySlots(
+                        SchemaValidatedSemanticDraft.EntitySlots.builder()
+                                .mentionedDishName(resolveDraftMentionedDishName(raw, semanticSlots))
+                                .mentionedGoodsName(resolveDraftMentionedGoodsName(raw, semanticSlots))
+                                .build())
+                .domainExtensions(
+                        SchemaValidatedSemanticDraft.DomainExtensions.builder()
+                                .salesBaselineWindow(salesBaselineWindow)
+                                .stockSnapshot(stockSnapshot)
+                                .build())
+                .presence(presence)
+                .protocolErrors(protocolErrors)
+                .build();
+    }
+
+    private static String resolveDraftMentionedDishName(
+            JSONObject raw, AiQuerySemanticParseResult.SemanticSlotsPart slots) {
+        String top = raw != null ? trimToNull(raw.getStr("mentionedDishName")) : null;
+        if (top != null) {
+            return top;
+        }
+        return slots != null ? trimToNull(slots.getMentionedDishName()) : null;
+    }
+
+    private static String resolveDraftMentionedGoodsName(
+            JSONObject raw, AiQuerySemanticParseResult.SemanticSlotsPart slots) {
+        String top = raw != null ? trimToNull(raw.getStr("mentionedGoodsName")) : null;
+        if (top != null) {
+            return top;
+        }
+        return slots != null ? trimToNull(slots.getMentionedGoodsName()) : null;
+    }
+
+    private static boolean jsonEquals(JSONObject a, JSONObject b) {
+        if (a == b) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        return JSONUtil.toJsonStr(a).equals(JSONUtil.toJsonStr(b));
     }
 
     private static Double parseDouble(Object v) {
@@ -914,6 +1143,11 @@ public final class AiQuerySemanticParseResultJsonParser {
                 .mentionedGoodsName(trimToNull(sjo.getStr("mentionedGoodsName")))
                 .requestedTargetGrossMarginRate(
                         parseRequestedTargetGrossMarginRate(sjo.get("requestedTargetGrossMarginRate")))
+                .expiryRiskFilter(
+                        com.nongxinle.ai.inventory.WarehouseNearExpiryRiskFilterSupport.normalizeFilter(
+                                trimToNull(sjo.getStr("expiryRiskFilter"))))
+                .capabilitySpecificity(
+                        CapabilitySpecificitySupport.normalize(trimToNull(sjo.getStr("capabilitySpecificity"))))
                 .build();
     }
 

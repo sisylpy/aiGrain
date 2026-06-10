@@ -14,6 +14,8 @@ import java.util.Map;
 public final class WarehouseAnswerPlanCardSupport {
 
     public static final String CARD_TYPE_INVENTORY_RISK = "WAREHOUSE_INVENTORY_RISK_LIST_CARD";
+    public static final String CARD_TYPE_NEAR_EXPIRY_RISK = "WAREHOUSE_NEAR_EXPIRY_RISK_CARD";
+    public static final String CARD_TYPE_INVENTORY_SUPERVISION = "WAREHOUSE_INVENTORY_SUPERVISION_CARD";
 
     private static final String CHART_TYPE_TABLE = "TABLE";
     private static final String PAYLOAD_STATUS_OK = "OK";
@@ -30,6 +32,10 @@ public final class WarehouseAnswerPlanCardSupport {
         Map<String, Object> card;
         if (WarehouseAnswerPlan.TYPE_WAREHOUSE_LOW_STOCK_RISK.equals(type)) {
             card = buildInventoryRiskCard(plan);
+        } else if (WarehouseAnswerPlan.TYPE_WAREHOUSE_NEAR_EXPIRY_RISK.equals(type)) {
+            card = buildNearExpiryRiskCard(plan);
+        } else if (WarehouseAnswerPlan.TYPE_WAREHOUSE_INVENTORY_SUPERVISION.equals(type)) {
+            card = buildInventorySupervisionCard(plan);
         } else if (isStockAmountRankingPlanType(type)) {
             card = buildStockRankingCard(plan);
         } else {
@@ -56,6 +62,70 @@ public final class WarehouseAnswerPlanCardSupport {
         card.put("sourceAnswerPlanType", plan.getPlanType());
         card.put("payload", buildInventoryRiskPayload(plan));
         return card;
+    }
+
+    private static Map<String, Object> buildNearExpiryRiskCard(WarehouseAnswerPlan plan) {
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("cardType", CARD_TYPE_NEAR_EXPIRY_RISK);
+        card.put("title", "库存临期/过期风险");
+        card.put("subtitle", WarehouseAnswerPlanCardTimeSupport.cardSubtitle(plan));
+        card.put("sourceAnswerPlanType", plan.getPlanType());
+        card.put("payload", buildNearExpiryRiskPayload(plan));
+        return card;
+    }
+
+    private static Map<String, Object> buildNearExpiryRiskPayload(WarehouseAnswerPlan plan) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("scopeLabel", plan.getScopeLabel());
+        payload.put("timeLabel", plan.getTimeLabel());
+        payload.put("stockSnapshotLabel", plan.getStockSnapshotLabel());
+        payload.put("asOfDate", plan.getAsOfDate());
+        payload.put("inventoryQueryTimeKind", plan.getInventoryQueryTimeKind());
+        if (org.springframework.util.StringUtils.hasText(plan.getExpiryRiskFilter())) {
+            payload.put("expiryRiskFilter", plan.getExpiryRiskFilter().trim());
+        }
+        if (plan.getSummary() != null) {
+            payload.put("summary", plan.getSummary());
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (plan.getFocusRows() != null) {
+            rows.addAll(plan.getFocusRows());
+        }
+        if (plan.getSecondaryRows() != null) {
+            rows.addAll(plan.getSecondaryRows());
+        }
+        payload.put("riskItems", rows);
+        if (plan.getDebug() != null) {
+            payload.put("dataSources", plan.getDebug().get("dataSources"));
+        }
+        return payload;
+    }
+
+    private static Map<String, Object> buildInventorySupervisionCard(WarehouseAnswerPlan plan) {
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("cardType", CARD_TYPE_INVENTORY_SUPERVISION);
+        card.put("title", "库存监督/诊断");
+        card.put("subtitle", WarehouseAnswerPlanCardTimeSupport.cardSubtitle(plan));
+        card.put("sourceAnswerPlanType", plan.getPlanType());
+        card.put("payload", buildInventorySupervisionPayload(plan));
+        return card;
+    }
+
+    private static Map<String, Object> buildInventorySupervisionPayload(WarehouseAnswerPlan plan) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("scopeLabel", plan.getScopeLabel());
+        payload.put("timeLabel", plan.getTimeLabel());
+        payload.put("stockSnapshotLabel", plan.getStockSnapshotLabel());
+        payload.put("asOfDate", plan.getAsOfDate());
+        payload.put("inventoryQueryTimeKind", plan.getInventoryQueryTimeKind());
+        if (plan.getSummary() != null) {
+            payload.put("summary", plan.getSummary());
+        }
+        payload.put("sections", plan.getSections() == null ? List.of() : plan.getSections());
+        if (plan.getDebug() != null) {
+            payload.put("dataSources", plan.getDebug().get("dataSources"));
+        }
+        return payload;
     }
 
     private static Map<String, Object> buildStockRankingCard(WarehouseAnswerPlan plan) {

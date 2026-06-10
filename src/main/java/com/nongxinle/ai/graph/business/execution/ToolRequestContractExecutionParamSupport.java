@@ -2,7 +2,17 @@ package com.nongxinle.ai.graph.business.execution;
 
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
+import com.nongxinle.ai.identity.BusinessEntityIdentityBridge;
+import com.nongxinle.ai.identity.BusinessEntityIdentityGoodsProjection;
+import com.nongxinle.ai.identity.EntityIdentityResolutionStatus;
+import com.nongxinle.ai.identity.ResolvedEntityIdentity;
+import com.nongxinle.ai.semantic.InventoryCoverDaysContractSupport;
+import com.nongxinle.ai.semantic.intake.WarehouseInventorySupervisionSemanticsSupport;
 import com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport;
+import com.nongxinle.ai.dto.business.PurchaseGoodsBusinessAnalysisAnswerPlan;
+import com.nongxinle.ai.dto.business.GoodsStockBatchDetailAnswerPlan;
+import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
+import com.nongxinle.ai.semantic.contract.SemanticContractPlanOutputSupport;
 import com.nongxinle.ai.semantic.matrix.DishCostAnalysisSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
@@ -107,6 +117,24 @@ public final class ToolRequestContractExecutionParamSupport {
                 selectedContractId(ctx));
     }
 
+    /** contract locked 且 {@code selectedContractId=warehouse.near_expiry}。 */
+    public static boolean isWarehouseNearExpiryContract(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
+        }
+        return WarehouseInventoryShortageSemanticsSupport.CONTRACT_NEAR_EXPIRY.equals(
+                selectedContractId(ctx));
+    }
+
+    /** contract locked 且 {@code selectedContractId=warehouse.inventory_supervision.v1}。 */
+    public static boolean isWarehouseInventorySupervisionContract(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
+        }
+        return WarehouseInventorySupervisionSemanticsSupport.CONTRACT_INVENTORY_SUPERVISION.equals(
+                selectedContractId(ctx));
+    }
+
     /** contract locked 且 {@code selectedContractId=warehouse.goods_supported_dish_cover.v1}。 */
     public static boolean isGoodsSupportedDishCoverContract(AiResolvedQueryContext ctx) {
         if (!isContractLocked(ctx)) {
@@ -116,21 +144,48 @@ public final class ToolRequestContractExecutionParamSupport {
                 selectedContractId(ctx));
     }
 
-    /** contract locked 且 GOODS 锚：商品名 hint（读 {@link EffectiveGoodsAnchorSupport}）。 */
+    /** contract locked 且 {@code selectedContractId=warehouse.goods_stock_batch_detail.v1}。 */
+    public static boolean isGoodsStockBatchDetailContract(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
+        }
+        return GoodsStockBatchDetailAnswerPlan.CONTRACT_ID.equals(selectedContractId(ctx));
+    }
+
+    /** GOODS 锚点库房库存 Tool（planOutputs 含 cover 或 batch 时启用）。 */
+    public static boolean isWarehouseGoodsAnchorInventoryToolContract(AiResolvedQueryContext ctx) {
+        return SemanticContractPlanOutputSupport.requestsPlanOutput(
+                        ctx, GoodsSupportedDishCoverAnswerPlan.TYPE)
+                || SemanticContractPlanOutputSupport.requestsPlanOutput(
+                        ctx, GoodsStockBatchDetailAnswerPlan.TYPE);
+    }
+
+    /** contract locked 且 {@code selectedContractId=purchase.goods_business_analysis.v1}。 */
+    public static boolean isPurchaseGoodsBusinessAnalysisContract(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
+        }
+        return PurchaseGoodsBusinessAnalysisAnswerPlan.CONTRACT_ID.equals(selectedContractId(ctx));
+    }
+
+    /** contract locked 且 GOODS 锚：商品名 hint（读 Identity Resolver 执行投影）。 */
     public static String resolveGoodsNameFocusHint(AiResolvedQueryContext ctx) {
         if (!isContractLocked(ctx)) {
             return null;
         }
-        EffectiveGoodsAnchor anchor = EffectiveGoodsAnchorSupport.resolve(ctx);
-        return anchor.hasGoodsName() ? anchor.getGoodsName().trim() : null;
+        ResolvedEntityIdentity identity = BusinessEntityIdentityBridge.resolveGoods(ctx);
+        return BusinessEntityIdentityGoodsProjection.executionGoodsNameHint(identity);
     }
 
     public static Integer resolveDisGoodsIdFromContract(AiResolvedQueryContext ctx) {
         if (!isContractLocked(ctx)) {
             return null;
         }
-        EffectiveGoodsAnchor anchor = EffectiveGoodsAnchorSupport.resolve(ctx);
-        return anchor.hasDisGoodsId() ? anchor.getDisGoodsId() : null;
+        ResolvedEntityIdentity identity = BusinessEntityIdentityBridge.resolveGoods(ctx);
+        if (identity.getResolutionStatus() != EntityIdentityResolutionStatus.OK) {
+            return null;
+        }
+        return BusinessEntityIdentityGoodsProjection.executionDisGoodsId(identity);
     }
 
     /** contract locked 且 {@code selectedContractId=dish.ingredient_cover_days.v1}。 */
@@ -140,6 +195,16 @@ public final class ToolRequestContractExecutionParamSupport {
         }
         return DishCostAnalysisSemanticCapabilityMatrix.CONTRACT_DISH_INGREDIENT_COVER_DAYS.equals(
                 selectedContractId(ctx));
+    }
+
+    /**
+     * 库存支撑天数类能力：当前库存快照 + 独立 salesBaselineWindow（goods 反查关联菜 / 单菜配料 / WH-K bundle cover 子计划）。
+     */
+    public static boolean isInventoryCoverDaysCapability(AiResolvedQueryContext ctx) {
+        if (!isContractLocked(ctx)) {
+            return false;
+        }
+        return InventoryCoverDaysContractSupport.isInventoryCoverDaysContractId(selectedContractId(ctx));
     }
 
     /** contract locked 且 {@code selectedContractId=dish.profit.prescription.v1}。 */

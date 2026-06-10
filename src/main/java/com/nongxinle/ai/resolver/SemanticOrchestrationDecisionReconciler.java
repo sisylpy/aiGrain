@@ -7,9 +7,6 @@ import com.nongxinle.ai.conversation.AiFollowUpResolution;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.SemanticParseClarificationPolicy;
-import com.nongxinle.ai.semantic.matrix.BusinessDiagnosisSemanticCapabilityMatrix;
-import com.nongxinle.ai.semantic.matrix.BusinessOverviewSemanticCapabilityMatrix;
-import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -17,7 +14,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 编排决策业务修正：经营诊断/概览 MULTI_AGENT 门闸、四域换时 follow-up 候选补齐、Matrix 工具表对齐。
+ * 编排决策业务修正：经营诊断/概览 MULTI_AGENT 门闸、四域换时 follow-up 候选补齐。
+ * selectedTools 仅作为 LLM orchestration raw/debug 字段；正式执行工具由 ACTIVE contract entry 决定。
  * <p>从 {@link AiResolvedQueryContextResolver} 抽出的 orchestration policy，不改变 debug 字段名与写入顺序。
  */
 public final class SemanticOrchestrationDecisionReconciler {
@@ -245,19 +243,8 @@ public final class SemanticOrchestrationDecisionReconciler {
                         && shouldCanonicalizeOrchestrationForSemanticTimeFollowUpBizOverview(
                                 request.orchSource(), request.previousTurn())) {
                     agents = new ArrayList<>(canonicalBusinessOverviewMultiAgentAgents());
-                    tools = new ArrayList<>(AiBusinessToolIds.BUSINESS_OVERVIEW_MULTI_AGENT_DOMAIN_TOOLS);
                 }
             }
-        }
-
-        OrchestrationToolsMatrixReconcile matrixReconcile =
-                reconcileSelectedToolsFromBusinessMatrix(request.followUp(), request.queryIntent(), tools);
-        tools = matrixReconcile.tools();
-        if (StringUtils.hasText(matrixReconcile.reasonNote())) {
-            reason =
-                    StringUtils.hasText(reason)
-                            ? reason.trim() + "; " + matrixReconcile.reasonNote()
-                            : matrixReconcile.reasonNote();
         }
 
         return new ReconcileResult(agents, tools, taskMode, plannerRequired, multiAgentRequired, reason);
@@ -267,7 +254,7 @@ public final class SemanticOrchestrationDecisionReconciler {
         return new ReconcileResult(null, null, null, null, null, null);
     }
 
-    /** V2 四域经营概览：仅换时间窗且 intent 继承时，补齐 orchestration 候选里可能被 LLM 截断的子 Agent/tool 列表。 */
+    /** V2 四域经营概览：仅换时间窗且 intent 继承时，补齐 orchestration 候选里可能被 LLM 截断的子 Agent 列表。 */
     static boolean shouldCanonicalizeOrchestrationForSemanticTimeFollowUpBizOverview(
             AiQuerySemanticParseResult sem, AiConversationTurnMemory previousTurn) {
         if (sem == null) {
@@ -302,67 +289,6 @@ public final class SemanticOrchestrationDecisionReconciler {
                 BusinessAgentNames.PURCHASE_OVERVIEW,
                 BusinessAgentNames.STOCK_REDUCE_QUERY,
                 BusinessAgentNames.DISH_PROFIT_ANALYSIS);
-    }
-
-    private record OrchestrationToolsMatrixReconcile(List<String> tools, String reasonNote) {}
-
-    /**
-     * 经营概览/诊断：Planner 工具表以 Matrix 为准；LLM {@code selectedTools} 冲突时写 reason 供 Debug。
-     */
-    private static OrchestrationToolsMatrixReconcile reconcileSelectedToolsFromBusinessMatrix(
-            AiFollowUpResolution followUpRes,
-            AiResolvedQueryIntent queryIntent,
-            List<String> llmSelectedTools) {
-        if (followUpRes == null || queryIntent == null) {
-            return new OrchestrationToolsMatrixReconcile(llmSelectedTools, null);
-        }
-        String path = followUpRes.getEffectivePathCode();
-        String wireRaw = queryIntent.getStructuredIntentDetail();
-        String canon =
-                StringUtils.hasText(wireRaw)
-                        ? AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wireRaw.trim())
-                        : null;
-        List<String> matrixTools = null;
-        String source = null;
-        if (AiResolvedQueryIntent.PATH_BUSINESS_OVERVIEW.equals(path)
-                && StringUtils.hasText(canon)
-                && AiQuerySemanticLexicon.isStructuredBusinessOverviewFourDomainOrchestrationSurface(canon)) {
-            matrixTools = BusinessOverviewSemanticCapabilityMatrix.defaultFourDomainPlannerTools();
-            source = "business_overview_matrix";
-        } else if (AiResolvedQueryIntent.PATH_BUSINESS_DIAGNOSIS.equals(path) && StringUtils.hasText(canon)) {
-            matrixTools = BusinessDiagnosisSemanticCapabilityMatrix.plannerToolsForWire(canon);
-            source =
-                    BusinessDiagnosisSemanticCapabilityMatrix.isDualDomainPurchaseStockWire(canon)
-                            ? "business_diagnosis_matrix_dual_domain"
-                            : "business_diagnosis_matrix_four_domain";
-        }
-        if (matrixTools == null || matrixTools.isEmpty()) {
-            return new OrchestrationToolsMatrixReconcile(llmSelectedTools, null);
-        }
-        String reason = null;
-        if (llmSelectedTools != null
-                && !llmSelectedTools.isEmpty()
-                && !plannerToolListsEqual(llmSelectedTools, matrixTools)) {
-            reason = "planner_tools_matrix_override_llm_selectedTools:" + source;
-        }
-        return new OrchestrationToolsMatrixReconcile(new ArrayList<>(matrixTools), reason);
-    }
-
-    private static boolean plannerToolListsEqual(List<String> a, List<String> b) {
-        if (a == null && b == null) {
-            return true;
-        }
-        if (a == null || b == null || a.size() != b.size()) {
-            return false;
-        }
-        for (int i = 0; i < a.size(); i++) {
-            String ta = a.get(i) != null ? a.get(i).trim() : "";
-            String tb = b.get(i) != null ? b.get(i).trim() : "";
-            if (!ta.equals(tb)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static String normalizeSemanticV2ActionToken(String raw) {

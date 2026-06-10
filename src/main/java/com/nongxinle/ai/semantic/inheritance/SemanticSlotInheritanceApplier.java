@@ -47,6 +47,8 @@ public final class SemanticSlotInheritanceApplier {
                     applySameCapabilityNamedEntity(current, previousTurn, decision);
             case INHERIT_SAME_GOODS_ANCHOR_FOLLOWUP ->
                     applySameGoodsAnchorFollowUp(current, previousTurn, decision);
+            case INHERIT_SAME_CAPABILITY_TIME_FOLLOWUP, INHERIT_COVER_DAYS_SALES_BASELINE_FOLLOWUP ->
+                    applySameCapabilityTimeFollowUp(current, previousTurn, decision);
         };
     }
 
@@ -106,6 +108,86 @@ public final class SemanticSlotInheritanceApplier {
                 .mentionedGoodsName(goodsName)
                 .mentionedDishName(slots.getMentionedDishName())
                 .requestedTargetGrossMarginRate(slots.getRequestedTargetGrossMarginRate())
+                .expiryRiskFilter(slots.getExpiryRiskFilter())
+                .build();
+    }
+
+    private static AiQuerySemanticParseResult applySameCapabilityTimeFollowUp(
+            AiQuerySemanticParseResult current,
+            AiConversationTurnMemory previousTurn,
+            SemanticSlotInheritanceDecision decision) {
+        String previousContractId = resolvePreviousContractId(decision, previousTurn);
+        if (!StringUtils.hasText(previousContractId)) {
+            return attachTrace(current, decision);
+        }
+        String domainHint = resolveDomainHint(decision, previousContractId);
+        SemanticCapabilityContract contract =
+                SemanticContractFamilySupport.lookupActiveContract(previousContractId, domainHint);
+        if (contract == null) {
+            return attachTrace(current, decision);
+        }
+        CanonicalContractFrameSupport.CanonicalBusinessFrame frame =
+                CanonicalContractFrameSupport.fromActiveContract(
+                        contract, AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS);
+        if (frame == null) {
+            return attachTrace(current, decision);
+        }
+        AiQuerySemanticParseResult merged =
+                CanonicalContractFrameSupport.applyBusinessFrameWhitelist(current, frame);
+        if (CoverDaysSalesBaselineFollowUpSupport.previousTurnWasGoodsCover(previousTurn)) {
+            String previousGoods = CoverDaysSalesBaselineFollowUpSupport.previousGoodsName(previousTurn);
+            if (StringUtils.hasText(previousGoods)) {
+                AiQuerySemanticParseResult.SemanticSlotsPart slots = merged.getSemanticSlots();
+                AiQuerySemanticParseResult.SemanticSlotsPart withGoods =
+                        slots != null
+                                ? copySlotsWithGoods(slots, previousGoods)
+                                : AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                                        .mentionedGoodsName(previousGoods)
+                                        .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS)
+                                        .build();
+                merged =
+                        merged.toBuilder()
+                                .mentionedGoodsName(previousGoods)
+                                .semanticSlots(withGoods)
+                                .build();
+            }
+        } else {
+            String previousDish = CoverDaysSalesBaselineFollowUpSupport.previousDishName(previousTurn);
+            if (StringUtils.hasText(previousDish)) {
+                AiQuerySemanticParseResult.SemanticSlotsPart slots = merged.getSemanticSlots();
+                AiQuerySemanticParseResult.SemanticSlotsPart withDish =
+                        slots != null
+                                ? copySlotsWithCoverDaysDish(slots, previousDish)
+                                : AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                                        .mentionedDishName(previousDish)
+                                        .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS)
+                                        .build();
+                merged =
+                        merged.toBuilder()
+                                .mentionedDishName(previousDish)
+                                .semanticSlots(withDish)
+                                .build();
+            }
+        }
+        return attachTrace(merged, decision);
+    }
+
+    private static AiQuerySemanticParseResult.SemanticSlotsPart copySlotsWithCoverDaysDish(
+            AiQuerySemanticParseResult.SemanticSlotsPart slots, String dishName) {
+        return AiQuerySemanticParseResult.SemanticSlotsPart.builder()
+                .selectedContractId(slots.getSelectedContractId())
+                .queryObject(slots.getQueryObject())
+                .operation(slots.getOperation())
+                .metric(slots.getMetric())
+                .sourceFacet(slots.getSourceFacet())
+                .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS)
+                .detailWanted(slots.getDetailWanted())
+                .structuredIntentDetailWire(slots.getStructuredIntentDetailWire())
+                .answerPlanType(slots.getAnswerPlanType())
+                .mentionedDishName(dishName)
+                .mentionedGoodsName(slots.getMentionedGoodsName())
+                .requestedTargetGrossMarginRate(slots.getRequestedTargetGrossMarginRate())
+                .expiryRiskFilter(slots.getExpiryRiskFilter())
                 .build();
     }
 
@@ -164,6 +246,7 @@ public final class SemanticSlotInheritanceApplier {
                 .answerPlanType(slots.getAnswerPlanType())
                 .mentionedDishName(dishName)
                 .requestedTargetGrossMarginRate(slots.getRequestedTargetGrossMarginRate())
+                .expiryRiskFilter(slots.getExpiryRiskFilter())
                 .build();
     }
 
@@ -234,6 +317,7 @@ public final class SemanticSlotInheritanceApplier {
                                 .structuredIntentDetailWire(slots.getStructuredIntentDetailWire())
                                 .answerPlanType(slots.getAnswerPlanType())
                                 .requestedTargetGrossMarginRate(slots.getRequestedTargetGrossMarginRate())
+                                .expiryRiskFilter(slots.getExpiryRiskFilter())
                                 .build()
                         : null;
         return current.toBuilder().mentionedDishName(null).semanticSlots(cleared).build();

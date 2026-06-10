@@ -5,11 +5,8 @@ import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.dto.business.PurchaseGoodsBusinessAnalysisAnswerPlan;
 import com.nongxinle.ai.harness.BusinessOverviewDishSalesReasonAgentHarnessSupport;
-import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntent;
-import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntentResolver;
-import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
-import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -33,7 +30,7 @@ public final class BusinessStatusCardWireSupport {
             return BusinessStatusCardProjection.REVENUE_ONLY;
         }
         if (isPurchaseOverviewComposerMainline(state)) {
-            if (isPurchasePeriodGoodsDetailMainline(state)) {
+            if (PurchaseAnswerPlanCardSupport.suppressesPurchaseBusinessStatusProjection(state)) {
                 return BusinessStatusCardProjection.NONE;
             }
             return BusinessStatusCardProjection.PURCHASE_ONLY;
@@ -67,7 +64,17 @@ public final class BusinessStatusCardWireSupport {
                         state, req, effective.getReorderReminderService()));
             }
             case REVENUE_ONLY -> cards.add(RevenueReportCardSupport.build(state, req));
-            case PURCHASE_ONLY -> cards.add(PurchaseCheckCardSupport.build(state, req, effective));
+            case PURCHASE_ONLY -> {
+                PurchaseAnswerPlan purchasePlan = state.getPurchaseAnswerPlan();
+                Map<String, Object> planCard = PurchaseAnswerPlanCardSupport.buildCard(purchasePlan);
+                if (planCard != null && !planCard.isEmpty()) {
+                    cards.add(planCard);
+                } else if (purchasePlan != null
+                        && PurchaseAnswerPlanCardSupport.isPurchaseCheckCardEligiblePlanType(
+                                purchasePlan.getPlanType())) {
+                    cards.add(PurchaseCheckCardSupport.build(state, req, effective));
+                }
+            }
             case STOCK_RECONCILE_ONLY -> cards.add(
                     StockReconcileCardSupport.build(
                             state,
@@ -233,54 +240,23 @@ public final class BusinessStatusCardWireSupport {
                 && AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW.equals(rq.getEffectivePathCode());
     }
 
-    /** 「买了什么」明细卡与 {@code PURCHASE_CHECK_CARD} 互斥。 */
+    /** {@link PurchaseAnswerPlan#TYPE_PURCHASE_PERIOD_GOODS_DETAIL} 已绑定专属卡片。 */
     public static boolean isPurchasePeriodGoodsDetailMainline(AiRunState state) {
         if (state == null) {
             return false;
         }
         PurchaseAnswerPlan plan = state.getPurchaseAnswerPlan();
-        if (plan != null
-                && PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL.equals(plan.getPlanType())) {
-            return true;
-        }
-        AiResolvedQueryContext rq = state.getResolvedQueryContext();
-        if (rq == null) {
-            return false;
-        }
-        if (PurchaseSemanticExecutionIntentResolver.isPeriodGoodsListContractId(
-                resolveMatchedContractId(rq))) {
-            return true;
-        }
-        PurchaseSemanticExecutionIntent executionIntent = PurchaseSemanticExecutionIntentResolver.resolve(rq);
-        if (executionIntent != null
-                && executionIntent.isActive()
-                && PurchaseSemanticExecutionIntent.EXEC_PERIOD_GOODS_LIST.equals(
-                        executionIntent.getExecutionIntentType())) {
-            return true;
-        }
-        if (rq.getQueryIntent() != null) {
-            String wire = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(
-                    rq.getQueryIntent().getStructuredIntentDetail());
-            if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PERIOD_GOODS_LIST.equals(wire)) {
-                return true;
-            }
-        }
-        return false;
+        return plan != null
+                && PurchaseAnswerPlan.TYPE_PURCHASE_PERIOD_GOODS_DETAIL.equals(plan.getPlanType());
     }
 
-    private static String resolveMatchedContractId(AiResolvedQueryContext rq) {
-        if (rq == null || rq.getQuerySemanticParse() == null) {
-            return null;
+    /** {@link PurchaseGoodsBusinessAnalysisAnswerPlan} 已绑定专属卡片。 */
+    public static boolean isPurchaseGoodsBusinessAnalysisMainline(AiRunState state) {
+        if (state == null) {
+            return false;
         }
-        String fromSlots = SemanticContractCompletionEngine.extractSelectedContractId(rq.getQuerySemanticParse());
-        if (StringUtils.hasText(fromSlots)) {
-            return fromSlots.trim();
-        }
-        SemanticContractValidationDebug v = rq.getSemanticContractValidation();
-        if (v != null && StringUtils.hasText(v.getMatchedContractId())) {
-            return v.getMatchedContractId().trim();
-        }
-        return null;
+        PurchaseGoodsBusinessAnalysisAnswerPlan plan = state.getPurchaseGoodsBusinessAnalysisAnswerPlan();
+        return plan != null && PurchaseGoodsBusinessAnalysisAnswerPlan.TYPE.equals(plan.getPlanType());
     }
 
     private static boolean isStockReduceComposerMainline(AiRunState state) {

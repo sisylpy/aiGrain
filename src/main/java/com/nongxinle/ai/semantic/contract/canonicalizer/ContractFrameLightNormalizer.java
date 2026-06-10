@@ -39,6 +39,7 @@ public final class ContractFrameLightNormalizer {
                         .mentionedDishName(trim(raw.effectiveMentionedDishName()))
                         .mentionedGoodsName(trim(raw.effectiveMentionedGoodsName()))
                         .requestedTargetGrossMarginRate(trim(s.getRequestedTargetGrossMarginRate()))
+                        .expiryRiskFilter(trim(s.getExpiryRiskFilter()))
                         .build();
         return raw.toBuilder()
                 .semanticSlots(updated)

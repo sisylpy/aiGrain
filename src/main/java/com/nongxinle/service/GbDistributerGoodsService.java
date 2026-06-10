@@ -45,7 +45,8 @@ public interface GbDistributerGoodsService extends IService<GbDistributerGoodsEn
      * @param depId    部门主键，用于部门分销商品的父子部门 ID
      */
     GbDistributerGoodsEntity saveLinshiGoodsGb(MultipartFile file, String goodsName, String standard, String detail,
-                                               Integer disId, Integer toDepId, Integer depId, Integer depFatherId);
+                                               Integer disId, Integer toDepId, Integer depId, Integer depFatherId,
+                                               String standardWeight, String cartonUnit, String itemsPerCarton);
 
     // 老项目的 update 方法，使用 default 委托给 updateById
     default boolean update(GbDistributerGoodsEntity entity) {

@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -102,6 +103,8 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
         cgnGoods.setGbDgIsFranchisePrice(0);
         cgnGoods.setGbDgIsSelfControl(0);
         cgnGoods.setGbDgQuantityDays(nxGoodsEntity.getNxGoodsQuantityDays());
+        cgnGoods.setGbDgCartonUnit(nxGoodsEntity.getNxGoodsCartonUnit());
+        cgnGoods.setGbDgItemsPerCarton(nxGoodsEntity.getNxGoodsItemsPerCarton());
 
         GbDistributerGoodsEntity disGoods = persistDistributerGoodsWithFatherHierarchy(cgnGoods);
 
@@ -140,9 +143,9 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
 
     @Override
     public GbDistributerGoodsEntity saveLinshiGoodsGb(MultipartFile file, String goodsName, String standard,
-                                                      String detail, Integer disId, Integer toDepId, Integer depId
-            ,Integer depFatherId) {
-        String filePath = null;
+                                                      String detail, Integer disId, Integer toDepId, Integer depId,
+                                                      Integer depFatherId, String standardWeight, String cartonUnit, String itemsPerCarton) {
+        String filePath = "goodsImage/logo.jpg";
         if (file != null && !file.isEmpty()) {
             String originalName = goodsName.replaceAll("[\\\\/:*?\"<>|]", "");
             String headByString = hanziToPinyin(getEnglishKuohao(originalName));
@@ -186,6 +189,9 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
         goods.setGbDgGoodsIsHidden(0);
         goods.setGbDgGoodsStandardname(standard);
         goods.setGbDgGoodsDetail(detail);
+        goods.setGbDgGoodsStandardWeight(standardWeight);
+        goods.setGbDgCartonUnit(cartonUnit);
+        goods.setGbDgItemsPerCarton(itemsPerCarton);
         goods.setGbDgNxDistributerId(-1);
         goods.setGbDgNxDistributerGoodsId(-1);
         goods.setGbDgGoodsStatus(0);
@@ -200,9 +206,21 @@ public class GbDistributerGoodsServiceImpl extends ServiceImpl<GbDistributerGood
 
         save(goods);
 
+        // 大包装字段有值时，自动创建商品规格记录
+        if (cartonUnit != null && !cartonUnit.isBlank() && itemsPerCarton != null && !itemsPerCarton.isBlank()) {
+            GbDistributerStandardEntity standardEntity = new GbDistributerStandardEntity();
+            standardEntity.setGbDsDisGoodsId(goods.getGbDistributerGoodsId());
+            standardEntity.setGbDsStandardName(cartonUnit);
+            standardEntity.setGbDsStandardScale(itemsPerCarton);
+            standardEntity.setGbDsStandardWeight(standardWeight);
+            gbDistributerStandardService.save(standardEntity);
+            goods.setGbDistributerStandardEntities(Collections.singletonList(standardEntity));
+        }
+
         Integer gbDfgGoodsAmount = fatherGoodsEntity.getGbDfgGoodsAmount();
         fatherGoodsEntity.setGbDfgGoodsAmount((gbDfgGoodsAmount == null ? 0 : gbDfgGoodsAmount) + 1);
         dgfService.update(fatherGoodsEntity);
+
 
         return goods;
     }

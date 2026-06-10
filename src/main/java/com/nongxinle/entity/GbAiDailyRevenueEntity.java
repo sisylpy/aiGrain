@@ -74,9 +74,8 @@ public class GbAiDailyRevenueEntity implements Serializable {
 	 */
 	private String gbAiDailyRevenueHoliday;
 	/**
-	 *  总营业额（数据库生成列，无需手动插入）
+	 *  总营业额（堂食 + 外卖）
 	 */
-	@TableField(exist = false)
 	private BigDecimal gbAiDailyRevenueGrossRevenue;
 	/**
 	 *  净营业额（数据库生成列，无需手动插入）

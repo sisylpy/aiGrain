@@ -301,7 +301,7 @@ public final class GbConstants {
     /**
      * 部门商品库存扣减类型（与表 gb_department_goods_stock_reduce.gb_dgsr_type 一致）。
      * <p><b>菜品成本分析（按菜分摊、均价）</b>：仅汇总 {@link #PRODUCTION}（type=1），与 {@link com.nongxinle.service.GbDepartmentGoodsStockReduceService#queryProductionReduceAggByDisGoods(java.util.Map)} 一致。</p>
-     * <p><b>区间损耗率</b>：分子为 {@link #WASTE}+{@link #LOSS}（2+3）出库金额，分母为 1+2+3 出库金额合计（不含 {@link #RETURN}）；全量 1+2+3 按商品汇总见 {@link com.nongxinle.service.GbDepartmentGoodsStockReduceService#queryProduceLossWasteReduceAggByDisGoods(java.util.Map)}。</p>
+     * <p><b>区间损耗率</b>：分子为 {@link #WASTE}+{@link #LOSS}（2+3）出库金额，分母为 1+2+3 出库金额合计（不含 {@link #RETURN}、{@link #EMPLOYEE_MEAL}）；全量 1+2+3 按商品汇总见 {@link com.nongxinle.service.GbDepartmentGoodsStockReduceService#queryProduceLossWasteReduceAggByDisGoods(java.util.Map)}。</p>
      */
     public static final class StockReduceType {
         private StockReduceType() {
@@ -321,6 +321,100 @@ public final class GbConstants {
         public static final Integer RETURN = 4;
         /** 其它类型 5（与库表 gb_dgsr_type 等约定一致） */
         public static final Integer STARS = 5;
+        /** 员工餐消耗（原料型员工餐，{@code gb_department_goods_stock_reduce}） */
+        public static final Integer EMPLOYEE_MEAL = 6;
+    }
+
+    /**
+     * 部门菜品销售消费类型（{@code gb_dep_food_sales.gb_dfs_type}）。
+     * <p>菜品型员工餐走本表 {@link #EMPLOYEE_MEAL}，与原料型 {@link StockReduceType#EMPLOYEE_MEAL} 独立。</p>
+     */
+    public static final class FoodSalesType {
+        private FoodSalesType() {
+        }
+
+        /** 正常销售 */
+        public static final Integer NORMAL_SALE = 1;
+        /** 折扣销售 */
+        public static final Integer DISCOUNT_SALE = 2;
+        /** 会员销售 */
+        public static final Integer MEMBER_SALE = 3;
+        /** 赠送 */
+        public static final Integer COMPLIMENTARY = 4;
+        /** 菜品型员工餐 */
+        public static final Integer EMPLOYEE_MEAL = 5;
+
+        public static Integer normalize(Integer type) {
+            if (type == null || type < NORMAL_SALE || type > EMPLOYEE_MEAL) {
+                return NORMAL_SALE;
+            }
+            return type;
+        }
+
+        public static boolean isOperationalSales(Integer type) {
+            Integer t = normalize(type);
+            return NORMAL_SALE.equals(t) || DISCOUNT_SALE.equals(t) || MEMBER_SALE.equals(t);
+        }
+
+        public static boolean isNonOperationalConsumption(Integer type) {
+            Integer t = normalize(type);
+            return COMPLIMENTARY.equals(t) || EMPLOYEE_MEAL.equals(t);
+        }
+
+        public static boolean isIngredientConsumption(Integer type) {
+            return normalize(type) >= NORMAL_SALE && normalize(type) <= EMPLOYEE_MEAL;
+        }
+
+        public static boolean isOperationalRevenue(Integer type) {
+            return isOperationalSales(type);
+        }
+
+        public static boolean isEmployeeMeal(Integer type) {
+            return EMPLOYEE_MEAL.equals(normalize(type));
+        }
+
+        public static boolean isComplimentary(Integer type) {
+            return COMPLIMENTARY.equals(normalize(type));
+        }
+
+        /** 展示名称（接口 {@code typeName}）。 */
+        public static String displayName(Integer type) {
+            Integer t = normalize(type);
+            if (NORMAL_SALE.equals(t)) {
+                return "正常销售";
+            }
+            if (DISCOUNT_SALE.equals(t)) {
+                return "折扣销售";
+            }
+            if (MEMBER_SALE.equals(t)) {
+                return "会员销售";
+            }
+            if (COMPLIMENTARY.equals(t)) {
+                return "赠送";
+            }
+            if (EMPLOYEE_MEAL.equals(t)) {
+                return "员工餐";
+            }
+            return "正常销售";
+        }
+    }
+
+    /**
+     * 部门库存批次 / 出库 Ledger 数量精度（{@code saveDepGoodsStockAdjust} 等）。
+     * <p>重量与 reduce 汇总 {@code DECIMAL(18,6)} 对齐，支持小程序 0.04 等小量出库。</p>
+     */
+    public static final class StockLedger {
+        private StockLedger() {
+        }
+
+        /** 批次剩余、出库、累计重量 */
+        public static final int WEIGHT_SCALE = 3;
+        /** 出库金额、批次 restSubtotal 计算 */
+        public static final int SUBTOTAL_SCALE = 2;
+        /** 部门商品总库存列表展示（金额） */
+        public static final int DEP_AGG_SUBTOTAL_SCALE = 1;
+        /** 毛利/售价相关金额字段（历史口径） */
+        public static final int PROFIT_AMOUNT_SCALE = 1;
     }
 
     /**

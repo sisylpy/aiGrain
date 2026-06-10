@@ -25,6 +25,8 @@ public class WarehouseAnswerPlan {
     public static final String TYPE_WAREHOUSE_GOODS_AMOUNT_RANKING_HIGH = "WAREHOUSE_GOODS_AMOUNT_RANKING_HIGH";
     public static final String TYPE_WAREHOUSE_GOODS_AMOUNT_RANKING_LOW = "WAREHOUSE_GOODS_AMOUNT_RANKING_LOW";
     public static final String TYPE_WAREHOUSE_LOW_STOCK_RISK = "WAREHOUSE_LOW_STOCK_RISK";
+    public static final String TYPE_WAREHOUSE_NEAR_EXPIRY_RISK = "WAREHOUSE_NEAR_EXPIRY_RISK";
+    public static final String TYPE_WAREHOUSE_INVENTORY_SUPERVISION = "WAREHOUSE_INVENTORY_SUPERVISION";
 
     /** 账面库存金额排行统一卡片（商品高/低、门店）。 */
     public static final String CARD_TYPE_STOCK_RANKING = "WAREHOUSE_STOCK_RANKING_CARD";
@@ -53,6 +55,14 @@ public class WarehouseAnswerPlan {
     /** 流水/耗用基线区间文案（混合能力时有值）。 */
     private String periodFlowLabel;
 
+    /** 内部销量/耗用基线（debug）；不对用户主文案与卡片副标题展示。 */
+    private String internalBaselineLabel;
+
+    /**
+     * warehouse.near_expiry 风险子意图筛选（Intake/V2 {@code expiryRiskFilter} 搬运）。
+     */
+    private String expiryRiskFilter;
+
     @Builder.Default
     private Map<String, Object> summary = new LinkedHashMap<>();
 
@@ -61,6 +71,10 @@ public class WarehouseAnswerPlan {
 
     @Builder.Default
     private List<Map<String, Object>> secondaryRows = new ArrayList<>();
+
+    /** 库存监督分桶（{@code warehouse.inventory_supervision.v1}）。 */
+    @Builder.Default
+    private List<Map<String, Object>> sections = new ArrayList<>();
 
     @Builder.Default
     private Map<String, Object> debug = new LinkedHashMap<>();

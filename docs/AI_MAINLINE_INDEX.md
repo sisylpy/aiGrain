@@ -4,8 +4,11 @@
 
 # AI 主链与 Tool 索引
 
-> **权威契约**：`docs/API_INTEGRATION.md`、`docs/PERMISSION_MODEL.md`、`docs/AI_HARNESS_REPLAY_CASES.md`、`src/main/java/com/nongxinle/ai/tool/business/AiBusinessToolIds.java`  
-> **语义合同**：`docs/ai/semantic-allowed-output-contract-design.md`、`docs/ai/semantic-contract-strict-mode-plan.md`
+> **权威契约**：`docs/API_INTEGRATION.md`、`docs/PERMISSION_MODEL.md`、`docs/AI_HARNESS_REPLAY_CASES.md`、`src/main/java/com/nongxinle/ai/tool/business/AiBusinessToolIds.java`
+> **语义合同 Current Baseline**：`.cursor/rules/harness-java-boundary.md`、`.cursor/rules/time-layer-inheritance.mdc`、`.cursor/rules/semantic-contract-exporter.mdc`、`docs/ai/semantic-inheritance-architecture.md`、`docs/ai/contract-entry-validation-p2-summary.md`
+> **Partial / Historical 设计背景**：`docs/ai/semantic-allowed-output-contract-design.md`、`docs/ai/semantic-contract-strict-mode-plan.md`。这些文件不得覆盖 Current Baseline 或当前运行代码事实。
+
+**合同主权（Current）**：V2 在单域 `allowedContracts` 内选择 `semanticSlots.selectedContractId`；Completion 成功后，canonical wire、`answerPlanType`、`selectedTools`、execution path 统一来自同一条 ACTIVE contract entry。LLM wire、orchestration `selectedTools`、`reason` marker 仅 raw/debug 或过渡观测，不参与主链执行。V2 之后 Java 无权重新选择业务合同；后置冲突只能澄清、失败或 known gap。
 
 ---
 
@@ -13,8 +16,14 @@
 
 | 能力 | 现网入口 |
 |------|----------|
-| 语义解析 | `query_semantic_parser.v2.md` → `semanticSlots` → `SemanticContractValidator`（observe-only） |
-| 追问改写 | `LlmFollowUpQueryRewriter`（`followup_query_rewriter.v1.md`） |
+| 语义入口 Step 1 | `semantic_intake.v1.md` → `canonicalUserQuery` / `primaryDomain` / context signals |
+| 合同注入 | `DomainContractSelector` 按单域注入 ACTIVE `allowedContracts`；V2 前允许确定性实体存在性落地以缩小合同或澄清 |
+| 合同选择 Step 2 | `query_semantic_parser.v2.md` 在 `allowedContracts` 内输出 `semanticSlots.selectedContractId` + 同 entry 槽位 |
+| 合同完成 / 锁定 | `SemanticAdoptionPipeline` → `SemanticContractCompletionEngine.complete()`；成功后 `contractEntryValidated=true`，wire / planType / tools / path 来自 ACTIVE entry |
+| 合同校验 / strict 决策 | `SemanticContractValidationPipeline` / `SemanticContractStrictDecision` 记录或拦截合同层违例；不得用 Java 后置切换合同修复 |
+| Tool / Planner | `BusinessDataPlannerNode` 读取 contract-owned selectedTools / path；Tool Request 只读 `AiResolvedQueryContext` |
+| AnswerPlan / Composer | Tool 结构化事实 → AnswerPlan 定稿 → `StubAnswerComposerNode` / deterministic renderer 只表达 |
+| 追问上下文 | Semantic Intake / Inheritance Policy / ResultAnchor；不得在 Java 用 raw contains 继承业务合同 |
 | 锚点 execution | `PurchaseSemanticExecutionIntentResolver` + `resultAnchors` / `executionDetailWanted` |
 | 经营概览 | `business_overview_path` → MULTI_AGENT 四域（`revenue_query` + `purchase_overview` + `stock_reduce_query` + `dish_profit_analysis`） |
 | 成本诊断 | `cost_diagnosis_path` → 四 Tool + `CostDiagnosisAgentNode` + `CostMarginDerivation` |
@@ -64,5 +73,5 @@
 
 ## 维护
 
-- 新增下线 Tool：在上表增加一行替代关系。  
+- 新增下线 Tool：在上表增加一行替代关系。
 - 实现进度：`docs/TODO_MULTI_AGENT.md`。

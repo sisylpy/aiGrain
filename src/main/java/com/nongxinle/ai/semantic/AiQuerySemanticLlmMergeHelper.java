@@ -4,14 +4,12 @@ import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.context.AiResolvedTimeWindow;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
-import com.nongxinle.ai.semantic.SemanticTimeContractCheck;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
 import com.nongxinle.ai.semantic.contract.ContractExecutionMappingSupport;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.util.Locale;
-import java.util.Map;
 
 /**
  * 将 {@link AiQuerySemanticParseResult} 合并入意图/时间草稿（时间日期镜像 LLM {@code startDate}/{@code endDate}，合同见 {@link SemanticTimeContractCheck}）。
@@ -48,7 +46,31 @@ public final class AiQuerySemanticLlmMergeHelper {
             String normalizedUserMessage,
             AiConversationTurnMemory previousTurn) {
         AiResolvedQueryIntent base = baselineIntent != null ? copyIntent(baselineIntent) : AiResolvedQueryIntent.builder().build();
-        if (sem == null || sem.isParseMissing() || !sem.isStructuralConfidenceOk(minConfidence)) {
+        if (sem == null || sem.isParseMissing()) {
+            return base;
+        }
+
+        if (SemanticContractCompletionEngine.isContractLockedParse(sem)) {
+            WireIntent contractIntent = contractExecutionIntentForLockedParse(sem);
+            if (contractIntent == null) {
+                return base;
+            }
+            AiResolvedQueryIntent merged =
+                    AiResolvedQueryIntent.builder()
+                            .intentCode(contractIntent.intentCode())
+                            .pathCode(contractIntent.pathCode())
+                            .topic(contractIntent.topic())
+                            .structuredIntentDetail(base.getStructuredIntentDetail())
+                            .purchaseSourceType(base.getPurchaseSourceType())
+                            .inheritedFromPreviousTurn(false)
+                            .inheritedFromIntentCode(null)
+                            .build();
+            // contract-locked：唯一标准 selectedContractId + ACTIVE entry + completed semanticSlots；不读 raw intent/domain 抢路由。
+            applyCompletedContractFieldsToIntent(merged, sem);
+            return merged;
+        }
+
+        if (!sem.isStructuralConfidenceOk(minConfidence)) {
             return base;
         }
 
@@ -62,9 +84,6 @@ public final class AiQuerySemanticLlmMergeHelper {
         WireIntent mappedFromCurrent = mapLlmIntent(sem.getIntent());
         if (mappedFromCurrent == null && StringUtils.hasText(sem.getSemanticDomain())) {
             mappedFromCurrent = mapLlmIntent(sem.getSemanticDomain());
-        }
-        if (mappedFromCurrent == null && SemanticContractCompletionEngine.isContractLockedParse(sem)) {
-            mappedFromCurrent = wireIntentForContractLockedParse(sem);
         }
         if (mappedFromCurrent == null && requestedInheritPrevious && StringUtils.hasText(prevIntent)) {
             mappedFromCurrent = mapLlmIntent(prevIntent);
@@ -94,13 +113,6 @@ public final class AiQuerySemanticLlmMergeHelper {
                         .inheritedFromPreviousTurn(intentInherited)
                         .inheritedFromIntentCode(intentInherited ? prevIntent : null)
                         .build();
-
-        if (SemanticContractCompletionEngine.isContractLockedParse(sem)) {
-            // contract-locked：唯一标准 selectedContractId + ACTIVE entry + completed semanticSlots；不读 rankingType/slots 推导 wire。
-            applyCompletedContractFieldsToIntent(merged, sem);
-            return merged;
-        }
-
         return merged;
     }
 
@@ -539,10 +551,10 @@ public final class AiQuerySemanticLlmMergeHelper {
     }
 
     /**
-     * P4 contract-locked：path 来自 {@link ContractExecutionMappingSupport}（Catalog execution metadata），
-     * 或 completion trace / 合同 completion 遗留 fallback；不解析用户原文。
+     * P4 contract-locked：intent/path 只来自 {@link ContractExecutionMappingSupport}
+     * （ACTIVE contract execution metadata）。raw intent/domain/wire 只作为 debug，不参与主链路由。
      */
-    private static WireIntent wireIntentForContractLockedParse(AiQuerySemanticParseResult sem) {
+    private static WireIntent contractExecutionIntentForLockedParse(AiQuerySemanticParseResult sem) {
         if (sem == null) {
             return null;
         }
@@ -550,37 +562,6 @@ public final class AiQuerySemanticLlmMergeHelper {
         if (execution != null && execution.hasRoutableExecution()) {
             return new WireIntent(
                     execution.getIntentCode(), execution.getPathCode(), execution.getTopic());
-        }
-        Map<String, Object> trace = sem.getContractCompletionTrace();
-        if (trace != null) {
-            Object domainObj = trace.get("domain");
-            if (domainObj instanceof String domainStr && StringUtils.hasText(domainStr)) {
-                WireIntent mapped = mapLlmIntent(domainStr);
-                if (mapped != null) {
-                    return mapped;
-                }
-            }
-        }
-        if (explicitPurchaseOverviewWireInSemanticSlots(sem)) {
-            return new WireIntent(
-                    AiResolvedQueryIntent.PURCHASE_OVERVIEW,
-                    AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW,
-                    "采购概览");
-        }
-        String wire =
-                StringUtils.hasText(sem.getCurrentTurnStructuredIntentDetailWire())
-                        ? sem.getCurrentTurnStructuredIntentDetailWire()
-                        : sem.getSemanticSlots() != null
-                                ? sem.getSemanticSlots().getStructuredIntentDetailWire()
-                                : null;
-        if (StringUtils.hasText(wire)) {
-            String canon = AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim());
-            if (AiQuerySemanticLexicon.isPurchaseOverviewDomainCanonicalWire(canon)) {
-                return new WireIntent(
-                        AiResolvedQueryIntent.PURCHASE_OVERVIEW,
-                        AiResolvedQueryIntent.PATH_PURCHASE_OVERVIEW,
-                        "采购概览");
-            }
         }
         return null;
     }

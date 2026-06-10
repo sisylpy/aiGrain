@@ -64,6 +64,8 @@ public class AiResolvedQueryContextAssemblySupport {
             Map<String, Object> querySemanticV2InputPreview,
             SemanticDomainRouteResult semanticDomainRoute,
             DomainContractSelectionResult domainContractSelection,
+            SemanticDomainRouteResult effectiveSemanticDomainRoute,
+            DomainContractSelectionResult effectiveDomainContractSelection,
             SemanticContractValidationDebug semanticContractValidation,
             SemanticContractStrictDecision semanticContractStrictDecision,
             int previousTurnResultAnchorsCount,
@@ -82,7 +84,11 @@ public class AiResolvedQueryContextAssemblySupport {
             String semanticFailureCode,
             String semanticFailureStage,
             ScopeResolutionTrace scopeResolutionTrace,
-            BareRankingDimensionSwitchPlan bareRankingDimensionSwitchPlan) {}
+            BareRankingDimensionSwitchPlan bareRankingDimensionSwitchPlan,
+            String rewriteInheritedAnchorType,
+            String rewriteInheritedAnchorName,
+            String rewriteInheritedAnchorEntityId,
+            List<Map<String, String>> rewriteUsedAnchors) {}
 
     public AiResolvedQueryContext assemble(AssembleRequest req) {
         ResolvedQueryContextScopePreparation.ScopePrepareResult scope =
@@ -175,13 +181,19 @@ public class AiResolvedQueryContextAssemblySupport {
                                 req.rewritePromptResultAnchorsCount(),
                                 req.semanticDomainRoute(),
                                 req.domainContractSelection(),
+                                req.effectiveSemanticDomainRoute(),
+                                req.effectiveDomainContractSelection(),
                                 req.semanticContractValidation(),
                                 req.semanticContractStrictDecision(),
                                 req.querySemanticV2Raw(),
                                 req.semanticFailureCode(),
                                 req.semanticFailureStage(),
                                 req.scopeResolutionTrace(),
-                                req.bareRankingDimensionSwitchPlan()));
+                                req.bareRankingDimensionSwitchPlan(),
+                                req.rewriteInheritedAnchorType(),
+                                req.rewriteInheritedAnchorName(),
+                                req.rewriteInheritedAnchorEntityId(),
+                                req.rewriteUsedAnchors()));
 
         diagnostics.logIntentResolutionDiagnostics(
                 req.runId(),

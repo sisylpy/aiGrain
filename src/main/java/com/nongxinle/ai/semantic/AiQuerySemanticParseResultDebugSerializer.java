@@ -44,6 +44,27 @@ public final class AiQuerySemanticParseResultDebugSerializer {
         } else {
             m.put("time", null);
         }
+        if (r.getSalesBaselineWindow() != null) {
+            LinkedHashMap<String, Object> sbw = new LinkedHashMap<>();
+            AiQuerySemanticParseResult.SalesBaselineWindowPart w = r.getSalesBaselineWindow();
+            sbw.put("action", blankToNull(w.getAction()));
+            sbw.put("source", blankToNull(w.getSource()));
+            sbw.put("startDate", blankToNull(w.getStartDate()));
+            sbw.put("endDate", blankToNull(w.getEndDate()));
+            sbw.put("timeType", blankToNull(w.getTimeType()));
+            sbw.put("reason", blankToNull(w.getReason()));
+            m.put("salesBaselineWindow", sbw);
+        } else {
+            m.put("salesBaselineWindow", null);
+        }
+        if (r.getStockSnapshot() != null) {
+            LinkedHashMap<String, Object> ss = new LinkedHashMap<>();
+            ss.put("asOfDate", blankToNull(r.getStockSnapshot().getAsOfDate()));
+            ss.put("reason", blankToNull(r.getStockSnapshot().getReason()));
+            m.put("stockSnapshot", ss);
+        } else {
+            m.put("stockSnapshot", null);
+        }
         if (r.getRequestedScope() != null) {
             LinkedHashMap<String, Object> rs = new LinkedHashMap<>();
             rs.put("requestedScopeType", blankToNull(r.getRequestedScope().getRequestedScopeType()));

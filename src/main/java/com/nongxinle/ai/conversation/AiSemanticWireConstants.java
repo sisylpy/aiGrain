@@ -22,11 +22,15 @@ public final class AiSemanticWireConstants {
     public static final String STRUCTURED_PURCHASE_PERIOD_GOODS_LIST = "purchase_period_goods_list";
     public static final String STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING = "purchase_goods_amount_ranking";
     public static final String STRUCTURED_PURCHASE_GOODS_COUNT_RANKING = "purchase_goods_count_ranking";
+    /** 按采购数量（SUM buy_quantity）排行；与 {@link #STRUCTURED_PURCHASE_GOODS_COUNT_RANKING}（采购次数）区分。 */
+    public static final String STRUCTURED_PURCHASE_GOODS_QUANTITY_RANKING = "purchase_goods_quantity_ranking";
     public static final String STRUCTURED_PURCHASE_GOODS_ANOMALY = "purchase_goods_anomaly";
     public static final String STRUCTURED_PURCHASE_PRICE_ANOMALY = "purchase_price_anomaly";
     public static final String STRUCTURED_PURCHASE_FREQUENCY_ANOMALY = "purchase_frequency_anomaly";
     public static final String STRUCTURED_PURCHASE_QUANTITY_ANOMALY = "purchase_quantity_anomaly";
     public static final String STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE = "purchase_goods_amount_spike";
+    /** GOODS 锚点：原料采购经营分析（来源+量价+库存支撑）。 */
+    public static final String STRUCTURED_PURCHASE_GOODS_BUSINESS_ANALYSIS = "purchase_goods_business_analysis";
     public static final String STRUCTURED_PURCHASE_STOCK_REDUCE_MISMATCH = "purchase_stock_reduce_mismatch";
     public static final String STRUCTURED_PURCHASE_SLOW_MOVING_RISK = "purchase_slow_moving_risk";
     public static final String STRUCTURED_PURCHASE_INVENTORY_OVERSTOCK_RISK = "purchase_inventory_overstock_risk";
@@ -148,7 +152,12 @@ public final class AiSemanticWireConstants {
     public static final String STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW = "goods_stock_amount_ranking_low";
     /** 原料 → 受影响菜品可支撑（{@code warehouse.goods_supported_dish_cover.v1}）。 */
     public static final String STRUCTURED_GOODS_SUPPORTED_DISH_COVER = "goods_supported_dish_cover";
+    /** 指定商品当前仍有剩余的库存批次明细（{@code warehouse.goods_stock_batch_detail.v1}）。 */
+    public static final String STRUCTURED_GOODS_STOCK_BATCH_DETAIL = "goods_stock_batch_detail";
+    /** 商品库存综合详情：cover + batch 双卡（{@code warehouse.goods_anchor_inventory_bundle.v1}）。 */
+    public static final String STRUCTURED_GOODS_ANCHOR_INVENTORY_BUNDLE = "goods_anchor_inventory_bundle";
     public static final String STRUCTURED_WAREHOUSE_NEAR_EXPIRY = "warehouse_near_expiry";
+    public static final String STRUCTURED_WAREHOUSE_INVENTORY_SUPERVISION = "warehouse_inventory_supervision";
 
     private static final Set<String> PURCHASE_OVERVIEW_DOMAIN_CANONICAL_WIRES =
             Set.of(
@@ -159,11 +168,13 @@ public final class AiSemanticWireConstants {
                     STRUCTURED_PURCHASE_PERIOD_GOODS_LIST,
                     STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING,
                     STRUCTURED_PURCHASE_GOODS_COUNT_RANKING,
+                    STRUCTURED_PURCHASE_GOODS_QUANTITY_RANKING,
                     STRUCTURED_PURCHASE_GOODS_ANOMALY,
                     STRUCTURED_PURCHASE_PRICE_ANOMALY,
                     STRUCTURED_PURCHASE_FREQUENCY_ANOMALY,
                     STRUCTURED_PURCHASE_QUANTITY_ANOMALY,
                     STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE,
+                    STRUCTURED_PURCHASE_GOODS_BUSINESS_ANALYSIS,
                     STRUCTURED_PURCHASE_STOCK_REDUCE_MISMATCH,
                     STRUCTURED_PURCHASE_SLOW_MOVING_RISK,
                     STRUCTURED_PURCHASE_INVENTORY_OVERSTOCK_RISK,
@@ -190,11 +201,13 @@ public final class AiSemanticWireConstants {
                     STRUCTURED_PURCHASE_PERIOD_GOODS_LIST,
                     STRUCTURED_PURCHASE_GOODS_AMOUNT_RANKING,
                     STRUCTURED_PURCHASE_GOODS_COUNT_RANKING,
+                    STRUCTURED_PURCHASE_GOODS_QUANTITY_RANKING,
                     STRUCTURED_PURCHASE_GOODS_ANOMALY,
                     STRUCTURED_PURCHASE_PRICE_ANOMALY,
                     STRUCTURED_PURCHASE_FREQUENCY_ANOMALY,
                     STRUCTURED_PURCHASE_QUANTITY_ANOMALY,
                     STRUCTURED_PURCHASE_GOODS_AMOUNT_SPIKE,
+                    STRUCTURED_PURCHASE_GOODS_BUSINESS_ANALYSIS,
                     STRUCTURED_PURCHASE_STOCK_REDUCE_MISMATCH,
                     STRUCTURED_PURCHASE_SLOW_MOVING_RISK,
                     STRUCTURED_PURCHASE_INVENTORY_OVERSTOCK_RISK,
@@ -281,7 +294,10 @@ public final class AiSemanticWireConstants {
                     STRUCTURED_WAREHOUSE_STOCK_ITEM_COUNT_RANKING,
                     STRUCTURED_GOODS_STOCK_AMOUNT_RANKING_LOW,
                     STRUCTURED_GOODS_SUPPORTED_DISH_COVER,
-                    STRUCTURED_WAREHOUSE_NEAR_EXPIRY);
+                    STRUCTURED_GOODS_STOCK_BATCH_DETAIL,
+                    STRUCTURED_GOODS_ANCHOR_INVENTORY_BUNDLE,
+                    STRUCTURED_WAREHOUSE_NEAR_EXPIRY,
+                    STRUCTURED_WAREHOUSE_INVENTORY_SUPERVISION);
 
     public static boolean isRegisteredCanonicalWire(String wire) {
         return StringUtils.hasText(wire) && REGISTERED_CANONICAL_WIRES.contains(wire.trim());

@@ -3,6 +3,9 @@ package com.nongxinle.ai.semantic;
 import com.nongxinle.ai.context.AiResolvedOrgScope;
 import com.nongxinle.ai.context.AiStoreScopeDTO;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeFollowUpKind;
+import com.nongxinle.ai.semantic.intake.SemanticIntakeResult;
+import com.nongxinle.ai.semantic.inheritance.SemanticContractFamilySupport;
 import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.intake.route.SemanticDomainRouteResult;
@@ -89,6 +92,26 @@ public final class SemanticParserInputBuilder {
             SemanticDomainRouteResult domainRoute,
             DomainContractSelectionResult contractSelection,
             AiConversationTurnMemory contractHintPreviousTurn) {
+        return build(
+                normalizedUserMessage,
+                today,
+                previousTurn,
+                orgScope,
+                domainRoute,
+                contractSelection,
+                contractHintPreviousTurn,
+                null);
+    }
+
+    public static SemanticParserInput build(
+            String normalizedUserMessage,
+            LocalDate today,
+            AiConversationTurnMemory previousTurn,
+            AiResolvedOrgScope orgScope,
+            SemanticDomainRouteResult domainRoute,
+            DomainContractSelectionResult contractSelection,
+            AiConversationTurnMemory contractHintPreviousTurn,
+            SemanticParserFollowUpContext followUpContext) {
         if (today == null) {
             throw new IllegalArgumentException("today must not be null");
         }
@@ -105,7 +128,38 @@ public final class SemanticParserInputBuilder {
         if (contractSelection != null && contractSelection.getParserAllowedOutputContract() != null) {
             b.allowedOutputContract(contractSelection.getParserAllowedOutputContract());
         }
+        if (followUpContext != null) {
+            b.followUpContext(followUpContext);
+        }
         return b.build();
+    }
+
+    public static SemanticParserFollowUpContext buildFollowUpContext(
+            AiConversationTurnMemory previousTurn, SemanticIntakeResult intake) {
+        if (previousTurn == null
+                || !SemanticContractFamilySupport.previousTurnHasStableBusinessFrame(previousTurn)) {
+            return null;
+        }
+        String stableContractId = SemanticContractFamilySupport.contractIdFromPreviousTurn(previousTurn);
+        if (intake != null
+                && intake.getFollowUpIntent() != null
+                && StringUtils.hasText(intake.getFollowUpIntent().getTargetContractId())) {
+            stableContractId = intake.getFollowUpIntent().getTargetContractId().trim();
+        }
+        String kind = null;
+        if (intake != null
+                && intake.getFollowUpIntent() != null
+                && intake.getFollowUpIntent().getKind() != null
+                && intake.getFollowUpIntent().getKind() != SemanticIntakeFollowUpKind.NONE) {
+            kind = intake.getFollowUpIntent().getKind().name();
+        }
+        if (!StringUtils.hasText(stableContractId) && !StringUtils.hasText(kind)) {
+            return null;
+        }
+        return SemanticParserFollowUpContext.builder()
+                .previousStableContractId(stableContractId)
+                .intakeFollowUpKind(kind)
+                .build();
     }
 
     private static String blank(String s) {
@@ -182,6 +236,14 @@ public final class SemanticParserInputBuilder {
         } else {
             root.put("allowedOutputContract", null);
         }
+        if (input.getFollowUpContext() != null) {
+            LinkedHashMap<String, Object> fu = new LinkedHashMap<>();
+            fu.put("previousStableContractId", blankDbg(input.getFollowUpContext().getPreviousStableContractId()));
+            fu.put("intakeFollowUpKind", blankDbg(input.getFollowUpContext().getIntakeFollowUpKind()));
+            root.put("followUpContext", fu);
+        } else {
+            root.put("followUpContext", null);
+        }
         return root;
     }
 
@@ -205,6 +267,9 @@ public final class SemanticParserInputBuilder {
                 row.put("metric", e.getMetric());
                 row.put("metrics", e.getMetrics());
                 row.put("sourceFacet", e.getSourceFacet());
+                if (e.getAllowedSourceFacets() != null && !e.getAllowedSourceFacets().isEmpty()) {
+                    row.put("allowedSourceFacets", e.getAllowedSourceFacets());
+                }
                 row.put("detailWanted", e.getDetailWanted());
                 row.put("answerPlanType", e.getAnswerPlanType());
                 row.put("requiresAnchor", e.getRequiresAnchor());

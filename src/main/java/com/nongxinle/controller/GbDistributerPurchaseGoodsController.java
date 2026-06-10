@@ -12,7 +12,6 @@ import java.math.BigDecimal;
 import java.util.*;
 
 import static com.nongxinle.utils.DateUtils.*;
-import static com.nongxinle.utils.GbTypeUtils.*;
 
 /**
  * 批发商采购商品Controller
@@ -190,7 +189,7 @@ public class GbDistributerPurchaseGoodsController {
     @ResponseBody
     public R purUserGetPurGoodsInfo(@RequestParam Integer purUserId, @RequestParam Integer disGoodsId) {
         Map<String, Object> map = new HashMap<>();
-        map.put("purUserId", purUserId);
+//        map.put("purUserId", purUserId);
         map.put("disGoodsId", disGoodsId);
         GbDistributerPurchaseGoodsEntity purchaseGoodsEntity = gbDpgService.queryPurchaseGoodsLastItem(map);
         if (purchaseGoodsEntity != null) {
@@ -212,7 +211,7 @@ public class GbDistributerPurchaseGoodsController {
      * @param disId 批发商ID
      * @param startDate 开始日期
      * @param stopDate 结束日期
-     * @return 统计数据
+     * @return 统计数据（含 {@code employeeMealCostTotal} 原料型员工餐 type=6；{@code costTotal} 含销售+损耗+退货+员工餐）
      */
     @RequestMapping(value = "/disGetPurchaseDate", method = RequestMethod.POST)
     @ResponseBody

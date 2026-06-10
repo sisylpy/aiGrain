@@ -40,6 +40,8 @@ public class SemanticIntakeInput {
     private List<String> visibleStoreNames;
     private String previousEffectiveQuestion;
     private String previousAnswerSummary;
+    /** 当前商户 distributerId，供 cover days 实体存在性探测。 */
+    private Long distributerId;
 
     public static SemanticIntakeInput from(
             String rawUserMessage,
@@ -55,6 +57,10 @@ public class SemanticIntakeInput {
                 }
             }
         }
+        Long distributerId =
+                orgScope != null && orgScope.getDistributerId() != null
+                        ? orgScope.getDistributerId()
+                        : null;
         if (previousTurn == null) {
             return SemanticIntakeInput.builder()
                     .rawUserMessage(rawUserMessage)
@@ -62,6 +68,7 @@ public class SemanticIntakeInput {
                     .today(today)
                     .hasPreviousTurn(false)
                     .visibleStoreNames(visible.isEmpty() ? null : visible)
+                    .distributerId(distributerId)
                     .build();
         }
         String mentionedStore = trim(previousTurn.getLastMentionedStore());
@@ -87,6 +94,7 @@ public class SemanticIntakeInput {
                 .previousSemanticSlots(previousTurn.getLastSemanticSlots())
                 .resultAnchors(copyAnchors(previousTurn.getLastResultAnchors()))
                 .visibleStoreNames(visible.isEmpty() ? null : visible)
+                .distributerId(distributerId)
                 .build();
     }
 

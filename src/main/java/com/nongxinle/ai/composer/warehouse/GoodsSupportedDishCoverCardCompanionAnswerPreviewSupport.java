@@ -1,6 +1,7 @@
 package com.nongxinle.ai.composer.warehouse;
 
 import com.nongxinle.ai.dto.business.GoodsSupportedDishCoverAnswerPlan;
+import com.nongxinle.ai.inventory.CoverDaysSalesBaselinePresentationSupport;
 import org.springframework.util.StringUtils;
 
 /** 原料关联菜品卡已生成时，answerPreview 只保留一句短引导。 */
@@ -22,14 +23,11 @@ public final class GoodsSupportedDishCoverCardCompanionAnswerPreviewSupport {
         }
         if (StringUtils.hasText(plan.getFirstImpactedDishName())
                 && StringUtils.hasText(plan.getFirstImpactedCoverDays())) {
-            return goods
-                    + "按当前库存与近 "
-                    + resolveBaselineDays(plan)
-                    + " 天销量，最先受影响的是「"
-                    + plan.getFirstImpactedDishName().trim()
-                    + "」（约 "
-                    + plan.getFirstImpactedCoverDays().trim()
-                    + " 天）。详情见下方卡片。";
+            return CoverDaysSalesBaselinePresentationSupport.composeGoodsCoverDaysSuccessPreview(
+                    goods,
+                    resolveBaselinePeriodPhrase(plan),
+                    plan.getFirstImpactedDishName().trim(),
+                    plan.getFirstImpactedCoverDays().trim());
         }
         if (StringUtils.hasText(plan.getCurrentStockQty())) {
             return goods + "当前库存与关联菜品明细见下方卡片。";
@@ -44,10 +42,9 @@ public final class GoodsSupportedDishCoverCardCompanionAnswerPreviewSupport {
         return "该原料";
     }
 
-    private static int resolveBaselineDays(GoodsSupportedDishCoverAnswerPlan plan) {
-        if (plan.getSummary() != null && plan.getSummary().get("salesBaselineDays") instanceof Number n) {
-            return Math.max(1, n.intValue());
-        }
-        return 7;
+    private static String resolveBaselinePeriodPhrase(GoodsSupportedDishCoverAnswerPlan plan) {
+        String fromSummary =
+                CoverDaysSalesBaselinePresentationSupport.readPeriodPhraseFromPlanSummary(plan.getSummary());
+        return CoverDaysSalesBaselinePresentationSupport.defaultPeriodPhraseOr(fromSummary);
     }
 }

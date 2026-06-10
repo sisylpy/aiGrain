@@ -2,16 +2,20 @@ package com.nongxinle.ai.graph.business;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.nongxinle.entity.GbDepFoodSalesEntity;
+import com.nongxinle.entity.GbDepartmentEntity;
 import com.nongxinle.entity.GbDepartmentGoodsStockEntity;
 import com.nongxinle.entity.GbDistributerFoodEntity;
 import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
 import com.nongxinle.entity.GbDistributerGoodsEntity;
 import com.nongxinle.service.GbDepFoodSalesService;
 import com.nongxinle.service.GbDepartmentGoodsStockService;
+import com.nongxinle.service.GbDepartmentService;
 import com.nongxinle.service.GbDistributerFoodGoodsService;
 import com.nongxinle.service.GbDistributerFoodService;
 import com.nongxinle.service.GbDistributerGoodsService;
+import com.nongxinle.constants.AiInsightDishProfitScope;
 import com.nongxinle.utils.GbDepartmentGoodsStockReduceSupport;
+import com.nongxinle.utils.GbDepFoodSalesMetricsSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -40,6 +44,7 @@ public class GoodsSupportedDishCoverDomainService {
     private final GbDistributerFoodService gbDistributerFoodService;
     private final GbDepartmentGoodsStockService gbDepartmentGoodsStockService;
     private final GbDepFoodSalesService gbDepFoodSalesService;
+    private final GbDepartmentService gbDepartmentService;
 
     public Map<String, Object> buildPayload(
             int disId,
@@ -80,6 +85,7 @@ public class GoodsSupportedDishCoverDomainService {
         Map<Integer, BigDecimal> salesByFoodId =
                 querySalesPortionsByFoodId(
                         disId,
+                        depFatherId,
                         foodIds,
                         salesBaseline.getStartDateIso(),
                         salesBaseline.getStopDateIso());
@@ -226,9 +232,19 @@ public class GoodsSupportedDishCoverDomainService {
     }
 
     private Map<Integer, BigDecimal> querySalesPortionsByFoodId(
-            int disId, LinkedHashSet<Integer> foodIds, String startDate, String stopDate) {
+            int disId,
+            Integer depFatherId,
+            LinkedHashSet<Integer> foodIds,
+            String startDate,
+            String stopDate) {
         Map<Integer, BigDecimal> out = new HashMap<>();
         if (foodIds == null || foodIds.isEmpty() || startDate == null || stopDate == null) {
+            return out;
+        }
+        List<Integer> scopeDepIds = resolveSalesScopeDepIds(depFatherId);
+        if (depFatherId != null
+                && !AiInsightDishProfitScope.isGroupWideMendianAggregateUnderDis(depFatherId)
+                && scopeDepIds.isEmpty()) {
             return out;
         }
         LambdaQueryWrapper<GbDepFoodSalesEntity> sq =
@@ -237,15 +253,41 @@ public class GoodsSupportedDishCoverDomainService {
                         .ge(GbDepFoodSalesEntity::getGbDfsFullDate, startDate)
                         .le(GbDepFoodSalesEntity::getGbDfsFullDate, stopDate)
                         .eq(GbDepFoodSalesEntity::getGbDfsDistributerId, disId);
+        if (!scopeDepIds.isEmpty()) {
+            if (scopeDepIds.size() == 1) {
+                sq.eq(GbDepFoodSalesEntity::getGbDfsDepId, scopeDepIds.get(0));
+            } else {
+                sq.in(GbDepFoodSalesEntity::getGbDfsDepId, scopeDepIds);
+            }
+        }
         for (GbDepFoodSalesEntity s : gbDepFoodSalesService.list(sq)) {
-            if (s.getGbDfsFoodId() == null) {
+            if (s.getGbDfsFoodId() == null || !GbDepFoodSalesMetricsSupport.countsAsOperationalSales(s)) {
                 continue;
             }
-            BigDecimal amt =
-                    GbDepartmentGoodsStockReduceSupport.parseGoodsAmountString(s.getGbDfsAmount());
+            BigDecimal amt = GbDepFoodSalesMetricsSupport.operationalSalesQty(s);
             out.merge(s.getGbDfsFoodId(), amt, BigDecimal::add);
         }
         return out;
+    }
+
+    /**
+     * 与 {@code GbDishCostAnalysisServiceImpl#loadFoodSales} 门店口径一致：销售按子部门 depId 汇总，不能只用 disId 全集团混算。
+     */
+    private List<Integer> resolveSalesScopeDepIds(Integer depFatherId) {
+        if (depFatherId == null
+                || AiInsightDishProfitScope.isGroupWideMendianAggregateUnderDis(depFatherId)) {
+            return List.of();
+        }
+        LinkedHashMap<Integer, Boolean> uniq = new LinkedHashMap<>();
+        List<GbDepartmentEntity> subs = gbDepartmentService.querySubDepartments(depFatherId);
+        if (subs != null) {
+            for (GbDepartmentEntity sub : subs) {
+                if (sub != null && sub.getGbDepartmentId() != null) {
+                    uniq.put(sub.getGbDepartmentId(), Boolean.TRUE);
+                }
+            }
+        }
+        return new ArrayList<>(uniq.keySet());
     }
 
     private BigDecimal sumRestWeightByDisGoodsId(int disId, Integer depFatherId, int disGoodsId) {

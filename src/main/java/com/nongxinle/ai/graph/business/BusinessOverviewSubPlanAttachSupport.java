@@ -1,5 +1,6 @@
 package com.nongxinle.ai.graph.business;
 
+import com.nongxinle.ai.agent.business.MasterBusinessAgent;
 import com.nongxinle.ai.context.AiResolvedQueryContext;
 import com.nongxinle.ai.context.AiResolvedQueryIntent;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
@@ -7,21 +8,43 @@ import com.nongxinle.ai.core.AiRunState;
 import org.springframework.util.StringUtils;
 
 /**
- * 经营概览 MULTI_AGENT 四域编排：子域 AnswerPlan 从 Tool 信封建 Plan 时，
- * contract-completed wire 为 {@code business_overview_*}，不应被各域 Matrix wire 门禁拒绝。
+ * 经营概览 / 经营诊断 MULTI_AGENT 多域编排：子域 AnswerPlan 从 Tool 信封建 Plan 时，
+ * 主合同 wire 为 {@code business_overview_*} 或 {@code business_diagnosis_summary} 等编排表面，
+ * 不应被各域 Matrix canonical wire 门禁拒绝。
  */
 public final class BusinessOverviewSubPlanAttachSupport {
 
-    /** debug：经营概览四域子计划旁路挂载（与 DishProfit portfolio fallback 对齐）。 */
-    public static final String ATTACH_MODE = "business_overview_four_domain_sub_plan";
+    /** debug：多域编排子计划旁路挂载（概览 + 诊断 Multi-Agent 共用）。 */
+    public static final String ATTACH_MODE = "multi_domain_orchestration_sub_plan";
+
+    /** @deprecated 兼容 Harness 观测；与 {@link #ATTACH_MODE} 同义。 */
+    @Deprecated
+    public static final String LEGACY_ATTACH_MODE = "business_overview_four_domain_sub_plan";
 
     private BusinessOverviewSubPlanAttachSupport() {
     }
 
     /**
-     * {@link AiRunState#isBusinessOverviewPath()} + contract-completed wire 属于四域编排表面。
+     * 多域编排子计划挂载：经营概览四域 wire 或经营诊断 Multi-Agent（与
+     * {@link MasterBusinessAgent#eligibleForBusinessOverviewMultiAgentOrchestration} 对齐）。
      */
+    public static boolean isMultiDomainOrchestrationSubPlanAttach(AiRunState state, AiResolvedQueryContext rq) {
+        if (MasterBusinessAgent.eligibleForBusinessOverviewMultiAgentOrchestration(state)) {
+            return true;
+        }
+        return isLegacyBusinessOverviewFourDomainSubPlanAttach(state, rq);
+    }
+
+    /**
+     * @deprecated 使用 {@link #isMultiDomainOrchestrationSubPlanAttach}。
+     */
+    @Deprecated
     public static boolean isFourDomainSubPlanAttach(AiRunState state, AiResolvedQueryContext rq) {
+        return isMultiDomainOrchestrationSubPlanAttach(state, rq);
+    }
+
+    private static boolean isLegacyBusinessOverviewFourDomainSubPlanAttach(
+            AiRunState state, AiResolvedQueryContext rq) {
         if (state == null || rq == null || !state.isBusinessOverviewPath()) {
             return false;
         }

@@ -63,25 +63,27 @@ public class GbAiDailyRevenueController {
     }
 
     /**
-     * 获取日营业额列表（含统计、曲线图、每日详情）
-     *
-     * @Description 获取指定餐厅的日营业额完整数据，包含统计数据、曲线图数据、每日详情列表
-     * @param departmentId 部门/餐厅ID
-     * @param startDate 开始日期（可选）
-     * @param endDate 结束日期（可选）
-     * @return 统计数据、曲线图数据、每日列表
+     * 获取日营业额列表（区间 summary + 每日明细，含菜品五类销售结构）
      */
     @GetMapping("/list/{departmentId}")
-    @Operation(summary = "获取日营业额完整数据", description = "统计数据、曲线图、每日列表；departmentId 为父部门 ID；可选 startDate、endDate（yyyy-MM-dd）")
+    @Operation(summary = "获取日营业额完整数据",
+            description = "返回 data.summary + data.dailyRows；主账来自 gb_ai_daily_revenue，销售类型来自 gb_dep_food_sales；可选 subDepId、distributerId")
     public R getList(
             @Parameter(description = "父部门/餐厅ID（与日营收 department_id 一致）") @PathVariable Long departmentId,
             @Parameter(description = "开始日期 yyyy-MM-dd，可选") @RequestParam(required = false) String startDate,
-            @Parameter(description = "结束日期 yyyy-MM-dd，可选") @RequestParam(required = false) String endDate) {
-        Map<String, Object> result = dailyRevenueService.buildListPayload(departmentId, startDate, endDate);
-        if (result == null) {
-            return R.error("暂无营业额数据");
+            @Parameter(description = "结束日期 yyyy-MM-dd，可选") @RequestParam(required = false) String endDate,
+            @Parameter(description = "子部门 ID，可选；限定单店范围") @RequestParam(required = false) Long subDepId,
+            @Parameter(description = "分配者 ID，可选；作用于菜品销售查询") @RequestParam(required = false) Long distributerId) {
+        try {
+            Map<String, Object> result = dailyRevenueService.buildListPayload(
+                    departmentId, startDate, endDate, subDepId, distributerId);
+            if (result == null) {
+                return R.error("暂无营业额或菜品销售数据");
+            }
+            return R.ok().put("data", result);
+        } catch (IllegalArgumentException e) {
+            return R.error(e.getMessage());
         }
-        return R.ok(result);
     }
 
     /**
@@ -99,15 +101,23 @@ public class GbAiDailyRevenueController {
     }
 
     /**
-     * 更新日营业额
+     * 更新日营业额（纯更新，不新增；当天没有记录则返回错误）
      */
     @PostMapping("/update")
-    @Operation(summary = "更新日营业额", description = "更新日营业额记录")
+    @Operation(summary = "更新日营业额", description = "按部门+记录日更新；该日已有记录则覆盖更新，否则返回错误；有子部门ID时按子部门匹配，仅有父部门ID时按父部门匹配")
     public R update(@RequestBody GbAiDailyRevenueEntity dailyRevenue) {
-        dailyRevenueService.backfillParentDepartmentIdIfMissing(dailyRevenue);
-        dailyRevenueService.fillUpdateWeekday(dailyRevenue);
-        dailyRevenueService.updateById(dailyRevenue);
-        return R.ok();
+        try {
+            if (dailyRevenue.getGbAiDailyRevenueDepartmentId() != null) {
+                dailyRevenueService.updateByDepartmentAndDate(dailyRevenue);
+            } else if (dailyRevenue.getGbAiDailyRevenueParentDepartmentId() != null) {
+                dailyRevenueService.updateByParentDepartmentAndDate(dailyRevenue);
+            } else {
+                return R.error("子部门ID和父部门ID至少需要提供一个");
+            }
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.error(e.getMessage());
+        }
     }
 
     /**

@@ -6,18 +6,15 @@ import com.nongxinle.ai.graph.business.execution.EffectiveDishAnchor;
 import com.nongxinle.ai.graph.business.execution.EffectiveDishAnchorSupport;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
 import com.nongxinle.entity.GbDepartmentGoodsStockEntity;
-import com.nongxinle.entity.GbDistributerFoodGoodsEntity;
 import com.nongxinle.service.GbDepartmentGoodsStockService;
 import com.nongxinle.service.GbDishCostAnalysisService;
-import com.nongxinle.service.GbDistributerFoodGoodsService;
-import com.nongxinle.utils.GbDepartmentGoodsStockReduceSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,7 +29,6 @@ import java.util.Map;
 public class DishIngredientCoverCostDataEnricher {
 
     private final GbDepartmentGoodsStockService gbDepartmentGoodsStockService;
-    private final GbDistributerFoodGoodsService gbDistributerFoodGoodsService;
     private final GbDishCostAnalysisService gbDishCostAnalysisService;
 
     public void enrichIfApplicable(AiRunState state) {
@@ -46,8 +42,7 @@ public class DishIngredientCoverCostDataEnricher {
         AiResolvedQueryContext rq = state.getResolvedQueryContext();
         DishIngredientCoverSalesBaseline baseline = DishIngredientCoverSalesBaselineSupport.resolve(state, rq);
         costData.put(DishIngredientCoverSalesBaselineSupport.COST_DATA_BASELINE_KEY, baseline.toWireMap());
-        applySalesBaselineFromService(costData, state, baseline);
-        ensureCompleteIngredientRows(costData, state, baseline);
+        refreshDishRowFromSalesBaseline(costData, state, baseline);
         attachInventoryRestWeights(costData, state);
     }
 
@@ -65,8 +60,8 @@ public class DishIngredientCoverCostDataEnricher {
         return null;
     }
 
-    /** 按销量基线区间刷新 {@code salesPortions}（与问句时间窗解耦）。 */
-    private void applySalesBaselineFromService(
+    /** 始终按销量基线区间重载单菜配料行（与问句 inherited timeWindow 解耦）。 */
+    private void refreshDishRowFromSalesBaseline(
             Map<String, Object> costData, AiRunState state, DishIngredientCoverSalesBaseline baseline) {
         if (baseline == null) {
             return;
@@ -79,6 +74,10 @@ public class DishIngredientCoverCostDataEnricher {
         if (scope.disId() == null || scope.depFatherId() == null) {
             return;
         }
+        List<Integer> scopeDepIds =
+                BusinessToolExecutionNode.extractSqlQueryDepartmentIdsForTools(
+                        state != null ? state.getResolvedQueryContext() : null);
+        Collection<Integer> scopeFilter = scopeDepIds.isEmpty() ? null : scopeDepIds;
         try {
             Map<String, Object> fresh =
                     gbDishCostAnalysisService.buildIngredientAnalysisDishRowForFoodId(
@@ -88,53 +87,7 @@ public class DishIngredientCoverCostDataEnricher {
                             scope.depFatherId(),
                             scope.searchDepId(),
                             foodId,
-                            null);
-            if (fresh == null || fresh.isEmpty()) {
-                return;
-            }
-            if (fresh.get("salesPortions") != null) {
-                costData.put("salesPortions", fresh.get("salesPortions"));
-            }
-            if (!StringUtils.hasText(str(costData.get("dishName")))) {
-                copyIfPresent(costData, fresh, "dishName");
-            }
-            if (costData.get("dishId") == null) {
-                costData.put("dishId", fresh.get("dishId"));
-            }
-        } catch (RuntimeException ignored) {
-            // 保留 tool 快照销量
-        }
-    }
-
-    private void ensureCompleteIngredientRows(
-            Map<String, Object> costData, AiRunState state, DishIngredientCoverSalesBaseline baseline) {
-        if (baseline == null) {
-            return;
-        }
-        Integer foodId = firstNonNullInt(costData.get("dishId"), resolveFoodIdFromContext(state));
-        if (foodId == null) {
-            return;
-        }
-        int expectedMergedGoods = countMergedActiveRecipeGoods(gbDistributerFoodGoodsService.queryFoodGoodsByFoodId(foodId));
-        List<Map<String, Object>> current = ingredientRows(costData);
-        if (expectedMergedGoods > 0 && current.size() >= expectedMergedGoods) {
-            return;
-        }
-
-        OrgScope scope = resolveOrgScope(costData, state);
-        if (scope.disId() == null || scope.depFatherId() == null) {
-            return;
-        }
-        try {
-            Map<String, Object> fresh =
-                    gbDishCostAnalysisService.buildIngredientAnalysisDishRowForFoodId(
-                            baseline.getStartDateIso(),
-                            baseline.getStopDateIso(),
-                            scope.disId(),
-                            scope.depFatherId(),
-                            scope.searchDepId(),
-                            foodId,
-                            null);
+                            scopeFilter);
             if (fresh == null || fresh.isEmpty()) {
                 return;
             }
@@ -142,17 +95,12 @@ public class DishIngredientCoverCostDataEnricher {
             if (!freshRows.isEmpty()) {
                 costData.put("ingredientRows", freshRows);
             }
-            if (!StringUtils.hasText(str(costData.get("dishName")))) {
-                copyIfPresent(costData, fresh, "dishName");
-            }
-            if (costData.get("dishId") == null) {
-                costData.put("dishId", fresh.get("dishId"));
-            }
-            if (costData.get("salesPortions") == null) {
-                costData.put("salesPortions", fresh.get("salesPortions"));
-            }
+            copyIfPresent(costData, fresh, "dishName");
+            copyIfPresent(costData, fresh, "dishId");
+            copyIfPresent(costData, fresh, "salesPortions");
+            copyIfPresent(costData, fresh, "bottle");
         } catch (RuntimeException ignored) {
-            // 保留原 tool 快照，由 AnswerPlan 按 partial 表达
+            // 保留 tool 快照，由 AnswerPlan 按 partial 表达
         }
     }
 
@@ -205,28 +153,6 @@ public class DishIngredientCoverCostDataEnricher {
             out.merge(entity.getGbDgsGbDisGoodsId(), rw, BigDecimal::add);
         }
         return out;
-    }
-
-    private static int countMergedActiveRecipeGoods(List<GbDistributerFoodGoodsEntity> recipe) {
-        if (recipe == null || recipe.isEmpty()) {
-            return 0;
-        }
-        LinkedHashMap<Integer, Boolean> merged = new LinkedHashMap<>();
-        for (GbDistributerFoodGoodsEntity line : recipe) {
-            if (!GbDepartmentGoodsStockReduceSupport.isActiveFoodGoodsLine(line)) {
-                continue;
-            }
-            Integer gId = line.getGbDfgDisGoodsId();
-            if (gId == null) {
-                continue;
-            }
-            BigDecimal u = GbDepartmentGoodsStockReduceSupport.coerceDecimal(line.getGbDfgGoodsAmount());
-            if (u.compareTo(BigDecimal.ZERO) <= 0) {
-                continue;
-            }
-            merged.put(gId, Boolean.TRUE);
-        }
-        return merged.size();
     }
 
     @SuppressWarnings("unchecked")
@@ -331,10 +257,6 @@ public class DishIngredientCoverCostDataEnricher {
         } catch (NumberFormatException e) {
             return null;
         }
-    }
-
-    private static String str(Object o) {
-        return o == null ? "" : o.toString().trim();
     }
 
     private record OrgScope(Integer disId, Integer depFatherId, String searchDepId) {}

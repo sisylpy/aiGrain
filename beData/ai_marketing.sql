@@ -389,9 +389,14 @@ CREATE TABLE `gb_dep_food_sales` (
   `gb_dfs_year` varchar(10) CHARACTER SET utf16 COLLATE utf16_czech_ci DEFAULT NULL COMMENT '销售年份',
   `gb_dfs_subtotal` varchar(10) CHARACTER SET utf16 COLLATE utf16_czech_ci DEFAULT NULL COMMENT '小计金额',
   `gb_dfs_distributer_id` int DEFAULT NULL COMMENT '配送商id',
+  `gb_dfs_type` tinyint NOT NULL DEFAULT 1 COMMENT '消费类型：1正常 2折扣 3会员 4赠送 5员工餐',
+  `gb_dfs_original_unit_price` decimal(12,4) DEFAULT NULL COMMENT '标价快照（元/份）',
+  `gb_dfs_actual_unit_price` decimal(12,4) DEFAULT NULL COMMENT '实际成交价（元/份）',
+  `gb_dfs_discount_rate` decimal(8,4) DEFAULT NULL COMMENT '折扣率（展示用）',
   `gb_dfs_revenue_weekday` tinyint DEFAULT NULL COMMENT 'æ˜ŸæœŸå‡ ',
   `gb_dfs_revenue_holiday` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT 'èŠ‚å‡æ—¥åç§°',
-  PRIMARY KEY (`gb_dep_food_sales_id`) USING BTREE
+  PRIMARY KEY (`gb_dep_food_sales_id`) USING BTREE,
+  UNIQUE KEY `uk_dep_food_date_type` (`gb_dfs_dep_id`,`gb_dfs_food_id`,`gb_dfs_full_date`,`gb_dfs_type`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf16 COLLATE=utf16_czech_ci;
 
 -- ----------------------------
@@ -1114,6 +1119,8 @@ CREATE TABLE `gb_distributer_goods` (
   `gb_dg_dfg_goods_grand_id` int DEFAULT NULL COMMENT '批发商父类商品id',
   `gb_dg_dfg_goods_great_id` int DEFAULT NULL COMMENT '批发商父类商品id',
   `gb_dg_quantity_days` int DEFAULT NULL COMMENT '批发商父类商品id',
+  `gb_dg_carton_unit` varchar(20) DEFAULT NULL COMMENT '外箱名称',
+  `gb_dg_items_per_carton` varchar(20) DEFAULT NULL COMMENT '外箱装数量',
   PRIMARY KEY (`gb_distributer_goods_id`) USING BTREE
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 

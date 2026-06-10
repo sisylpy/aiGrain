@@ -39,9 +39,15 @@ public interface GbAiDailyRevenueService extends IService<GbAiDailyRevenueEntity
 	Map<String, Object> getGroupIncomeAggregateForDepartmentIds(List<Integer> departmentIds, String startDate, String endDate);
 
 	/**
-	 * 列表接口：查询并组装 chartData + dailyList；无数据时返回 {@code null}。
+	 * 列表接口：主账 + 菜品五类销售；无数据时返回 {@code null}。
 	 */
 	Map<String, Object> buildListPayload(Long departmentId, String startDate, String endDate);
+
+	/**
+	 * 列表接口（可选子部门、分配者范围）；summary 由 dailyRows 同口径累加。
+	 */
+	Map<String, Object> buildListPayload(Long departmentId, String startDate, String endDate,
+			Long subDepId, Long distributerId);
 
 	/** 新增前填充默认日期、星期、节假日、时间戳。 */
 	void fillInsertDefaults(GbAiDailyRevenueEntity entity);
@@ -59,6 +65,22 @@ public interface GbAiDailyRevenueService extends IService<GbAiDailyRevenueEntity
 	 * 按 部门+记录日 保存：与唯一键 {@code uk_gb_ai_dr_dep_date} 一致，已存在则更新，否则插入。
 	 */
 	void saveOrUpsertByDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue);
+
+	/**
+	 * 按 父部门+记录日 保存（子部门 ID 为 null）：与 {@code uk_gb_ai_dr_dep_date} 一致，已存在则更新，否则插入。
+	 * 适用于仅提供父部门 ID、无需指定子部门的场景。
+	 */
+	void saveOrUpsertByParentDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue);
+
+	/**
+	 * 按 部门+记录日 更新（纯更新，不新增）。找不到当天记录则抛出 IllegalArgumentException。
+	 */
+	void updateByDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue);
+
+	/**
+	 * 按 父部门+记录日 更新（纯更新，不新增）。找不到当天记录则抛出 IllegalArgumentException。
+	 */
+	void updateByParentDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue);
 
 	/**
 	 * 仅写入或更新堂食营业额：已有记录时只覆盖堂食字段与分配者（若传入），其它字段不变。

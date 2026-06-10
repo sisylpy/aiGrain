@@ -2,12 +2,15 @@ package com.nongxinle.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.nongxinle.entity.GbAiDailyRevenueEntity;
+import com.nongxinle.entity.GbDepFoodSalesEntity;
 import com.nongxinle.entity.GbDepartmentEntity;
 import com.nongxinle.mapper.GbAiDailyRevenueMapper;
 import com.nongxinle.service.GbAiDailyRevenueExcelService;
 import com.nongxinle.service.GbAiDailyRevenueService;
 import com.nongxinle.service.GbDepFoodSalesExcelImportService;
+import com.nongxinle.service.GbDepFoodSalesService;
 import com.nongxinle.service.GbDepartmentService;
+import com.nongxinle.service.support.GbAiDailyRevenueListSupport;
 import com.nongxinle.utils.GbDateTimeUtils;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
@@ -43,15 +46,18 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
     private final GbAiDailyRevenueExcelService dailyRevenueExcelService;
     private final GbDepFoodSalesExcelImportService gbDepFoodSalesExcelImportService;
     private final GbDepartmentService departmentService;
+    private final GbDepFoodSalesService gbDepFoodSalesService;
 
     @Autowired
     public GbAiDailyRevenueServiceImpl(
             GbAiDailyRevenueExcelService dailyRevenueExcelService,
             @Lazy GbDepFoodSalesExcelImportService gbDepFoodSalesExcelImportService,
-            GbDepartmentService departmentService) {
+            GbDepartmentService departmentService,
+            GbDepFoodSalesService gbDepFoodSalesService) {
         this.dailyRevenueExcelService = dailyRevenueExcelService;
         this.gbDepFoodSalesExcelImportService = gbDepFoodSalesExcelImportService;
         this.departmentService = departmentService;
+        this.gbDepFoodSalesService = gbDepFoodSalesService;
     }
     @Override
     public List<GbAiDailyRevenueEntity> queryDailyRevenueListByParams(Map<String, Object> params) {
@@ -88,31 +94,143 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
 
     @Override
     public Map<String, Object> buildListPayload(Long departmentId, String startDate, String endDate) {
-        Map<String, Object> params = new HashMap<>();
-        params.put("departmentScopeIds", departmentScopeIdsForParent(departmentId));
-        params.put("startDate", startDate);
-        params.put("endDate", endDate);
-        List<GbAiDailyRevenueEntity> dailyList = queryDailyRevenueListByParams(params);
-        if (dailyList == null || dailyList.isEmpty()) {
+        return buildListPayload(departmentId, startDate, endDate, null, null);
+    }
+
+    @Override
+    public Map<String, Object> buildListPayload(Long departmentId, String startDate, String endDate,
+            Long subDepId, Long distributerId) {
+        if (departmentId == null) {
             return null;
         }
-        dailyList = aggregateDailyRevenueByDateForParentView(dailyList, departmentId);
-        Map<String, Object> result = new HashMap<>();
-        List<Map<String, Object>> chartData = new ArrayList<>();
-        for (GbAiDailyRevenueEntity item : dailyList) {
-            Map<String, Object> dayData = new HashMap<>();
-            dayData.put("date", GbDateTimeUtils.formatDay(item.getGbAiDailyRevenueRecordDate()));
-            BigDecimal dineIn = item.getGbAiDailyRevenueDineInRevenue() != null
-                    ? item.getGbAiDailyRevenueDineInRevenue() : BigDecimal.ZERO;
-            dayData.put("dineIn", dineIn);
-            BigDecimal takeout = item.getGbAiDailyRevenueTakeoutRevenue() != null
-                    ? item.getGbAiDailyRevenueTakeoutRevenue() : BigDecimal.ZERO;
-            dayData.put("takeout", takeout);
-            chartData.add(dayData);
+        if (subDepId != null) {
+            GbDepartmentEntity sub = departmentService.getById(subDepId.intValue());
+            if (sub == null) {
+                throw new IllegalArgumentException("子部门不存在: " + subDepId);
+            }
+            if (!departmentId.equals(sub.getGbDepartmentFatherId() == null ? null : sub.getGbDepartmentFatherId().longValue())) {
+                throw new IllegalArgumentException("subDepId 与 departmentId 不是父子关系");
+            }
         }
-        result.put("chartData", chartData);
-        result.put("dailyList", dailyList);
-        return result;
+
+        List<Long> scopeIds = resolveListScopeDepartmentIds(departmentId, subDepId);
+        LocalDate start = parseOptionalLocalDay(startDate);
+        LocalDate end = parseOptionalLocalDay(endDate);
+
+        Map<String, Object> revParams = new HashMap<>();
+        revParams.put("departmentScopeIds", scopeIds);
+        if (start != null) {
+            revParams.put("startDate", GbDateTimeUtils.formatDay(start));
+        }
+        if (end != null) {
+            revParams.put("endDate", GbDateTimeUtils.formatDay(end));
+        }
+        List<GbAiDailyRevenueEntity> revenueRaw = queryDailyRevenueListByParams(revParams);
+        List<GbAiDailyRevenueEntity> revenueByDay = revenueRaw == null || revenueRaw.isEmpty()
+                ? Collections.emptyList()
+                : aggregateDailyRevenueByDateForParentView(revenueRaw, departmentId);
+
+        List<Integer> intScopeIds = toIntegerScopeIds(scopeIds);
+        List<GbDepFoodSalesEntity> foodRows;
+        if (intScopeIds.isEmpty()) {
+            foodRows = Collections.emptyList();
+        } else {
+            LambdaQueryWrapper<GbDepFoodSalesEntity> foodQ = new LambdaQueryWrapper<GbDepFoodSalesEntity>()
+                    .eq(GbDepFoodSalesEntity::getGbDfsDepFatherId, departmentId.intValue())
+                    .in(GbDepFoodSalesEntity::getGbDfsDepId, intScopeIds);
+            if (distributerId != null) {
+                foodQ.eq(GbDepFoodSalesEntity::getGbDfsDistributerId, distributerId.intValue());
+            }
+            if (start != null) {
+                foodQ.ge(GbDepFoodSalesEntity::getGbDfsFullDate, GbDateTimeUtils.formatDay(start));
+            }
+            if (end != null) {
+                foodQ.le(GbDepFoodSalesEntity::getGbDfsFullDate, GbDateTimeUtils.formatDay(end));
+            }
+            foodRows = gbDepFoodSalesService.list(foodQ);
+        }
+
+        if ((revenueByDay == null || revenueByDay.isEmpty())
+                && (foodRows == null || foodRows.isEmpty())) {
+            return null;
+        }
+
+        if (start == null || end == null) {
+            LocalDate[] inferred = inferDateRange(revenueByDay, foodRows, start, end);
+            start = inferred[0];
+            end = inferred[1];
+        }
+
+        Map<String, GbAiDailyRevenueEntity> revenueByDate =
+                GbAiDailyRevenueListSupport.indexRevenueByDate(revenueByDay);
+        Map<String, List<GbDepFoodSalesEntity>> foodByDate =
+                GbAiDailyRevenueListSupport.groupFoodSalesByDate(foodRows);
+
+        return GbAiDailyRevenueListSupport.buildPayload(
+                departmentId, subDepId, distributerId, start, end, revenueByDate, foodByDate);
+    }
+
+    private List<Long> resolveListScopeDepartmentIds(Long depFatherId, Long subDepId) {
+        if (subDepId != null) {
+            return Collections.singletonList(subDepId);
+        }
+        return departmentScopeIdsForParent(depFatherId);
+    }
+
+    private static List<Integer> toIntegerScopeIds(List<Long> scopeIds) {
+        List<Integer> out = new ArrayList<>();
+        if (scopeIds == null) {
+            return out;
+        }
+        for (Long id : scopeIds) {
+            if (id != null && id > 0 && id <= Integer.MAX_VALUE) {
+                out.add(id.intValue());
+            }
+        }
+        return out;
+    }
+
+    private static LocalDate parseOptionalLocalDay(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        return GbDateTimeUtils.parseLocalDay(text.trim());
+    }
+
+    private static LocalDate[] inferDateRange(
+            List<GbAiDailyRevenueEntity> revenueByDay,
+            List<GbDepFoodSalesEntity> foodRows,
+            LocalDate startHint,
+            LocalDate endHint) {
+        LocalDate min = startHint;
+        LocalDate max = endHint;
+        if (revenueByDay != null) {
+            for (GbAiDailyRevenueEntity r : revenueByDay) {
+                if (r == null || r.getGbAiDailyRevenueRecordDate() == null) {
+                    continue;
+                }
+                LocalDate d = GbDateTimeUtils.toLocalDate(r.getGbAiDailyRevenueRecordDate());
+                min = min == null || d.isBefore(min) ? d : min;
+                max = max == null || d.isAfter(max) ? d : max;
+            }
+        }
+        if (foodRows != null) {
+            for (GbDepFoodSalesEntity row : foodRows) {
+                if (row == null || row.getGbDfsFullDate() == null) {
+                    continue;
+                }
+                LocalDate d = GbDateTimeUtils.parseLocalDay(row.getGbDfsFullDate().trim());
+                min = min == null || d.isBefore(min) ? d : min;
+                max = max == null || d.isAfter(max) ? d : max;
+            }
+        }
+        if (min == null) {
+            min = max;
+        }
+        if (max == null) {
+            max = min;
+        }
+        return new LocalDate[] { min, max };
     }
 
     @Override
@@ -211,6 +329,98 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
     }
 
     @Override
+    public void saveOrUpsertByParentDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue) {
+        if (dailyRevenue.getGbAiDailyRevenueParentDepartmentId() == null) {
+            throw new IllegalArgumentException("父部门ID不能为空");
+        }
+        if (dailyRevenue.getGbAiDailyRevenueRecordDate() == null) {
+            dailyRevenue.setGbAiDailyRevenueRecordDate(new Date());
+        }
+        // 子部门 ID 用 0 表示"父部门级记录"（数据库字段 NOT NULL，不可留空）
+        dailyRevenue.setGbAiDailyRevenueDepartmentId(0L);
+        Date recordDate = dailyRevenue.getGbAiDailyRevenueRecordDate();
+        Date dayStart = GbDateTimeUtils.startOfDay(recordDate);
+        Date dayEnd = GbDateTimeUtils.endOfDay(recordDate);
+        GbAiDailyRevenueEntity existing = getOne(
+                new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
+                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueParentDepartmentId, dailyRevenue.getGbAiDailyRevenueParentDepartmentId())
+                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, 0L)
+                        .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayStart)
+                        .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayEnd)
+                        .last("LIMIT 1"), false);
+        if (existing != null) {
+            if (dailyRevenue.getGbAiDailyRevenueDistributerId() != null) {
+                existing.setGbAiDailyRevenueDistributerId(dailyRevenue.getGbAiDailyRevenueDistributerId());
+            }
+            copyMutableDailyRevenueFields(dailyRevenue, existing);
+            fillUpdateWeekday(existing);
+            updateById(existing);
+        } else {
+            fillInsertDefaults(dailyRevenue);
+            save(dailyRevenue);
+        }
+    }
+
+    @Override
+    public void updateByDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue) {
+        if (dailyRevenue.getGbAiDailyRevenueDepartmentId() == null) {
+            throw new IllegalArgumentException("部门ID不能为空");
+        }
+        if (dailyRevenue.getGbAiDailyRevenueRecordDate() == null) {
+            dailyRevenue.setGbAiDailyRevenueRecordDate(new Date());
+        }
+        Date recordDate = dailyRevenue.getGbAiDailyRevenueRecordDate();
+        Date dayStart = GbDateTimeUtils.startOfDay(recordDate);
+        Date dayEnd = GbDateTimeUtils.endOfDay(recordDate);
+        GbAiDailyRevenueEntity existing = getOne(
+                new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
+                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, dailyRevenue.getGbAiDailyRevenueDepartmentId())
+                        .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayStart)
+                        .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayEnd)
+                        .last("LIMIT 1"), false);
+        if (existing == null) {
+            throw new IllegalArgumentException("未找到当天(" + GbDateTimeUtils.formatDay(recordDate) + ")该部门的日营业额记录，无法更新");
+        }
+        if (dailyRevenue.getGbAiDailyRevenueDistributerId() != null) {
+            existing.setGbAiDailyRevenueDistributerId(dailyRevenue.getGbAiDailyRevenueDistributerId());
+        }
+        copyMutableDailyRevenueFields(dailyRevenue, existing);
+        backfillParentDepartmentIdIfMissing(existing);
+        fillUpdateWeekday(existing);
+        updateById(existing);
+    }
+
+    @Override
+    public void updateByParentDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue) {
+        if (dailyRevenue.getGbAiDailyRevenueParentDepartmentId() == null) {
+            throw new IllegalArgumentException("父部门ID不能为空");
+        }
+        if (dailyRevenue.getGbAiDailyRevenueRecordDate() == null) {
+            dailyRevenue.setGbAiDailyRevenueRecordDate(new Date());
+        }
+        dailyRevenue.setGbAiDailyRevenueDepartmentId(0L);
+        Date recordDate = dailyRevenue.getGbAiDailyRevenueRecordDate();
+        Date dayStart = GbDateTimeUtils.startOfDay(recordDate);
+        Date dayEnd = GbDateTimeUtils.endOfDay(recordDate);
+        GbAiDailyRevenueEntity existing = getOne(
+                new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
+                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueParentDepartmentId, dailyRevenue.getGbAiDailyRevenueParentDepartmentId())
+                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, 0L)
+                        .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayStart)
+                        .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayEnd)
+                        .last("LIMIT 1"), false);
+        if (existing == null) {
+            throw new IllegalArgumentException("未找到当天(" + GbDateTimeUtils.formatDay(recordDate) + ")该父部门的日营业额记录，无法更新");
+        }
+        if (dailyRevenue.getGbAiDailyRevenueDistributerId() != null) {
+            existing.setGbAiDailyRevenueDistributerId(dailyRevenue.getGbAiDailyRevenueDistributerId());
+        }
+        copyMutableDailyRevenueFields(dailyRevenue, existing);
+        fillUpdateWeekday(existing);
+        updateById(existing);
+    }
+
+    @Override
     public void upsertDineInRevenueOnly(Long departmentId, Long distributerId, Date recordDate, BigDecimal dineInRevenue) {
         if (departmentId == null) {
             throw new IllegalArgumentException("部门ID不能为空");
@@ -229,6 +439,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         BigDecimal dineIn = dineInRevenue != null ? dineInRevenue : BigDecimal.ZERO;
         if (existing != null) {
             existing.setGbAiDailyRevenueDineInRevenue(dineIn);
+            recomputeGrossRevenue(existing);
             if (distributerId != null) {
                 existing.setGbAiDailyRevenueDistributerId(distributerId);
             }
@@ -241,6 +452,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
             row.setGbAiDailyRevenueDistributerId(distributerId);
             row.setGbAiDailyRevenueRecordDate(dayStart);
             row.setGbAiDailyRevenueDineInRevenue(dineIn);
+            recomputeGrossRevenue(row);
             fillInsertDefaults(row);
             backfillParentDepartmentIdIfMissing(row);
             save(row);
@@ -272,6 +484,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
             row.setGbAiDailyRevenueRecordDate(dayStart);
             row.setGbAiDailyRevenueDineInRevenue(BigDecimal.ZERO);
             applyNonNullNonDineInMetrics(row, dineInOrders, dineInCustomers, takeoutRevenue, takeoutOrders, platformFee, notes);
+            recomputeGrossRevenue(row);
             fillInsertDefaults(row);
             backfillParentDepartmentIdIfMissing(row);
             save(row);
@@ -281,6 +494,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
             existing.setGbAiDailyRevenueDistributerId(distributerId);
         }
         applyNonNullNonDineInMetrics(existing, dineInOrders, dineInCustomers, takeoutRevenue, takeoutOrders, platformFee, notes);
+        recomputeGrossRevenue(existing);
         backfillParentDepartmentIdIfMissing(existing);
         fillUpdateWeekday(existing);
         updateById(existing);
@@ -309,6 +523,15 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         }
     }
 
+    /**
+     * 重新计算总营业额 = 堂食 + 外卖，null 视为 0。
+     */
+    private static void recomputeGrossRevenue(GbAiDailyRevenueEntity e) {
+        BigDecimal dineIn = e.getGbAiDailyRevenueDineInRevenue() != null ? e.getGbAiDailyRevenueDineInRevenue() : BigDecimal.ZERO;
+        BigDecimal takeout = e.getGbAiDailyRevenueTakeoutRevenue() != null ? e.getGbAiDailyRevenueTakeoutRevenue() : BigDecimal.ZERO;
+        e.setGbAiDailyRevenueGrossRevenue(dineIn.add(takeout));
+    }
+
     private static void copyMutableDailyRevenueFields(GbAiDailyRevenueEntity from, GbAiDailyRevenueEntity to) {
         to.setGbAiDailyRevenueDineInRevenue(from.getGbAiDailyRevenueDineInRevenue());
         to.setGbAiDailyRevenueDineInOrders(from.getGbAiDailyRevenueDineInOrders());
@@ -322,6 +545,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         if (from.getGbAiDailyRevenueParentDepartmentId() != null) {
             to.setGbAiDailyRevenueParentDepartmentId(from.getGbAiDailyRevenueParentDepartmentId());
         }
+        recomputeGrossRevenue(to);
     }
 
     @Override
@@ -438,10 +662,15 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         log.info("importCombinedExcel start depFatherId={} distributerId={} bytes={}",
                 departmentId, distributerId, bytes.length);
         int[] sheets = dailyRevenueExcelService.resolveCombinedTemplateFoodAndRevenueSheetIndexes(bytes);
-        log.info("importCombinedExcel resolved sheetIndexes food={} revenue={}", sheets[0], sheets[1]);
+        int discountSheet = dailyRevenueExcelService.resolveCombinedTemplateDiscountSheetIndex(bytes);
+        log.info("importCombinedExcel resolved sheetIndexes food={} revenue={} discount={}",
+                sheets[0], sheets[1], discountSheet);
 
         Map<String, Object> foodOut = gbDepFoodSalesExcelImportService.importFoodSalesFromExcelMultipart(
                 file, departmentId.intValue(), distributerId.intValue(), sheets[0], true);
+
+        Map<String, Object> discountOut = gbDepFoodSalesExcelImportService.importDiscountFoodSalesFromCombinedSheet(
+                file, departmentId.intValue(), distributerId.intValue(), discountSheet, true);
 
         List<GbAiDailyRevenueEntity> supplement =
                 dailyRevenueExcelService.parseCombinedTemplateRevenueSheet(bytes, sheets[1], departmentId, distributerId);
@@ -460,6 +689,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
 
         Map<String, Object> out = new HashMap<>();
         out.put("foodSales", foodOut);
+        out.put("discountFoodSales", discountOut);
         out.put("dailyRevenueSupplement", revOut);
         return out;
     }
@@ -566,6 +796,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         to.setGbAiDailyRevenueWeekday(from.getGbAiDailyRevenueWeekday());
         to.setGbAiDailyRevenueHoliday(from.getGbAiDailyRevenueHoliday());
         to.setGbAiDailyRevenueNotes(from.getGbAiDailyRevenueNotes());
+        recomputeGrossRevenue(to);
     }
 
     @Override
@@ -713,6 +944,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         m.setGbAiDailyRevenueDineInCustomers(cust);
         m.setGbAiDailyRevenueTakeoutOrders(tOrders);
         m.setGbAiDailyRevenueNotes(String.join("；", noteParts));
+        m.setGbAiDailyRevenueGrossRevenue(dineIn.add(takeout));
         return m;
     }
 }

@@ -63,5 +63,12 @@ public class GbDepFoodDailySalesSubmitRequest {
         private Integer foodId;
         /** 销售份数 */
         private BigDecimal quantity;
+        /**
+         * 消费类型 1～5，见 {@link com.nongxinle.utils.GbConstants.FoodSalesType}。
+         * 同一菜品同日可分别存在多类型行（按 type 唯一键）。
+         */
+        private Integer type;
+        /** 实际单价（元/份）；折扣/会员场景可选，默认按标价 */
+        private BigDecimal actualUnitPrice;
     }
 }

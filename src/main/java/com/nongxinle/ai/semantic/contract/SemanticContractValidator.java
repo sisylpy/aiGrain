@@ -47,6 +47,14 @@ public final class SemanticContractValidator {
 
         if (!allowedEntries.isEmpty()) {
             if (!StringUtils.hasText(selectedContractId)) {
+                if (parseAlreadyHasModelExplicitClarification(frame.getParse())) {
+                    return SemanticContractValidationDebug.builder()
+                            .modelContractViolation(false)
+                            .selectedDomain(selectedDomain)
+                            .allowedWires(allowedWires.isEmpty() ? null : allowedWires)
+                            .allowedContractCount(allowedContractCount)
+                            .build();
+                }
                 return SemanticContractValidationDebug.builder()
                         .modelContractViolation(true)
                         .violationCode(SemanticContractViolationCode.MISSING_SELECTED_CONTRACT_ID)
@@ -267,5 +275,12 @@ public final class SemanticContractValidator {
 
     private static String blank(String s) {
         return StringUtils.hasText(s) ? s.trim() : null;
+    }
+
+    /** V2 已输出 needClarification + clarificationQuestion 时，strict 合同校验不再叠加 MISSING_SELECTED_CONTRACT_ID。 */
+    private static boolean parseAlreadyHasModelExplicitClarification(AiQuerySemanticParseResult parse) {
+        return parse != null
+                && Boolean.TRUE.equals(parse.getNeedClarification())
+                && StringUtils.hasText(parse.getClarificationQuestion());
     }
 }

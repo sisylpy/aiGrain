@@ -69,9 +69,9 @@ public final class StockReduceAnswerPlanBuilder {
         // contract-locked but no completed wire → early exit
         String completedWire = resolveWire(rq);
         baseDiag.put("completedWire", completedWire.isEmpty() ? null : completedWire);
-        boolean overviewFourDomainAttach =
-                BusinessOverviewSubPlanAttachSupport.isFourDomainSubPlanAttach(state, rq);
-        if (!overviewFourDomainAttach && completedWire.isEmpty()) {
+        boolean multiDomainOrchestrationAttach =
+                BusinessOverviewSubPlanAttachSupport.isMultiDomainOrchestrationSubPlanAttach(state, rq);
+        if (!multiDomainOrchestrationAttach && completedWire.isEmpty()) {
             baseDiag.put("earlyReturnReason", "missing_contract_completed_wire");
             baseDiag.put("failureReason", "missing_contract_completed_wire");
             baseDiag.put("failureDetail",
@@ -84,7 +84,7 @@ public final class StockReduceAnswerPlanBuilder {
         // wire not in StockReduce accepted canonical wire set → early exit
         String canon = completedWire.isEmpty() ? null
                 : AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(completedWire.trim());
-        if (!overviewFourDomainAttach
+        if (!multiDomainOrchestrationAttach
                 && (canon == null || !AiQuerySemanticLexicon.isStructuredStockReduceDetail(canon))) {
             baseDiag.put("earlyReturnReason", "contract_wire_not_accepted_stock_reduce_matrix");
             baseDiag.put("failureReason", "contract_wire_not_accepted_stock_reduce_matrix");
@@ -94,7 +94,7 @@ public final class StockReduceAnswerPlanBuilder {
             writeEmptyEarlyExitPlan(state, baseDiag);
             return;
         }
-        if (overviewFourDomainAttach) {
+        if (multiDomainOrchestrationAttach) {
             baseDiag.put("attachMode", BusinessOverviewSubPlanAttachSupport.ATTACH_MODE);
             baseDiag.put("orchestrationSubPlanWire",
                     BusinessOverviewSubPlanAttachSupport.contractCompletedWire(rq));
@@ -185,7 +185,7 @@ public final class StockReduceAnswerPlanBuilder {
     static StockReduceAnswerPlan build(AiRunState state, Map<String, Object> inner, AiResolvedQueryContext rq,
             LinkedHashMap<String, Object> debug) {
         String wire = resolveWire(rq);
-        String planType = BusinessOverviewSubPlanAttachSupport.isFourDomainSubPlanAttach(state, rq)
+        String planType = BusinessOverviewSubPlanAttachSupport.isMultiDomainOrchestrationSubPlanAttach(state, rq)
                 ? StockReduceAnswerPlan.TYPE_STOCK_REDUCE_OVERVIEW
                 : resolvePlanType(wire);
         String reduceType = resolveReduceType(planType);

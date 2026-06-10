@@ -33,7 +33,7 @@ public interface GbDepartmentGoodsStockReduceMapper extends BaseMapper<GbDepartm
 
     /**
      * 与 {@link #queryReduceTypeCount} 条件一致，按 gb_dgsr_type 汇总重量（produce/loss/waste/return）。
-     * 返回键：produceWeight、lossWeight、wasteWeight、returnWeight。
+     * 返回键：produceWeight、lossWeight、wasteWeight、returnWeight、employeeMealWeight。
      */
     Map<String, Object> queryReduceTypeWeightTotalsByScope(@Param("params") Map<String, Object> map);
 
@@ -113,5 +113,13 @@ public interface GbDepartmentGoodsStockReduceMapper extends BaseMapper<GbDepartm
      * 指定 type（1/2/3）按商品汇总 weightSum、subtotalSum；与 {@link #queryProductionReduceAggByDisGoods} 条件与分组一致，{@code params.reduceType} 为类型。
      */
     List<Map<String, Object>> queryReduceAggByDisGoodsByType(@Param("params") Map<String, Object> map);
+
+    /**
+     * 同 {@link #queryProduceLossWasteReduceAggByDisGoods}，且仅统计 {@code gb_dgsr_date} 在 gb_ai_daily_revenue 中已有上传记录的日期。
+     */
+    List<Map<String, Object>> queryProduceLossWasteReduceAggByDisGoodsOnDailyRevenueDays(@Param("params") Map<String, Object> map);
+
+    /** type1+2+3 按商品 + {@code gb_dgsr_date} 汇总 subtotalSum、weightSum。 */
+    List<Map<String, Object>> queryProduceLossWasteReduceAggByDisGoodsAndDate(@Param("params") Map<String, Object> map);
 
 }
