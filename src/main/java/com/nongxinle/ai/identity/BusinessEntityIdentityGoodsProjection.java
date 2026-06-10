@@ -1,10 +1,11 @@
 package com.nongxinle.ai.identity;
 
 import com.nongxinle.ai.context.AiResolvedQueryContext;
+import com.nongxinle.ai.dto.business.AiResultAnchor;
 import com.nongxinle.ai.graph.business.execution.EffectiveGoodsAnchor;
 import org.springframework.util.StringUtils;
 
-/** 将 {@link ResolvedEntityIdentity} 投影为 legacy {@link EffectiveGoodsAnchor}（展示层只读，PR1 不破坏 DisplayNameSupport）。 */
+/** 将 {@link ResolvedEntityIdentity} 投影为 legacy {@link EffectiveGoodsAnchor}（展示层只读）。 */
 public final class BusinessEntityIdentityGoodsProjection {
 
     private static final String SOURCE_CURRENT_TURN = "currentTurn.mentionedGoodsName";
@@ -64,16 +65,20 @@ public final class BusinessEntityIdentityGoodsProjection {
     }
 
     private static String mapSource(ResolvedEntityIdentity identity) {
-        if (identity.getResolutionSource() == EntityIdentityResolutionSource.INHERITED_PREVIOUS_ANCHOR) {
+        EntityIdentityResolutionSource source = identity.getResolutionSource();
+        if (source == EntityIdentityResolutionSource.PREVIOUS_RESULT_ANCHOR_ID
+                || source == EntityIdentityResolutionSource.INHERITED_PREVIOUS_ANCHOR) {
             return SOURCE_PREVIOUS;
         }
-        if (identity.getResolutionSource() == EntityIdentityResolutionSource.REWRITE_INHERITED_ANCHOR) {
+        if (source == EntityIdentityResolutionSource.REWRITE_RESULT_ANCHOR_ID
+                || source == EntityIdentityResolutionSource.REWRITE_INHERITED_ANCHOR) {
             return SOURCE_REWRITE;
         }
         if (StringUtils.hasText(identity.getUserMentionedName())) {
             return SOURCE_CURRENT_TURN;
         }
-        if (identity.getResolutionSource() == EntityIdentityResolutionSource.CURRENT_STRUCTURED_ID) {
+        if (source == EntityIdentityResolutionSource.CURRENT_V2_STRUCTURED_ID
+                || source == EntityIdentityResolutionSource.CURRENT_STRUCTURED_ID) {
             return SOURCE_CURRENT_TURN;
         }
         return "identityResolver";

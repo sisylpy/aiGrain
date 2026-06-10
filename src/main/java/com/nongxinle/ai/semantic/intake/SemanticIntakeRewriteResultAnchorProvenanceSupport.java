@@ -97,11 +97,13 @@ public final class SemanticIntakeRewriteResultAnchorProvenanceSupport {
         }
 
         List<AiResultAnchor> trustworthyGoods = filterTrustworthyGoods(anchors);
-        if (trustworthyGoods.size() == 1) {
+        if (trustworthyGoods.size() == 1 && !signalsExplicitNewGoodsEntity(intake, trustworthyGoods.get(0))) {
             return trustworthyGoods.get(0);
         }
 
-        if (signalsGoodsAnchorCarryForward(input, intake) && !trustworthyGoods.isEmpty()) {
+        if (signalsGoodsAnchorCarryForward(input, intake)
+                && !trustworthyGoods.isEmpty()
+                && !signalsExplicitNewGoodsEntity(intake, trustworthyGoods.get(0))) {
             return trustworthyGoods.get(0);
         }
 
@@ -176,6 +178,18 @@ public final class SemanticIntakeRewriteResultAnchorProvenanceSupport {
             }
         }
         return out;
+    }
+
+    private static boolean signalsExplicitNewGoodsEntity(
+            SemanticIntakeResult intake, AiResultAnchor candidate) {
+        if (intake == null || candidate == null) {
+            return false;
+        }
+        String hintedName = trim(intake.getCoverDaysEntityName());
+        if (!StringUtils.hasText(hintedName)) {
+            return false;
+        }
+        return !namesEqual(hintedName, candidate.getEntityName());
     }
 
     private static boolean namesEqual(String left, String right) {

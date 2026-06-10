@@ -1,6 +1,7 @@
 package com.nongxinle.ai.graph.business;
 
 import com.nongxinle.ai.dto.business.PurchaseAnswerPlan;
+import com.nongxinle.ai.identity.BusinessEntityExistenceLookup;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -40,6 +41,9 @@ public final class PurchaseGoodsAnchorDetailCardSupport {
                 || !PurchaseAnswerPlan.TYPE_PURCHASE_GOODS_SOURCE_BREAKDOWN.equals(plan.getPlanType())) {
             return null;
         }
+        if (isGoodsAnchorIdentityFailurePlan(plan)) {
+            return buildAnchorIdentityFailureCard(plan);
+        }
         Map<String, Object> aggregate = aggregateRow(plan);
         List<Map<String, Object>> lines = copyRows(plan.getSecondaryRows());
         boolean hasLines = !lines.isEmpty();
@@ -78,6 +82,71 @@ public final class PurchaseGoodsAnchorDetailCardSupport {
         return card;
     }
 
+    private static boolean isGoodsAnchorIdentityFailurePlan(PurchaseAnswerPlan plan) {
+        Map<String, Object> debug = plan.getDebug();
+        if (debug == null) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(debug.get("anchorIdentityBlocked"))
+                || Boolean.TRUE.equals(debug.get("goodsAnchorIdMissing"))) {
+            return true;
+        }
+        return "GOODS_ANCHOR_ID_MISSING".equalsIgnoreCase(stringLoose(debug.get("noDataReason")));
+    }
+
+    private static Map<String, Object> buildAnchorIdentityFailureCard(PurchaseAnswerPlan plan) {
+        Map<String, Object> debug = plan.getDebug();
+        String requestedName = null;
+        if (plan.getSummary() != null) {
+            Object name = plan.getSummary().get("requestedGoodsName");
+            if (name != null && StringUtils.hasText(name.toString())) {
+                requestedName = name.toString().trim();
+            }
+        }
+        if (requestedName == null && debug != null) {
+            requestedName = stringLoose(debug.get("requestedGoodsName"));
+            if (requestedName == null) {
+                requestedName = stringLoose(debug.get("focusEntityName"));
+            }
+        }
+
+        LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
+        if (StringUtils.hasText(requestedName)) {
+            summary.put("goodsName", requestedName);
+        }
+
+        String clarification =
+                debug != null ? stringLoose(debug.get("clarificationMessage")) : null;
+        if (clarification == null) {
+            clarification = BusinessEntityExistenceLookup.CLARIFICATION_GOODS_NOT_FOUND;
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("summary", summary);
+        payload.put("lines", List.of());
+        putOptional(payload, "timeLabel", plan.getTimeLabel());
+        putOptional(payload, "scopeLabel", plan.getScopeLabel());
+        payload.put("itemsScope", "GOODS_ANCHOR_IDENTITY_FAILURE");
+        payload.put("source", "purchaseAnswerPlan");
+        payload.put("status", BusinessStatusCardShellSupport.STATUS_EMPTY);
+        payload.put("emptyReason", clarification);
+        payload.put("noDataReason", "GOODS_ANCHOR_ID_MISSING");
+
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("cardType", PurchaseAnswerPlan.CARD_TYPE_PURCHASE_GOODS_ANCHOR_DETAIL);
+        card.put("title", CARD_TITLE);
+        card.put("payload", payload);
+        return card;
+    }
+
+    private static String stringLoose(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String s = value.toString().trim();
+        return s.isEmpty() ? null : s;
+    }
+
     private static Map<String, Object> aggregateRow(PurchaseAnswerPlan plan) {
         if (plan.getFocusRows() == null || plan.getFocusRows().isEmpty()) {
             return null;
@@ -99,9 +168,9 @@ public final class PurchaseGoodsAnchorDetailCardSupport {
             if (focus != null && StringUtils.hasText(focus.toString())) {
                 return focus.toString().trim();
             }
-            Object inherited = debug.get("inheritedAnchorName");
-            if (inherited != null && StringUtils.hasText(inherited.toString())) {
-                return inherited.toString().trim();
+            Object requested = debug.get("requestedGoodsName");
+            if (requested != null && StringUtils.hasText(requested.toString())) {
+                return requested.toString().trim();
             }
         }
         return null;

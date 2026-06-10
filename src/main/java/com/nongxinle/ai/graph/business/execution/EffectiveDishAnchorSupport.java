@@ -47,7 +47,7 @@ public final class EffectiveDishAnchorSupport {
                     .build();
         }
 
-        AiResultAnchor currentTurnAnchor = resolveCurrentTurnStructuredDishAnchor(ctx);
+        AiResultAnchor currentTurnAnchor = resolveCurrentTurnStructuredDishAnchor(sem);
         if (currentTurnAnchor != null) {
             String name =
                     StringUtils.hasText(currentTurnAnchor.getEntityName())
@@ -124,30 +124,9 @@ public final class EffectiveDishAnchorSupport {
         return null;
     }
 
-    /** 当前轮结构化 DISH anchor：仅读 rewriteUsedAnchors（非 previousTurn）。 */
-    private static AiResultAnchor resolveCurrentTurnStructuredDishAnchor(AiResolvedQueryContext ctx) {
-        if (ctx == null || ctx.getRewriteUsedAnchors() == null || ctx.getRewriteUsedAnchors().isEmpty()) {
-            return null;
-        }
-        for (var raw : ctx.getRewriteUsedAnchors()) {
-            if (raw == null) {
-                continue;
-            }
-            String type = raw.get("entityType");
-            if (!StringUtils.hasText(type)
-                    || !AiResultAnchor.ENTITY_TYPE_DISH.equalsIgnoreCase(type.trim())) {
-                continue;
-            }
-            String name = raw.get("entityName");
-            String id = raw.get("entityId");
-            if (StringUtils.hasText(name) || StringUtils.hasText(id)) {
-                return AiResultAnchor.builder()
-                        .entityType(AiResultAnchor.ENTITY_TYPE_DISH)
-                        .entityName(StringUtils.hasText(name) ? name.trim() : null)
-                        .entityId(StringUtils.hasText(id) ? id.trim() : null)
-                        .build();
-            }
-        }
+    /** 当前轮 V2/LockedFrame 结构化 DISH anchor；不读 rewriteUsedAnchors / previousTurn。 */
+    private static AiResultAnchor resolveCurrentTurnStructuredDishAnchor(AiQuerySemanticParseResult sem) {
+        // V2 尚未输出 dish structured ID 槽位；预留扩展点，当前恒为 null。
         return null;
     }
 

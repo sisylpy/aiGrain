@@ -54,6 +54,10 @@ public class PurchaseSemanticExecutionIntent {
     }
 
     public boolean requiresGoodsFocus() {
+        return requiresGoodsFocusExecType(executionIntentType);
+    }
+
+    public static boolean requiresGoodsFocusExecType(String executionIntentType) {
         return EXEC_GOODS_SOURCE_BREAKDOWN.equals(executionIntentType)
                 || EXEC_GOODS_SUPPLIER_BREAKDOWN.equals(executionIntentType)
                 || EXEC_GOODS_SUPPLIER_UNIT_PRICE.equals(executionIntentType)

@@ -3,6 +3,7 @@ package com.nongxinle.ai.semantic.inheritance;
 import com.nongxinle.ai.conversation.AiConversationTurnMemory;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
+import com.nongxinle.ai.semantic.frame.SemanticDraftSyncSupport;
 import com.nongxinle.ai.semantic.contract.SemanticCapabilityContract;
 import org.springframework.util.StringUtils;
 
@@ -74,42 +75,14 @@ public final class SemanticSlotInheritanceApplier {
         }
         AiQuerySemanticParseResult merged =
                 CanonicalContractFrameSupport.applyBusinessFrameWhitelist(current, frame);
+        merged = SemanticDraftSyncSupport.syncDraftFromParse(merged);
         String previousGoods = GoodsAnchorSameEntityFollowUpSupport.previousGoodsName(previousTurn);
         if (StringUtils.hasText(previousGoods)) {
-            AiQuerySemanticParseResult.SemanticSlotsPart slots = merged.getSemanticSlots();
-            AiQuerySemanticParseResult.SemanticSlotsPart withGoods =
-                    slots != null
-                            ? copySlotsWithGoods(slots, previousGoods)
-                            : AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                                    .mentionedGoodsName(previousGoods)
-                                    .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS)
-                                    .build();
             merged =
-                    merged.toBuilder()
-                            .mentionedGoodsName(previousGoods)
-                            .semanticSlots(withGoods)
-                            .build();
+                    SemanticDraftSyncSupport.inheritGoodsEntity(
+                            merged, previousGoods, AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS);
         }
         return attachTrace(merged, decision);
-    }
-
-    private static AiQuerySemanticParseResult.SemanticSlotsPart copySlotsWithGoods(
-            AiQuerySemanticParseResult.SemanticSlotsPart slots, String goodsName) {
-        return AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                .selectedContractId(slots.getSelectedContractId())
-                .queryObject(slots.getQueryObject())
-                .operation(slots.getOperation())
-                .metric(slots.getMetric())
-                .sourceFacet(slots.getSourceFacet())
-                .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS)
-                .detailWanted(slots.getDetailWanted())
-                .structuredIntentDetailWire(slots.getStructuredIntentDetailWire())
-                .answerPlanType(slots.getAnswerPlanType())
-                .mentionedGoodsName(goodsName)
-                .mentionedDishName(slots.getMentionedDishName())
-                .requestedTargetGrossMarginRate(slots.getRequestedTargetGrossMarginRate())
-                .expiryRiskFilter(slots.getExpiryRiskFilter())
-                .build();
     }
 
     private static AiQuerySemanticParseResult applySameCapabilityTimeFollowUp(
@@ -134,61 +107,23 @@ public final class SemanticSlotInheritanceApplier {
         }
         AiQuerySemanticParseResult merged =
                 CanonicalContractFrameSupport.applyBusinessFrameWhitelist(current, frame);
+        merged = SemanticDraftSyncSupport.syncDraftFromParse(merged);
         if (CoverDaysSalesBaselineFollowUpSupport.previousTurnWasGoodsCover(previousTurn)) {
             String previousGoods = CoverDaysSalesBaselineFollowUpSupport.previousGoodsName(previousTurn);
             if (StringUtils.hasText(previousGoods)) {
-                AiQuerySemanticParseResult.SemanticSlotsPart slots = merged.getSemanticSlots();
-                AiQuerySemanticParseResult.SemanticSlotsPart withGoods =
-                        slots != null
-                                ? copySlotsWithGoods(slots, previousGoods)
-                                : AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                                        .mentionedGoodsName(previousGoods)
-                                        .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS)
-                                        .build();
                 merged =
-                        merged.toBuilder()
-                                .mentionedGoodsName(previousGoods)
-                                .semanticSlots(withGoods)
-                                .build();
+                        SemanticDraftSyncSupport.inheritGoodsEntity(
+                                merged, previousGoods, AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS);
             }
         } else {
             String previousDish = CoverDaysSalesBaselineFollowUpSupport.previousDishName(previousTurn);
             if (StringUtils.hasText(previousDish)) {
-                AiQuerySemanticParseResult.SemanticSlotsPart slots = merged.getSemanticSlots();
-                AiQuerySemanticParseResult.SemanticSlotsPart withDish =
-                        slots != null
-                                ? copySlotsWithCoverDaysDish(slots, previousDish)
-                                : AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                                        .mentionedDishName(previousDish)
-                                        .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS)
-                                        .build();
                 merged =
-                        merged.toBuilder()
-                                .mentionedDishName(previousDish)
-                                .semanticSlots(withDish)
-                                .build();
+                        SemanticDraftSyncSupport.inheritDishEntity(
+                                merged, previousDish, AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS);
             }
         }
         return attachTrace(merged, decision);
-    }
-
-    private static AiQuerySemanticParseResult.SemanticSlotsPart copySlotsWithCoverDaysDish(
-            AiQuerySemanticParseResult.SemanticSlotsPart slots, String dishName) {
-        return AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                .selectedContractId(slots.getSelectedContractId())
-                .queryObject(slots.getQueryObject())
-                .operation(slots.getOperation())
-                .metric(slots.getMetric())
-                .sourceFacet(slots.getSourceFacet())
-                .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS)
-                .detailWanted(slots.getDetailWanted())
-                .structuredIntentDetailWire(slots.getStructuredIntentDetailWire())
-                .answerPlanType(slots.getAnswerPlanType())
-                .mentionedDishName(dishName)
-                .mentionedGoodsName(slots.getMentionedGoodsName())
-                .requestedTargetGrossMarginRate(slots.getRequestedTargetGrossMarginRate())
-                .expiryRiskFilter(slots.getExpiryRiskFilter())
-                .build();
     }
 
     private static AiQuerySemanticParseResult applySameCapabilityNamedEntity(
@@ -214,40 +149,13 @@ public final class SemanticSlotInheritanceApplier {
         }
         AiQuerySemanticParseResult merged =
                 CanonicalContractFrameSupport.applyBusinessFrameWhitelist(current, frame);
+        merged = SemanticDraftSyncSupport.syncDraftFromParse(merged);
         if (StringUtils.hasText(currentDish)) {
-            AiQuerySemanticParseResult.SemanticSlotsPart slots = merged.getSemanticSlots();
-            AiQuerySemanticParseResult.SemanticSlotsPart withDish =
-                    slots != null
-                            ? copySlotsWithDish(slots, currentDish)
-                            : AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                                    .mentionedDishName(currentDish)
-                                    .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_IGNORE_PREVIOUS)
-                                    .build();
             merged =
-                    merged.toBuilder()
-                            .mentionedDishName(currentDish)
-                            .semanticSlots(withDish)
-                            .build();
+                    SemanticDraftSyncSupport.inheritDishEntity(
+                            merged, currentDish, AiQuerySemanticSlotMerge.ANCHOR_IGNORE_PREVIOUS);
         }
         return attachTrace(merged, decision);
-    }
-
-    private static AiQuerySemanticParseResult.SemanticSlotsPart copySlotsWithDish(
-            AiQuerySemanticParseResult.SemanticSlotsPart slots, String dishName) {
-        return AiQuerySemanticParseResult.SemanticSlotsPart.builder()
-                .selectedContractId(slots.getSelectedContractId())
-                .queryObject(slots.getQueryObject())
-                .operation(slots.getOperation())
-                .metric(slots.getMetric())
-                .sourceFacet(slots.getSourceFacet())
-                .anchorPolicy(AiQuerySemanticSlotMerge.ANCHOR_IGNORE_PREVIOUS)
-                .detailWanted(slots.getDetailWanted())
-                .structuredIntentDetailWire(slots.getStructuredIntentDetailWire())
-                .answerPlanType(slots.getAnswerPlanType())
-                .mentionedDishName(dishName)
-                .requestedTargetGrossMarginRate(slots.getRequestedTargetGrossMarginRate())
-                .expiryRiskFilter(slots.getExpiryRiskFilter())
-                .build();
     }
 
     private static AiQuerySemanticParseResult applyBareRankingDimensionSwitch(
@@ -276,7 +184,7 @@ public final class SemanticSlotInheritanceApplier {
 
         AiQuerySemanticParseResult merged =
                 CanonicalContractFrameSupport.applyBusinessFrameWhitelist(scoped, frame);
-        merged = merged.toBuilder().mentionedDishName(null).build();
+        merged = SemanticDraftSyncSupport.syncDraftFromParse(merged.toBuilder().mentionedDishName(null).build());
         return attachTrace(merged, decision);
     }
 
@@ -354,6 +262,7 @@ public final class SemanticSlotInheritanceApplier {
 
         AiQuerySemanticParseResult merged =
                 CanonicalContractFrameSupport.applyBusinessFrameWhitelist(current, frame);
+        merged = SemanticDraftSyncSupport.syncDraftFromParse(merged);
         return attachTrace(merged, decision);
     }
 

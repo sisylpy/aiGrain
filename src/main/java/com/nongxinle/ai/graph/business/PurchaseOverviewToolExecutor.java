@@ -7,6 +7,7 @@ import com.nongxinle.ai.context.AiUserContext;
 import com.nongxinle.ai.conversation.AiQuerySemanticLexicon;
 import com.nongxinle.ai.core.AiRunState;
 import com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionArgs;
+import com.nongxinle.ai.graph.business.execution.RequiresAnchorExecutionGateSupport;
 import com.nongxinle.ai.graph.business.execution.ToolRequestContractExecutionParamSupport;
 import com.nongxinle.ai.graph.business.scope.BusinessScopeResolutionSupport;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
@@ -18,10 +19,12 @@ import com.nongxinle.ai.tool.ToolRegistry;
 import com.nongxinle.ai.tool.ToolRequest;
 import com.nongxinle.ai.tool.ToolResult;
 import com.nongxinle.ai.tool.business.AiBusinessToolIds;
+import com.nongxinle.ai.tool.business.AiBusinessToolResponses;
 import com.nongxinle.ai.trace.AiSseEventPublisher;
 import com.alibaba.fastjson2.JSON;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -141,6 +144,13 @@ public class PurchaseOverviewToolExecutor {
             long rid, AiRunState state, Long deptForScopedTools, Long dis, String start, String stop,
             Map<String, Object> toolEnvelopes) {
         String toolId = AiBusinessToolIds.PURCHASE_OVERVIEW;
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        RequiresAnchorExecutionGateSupport.Decision gate = RequiresAnchorExecutionGateSupport.evaluate(rq);
+        if (gate.blocksToolExecution()) {
+            return writeAnchorIdentityBlockedResult(
+                    rid, state, deptForScopedTools, dis, start, stop, toolEnvelopes, gate);
+        }
+
         ToolRequest req = ToolRequest.builder()
                 .runId(rid)
                 .userId(state.getUserId())
@@ -193,6 +203,78 @@ public class PurchaseOverviewToolExecutor {
                 "success", executed.isSuccess()
         ));
         return executed;
+    }
+
+    private ToolResult writeAnchorIdentityBlockedResult(
+            long rid,
+            AiRunState state,
+            Long deptForScopedTools,
+            Long dis,
+            String start,
+            String stop,
+            Map<String, Object> toolEnvelopes,
+            RequiresAnchorExecutionGateSupport.Decision gate) {
+        String toolId = AiBusinessToolIds.PURCHASE_OVERVIEW;
+        if (gate != null && StringUtils.hasText(gate.getClarificationMessage())) {
+            state.setClarificationQuestion(gate.getClarificationMessage().trim());
+        }
+
+        LinkedHashMap<String, Object> failure = new LinkedHashMap<>();
+        failure.put("blockReason", gate != null ? gate.getBlockReason() : null);
+        failure.put("anchorType", gate != null ? gate.getAnchorType() : null);
+        failure.put("contractId", gate != null ? gate.getContractId() : null);
+        failure.put(
+                "identityStatus",
+                gate != null && gate.getIdentityStatus() != null ? gate.getIdentityStatus().name() : null);
+        failure.put("requestedGoodsName", gate != null ? gate.getRequestedEntityName() : null);
+        failure.put("noDataReason", "GOODS_ANCHOR_ID_MISSING");
+
+        LinkedHashMap<String, Object> purchaseOverview = new LinkedHashMap<>();
+        purchaseOverview.put(AiBusinessToolIds.PAYLOAD_PURCHASE_ANCHOR_IDENTITY_FAILURE, failure);
+        purchaseOverview.put("purchaseGoodsSourceBreakdownActive", Boolean.TRUE);
+        purchaseOverview.put("purchaseGoodsSourceBreakdownNoDataReason", "GOODS_ANCHOR_ID_MISSING");
+        purchaseOverview.put("purchaseGoodsSourceBreakdownGoodsAnchorIdMissing", Boolean.TRUE);
+        purchaseOverview.put("purchaseGoodsSourceBreakdownFocusDisGoodsId", null);
+        purchaseOverview.put("totalPurchaseAmount", null);
+        purchaseOverview.put("purchaseOrderCount", 0);
+        purchaseOverview.put("goodsPurchaseAmountTop", List.of());
+        purchaseOverview.put("goodsPurchaseFrequencyTop", List.of());
+        purchaseOverview.put("goodsPurchaseQuantityTop", List.of());
+        purchaseOverview.put("purchaseMethodBreakdown", List.of());
+
+        LinkedHashMap<String, Object> data = new LinkedHashMap<>();
+        data.put("purchaseOverview", purchaseOverview);
+        data.put("anchorIdentityBlocked", Boolean.TRUE);
+
+        Map<String, Object> envelope =
+                AiBusinessToolResponses.envelope(
+                        toolId,
+                        false,
+                        false,
+                        start,
+                        stop,
+                        deptForScopedTools,
+                        dis,
+                        data,
+                        gate != null ? gate.getClarificationMessage() : "goods_anchor_identity_blocked");
+
+        state.getToolResults().put(toolId, envelope);
+        if (toolEnvelopes != null) {
+            toolEnvelopes.put(toolId, envelope);
+        }
+
+        publisher.publish(rid, "tool_finished", Map.of(
+                "tool", toolId,
+                "displayText", "商品定位失败，未执行采购查询",
+                "success", false,
+                "anchorIdentityBlocked", true
+        ));
+
+        return ToolResult.builder()
+                .success(false)
+                .message(gate != null ? gate.getBlockReason() : "goods_anchor_identity_blocked")
+                .data(envelope)
+                .build();
     }
 
     @SuppressWarnings("unchecked")

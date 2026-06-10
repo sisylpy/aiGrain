@@ -7,6 +7,7 @@ import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
 import com.nongxinle.ai.semantic.contract.SemanticContractValidationDebug;
+import com.nongxinle.ai.identity.ResolvedEntityIdentity;
 import com.nongxinle.ai.semantic.frame.ContractLockedSemanticFrame;
 import com.nongxinle.ai.semantic.intake.grounding.CoverDaysSalesBaselineTimeSupport;
 import com.nongxinle.ai.scope.AiConversationScopeMode;
@@ -81,8 +82,10 @@ public class AiResolvedQueryContext {
     private DishIngredientCoverSalesBaseline resolvedSalesBaseline;
     /** Cover-days 族：销量基线展示 timeType（来自 V2 salesBaselineWindow.timeType）。 */
     private String salesBaselineTimeType;
-    /** Contract Completion 后不可变语义帧；cover-days 执行语义从这里投影。 */
+    /** Contract Completion 后不可变语义帧；cover-days / purchase 执行语义从这里投影。 */
     private ContractLockedSemanticFrame contractLockedFrame;
+    /** GOODS 实体 Identity 解析结果（与 LockedFrame 分离；执行阶段不回写 LockedFrame）。 */
+    private ResolvedEntityIdentity resolvedGoodsIdentity;
 
     /**
      * 菜品毛利：用户话术中点名的菜名（或多轮继承）；仅用于收窄 Tool/答复，非 SQL 部门列表。

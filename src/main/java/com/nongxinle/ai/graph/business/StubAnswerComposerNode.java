@@ -871,12 +871,21 @@ public class StubAnswerComposerNode implements AgentNode {
     }
 
     private static String composePurchaseGoodsAnchorDetailCardShortIntro(AiRunState state) {
+        AiResolvedQueryContext rq = state != null ? state.getResolvedQueryContext() : null;
+        if (BusinessEntityIdentityOutcomeSupport.blocksSuccessfulGoodsAnchoredPresentation(rq)) {
+            return BusinessEntityIdentityOutcomeSupport.composeGoodsIdentityFailureAnswer(state);
+        }
+        PurchaseAnswerPlan plan = state != null ? state.getPurchaseAnswerPlan() : null;
+        if (plan != null && plan.getDebug() != null
+                && (Boolean.TRUE.equals(plan.getDebug().get("anchorIdentityBlocked"))
+                        || Boolean.TRUE.equals(plan.getDebug().get("goodsAnchorIdMissing")))) {
+            return BusinessEntityIdentityOutcomeSupport.composeGoodsIdentityFailureAnswer(state);
+        }
         AiTimeWindowTextFormatter.UserPhrases tw = AiTimeWindowTextFormatter.forAnswer(state);
         String label = tw != null && StringUtils.hasText(tw.getTimeSubjectText())
                 ? tw.getTimeSubjectText().trim()
                 : "本期";
         String goodsHint = "";
-        PurchaseAnswerPlan plan = state != null ? state.getPurchaseAnswerPlan() : null;
         if (plan != null && plan.getSummary() != null) {
             Object name = plan.getSummary().get("goodsName");
             if (name == null && plan.getFocusRows() != null && !plan.getFocusRows().isEmpty()) {

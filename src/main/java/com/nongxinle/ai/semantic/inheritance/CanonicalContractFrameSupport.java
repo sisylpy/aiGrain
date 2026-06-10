@@ -5,6 +5,7 @@ import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticSlotMerge;
 import com.nongxinle.ai.semantic.contract.ContractBusinessSlotRequirementSupport;
 import com.nongxinle.ai.semantic.contract.ContractExecutionMappingSupport;
+import com.nongxinle.ai.semantic.frame.SemanticDraftSyncSupport;
 import com.nongxinle.ai.semantic.contract.SemanticCapabilityContract;
 import lombok.Value;
 import org.springframework.util.StringUtils;
@@ -128,7 +129,7 @@ public final class CanonicalContractFrameSupport {
             builder.multiTurnInheritanceTrace(trace);
         }
 
-        return builder.build();
+        return SemanticDraftSyncSupport.syncDraftFromParse(builder.build());
     }
 
     static Map<String, Object> inheritanceFrameTrace(CanonicalBusinessFrame frame) {

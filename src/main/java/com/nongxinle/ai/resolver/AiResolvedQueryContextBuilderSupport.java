@@ -16,6 +16,11 @@ import com.nongxinle.ai.semantic.intake.SemanticIntakeStatus;
 import com.nongxinle.ai.semantic.intake.WarehouseInventoryShortageSemanticsSupport;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResultDebugSerializer;
+import com.nongxinle.ai.identity.BusinessEntityIdentityBridge;
+import com.nongxinle.ai.identity.EntityAnchorSovereigntySupport;
+import com.nongxinle.ai.identity.ResolvedEntityIdentity;
+import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
+import com.nongxinle.ai.semantic.frame.PurchaseLockedSemanticFrameSupport;
 import com.nongxinle.ai.semantic.intake.grounding.CoverDaysSalesBaselineTimeSupport;
 import com.nongxinle.ai.semantic.contract.DomainContractSelectionResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractStrictDecision;
@@ -103,7 +108,10 @@ public final class AiResolvedQueryContextBuilderSupport {
                                 p.semanticLlm().getContractLockedFrame(), anchor)
                         : CoverDaysSalesBaselineTimeSupport.resolveDualTimePlan(p.semanticLlm(), anchor);
         SemanticOrchestrationDecisionReconciler.OrchestrationAssemblyFields orch = p.orchestration();
-        return AiResolvedQueryContext.builder()
+        boolean projectRewriteAnchors =
+                EntityAnchorSovereigntySupport.shouldProjectRewriteAnchorsIntoContext(p.semanticLlm());
+        AiResolvedQueryContext base =
+                AiResolvedQueryContext.builder()
                 .runId(p.runId())
                 .userId(p.uid())
                 .userContext(p.userContext())
@@ -258,17 +266,27 @@ public final class AiResolvedQueryContextBuilderSupport {
                 .rewriteInheritedTime(null)
                 .rewriteInheritedScope(null)
                 .rewriteInheritedAnchorType(
-                        AiResolvedQueryContextDebugFactory.blankToNullSemantic(p.rewriteInheritedAnchorType()))
+                        projectRewriteAnchors
+                                ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
+                                        p.rewriteInheritedAnchorType())
+                                : null)
                 .rewriteInheritedAnchorName(
-                        AiResolvedQueryContextDebugFactory.blankToNullSemantic(p.rewriteInheritedAnchorName()))
+                        projectRewriteAnchors
+                                ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
+                                        p.rewriteInheritedAnchorName())
+                                : null)
                 .rewriteInheritedAnchorEntityId(
-                        AiResolvedQueryContextDebugFactory.blankToNullSemantic(
-                                p.rewriteInheritedAnchorEntityId()))
+                        projectRewriteAnchors
+                                ? AiResolvedQueryContextDebugFactory.blankToNullSemantic(
+                                        p.rewriteInheritedAnchorEntityId())
+                                : null)
                 .followUpRewriteClarificationQuestion(resolveIntakeClarificationQuestion(p.semanticIntake()))
                 .rewriteUsedAnchors(
-                        p.rewriteUsedAnchors() == null || p.rewriteUsedAnchors().isEmpty()
-                                ? null
-                                : new ArrayList<>(p.rewriteUsedAnchors()))
+                        projectRewriteAnchors
+                                && p.rewriteUsedAnchors() != null
+                                && !p.rewriteUsedAnchors().isEmpty()
+                                ? new ArrayList<>(p.rewriteUsedAnchors())
+                                : null)
                 .previousTurnResultAnchorsCount(p.previousTurnResultAnchorsCount())
                 .rewritePromptResultAnchorsCount(p.rewritePromptResultAnchorsCount())
                 .semanticIntake(p.semanticIntake())
@@ -304,6 +322,23 @@ public final class AiResolvedQueryContextBuilderSupport {
                         buildBareRankingDimensionSwitchDebug(
                                 p.bareRankingDimensionSwitchPlan(), p.semanticLlm()))
                 .build();
+        return attachResolvedGoodsIdentity(base);
+    }
+
+    private static AiResolvedQueryContext attachResolvedGoodsIdentity(AiResolvedQueryContext ctx) {
+        if (ctx == null
+                || !SemanticContractCompletionEngine.isContractLockedParse(ctx.getQuerySemanticParse())) {
+            return ctx;
+        }
+        var frame = PurchaseLockedSemanticFrameSupport.lockedFrame(ctx);
+        if (frame == null
+                || (!PurchaseLockedSemanticFrameSupport.isGoodsAnchorContract(frame)
+                        && !PurchaseLockedSemanticFrameSupport.isGoodsBusinessAnalysis(frame))) {
+            return ctx;
+        }
+        ResolvedEntityIdentity goods = BusinessEntityIdentityBridge.resolveGoods(ctx);
+        ctx.setResolvedGoodsIdentity(goods);
+        return ctx;
     }
 
     private static LocalDate resolveSemanticAnchorDate(AiResolvedQueryContextBuilderSupport.BuildPayload p) {

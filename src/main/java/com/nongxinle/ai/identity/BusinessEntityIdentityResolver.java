@@ -16,8 +16,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * GOODS/DISH 实体 Identity SSOT（PR1：GOODS 落地）。当前轮显式 mention 优先 DB grounding；
- * 仅无显式实体且 {@code anchorPolicy=USE_PREVIOUS} 时继承 {@code previousTurn.resultAnchor}。
+ * GOODS 实体 Identity SSOT。主权顺序：
+ * <ol>
+ *   <li>当前轮 V2/LockedFrame 结构化 ID</li>
+ *   <li>当前轮显式名称 → DB lookup</li>
+ *   <li>无显式实体且 {@code USE_PREVIOUS_ANCHOR} → previous / rewrite resultAnchor</li>
+ *   <li>否则 unresolved / NOT_FOUND</li>
+ * </ol>
  */
 @Service
 @RequiredArgsConstructor
@@ -35,87 +40,145 @@ public class BusinessEntityIdentityResolver {
             return ResolvedEntityIdentity.skipped(EntityIdentityType.GOODS);
         }
         AiQuerySemanticParseResult sem = ctx.getQuerySemanticParse();
-        String anchorPolicy = anchorPolicyFromSlots(sem);
-        String userMention = resolveCurrentTurnGoodsName(sem);
-        Integer structuredId = resolveCurrentTurnDisGoodsId(ctx);
-        boolean hasExplicit = StringUtils.hasText(userMention) || structuredId != null;
+        String anchorPolicy = EntityAnchorSovereigntySupport.anchorPolicyFromParse(sem);
+        String userMention = EntityAnchorSovereigntySupport.resolveCurrentTurnGoodsName(sem);
+        boolean hasExplicitName = StringUtils.hasText(userMention);
+        boolean allowHistorical =
+                EntityAnchorSovereigntySupport.shouldAllowHistoricalAnchorSources(
+                        anchorPolicy, hasExplicitName);
         Integer disId = BusinessEntityIdentityScopeSupport.resolveGoodsLookupDisId(ctx, distributerIdHint);
 
-        if (structuredId != null) {
-            BusinessEntityExistenceLookup.GoodsIdLookupResult byId = existenceLookup.lookupGoodsById(structuredId);
-            if (byId.status() == EntityIdentityResolutionStatus.OK) {
-                return ResolvedEntityIdentity.builder()
-                        .entityType(EntityIdentityType.GOODS)
-                        .userMentionedName(trimOrNull(userMention))
-                        .resolvedCanonicalName(byId.canonicalName())
-                        .resolvedEntityId(byId.disGoodsId())
-                        .resolutionStatus(EntityIdentityResolutionStatus.OK)
-                        .resolutionSource(EntityIdentityResolutionSource.CURRENT_STRUCTURED_ID)
-                        .anchorPolicyApplied(anchorPolicy)
-                        .build();
-            }
-            if (hasExplicit && !StringUtils.hasText(userMention)) {
-                return notFoundGoods(null, anchorPolicy, "goods_structured_id_not_found");
-            }
+        Integer v2StructuredId = resolveCurrentV2StructuredGoodsId(sem);
+        if (v2StructuredId != null) {
+            return resolveByStructuredId(
+                    v2StructuredId,
+                    userMention,
+                    anchorPolicy,
+                    disId,
+                    EntityIdentityResolutionSource.CURRENT_V2_STRUCTURED_ID);
         }
 
-        ResolvedEntityIdentity inheritedCanonical =
-                resolveInheritedCanonicalGoodsById(ctx, disId, anchorPolicy);
-        if (inheritedCanonical != null) {
-            return inheritedCanonical;
+        if (hasExplicitName) {
+            return resolveByExplicitName(userMention, anchorPolicy, disId);
         }
 
-        if (StringUtils.hasText(userMention)) {
-            if (disId == null) {
-                return ResolvedEntityIdentity.builder()
-                        .entityType(EntityIdentityType.GOODS)
-                        .userMentionedName(userMention.trim())
-                        .resolutionStatus(EntityIdentityResolutionStatus.NOT_FOUND)
-                        .resolutionSource(EntityIdentityResolutionSource.CURRENT_MENTION_DB)
-                        .anchorPolicyApplied(anchorPolicy)
-                        .clarificationMessage(BusinessEntityExistenceLookup.CLARIFICATION_GOODS_NOT_FOUND)
-                        .debugTrace(lookupDebug(null, userMention.trim(), null, 0, "missing_disId_for_db_lookup"))
-                        .build();
-            }
-            return fromNameLookup(existenceLookup.lookupGoodsByName(disId, userMention), anchorPolicy);
-        }
-
-        if (AiQuerySemanticSlotMerge.ANCHOR_IGNORE_PREVIOUS.equals(anchorPolicy)) {
+        if (EntityAnchorSovereigntySupport.isIgnorePreviousAnchor(anchorPolicy)) {
             return ResolvedEntityIdentity.unresolved(EntityIdentityType.GOODS, anchorPolicy);
+        }
+
+        if (!allowHistorical) {
+            return ResolvedEntityIdentity.unresolved(EntityIdentityType.GOODS, anchorPolicy);
+        }
+
+        ResolvedEntityIdentity fromRewriteId = resolveFromRewriteResultAnchorId(ctx, disId, anchorPolicy);
+        if (fromRewriteId != null) {
+            return fromRewriteId;
         }
 
         if (StringUtils.hasText(ctx.getRewriteInheritedAnchorName())
                 && isGoodsRewriteType(ctx.getRewriteInheritedAnchorType())) {
-            String rewrite = ctx.getRewriteInheritedAnchorName().trim();
-            if (disId != null) {
-                BusinessEntityExistenceLookup.GoodsNameLookupResult lookup =
-                        existenceLookup.lookupGoodsByName(disId, rewrite);
-                if (lookup.status() == EntityIdentityResolutionStatus.OK) {
-                    return ResolvedEntityIdentity.builder()
-                            .entityType(EntityIdentityType.GOODS)
-                            .userMentionedName(rewrite)
-                            .resolvedCanonicalName(lookup.canonicalName())
-                            .resolvedEntityId(lookup.disGoodsId())
-                            .resolutionStatus(EntityIdentityResolutionStatus.OK)
-                            .resolutionSource(EntityIdentityResolutionSource.REWRITE_INHERITED_ANCHOR)
-                            .anchorPolicyApplied(anchorPolicy)
-                            .build();
-                }
+            return resolveFromRewriteInheritedName(
+                    ctx.getRewriteInheritedAnchorName().trim(), disId, anchorPolicy);
+        }
+
+        return resolveFromPreviousResultAnchor(ctx, disId, anchorPolicy);
+    }
+
+    private ResolvedEntityIdentity resolveByStructuredId(
+            Integer structuredId,
+            String userMention,
+            String anchorPolicy,
+            Integer disId,
+            EntityIdentityResolutionSource source) {
+        BusinessEntityExistenceLookup.GoodsIdLookupResult byId = existenceLookup.lookupGoodsById(structuredId);
+        if (byId.status() != EntityIdentityResolutionStatus.OK) {
+            if (StringUtils.hasText(userMention)) {
+                return resolveByExplicitName(userMention, anchorPolicy, disId);
             }
+            return notFoundGoods(null, anchorPolicy, source, "goods_structured_id_not_found");
+        }
+        if (StringUtils.hasText(userMention)
+                && !EntityAnchorSovereigntySupport.canonicalEntityNamesMatch(
+                        userMention, byId.canonicalName())) {
+            return nameIdConflict(userMention, byId.disGoodsId(), byId.canonicalName(), anchorPolicy);
+        }
+        return ResolvedEntityIdentity.builder()
+                .entityType(EntityIdentityType.GOODS)
+                .userMentionedName(trimOrNull(userMention))
+                .resolvedCanonicalName(byId.canonicalName())
+                .resolvedEntityId(byId.disGoodsId())
+                .resolutionStatus(EntityIdentityResolutionStatus.OK)
+                .resolutionSource(source)
+                .anchorPolicyApplied(anchorPolicy)
+                .build();
+    }
+
+    private ResolvedEntityIdentity resolveByExplicitName(
+            String userMention, String anchorPolicy, Integer disId) {
+        if (disId == null) {
             return ResolvedEntityIdentity.builder()
                     .entityType(EntityIdentityType.GOODS)
-                    .userMentionedName(rewrite)
-                    .resolvedCanonicalName(rewrite)
-                    .resolutionStatus(EntityIdentityResolutionStatus.OK)
-                    .resolutionSource(EntityIdentityResolutionSource.REWRITE_INHERITED_ANCHOR)
+                    .userMentionedName(userMention.trim())
+                    .resolutionStatus(EntityIdentityResolutionStatus.NOT_FOUND)
+                    .resolutionSource(EntityIdentityResolutionSource.CURRENT_EXPLICIT_NAME_DB)
                     .anchorPolicyApplied(anchorPolicy)
+                    .clarificationMessage(BusinessEntityExistenceLookup.CLARIFICATION_GOODS_NOT_FOUND)
+                    .debugTrace(lookupDebug(null, userMention.trim(), null, 0, "missing_disId_for_db_lookup"))
                     .build();
         }
+        return fromNameLookup(existenceLookup.lookupGoodsByName(disId, userMention), anchorPolicy);
+    }
 
-        if (!AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS.equals(anchorPolicy)) {
-            return ResolvedEntityIdentity.unresolved(EntityIdentityType.GOODS, anchorPolicy);
+    private ResolvedEntityIdentity resolveFromRewriteResultAnchorId(
+            AiResolvedQueryContext ctx, Integer disId, String anchorPolicy) {
+        Integer rewriteId =
+                CanonicalResultAnchorIdentitySupport.resolveRewriteResultAnchorGoodsDisId(ctx);
+        if (rewriteId == null) {
+            return null;
         }
+        BusinessEntityExistenceLookup.GoodsIdLookupResult byId = existenceLookup.lookupGoodsById(rewriteId);
+        if (byId.status() != EntityIdentityResolutionStatus.OK) {
+            return null;
+        }
+        return ResolvedEntityIdentity.builder()
+                .entityType(EntityIdentityType.GOODS)
+                .resolvedCanonicalName(byId.canonicalName())
+                .resolvedEntityId(byId.disGoodsId())
+                .resolutionStatus(EntityIdentityResolutionStatus.OK)
+                .resolutionSource(EntityIdentityResolutionSource.REWRITE_RESULT_ANCHOR_ID)
+                .anchorPolicyApplied(anchorPolicy)
+                .build();
+    }
 
+    private ResolvedEntityIdentity resolveFromRewriteInheritedName(
+            String rewriteName, Integer disId, String anchorPolicy) {
+        if (disId != null) {
+            BusinessEntityExistenceLookup.GoodsNameLookupResult lookup =
+                    existenceLookup.lookupGoodsByName(disId, rewriteName);
+            if (lookup.status() == EntityIdentityResolutionStatus.OK) {
+                return ResolvedEntityIdentity.builder()
+                        .entityType(EntityIdentityType.GOODS)
+                        .userMentionedName(rewriteName)
+                        .resolvedCanonicalName(lookup.canonicalName())
+                        .resolvedEntityId(lookup.disGoodsId())
+                        .resolutionStatus(EntityIdentityResolutionStatus.OK)
+                        .resolutionSource(EntityIdentityResolutionSource.REWRITE_INHERITED_ANCHOR)
+                        .anchorPolicyApplied(anchorPolicy)
+                        .build();
+            }
+        }
+        return ResolvedEntityIdentity.builder()
+                .entityType(EntityIdentityType.GOODS)
+                .userMentionedName(rewriteName)
+                .resolvedCanonicalName(rewriteName)
+                .resolutionStatus(EntityIdentityResolutionStatus.OK)
+                .resolutionSource(EntityIdentityResolutionSource.REWRITE_INHERITED_ANCHOR)
+                .anchorPolicyApplied(anchorPolicy)
+                .build();
+    }
+
+    private ResolvedEntityIdentity resolveFromPreviousResultAnchor(
+            AiResolvedQueryContext ctx, Integer disId, String anchorPolicy) {
         AiResultAnchor previous = firstStructuredGoodsResultAnchor(ctx.getPreviousTurn());
         if (previous == null) {
             return ResolvedEntityIdentity.unresolved(EntityIdentityType.GOODS, anchorPolicy);
@@ -128,11 +191,10 @@ public class BusinessEntityIdentityResolver {
             if (byId.status() == EntityIdentityResolutionStatus.OK) {
                 return ResolvedEntityIdentity.builder()
                         .entityType(EntityIdentityType.GOODS)
-                        .resolvedCanonicalName(
-                                firstNonBlank(byId.canonicalName(), inheritedName))
+                        .resolvedCanonicalName(firstNonBlank(byId.canonicalName(), inheritedName))
                         .resolvedEntityId(byId.disGoodsId())
                         .resolutionStatus(EntityIdentityResolutionStatus.OK)
-                        .resolutionSource(EntityIdentityResolutionSource.INHERITED_PREVIOUS_ANCHOR)
+                        .resolutionSource(EntityIdentityResolutionSource.PREVIOUS_RESULT_ANCHOR_ID)
                         .anchorPolicyApplied(anchorPolicy)
                         .build();
             }
@@ -146,7 +208,7 @@ public class BusinessEntityIdentityResolver {
                         .resolvedCanonicalName(lookup.canonicalName())
                         .resolvedEntityId(lookup.disGoodsId())
                         .resolutionStatus(EntityIdentityResolutionStatus.OK)
-                        .resolutionSource(EntityIdentityResolutionSource.INHERITED_PREVIOUS_ANCHOR)
+                        .resolutionSource(EntityIdentityResolutionSource.PREVIOUS_RESULT_ANCHOR_ID)
                         .anchorPolicyApplied(anchorPolicy)
                         .build();
             }
@@ -159,7 +221,7 @@ public class BusinessEntityIdentityResolver {
                         .resolvedCanonicalName(base.getResolvedCanonicalName())
                         .resolvedEntityId(base.getResolvedEntityId())
                         .resolutionStatus(base.getResolutionStatus())
-                        .resolutionSource(EntityIdentityResolutionSource.INHERITED_PREVIOUS_ANCHOR)
+                        .resolutionSource(EntityIdentityResolutionSource.PREVIOUS_RESULT_ANCHOR_ID)
                         .candidates(base.getCandidates())
                         .anchorPolicyApplied(anchorPolicy)
                         .clarificationMessage(base.getClarificationMessage())
@@ -173,61 +235,16 @@ public class BusinessEntityIdentityResolver {
                     .resolvedCanonicalName(inheritedName)
                     .resolvedEntityId(inheritedId)
                     .resolutionStatus(EntityIdentityResolutionStatus.OK)
-                    .resolutionSource(EntityIdentityResolutionSource.INHERITED_PREVIOUS_ANCHOR)
+                    .resolutionSource(EntityIdentityResolutionSource.PREVIOUS_RESULT_ANCHOR_ID)
                     .anchorPolicyApplied(anchorPolicy)
                     .build();
         }
         return ResolvedEntityIdentity.unresolved(EntityIdentityType.GOODS, anchorPolicy);
     }
 
-    private ResolvedEntityIdentity resolveInheritedCanonicalGoodsById(
-            AiResolvedQueryContext ctx, Integer disId, String anchorPolicy) {
-        if (ctx == null) {
-            return null;
-        }
-        Integer explicitRewriteId =
-                CanonicalResultAnchorIdentitySupport.resolveExplicitRewriteAdoptedGoodsDisId(ctx);
-        if (explicitRewriteId != null) {
-            return buildInheritedGoodsFromId(ctx, disId, anchorPolicy, explicitRewriteId);
-        }
-        if (ctx.getPreviousTurn() == null) {
-            return null;
-        }
-        if (AiQuerySemanticSlotMerge.ANCHOR_IGNORE_PREVIOUS.equals(anchorPolicy)) {
-            return null;
-        }
-        Integer inheritedId =
-                CanonicalResultAnchorIdentitySupport.resolveTrustworthyGoodsDisId(ctx.getPreviousTurn());
-        if (inheritedId == null) {
-            return null;
-        }
-        return buildInheritedGoodsFromId(ctx, disId, anchorPolicy, inheritedId);
-    }
-
-    private ResolvedEntityIdentity buildInheritedGoodsFromId(
-            AiResolvedQueryContext ctx, Integer disId, String anchorPolicy, Integer goodsId) {
-        BusinessEntityExistenceLookup.GoodsIdLookupResult byId = existenceLookup.lookupGoodsById(goodsId);
-        if (byId.status() == EntityIdentityResolutionStatus.OK) {
-            AiResultAnchor previous =
-                    ctx.getPreviousTurn() != null
-                            ? CanonicalResultAnchorIdentitySupport.firstTrustworthyGoodsAnchor(
-                                    ctx.getPreviousTurn())
-                            : null;
-            String inheritedName =
-                    firstNonBlank(byId.canonicalName(), previous != null ? previous.getEntityName() : null);
-            return ResolvedEntityIdentity.builder()
-                    .entityType(EntityIdentityType.GOODS)
-                    .userMentionedName(trimOrNull(resolveCurrentTurnGoodsName(ctx.getQuerySemanticParse())))
-                    .resolvedCanonicalName(inheritedName)
-                    .resolvedEntityId(byId.disGoodsId())
-                    .resolutionStatus(EntityIdentityResolutionStatus.OK)
-                    .resolutionSource(EntityIdentityResolutionSource.INHERITED_PREVIOUS_ANCHOR)
-                    .anchorPolicyApplied(anchorPolicy)
-                    .build();
-        }
-        if (disId != null) {
-            return null;
-        }
+    /** 当前轮 V2/LockedFrame 结构化 ID；不读 rewriteUsedAnchors / previousTurn。 */
+    private static Integer resolveCurrentV2StructuredGoodsId(AiQuerySemanticParseResult sem) {
+        // V2 尚未输出 goods structured ID 槽位；预留扩展点，当前恒为 null。
         return null;
     }
 
@@ -248,13 +265,32 @@ public class BusinessEntityIdentityResolver {
                 .resolvedCanonicalName(lookup.canonicalName())
                 .resolvedEntityId(lookup.disGoodsId())
                 .resolutionStatus(lookup.status())
-                .resolutionSource(EntityIdentityResolutionSource.CURRENT_MENTION_DB)
+                .resolutionSource(EntityIdentityResolutionSource.CURRENT_EXPLICIT_NAME_DB)
                 .anchorPolicyApplied(anchorPolicy)
                 .candidates(
                         lookup.candidates() == null
                                 ? List.of()
                                 : new ArrayList<>(lookup.candidates()))
                 .clarificationMessage(lookup.clarificationMessage())
+                .debugTrace(debug)
+                .build();
+    }
+
+    private static ResolvedEntityIdentity nameIdConflict(
+            String userMention, Integer candidateId, String canonicalName, String anchorPolicy) {
+        LinkedHashMap<String, Object> debug = new LinkedHashMap<>();
+        debug.put("reason", "current_name_id_conflict");
+        debug.put("candidateDisGoodsId", candidateId);
+        debug.put("candidateCanonicalName", canonicalName);
+        return ResolvedEntityIdentity.builder()
+                .entityType(EntityIdentityType.GOODS)
+                .userMentionedName(trimOrNull(userMention))
+                .resolvedCanonicalName(canonicalName)
+                .resolvedEntityId(null)
+                .resolutionStatus(EntityIdentityResolutionStatus.NOT_FOUND)
+                .resolutionSource(EntityIdentityResolutionSource.CURRENT_NAME_ID_CONFLICT)
+                .anchorPolicyApplied(anchorPolicy)
+                .clarificationMessage(BusinessEntityExistenceLookup.CLARIFICATION_GOODS_NOT_FOUND)
                 .debugTrace(debug)
                 .build();
     }
@@ -279,43 +315,18 @@ public class BusinessEntityIdentityResolver {
     }
 
     private static ResolvedEntityIdentity notFoundGoods(
-            String userMention, String anchorPolicy, String reason) {
+            String userMention,
+            String anchorPolicy,
+            EntityIdentityResolutionSource source,
+            String reason) {
         return ResolvedEntityIdentity.builder()
                 .entityType(EntityIdentityType.GOODS)
                 .userMentionedName(trimOrNull(userMention))
                 .resolutionStatus(EntityIdentityResolutionStatus.NOT_FOUND)
-                .resolutionSource(EntityIdentityResolutionSource.CURRENT_STRUCTURED_ID)
+                .resolutionSource(source)
                 .anchorPolicyApplied(anchorPolicy)
                 .debugTrace(Map.of("reason", reason))
                 .build();
-    }
-
-    private static String resolveCurrentTurnGoodsName(AiQuerySemanticParseResult sem) {
-        if (sem == null) {
-            return null;
-        }
-        return sem.effectiveMentionedGoodsName();
-    }
-
-    private static Integer resolveCurrentTurnDisGoodsId(AiResolvedQueryContext ctx) {
-        if (ctx == null || ctx.getRewriteUsedAnchors() == null) {
-            return null;
-        }
-        for (var raw : ctx.getRewriteUsedAnchors()) {
-            if (raw == null) {
-                continue;
-            }
-            String type = raw.get("entityType");
-            if (!StringUtils.hasText(type)
-                    || !AiResultAnchor.ENTITY_TYPE_GOODS.equalsIgnoreCase(type.trim())) {
-                continue;
-            }
-            Integer id = parseDisGoodsId(raw.get("entityId"));
-            if (id != null) {
-                return id;
-            }
-        }
-        return null;
     }
 
     private static AiResultAnchor firstStructuredGoodsResultAnchor(AiConversationTurnMemory previousTurn) {
@@ -353,14 +364,6 @@ public class BusinessEntityIdentityResolver {
             }
         }
         return null;
-    }
-
-    private static String anchorPolicyFromSlots(AiQuerySemanticParseResult sem) {
-        if (sem == null || sem.getSemanticSlots() == null) {
-            return null;
-        }
-        String raw = sem.getSemanticSlots().getAnchorPolicy();
-        return StringUtils.hasText(raw) ? raw.trim() : null;
     }
 
     private static boolean isGoodsRewriteType(String rewriteType) {

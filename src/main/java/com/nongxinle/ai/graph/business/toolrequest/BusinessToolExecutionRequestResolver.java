@@ -142,12 +142,12 @@ public class BusinessToolExecutionRequestResolver {
             dbg.put(
                     "purchaseSourceTypeSource",
                     purchaseSourceType != null && !purchaseSourceType.isBlank()
-                            ? "semanticSlots.sourceFacet"
+                            ? "contractLockedFrame.sourceFacet"
                             : "none");
             dbg.put(
                     "structuredIntentDetailSource",
                     structuredIntentDetail != null && !structuredIntentDetail.isBlank()
-                            ? "semanticSlots.structuredIntentDetailWire"
+                            ? "contractLockedFrame.wire"
                             : "none");
         } else {
             dbg.put("purchaseSourceTypeSource", "none");

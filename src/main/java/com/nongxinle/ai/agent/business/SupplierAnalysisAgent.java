@@ -108,7 +108,7 @@ public class SupplierAnalysisAgent implements BusinessSubAgent {
         }
 
         PurchaseAnswerPlan plan = null;
-        if (executed.isSuccess()) {
+        if (PurchaseAnswerPlanBuilder.shouldAttachPlanAfterToolExecution(state, executed.isSuccess())) {
             PurchaseAnswerPlanBuilder.attachIfApplicable(state);
             plan = state.getPurchaseAnswerPlan();
         }

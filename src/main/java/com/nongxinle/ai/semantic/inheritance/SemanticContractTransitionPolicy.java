@@ -38,12 +38,9 @@ public final class SemanticContractTransitionPolicy {
                     "operation",
                     "metric",
                     "sourceFacet",
-                    "structuredIntentDetailWire",
-                    "answerPlanType",
                     "mentionedDishName",
                     "mentionedGoodsName",
-                    "anchorPolicy",
-                    "selectedTools");
+                    "anchorPolicy");
     public static final List<String> OVERRIDDEN_TIME_AND_BASELINE =
             List.of("time", "timeAction", "timeSource", "salesBaselineWindow");
 

@@ -196,6 +196,11 @@ public final class AiBusinessToolIds {
     public static final String ARG_PURCHASE_EXECUTION_DETAIL_WANTED = "executionDetailWanted";
     /** P4-B：{@link com.nongxinle.ai.graph.business.execution.PurchaseSemanticExecutionIntent#getExecutionIntentType()}。 */
     public static final String ARG_PURCHASE_EXECUTION_INTENT_TYPE = "executionIntentType";
+    /** requiresAnchor identity 未 OK：禁止退化 overview 查询（由 {@link RequiresAnchorExecutionGateSupport} 写入）。 */
+    public static final String ARG_PURCHASE_ANCHOR_IDENTITY_BLOCKED = "anchorIdentityBlocked";
+    public static final String ARG_PURCHASE_ANCHOR_IDENTITY_BLOCK_REASON = "anchorIdentityBlockReason";
+    /** Tool payload：商品锚 identity 失败（无 scope 级 overview 数据）。 */
+    public static final String PAYLOAD_PURCHASE_ANCHOR_IDENTITY_FAILURE = "purchaseAnchorIdentityFailure";
     /**
      * contract locked 时本轮应产出的 AnswerPlan 类型键（来自 {@link com.nongxinle.ai.semantic.contract.SemanticCapabilityContract#getPlanOutputs()}）。
      */

@@ -11,10 +11,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 可信 canonical resultAnchor（正整数 entityId）在语义→实体执行链上的优先消费；不读 NL 词表。
- * <p>
- * Rewrite 结构化 provenance（{@code rewriteUsedAnchors} / rewriteInherited*）优先于 V2 raw
- * {@code IGNORE_PREVIOUS_ANCHOR}；不得仅凭 {@code usedPreviousContext} 全局放宽。
+ * 可信 canonical resultAnchor 在语义→实体链上的消费边界。
+ * <p>Rewrite / previous provenance 仅为历史候选，不得覆盖当前轮显式实体或 {@code IGNORE_PREVIOUS_ANCHOR}。
  */
 public final class CanonicalResultAnchorIdentitySupport {
 
@@ -33,14 +31,21 @@ public final class CanonicalResultAnchorIdentitySupport {
         return parsePositiveEntityId(anchor.getEntityId());
     }
 
-    public static Integer resolveExplicitRewriteAdoptedGoodsDisId(AiResolvedQueryContext ctx) {
+    /**
+     * 历史 rewrite provenance 中的 GOODS ID（非当前轮 V2 structured ID）。
+     * 调用方须先通过 {@link EntityAnchorSovereigntySupport#shouldAllowHistoricalAnchorSources} 门禁。
+     */
+    public static Integer resolveRewriteResultAnchorGoodsDisId(AiResolvedQueryContext ctx) {
         if (ctx == null) {
             return null;
         }
-        return resolveExplicitRewriteAdoptedGoodsDisId(
-                ctx.getRewriteInheritedAnchorType(),
-                ctx.getRewriteInheritedAnchorEntityId(),
-                ctx.getRewriteUsedAnchors());
+        return firstGoodsDisIdFromRewriteUsedAnchors(ctx.getRewriteUsedAnchors());
+    }
+
+    /** @deprecated 使用 {@link #resolveRewriteResultAnchorGoodsDisId}；不得在无 anchor 主权门禁时调用。 */
+    @Deprecated
+    public static Integer resolveExplicitRewriteAdoptedGoodsDisId(AiResolvedQueryContext ctx) {
+        return resolveRewriteResultAnchorGoodsDisId(ctx);
     }
 
     public static Integer resolveExplicitRewriteAdoptedGoodsDisId(
@@ -58,23 +63,22 @@ public final class CanonicalResultAnchorIdentitySupport {
     }
 
     public static boolean hasExplicitRewriteAdoptedGoodsProvenance(AiResolvedQueryContext ctx) {
-        return resolveExplicitRewriteAdoptedGoodsDisId(ctx) != null;
-    }
-
-    public static boolean hasExplicitRewriteAdoptedGoodsProvenance(
-            String rewriteInheritedAnchorType,
-            String rewriteInheritedAnchorEntityId,
-            List<Map<String, String>> rewriteUsedAnchors) {
-        return resolveExplicitRewriteAdoptedGoodsDisId(
-                        rewriteInheritedAnchorType, rewriteInheritedAnchorEntityId, rewriteUsedAnchors)
-                != null;
+        return resolveRewriteResultAnchorGoodsDisId(ctx) != null;
     }
 
     public static boolean hasConfirmedCanonicalGoodsProvenance(AiResolvedQueryContext ctx) {
-        if (ctx == null) {
+        if (ctx == null || ctx.getQuerySemanticParse() == null) {
             return false;
         }
-        return hasExplicitRewriteAdoptedGoodsProvenance(ctx);
+        String anchorPolicy = EntityAnchorSovereigntySupport.anchorPolicyFromParse(ctx.getQuerySemanticParse());
+        if (EntityAnchorSovereigntySupport.hasCurrentTurnExplicitGoodsName(ctx.getQuerySemanticParse())) {
+            return false;
+        }
+        if (EntityAnchorSovereigntySupport.isIgnorePreviousAnchor(anchorPolicy)) {
+            return false;
+        }
+        return EntityAnchorSovereigntySupport.isUsePreviousAnchor(anchorPolicy)
+                && resolveRewriteResultAnchorGoodsDisId(ctx) != null;
     }
 
     public static boolean shouldPreferCanonicalGoodsIdBeforeNameLookup(
@@ -90,14 +94,21 @@ public final class CanonicalResultAnchorIdentitySupport {
             String rewriteInheritedAnchorEntityId,
             List<Map<String, String>> rewriteUsedAnchors,
             String rewriteInheritedAnchorName) {
-        if (hasExplicitRewriteAdoptedGoodsProvenance(
-                rewriteInheritedAnchorType, rewriteInheritedAnchorEntityId, rewriteUsedAnchors)) {
-            return true;
-        }
-        if (sem != null && AiQuerySemanticSlotMerge.ANCHOR_IGNORE_PREVIOUS.equals(anchorPolicy(sem))) {
+        if (sem != null
+                && EntityAnchorSovereigntySupport.hasCurrentTurnExplicitGoodsName(sem)) {
             return false;
         }
-        if (AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS.equals(anchorPolicy(sem))
+        String anchorPolicy = EntityAnchorSovereigntySupport.anchorPolicyFromParse(sem);
+        if (EntityAnchorSovereigntySupport.isIgnorePreviousAnchor(anchorPolicy)) {
+            return false;
+        }
+        if (!EntityAnchorSovereigntySupport.isUsePreviousAnchor(anchorPolicy)) {
+            return false;
+        }
+        if (firstGoodsDisIdFromRewriteUsedAnchors(rewriteUsedAnchors) != null) {
+            return true;
+        }
+        if (AiQuerySemanticSlotMerge.ANCHOR_USE_PREVIOUS.equals(anchorPolicy)
                 && resolveTrustworthyGoodsDisId(previousTurn) != null) {
             return true;
         }
@@ -105,7 +116,7 @@ public final class CanonicalResultAnchorIdentitySupport {
                 && parsePositiveEntityId(rewriteInheritedAnchorEntityId) != null;
     }
 
-    static AiResultAnchor firstTrustworthyGoodsAnchor(AiConversationTurnMemory previousTurn) {
+    public static AiResultAnchor firstTrustworthyGoodsAnchor(AiConversationTurnMemory previousTurn) {
         if (previousTurn == null) {
             return null;
         }
@@ -177,13 +188,5 @@ public final class CanonicalResultAnchorIdentitySupport {
         } catch (NumberFormatException ignored) {
             return null;
         }
-    }
-
-    private static String anchorPolicy(AiQuerySemanticParseResult sem) {
-        if (sem == null || sem.getSemanticSlots() == null) {
-            return null;
-        }
-        String raw = sem.getSemanticSlots().getAnchorPolicy();
-        return StringUtils.hasText(raw) ? raw.trim() : null;
     }
 }

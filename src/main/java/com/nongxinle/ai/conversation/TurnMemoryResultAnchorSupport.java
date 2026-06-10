@@ -98,8 +98,7 @@ final class TurnMemoryResultAnchorSupport {
             return false;
         }
         EntityIdentityResolutionSource source = goods.getResolutionSource();
-        return source == EntityIdentityResolutionSource.CURRENT_STRUCTURED_ID
-                || source == EntityIdentityResolutionSource.CURRENT_MENTION_DB;
+        return source != null && source.isCurrentTurnExplicitSource();
     }
 
     private static boolean shouldPreserveStableAnchorDespiteExecution(

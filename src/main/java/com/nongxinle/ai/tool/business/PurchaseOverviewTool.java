@@ -48,8 +48,11 @@ import static com.nongxinle.ai.tool.business.AiBusinessToolIds.PAYLOAD_PURCHASE_
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_PUR_DEP_IDS;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_SOURCE_FOCUS;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.PAYLOAD_PURCHASE_SUPPLIER_ANCHOR_EXECUTION_TIME_WINDOW;
+import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_ANCHOR_IDENTITY_BLOCK_REASON;
+import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_ANCHOR_IDENTITY_BLOCKED;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_EXECUTION_INTENT_TYPE;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_DIS_GOODS_ID;
+import static com.nongxinle.ai.tool.business.AiBusinessToolIds.PAYLOAD_PURCHASE_ANCHOR_IDENTITY_FAILURE;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_ENTITY_TYPE;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_GOODS_NAME;
 import static com.nongxinle.ai.tool.business.AiBusinessToolIds.ARG_PURCHASE_FOCUS_SUPPLIER_ID;
@@ -116,6 +119,11 @@ public class PurchaseOverviewTool implements AiTool {
                     .data(AiBusinessToolResponses.envelope(name(), false, false, start, stop, dept, disId, data,
                             "参数不完整"))
                     .build();
+        }
+
+        ToolResult anchorBlocked = failClosedIfGoodsAnchorIdentityBlocked(args, disId, start, stop, dept, purDep);
+        if (anchorBlocked != null) {
+            return anchorBlocked;
         }
 
         try {
@@ -718,11 +726,86 @@ public class PurchaseOverviewTool implements AiTool {
         if (args == null) {
             return false;
         }
+        String execType = str(args.get(ARG_PURCHASE_EXECUTION_INTENT_TYPE));
+        if (PurchaseSemanticExecutionIntent.EXEC_GOODS_SOURCE_BREAKDOWN.equals(execType)) {
+            return true;
+        }
         String et = str(args.get(ARG_PURCHASE_FOCUS_ENTITY_TYPE));
         if (!AiResultAnchor.ENTITY_TYPE_GOODS.equalsIgnoreCase(et)) {
             return false;
         }
         return "SOURCE_BREAKDOWN".equalsIgnoreCase(PurchaseSemanticExecutionArgs.readExecutionDetailWanted(args));
+    }
+
+    /**
+     * 第二道防线：requiresGoodsFocus 且 identity 未 OK / 缺 focusDisGoodsId 时 fail-closed，不跑 overview SQL。
+     */
+    private ToolResult failClosedIfGoodsAnchorIdentityBlocked(
+            Map<String, Object> args, Long disId, String start, String stop, Long dept, Long purDep) {
+        if (!PurchaseSemanticExecutionArgs.requiresGoodsFocusExecution(args)) {
+            return null;
+        }
+        String blockReason = str(args.get(ARG_PURCHASE_ANCHOR_IDENTITY_BLOCK_REASON));
+        if (PurchaseSemanticExecutionArgs.isAnchorIdentityBlocked(args)) {
+            if (blockReason.isEmpty()) {
+                blockReason = "GOODS_ANCHOR_ID_MISSING";
+            }
+            return buildGoodsAnchorIdentityFailureToolResult(args, disId, start, stop, dept, purDep, blockReason);
+        }
+        Integer focusId = toInt(args.get(ARG_PURCHASE_FOCUS_DIS_GOODS_ID));
+        if (focusId == null || focusId <= 0) {
+            return buildGoodsAnchorIdentityFailureToolResult(
+                    args, disId, start, stop, dept, purDep, "GOODS_ANCHOR_ID_MISSING");
+        }
+        return null;
+    }
+
+    private ToolResult buildGoodsAnchorIdentityFailureToolResult(
+            Map<String, Object> args,
+            Long disId,
+            String start,
+            String stop,
+            Long dept,
+            Long purDep,
+            String blockReason) {
+        String requestedName = str(args.get(ARG_PURCHASE_FOCUS_GOODS_NAME));
+        LinkedHashMap<String, Object> failure = new LinkedHashMap<>();
+        failure.put("blockReason", blockReason);
+        failure.put("anchorType", AiResultAnchor.ENTITY_TYPE_GOODS);
+        failure.put("requestedGoodsName", requestedName.isEmpty() ? null : requestedName);
+        failure.put("noDataReason", "GOODS_ANCHOR_ID_MISSING");
+
+        LinkedHashMap<String, Object> purchaseOverview = new LinkedHashMap<>();
+        purchaseOverview.put(PAYLOAD_PURCHASE_ANCHOR_IDENTITY_FAILURE, failure);
+        purchaseOverview.put("purchaseGoodsSourceBreakdownActive", Boolean.TRUE);
+        purchaseOverview.put("purchaseGoodsSourceBreakdownNoDataReason", "GOODS_ANCHOR_ID_MISSING");
+        purchaseOverview.put("purchaseGoodsSourceBreakdownGoodsAnchorIdMissing", Boolean.TRUE);
+        purchaseOverview.put("purchaseGoodsSourceBreakdownFocusDisGoodsId", null);
+        purchaseOverview.put("totalPurchaseAmount", null);
+        purchaseOverview.put("purchaseOrderCount", 0);
+        purchaseOverview.put("goodsPurchaseAmountTop", List.of());
+        purchaseOverview.put("goodsPurchaseFrequencyTop", List.of());
+        purchaseOverview.put("goodsPurchaseQuantityTop", List.of());
+        purchaseOverview.put("purchaseMethodBreakdown", List.of());
+
+        LinkedHashMap<String, Object> data = new LinkedHashMap<>();
+        data.put("purchaseOverview", purchaseOverview);
+        data.put("anchorIdentityBlocked", Boolean.TRUE);
+
+        return ToolResult.builder()
+                .success(false)
+                .message(blockReason)
+                .data(AiBusinessToolResponses.envelope(
+                        name(),
+                        false,
+                        false,
+                        start,
+                        stop,
+                        dept != null ? dept : purDep,
+                        disId,
+                        data,
+                        "未能定位到该商品，未执行采购查询"))
+                .build();
     }
 
     /** 时间窗内采购原料/商品明细清单（contract {@code purchase.period_goods_list}）。 */

@@ -17,6 +17,8 @@ import com.nongxinle.ai.semantic.matrix.DishCostAnalysisSemanticCapabilityMatrix
 import com.nongxinle.ai.semantic.matrix.WarehouseSemanticCapabilityMatrix;
 import com.nongxinle.ai.semantic.AiQuerySemanticParseResult;
 import com.nongxinle.ai.semantic.contract.SemanticContractCompletionEngine;
+import com.nongxinle.ai.semantic.frame.ContractLockedSemanticFrame;
+import com.nongxinle.ai.semantic.frame.PurchaseLockedSemanticFrameSupport;
 import org.springframework.util.StringUtils;
 
 import java.util.Locale;
@@ -40,19 +42,26 @@ public final class ToolRequestContractExecutionParamSupport {
         if (!isContractLocked(ctx)) {
             return null;
         }
-        AiQuerySemanticParseResult.SemanticSlotsPart slots = semanticSlots(ctx);
-        if (slots == null) {
-            return null;
+        ContractLockedSemanticFrame frame = PurchaseLockedSemanticFrameSupport.lockedFrame(ctx);
+        String sourceFacet = PurchaseLockedSemanticFrameSupport.sourceFacet(frame);
+        if (sourceFacet == null) {
+            AiQuerySemanticParseResult.SemanticSlotsPart slots = semanticSlots(ctx);
+            sourceFacet = slots != null ? slots.getSourceFacet() : null;
         }
-        return purchaseSourceTypeFromSourceFacet(slots.getSourceFacet());
+        return purchaseSourceTypeFromSourceFacet(sourceFacet);
     }
 
     /**
-     * contract locked 时 canonical {@code structuredIntentDetailWire}（跨域通用，仅读 semanticSlots）。
+     * contract locked 时 canonical {@code structuredIntentDetailWire}（优先 LockedFrame）。
      */
     public static String resolveContractStructuredIntentDetailWire(AiResolvedQueryContext ctx) {
         if (!isContractLocked(ctx)) {
             return null;
+        }
+        ContractLockedSemanticFrame frame = PurchaseLockedSemanticFrameSupport.lockedFrame(ctx);
+        String wire = PurchaseLockedSemanticFrameSupport.canonicalWire(frame);
+        if (StringUtils.hasText(wire)) {
+            return AiQuerySemanticLexicon.canonicalStructuredIntentDetailWire(wire.trim());
         }
         AiQuerySemanticParseResult.SemanticSlotsPart slots = semanticSlots(ctx);
         if (slots == null || !StringUtils.hasText(slots.getStructuredIntentDetailWire())) {
@@ -217,6 +226,11 @@ public final class ToolRequestContractExecutionParamSupport {
     }
 
     private static String selectedContractId(AiResolvedQueryContext ctx) {
+        ContractLockedSemanticFrame frame = PurchaseLockedSemanticFrameSupport.lockedFrame(ctx);
+        String fromFrame = PurchaseLockedSemanticFrameSupport.selectedContractId(frame);
+        if (StringUtils.hasText(fromFrame)) {
+            return fromFrame.trim();
+        }
         if (ctx == null || ctx.getQuerySemanticParse() == null) {
             return null;
         }
