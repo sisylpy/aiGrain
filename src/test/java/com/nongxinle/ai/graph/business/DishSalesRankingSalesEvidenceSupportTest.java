@@ -43,7 +43,7 @@ class DishSalesRankingSalesEvidenceSupportTest {
                                 Map.of(
                                         "dishName",
                                         "测试菜",
-                                        "listPriceRevenue",
+                                        "actualRevenue",
                                         0,
                                         "salesAmount",
                                         "0")));

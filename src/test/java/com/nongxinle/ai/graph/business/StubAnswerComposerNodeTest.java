@@ -86,7 +86,7 @@ class StubAnswerComposerNodeTest {
         Map<String, Object> focus = new LinkedHashMap<>();
         focus.put("dishName", "PlanLowMargin");
         focus.put("blendedGrossMarginRateOnListPrice", new BigDecimal("5.5"));
-        focus.put("listPriceRevenue", "1000");
+        focus.put("actualRevenue", "1000");
         focus.put("theoryCostAmount", "400");
         focus.put("actualCostAmount", "500");
 
@@ -237,7 +237,7 @@ class StubAnswerComposerNodeTest {
         focus.put("blendedGrossMarginRateOnListPrice", new BigDecimal("8.25"));
         focus.put("theoryCostAmount", new BigDecimal("120.50"));
         focus.put("actualCostAmount", new BigDecimal("200.75"));
-        focus.put("listPriceRevenue", new BigDecimal("900"));
+        focus.put("actualRevenue", new BigDecimal("900"));
 
         DishProfitAnswerPlan plan = DishProfitAnswerPlan.builder()
                 .planType(DishProfitAnswerPlan.TYPE_DISH_PROFIT_REASON)

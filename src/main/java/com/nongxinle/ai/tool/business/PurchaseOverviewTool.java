@@ -12,6 +12,7 @@ import com.nongxinle.dto.PurchaseMethodLegacyAggRow;
 import com.nongxinle.entity.GbDistributerGoodsEntity;
 import com.nongxinle.entity.GbDistributerPurchaseGoodsEntity;
 import com.nongxinle.ai.graph.business.PurchaseGoodsAnchorLineRowSupport;
+import com.nongxinle.ai.graph.business.PurchasePriceAnomalyBatchDetailSupport;
 import com.nongxinle.service.GbAiDailyRevenueService;
 import com.nongxinle.service.GbDistributerPurchaseGoodsService;
 import com.nongxinle.utils.GbConstants;
@@ -290,8 +291,12 @@ public class PurchaseOverviewTool implements AiTool {
             Map<String, Object> unitPriceBase = new HashMap<>(base);
             unitPriceBase.put("limit", 20);
             List<Map<String, Object>> unitPriceChanged = hasRows
-                    ? nullToEmptyMap(
-                            purchaseGoodsService.queryGbPurchaseGoodsUnitPriceChangedVsPrevious(unitPriceBase))
+                    ? PurchasePriceAnomalyBatchDetailSupport.enrichUnitPriceChangedRows(
+                            nullToEmptyMap(
+                                    purchaseGoodsService.queryGbPurchaseGoodsUnitPriceChangedVsPrevious(
+                                            unitPriceBase)),
+                            unitPriceBase,
+                            purchaseGoodsService)
                     : List.of();
             List<Map<String, Object>> topSuppliers = hasRows
                     ? applyTopSuppliersFocus(
@@ -1640,12 +1645,21 @@ public class PurchaseOverviewTool implements AiTool {
                 continue;
             }
             LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+            row.put("disGoodsId", src.get("disGoodsId"));
             row.put("goodsName", src.get("goodsName"));
             row.put("standardName", src.get("standardName"));
             row.put("currentUnitPrice", src.get("currentUnitPrice"));
             row.put("previousUnitPrice", src.get("previousUnitPrice"));
             row.put("priceChangePercent", src.get("priceChangePercent"));
             row.put("priceFluctuationPercent", src.get("priceChangePercent"));
+            row.put("stockFinishDate", src.get("stockFinishDate"));
+            row.put("currentPurchaseGoodsId", src.get("currentPurchaseGoodsId"));
+            row.put("previousPurchaseGoodsId", src.get("previousPurchaseGoodsId"));
+            row.put("priceCompareMode", src.get("priceCompareMode"));
+            Object compareBatches = src.get("compareBatches");
+            if (compareBatches != null) {
+                row.put("compareBatches", compareBatches);
+            }
             out.add(row);
         }
         return out;

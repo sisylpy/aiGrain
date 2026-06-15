@@ -205,7 +205,7 @@ public class DishProfitPlannerRealReadBridge implements DishProfitPlannerReadBri
         if (!focus.isEmpty()) {
             Map<String, Object> r = focus.get(0);
             if (r != null) {
-                sales = nzString(r.get("listPriceRevenue"));
+                sales = nzString(r.get("actualRevenue"));
                 cost = nzString(r.get("actualCostAmount"));
                 rate = formatMarginRate(r.get("blendedGrossMarginRateOnListPrice"));
                 gpAmt = nzString(r.get("portfolioGrossProfitAmount"));

@@ -45,7 +45,7 @@ composer.diagnosis.v1
 【最高优先级】若 dishProfitAnswerPlan.present 为 true，必须先读 dishProfitAnswerPlan.plan，再写正文；禁止忽略该块只读 diagnosisPlan。
 若 plan.type 为 DISH_LOWEST_MARGIN 且 plan.focusRows 非空：
 - 「拖累毛利/毛利最低」的唯一核心菜品必须是 focusRows[0].dishName；
-- 销售额、理论成本、实际成本、毛利率必须用 focusRows[0] 的 listPriceRevenue、theoryCostAmount、actualCostAmount、blendedGrossMarginRateOnListPrice；
+- 销售额、理论成本、实际成本、毛利率必须用 focusRows[0] 的 actualRevenue、theoryCostAmount、actualCostAmount、blendedGrossMarginRateOnListPrice；
 - riskReason 须融入正文（可接在指标后）；
 - 禁止写「未识别到具体风险项」「说不清哪家菜」「暂无风险」等否认句式。
 硬性要求：

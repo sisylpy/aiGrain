@@ -274,7 +274,7 @@ public final class MenuOperationDeterministicRenderer {
             return;
         }
         appendFactLine(sb, facts, "dishCountAnalyzed", "分析菜品数", "");
-        appendFactLine(sb, facts, "totalListPriceRevenue", "标价销售额", "元");
+        appendFactLine(sb, facts, "totalActualRevenue", "标价销售额", "元");
         appendFactLine(sb, facts, "portfolioActualProfitAmount", "实际利润（type123）", "元");
         appendFactLine(sb, facts, "comprehensiveGrossMarginRate", "综合毛利率", "");
         appendFactLine(sb, facts, "highSalesLowProfitCount", "重点关注菜品数", "道");

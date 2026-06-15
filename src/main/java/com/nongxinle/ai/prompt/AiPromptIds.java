@@ -33,4 +33,7 @@ public final class AiPromptIds {
     /** v2：本期 vs 约 30 天基线，解释营业额高/低原因。 */
     public static final String BUSINESS_OVERVIEW_DISH_SALES_REASON_AGENT_V2 =
             "business-overview-dish-sales-reason-agent.v2";
+
+    /** 店长工作记录：书面整理 + 一级分类（单次 LLM）。 */
+    public static final String WORK_RECORD_POLISH_CLASSIFY_V1 = "workrecord.polish_classify.v1";
 }

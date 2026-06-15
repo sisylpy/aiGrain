@@ -36,4 +36,11 @@ public class GbDepartmentUserServiceImpl extends ServiceImpl<GbDepartmentUserMap
         return baseMapper.queryAllUsersByDepId(depId);
     }
 
+    @Override
+    public List<GbDepartmentUserEntity> queryUsersByAdminType(Integer adminType) {
+        LambdaQueryWrapper<GbDepartmentUserEntity> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(GbDepartmentUserEntity::getGbDuAdmin, adminType);
+        return list(wrapper);
+    }
+
 }

@@ -406,27 +406,27 @@ public class GbDistributerFoodController {
 			foodEntity.setGbDfStatus(0);
 			gbDistributerFoodService.save(foodEntity);
 
-			//如果只有一个门店并且只有一个部分，则自动给部门添加菜品。
+			// 给每个门店自动添加菜品（菜品颗粒度到门店，不再到子部门）
 			Map<String, Object> mapDep = new HashMap<>();
 			mapDep.put("disId", disId);
 			mapDep.put("depType", GbConstants.DepartmentType.STORE);
 			List<GbDepartmentEntity> gbDepartmentEntities = gbDepartmentService.queryGroupDepsByDisId(mapDep);
-			String depFatherId = gbDepartmentEntities.get(0).getGbDepartmentId().toString();
-			List<GbDepartmentEntity> subDepartments = gbDepartmentService.querySubDepartments(Integer.valueOf(depFatherId));
-			System.out.println("subnamgbDepartmentEntitiesi" + gbDepartmentEntities.size());
-			System.out.println("subnami" + subDepartments.size());
-			if(gbDepartmentEntities.size() == 1  && subDepartments.size() == 1){
-				GbDepFoodEntity gbDepFoodEntity = new GbDepFoodEntity();
-				gbDepFoodEntity.setGbDfFoodId(foodEntity.getGbDistributerFoodId());
-				gbDepFoodEntity.setGbDfDepId(subDepartments.get(0).getGbDepartmentId());
-				gbDepFoodEntity.setGbDfDepFatherId(gbDepartmentEntities.get(0).getGbDepartmentId().toString());
-				gbDepFoodEntity.setGbDfFoodName(foodName);
-				gbDepFoodEntity.setGbDfFoodPrice(price);
-				gbDepFoodEntity.setGbDfFoodMethod(method);
-				gbDepFoodEntity.setGbDfFoodFatherId(fatherId);
-				gbDepFoodEntity.setGbDfStatus(0);
-				gbDepFoodEntity.setGbDfDistributerId(disId);
-				gbDepFoodService.save(gbDepFoodEntity);
+			logger.info("查询到门店数量: {}", gbDepartmentEntities != null ? gbDepartmentEntities.size() : 0);
+			if (gbDepartmentEntities != null && !gbDepartmentEntities.isEmpty()) {
+				for (GbDepartmentEntity store : gbDepartmentEntities) {
+					GbDepFoodEntity gbDepFoodEntity = new GbDepFoodEntity();
+					gbDepFoodEntity.setGbDfFoodId(foodEntity.getGbDistributerFoodId());
+					gbDepFoodEntity.setGbDfDepId(store.getGbDepartmentId());
+					gbDepFoodEntity.setGbDfDepFatherId(store.getGbDepartmentId().toString());
+					gbDepFoodEntity.setGbDfFoodName(foodName);
+					gbDepFoodEntity.setGbDfFoodPrice(price);
+					gbDepFoodEntity.setGbDfFoodMethod(method);
+					gbDepFoodEntity.setGbDfFoodFatherId(fatherId);
+					gbDepFoodEntity.setGbDfStatus(0);
+					gbDepFoodEntity.setGbDfDistributerId(disId);
+					gbDepFoodService.save(gbDepFoodEntity);
+					logger.info("已为门店 [{}] 添加菜品", store.getGbDepartmentName());
+				}
 			}
 			logger.info("========== saveGbFood 成功 ==========");
 			return R.ok();

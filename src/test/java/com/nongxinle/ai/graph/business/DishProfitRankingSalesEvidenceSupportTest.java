@@ -22,7 +22,7 @@ class DishProfitRankingSalesEvidenceSupportTest {
                                         "测试菜",
                                         "soldPortionsTotal",
                                         0,
-                                        "listPriceRevenue",
+                                        "actualRevenue",
                                         0)));
         Map<String, Object> toolData = Map.of("salesDishCount", 0);
         assertThat(DishProfitRankingSalesEvidenceSupport.hasRankingSalesEvidence(rows, toolData))

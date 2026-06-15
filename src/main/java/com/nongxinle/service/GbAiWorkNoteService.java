@@ -2,6 +2,7 @@ package com.nongxinle.service;
 
 import com.nongxinle.ai.history.dto.AiMessageNoteResponseDTO;
 import com.nongxinle.ai.workspace.dto.WorkNoteCreateRequest;
+import com.nongxinle.ai.workspace.dto.WorkNoteMineListResponseDTO;
 import com.nongxinle.ai.workspace.dto.WorkNoteResponse;
 import com.nongxinle.ai.workspace.dto.WorkNoteUpdateRequest;
 import com.nongxinle.ai.workspace.dto.PromotePinToNoteRequest;
@@ -16,6 +17,16 @@ public interface GbAiWorkNoteService {
     WorkNoteResponse createNote(WorkNoteCreateRequest request);
 
     List<WorkNoteResponse> listNotes(Long conversationId, Long userId);
+
+    /**
+     * 当前用户跨会话笔记列表（分页）；不含完整 sourceTextSnapshot / content 全文。
+     */
+    WorkNoteMineListResponseDTO listMyNotes(
+            Long userId,
+            Long conversationId,
+            String noteType,
+            Integer page,
+            Integer pageSize);
 
     WorkNoteResponse getNoteDetail(Long noteId, Long userId);
 

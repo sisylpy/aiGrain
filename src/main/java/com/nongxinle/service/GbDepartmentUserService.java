@@ -26,4 +26,11 @@ public interface GbDepartmentUserService extends IService<GbDepartmentUserEntity
      */
     List<GbDepartmentUserEntity> queryAllUsersByDepId(Integer depId);
 
+    /**
+     * 根据用户角色类型（admin）查询用户列表
+     * @param adminType 用户角色类型，见 {@link com.nongxinle.utils.GbConstants.DepartmentUserRole}
+     * @return 用户列表
+     */
+    List<GbDepartmentUserEntity> queryUsersByAdminType(Integer adminType);
+
 }

@@ -39,7 +39,7 @@ public class IngredientDashboardModuleRenderer implements AiDashboardModuleRende
 
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("summary", report.get("summary"));
-            payload.put("utilizationDistribution", report.get("utilizationDistribution"));
+            payload.put("devianceDistribution", report.get("devianceDistribution"));
 
             return buildModule(module, "SUCCESS", null, payload);
         } catch (Exception e) {

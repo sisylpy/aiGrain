@@ -87,7 +87,7 @@ class CostDiagnosisPermissionDeniedTest {
                 "wasteTotal", BigDecimal.ZERO,
                 "lossTotal", BigDecimal.ZERO)));
         state.getToolResults().put(AiBusinessToolIds.DISH_PROFIT_ANALYSIS, envData(Map.of(
-                "businessInsightSummary", Map.of("totalListPriceRevenue", BigDecimal.ZERO))));
+                "businessInsightSummary", Map.of("totalActualRevenue", BigDecimal.ZERO))));
     }
 
     private static Map<String, Object> envData(Map<String, Object> payload) {

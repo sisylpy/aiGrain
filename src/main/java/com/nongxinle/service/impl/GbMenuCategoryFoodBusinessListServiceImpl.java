@@ -289,7 +289,7 @@ public class GbMenuCategoryFoodBusinessListServiceImpl implements GbMenuCategory
         row.put("foodId", foodId);
         row.put("foodName", foodName);
         row.put("soldPortionsTotal", "0");
-        row.put("listPriceRevenue", "0");
+        row.put("actualRevenue", "0");
         row.put("actualCostTotalAmount123", "0");
         row.put("theoreticalCostTotalAmount", "0");
         return row;

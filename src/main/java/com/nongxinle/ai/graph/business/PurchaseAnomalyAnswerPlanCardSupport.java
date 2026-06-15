@@ -33,7 +33,16 @@ final class PurchaseAnomalyAnswerPlanCardSupport {
             payload.put("anomalySubtype", debug.get("anomalySubtype"));
         }
         payload.put("anomalyFactsAvailable", factsAvailable);
-        payload.put("focusRows", plan.getFocusRows() != null ? plan.getFocusRows() : List.of());
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PRICE_ANOMALY.equals(canon)) {
+            payload.put(
+                    "priceCompareMode",
+                    PurchasePriceAnomalyBatchDetailSupport.PRICE_COMPARE_CURRENT_VS_PREVIOUS_BATCH);
+            payload.put(
+                    "focusRows",
+                    PurchasePriceAnomalyBatchDetailSupport.projectPriceAnomalyFocusRows(plan.getFocusRows()));
+        } else {
+            payload.put("focusRows", plan.getFocusRows() != null ? plan.getFocusRows() : List.of());
+        }
         payload.put("secondaryRows", plan.getSecondaryRows() != null ? plan.getSecondaryRows() : List.of());
         payload.put("timeLabel", plan.getTimeLabel());
         payload.put("scopeLabel", plan.getScopeLabel());

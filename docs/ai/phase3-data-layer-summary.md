@@ -72,7 +72,7 @@ Tool Request args → Tool / Service / Mapper / SQL → Tool payload → AnswerP
 | **Purchase** | ✅ OK | 无 | `gb_distributer_purchase_goods` | `gb_DPG_buy_subtotal`（来源：ALL/SELF_PURCHASE/SUPPLIER_PURCHASE） | `gb_DPG_stock_finish_date` | `gb_DPG_purchase_department_id` / `gb_DPG_distributer_id` | 单商品采购概览是功能缺口，非 SQL blocker |
 | **Warehouse** | ✅ OK | 无 | `gb_department_goods_stock` | `gb_dgs_rest_subtotal`（库存金额）、`gb_dgs_rest_weight`（库存数量/重量） | 无时间过滤（库存现量快照） | `gb_dgs_gb_department_father_id` | reduce 表仅作核销辅助，不作为库存余额主口径 |
 | **DishProfit** | ✅ OK | 无（P3I 已修复） | 多表聚合（`gb_dep_food` + `gb_dep_food_sales` + `gb_department_goods_stock_reduce`） | `actualCostTotalAmount123`（type1+2+3）、`blendedGrossMarginRateOnListPrice` | `gbDfsFullDate` / `gb_dgsr_date` | `gbDfsDepId` / `gb_dgsr_department_id` | 原 `actualCostAmount` 实际是 type1 生产出库成本，P3I 修复后优先使用 type1+2+3 |
-| **DishSales** | ✅ OK | 无 | 复用 DishProfit 快照（`gb_dep_food_sales` + `gb_dep_food`） | `soldPortionsTotal`（销量）、`listPriceRevenue`（标价销售额） | `gbDfsFullDate` | `gbDfsDepId IN scopeDepIds` | 无独立 Tool，寄生 DishProfit；销售额为菜品标价收入，不等于 Revenue 营业额 |
+| **DishSales** | ✅ OK | 无 | 复用 DishProfit 快照（`gb_dep_food_sales` + `gb_dep_food`） | `soldPortionsTotal`（销量）、`actualRevenue`（标价销售额） | `gbDfsFullDate` | `gbDfsDepId IN scopeDepIds` | 无独立 Tool，寄生 DishProfit；销售额为菜品标价收入，不等于 Revenue 营业额 |
 
 ---
 

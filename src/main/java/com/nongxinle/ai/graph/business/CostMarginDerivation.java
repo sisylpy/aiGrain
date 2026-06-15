@@ -99,7 +99,7 @@ public final class CostMarginDerivation {
     }
 
     /**
-     * 首选 {@code businessInsightSummary.totalListPriceRevenue}（全量菜品汇总）；
+     * 首选 {@code businessInsightSummary.totalActualRevenue}（全量菜品汇总）；
      * 仅缺失时兼容 {@code listPriceRevenueTotal}（可能仅为 presented 子集，勿作首选）。
      */
     public static BigDecimal listPriceRevenueFromDishProfitData(Map<String, Object> dishProfitData) {
@@ -110,13 +110,13 @@ public final class CostMarginDerivation {
         Map<String, Object> bis = dishProfitData.get("businessInsightSummary") instanceof Map
                 ? (Map<String, Object>) dishProfitData.get("businessInsightSummary")
                 : null;
-        if (bis != null && bis.get("totalListPriceRevenue") != null) {
-            BigDecimal fromBis = bd(bis.get("totalListPriceRevenue"));
+        if (bis != null && bis.get("totalActualRevenue") != null) {
+            BigDecimal fromBis = bd(bis.get("totalActualRevenue"));
             if (fromBis.signum() > 0) {
                 return fromBis;
             }
         }
-        return bd(dishProfitData.get("listPriceRevenueTotal"));
+        return bd(dishProfitData.get("actualRevenueTotal"));
     }
 
     @SuppressWarnings("unchecked")

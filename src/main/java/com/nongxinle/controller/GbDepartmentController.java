@@ -57,7 +57,7 @@ public class GbDepartmentController {
                 gbDepartmentService.saveNewDepartmentGb(department);
             }
 
-        GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerInfo(department.getGbDepartmentDisId());
+        GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerWithAllDepartments(department.getGbDepartmentDisId());
         return R.ok().put("data", gbDistributerEntity);
     }
 
@@ -136,7 +136,12 @@ public class GbDepartmentController {
 
         departmentEntity.setGbDepartmentSubAmount(departmentEntity.getGbDepartmentSubAmount() + 1);
         gbDepartmentService.updateById(departmentEntity);
-        return R.ok().put("data", gbDistributerService.queryDistributerInfo(departmentEntity.getGbDepartmentDisId()));
+        List<GbDepartmentEntity> subDepartments = gbDepartmentService.querySubDepartments(gbDepartmentFatherId);
+        departmentEntity.setGbDepartmentEntityList(subDepartments);
+        Map<String, Object> result = new HashMap<>();
+        result.put("mendianInfo", departmentEntity);
+        result.put("disInfo", gbDistributerService.queryDistributerWithAllDepartments(departmentEntity.getGbDepartmentDisId()));
+        return R.ok().put("data", result);
 
     }
 
@@ -147,6 +152,31 @@ public class GbDepartmentController {
         List<GbDepartmentEntity> departmentEntities = gbDepartmentService.querySubDepartments(depId);
 
         return R.ok().put("data", departmentEntities);
+    }
+
+    /**
+     * 门店综合查询：查询指定部门下的用户、子部门、以及子部门下的用户
+     */
+    @RequestMapping(value = "/getStoreDetailGb/{depId}", method = RequestMethod.GET)
+    @ResponseBody
+    public R getStoreDetailGb(@PathVariable Integer depId) {
+        // 1. 该ID（部门）下的用户
+        List<GbDepartmentUserEntity> users = gbDepartmentUserService.queryAllUsersByDepId(depId);
+
+        // 2. 该ID（部门）下面的子部门
+        List<GbDepartmentEntity> subDepartments = gbDepartmentService.querySubDepartments(depId);
+
+        // 3. 每个子部门的用户
+        for (GbDepartmentEntity subDept : subDepartments) {
+            List<GbDepartmentUserEntity> subUsers = gbDepartmentUserService.queryAllUsersByDepId(subDept.getGbDepartmentId());
+            subDept.setGbDepartmentUserEntities(subUsers);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("users", users);
+        result.put("subDepartments", subDepartments);
+
+        return R.ok().put("data", result);
     }
 
 
@@ -164,7 +194,7 @@ public class GbDepartmentController {
         GbDepartmentEntity departmentEntity = gbDepartmentService.saveNewDepartmentGb(depart);
         Integer gbDepartmentDisId = departmentEntity.getGbDepartmentDisId();
         // 保存门店后只需要基础信息，不需要查询所有部门（性能优化）
-        GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerBaseInfo(gbDepartmentDisId);
+        GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerWithAllDepartments(gbDepartmentDisId);
 
         return R.ok().put("data", gbDistributerEntity);
     }
@@ -191,6 +221,7 @@ public class GbDepartmentController {
     @RequestMapping(value = "/updateGroupNameGb", method = RequestMethod.POST)
     @ResponseBody
     public R updateGroupNameGb(@RequestBody GbDepartmentEntity departmentEntity) {
+        System.out.println("ishere" + departmentEntity);
         departmentEntity.setGbDepartmentAttrName(departmentEntity.getGbDepartmentName());
         departmentEntity.setGbDepartmentPrintName("ApplyHalfPanel");
         String gbDepartmentName = departmentEntity.getGbDepartmentName();
@@ -198,8 +229,10 @@ public class GbDepartmentController {
         departmentEntity.setGbDepartmentNamePy(headPinyin);
         gbDepartmentService.updateById(departmentEntity);
 
-        GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerInfo(departmentEntity.getGbDepartmentDisId());
-        return R.ok().put("data", gbDistributerEntity);
+        Map<String, Object> result = new HashMap<>();
+        result.put("mendianInfo", departmentEntity);
+        result.put("disInfo", gbDistributerService.queryDistributerWithAllDepartments(departmentEntity.getGbDepartmentDisId()));
+        return R.ok().put("data", result);
     }
 
     @RequestMapping(value = "/deleteDepartment/{depId}")
@@ -236,6 +269,9 @@ public class GbDepartmentController {
             return R.ok().put("data", gbDistributerEntity);
         }
     }
+
+
+
 
     /**
      * 获取部门用户列表（带采购统计）

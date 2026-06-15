@@ -20,8 +20,6 @@ public class GbDistributerModuleEntity implements Serializable {
     @TableId(type = IdType.AUTO)
     private Integer gbDistributerModuleId;
 
-    private Integer gbDmDisId;
-
     private Integer gbDmStockNumber;
 
     private Integer gbDmPurchaseNumber;

@@ -12,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static com.nongxinle.utils.DateUtils.formatWhatDay;
@@ -290,7 +291,7 @@ public class GbDepartmentUserController {
 
             if (departmentUserEntity != null) {
                 // 查询批发商信息
-                GbDistributerEntity gbDistributerEntity = gbDistributerService.getById(departmentUserEntity.getGbDuDistributerId());
+                GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerWithAllDepartments(departmentUserEntity.getGbDuDistributerId());
 
                 // 查询部门信息
                 Map<String, Object> mapDep = new HashMap<>();
@@ -353,7 +354,7 @@ public class GbDepartmentUserController {
         if (openId != null && !openId.trim().isEmpty()) {
             GbDistributerPurchaseBatchEntity batchEntity = gbDisPurchaseBatchService.getById(batchId);
             Map<String, Object> map = new HashMap<>();
-            GbDistributerEntity gbDistributerEntity = gbDistributerService.getById(gbDisId);
+            GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerWithAllDepartments(gbDisId);
             map.put("disInfo", gbDistributerEntity);
 
             // 首先判断是不是dis 用户
@@ -427,7 +428,21 @@ public class GbDepartmentUserController {
         GbDepartmentUserEntity byId = gbDepartmentUserService.getById(gbDepartmentUserId);
         byId.setGbDuAdmin(GbConstants.DepartmentUserRole.GROUP_MANAGER_APP);
         gbDepartmentUserService.saveOrUpdate(byId);
-        return R.ok().put("data", byId);
+        GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerWithAllDepartments(user.getGbDuDistributerId());
+        Map<String, Object> mapS = new HashMap<>();
+        mapS.put("disInfo", gbDistributerEntity);
+        mapS.put("userInfo", byId);
+        return R.ok().put("data", mapS);
+    }
+
+    /**
+     * 查询总部管理人员（gbDuAdmin = GROUP_MANAGER_APP = 0）的用户列表
+     */
+    @RequestMapping(value = "/getGroupManagerUsers", method = RequestMethod.GET)
+    @ResponseBody
+    public R getGroupManagerUsers() {
+        List<GbDepartmentUserEntity> users = gbDepartmentUserService.queryUsersByAdminType(GbConstants.DepartmentUserRole.GROUP_MANAGER_APP);
+        return R.ok().put("data", users);
     }
 
 

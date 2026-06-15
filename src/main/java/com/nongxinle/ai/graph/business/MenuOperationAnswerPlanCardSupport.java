@@ -306,7 +306,7 @@ public final class MenuOperationAnswerPlanCardSupport {
         putIfPresent(row, "foodId", dish.getDishId());
         putIfPresent(row, "dishName", dish.getDishName());
         putIfPresent(row, "soldPortionsTotal", dish.getSalesCount());
-        putIfPresent(row, "listPriceRevenue", dish.getSalesAmount());
+        putIfPresent(row, "actualRevenue", dish.getSalesAmount());
         putIfPresent(row, "blendedGrossMarginRateOnListPrice", dish.getBlendedGrossMarginRateOnListPrice());
         putIfPresent(row, "actualProfitAmount", dish.getActualProfitAmount());
         putIfPresent(row, "actualCostTotalAmount123", dish.getActualCostTotalAmount123());
@@ -327,7 +327,7 @@ public final class MenuOperationAnswerPlanCardSupport {
 
     private static String resolveSalesAmount(Map<String, Object> dishFacts) {
         return firstNonBlank(
-                fieldFromDish(dishFacts, "listPriceRevenue"), fieldFromDish(dishFacts, "salesAmount"));
+                fieldFromDish(dishFacts, "actualRevenue"), fieldFromDish(dishFacts, "salesAmount"));
     }
 
     private static String fieldFromDish(Map<String, Object> dishFacts, String key) {
@@ -606,7 +606,7 @@ public final class MenuOperationAnswerPlanCardSupport {
         putIfPresent(dish, "dishId", dishId);
         putIfPresent(dish, "dishName", row.get("dishName"));
         putIfPresent(dish, "salesCount", firstNonBlank(row.get("soldPortionsTotal"), row.get("salesCount")));
-        putIfPresent(dish, "salesAmount", firstNonBlank(row.get("listPriceRevenue"), row.get("salesAmount")));
+        putIfPresent(dish, "salesAmount", firstNonBlank(row.get("actualRevenue"), row.get("salesAmount")));
         putIfPresent(dish, "blendedGrossMarginRateOnListPrice", row.get("blendedGrossMarginRateOnListPrice"));
         putIfPresent(dish, "actualProfitAmount", row.get("actualProfitAmount"));
         putIfPresent(dish, "actualCostTotalAmount123", row.get("actualCostTotalAmount123"));

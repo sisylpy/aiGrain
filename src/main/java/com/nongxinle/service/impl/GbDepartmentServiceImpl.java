@@ -1,9 +1,11 @@
 package com.nongxinle.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.nongxinle.entity.GbDepFoodEntity;
 import com.nongxinle.entity.GbDepartmentDisGoodsEntity;
 import com.nongxinle.entity.GbDepartmentEntity;
 import com.nongxinle.mapper.GbDepartmentMapper;
+import com.nongxinle.service.GbDepFoodService;
 import com.nongxinle.service.GbDepartmentDisGoodsService;
 import com.nongxinle.service.GbDepartmentService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +28,9 @@ public class GbDepartmentServiceImpl extends ServiceImpl<GbDepartmentMapper, GbD
 
     @Autowired
     private GbDepartmentDisGoodsService gbDepartmentDisGoodsService;
+
+    @Autowired
+    private GbDepFoodService gbDepFoodService;
 
     @Override
     public GbDepartmentEntity saveNewDepartmentGb(GbDepartmentEntity department) {
@@ -186,6 +191,33 @@ public class GbDepartmentServiceImpl extends ServiceImpl<GbDepartmentMapper, GbD
                 newGoods.setGbDdgDepGoodsStatus(refGoods.getGbDdgDepGoodsStatus());
                 gbDepartmentDisGoodsService.save(newGoods);
                 existDisGoodsIds.add(disGoodsId);
+            }
+        }
+
+        // 4. 复制参考部门的菜品到新部门
+        Map<String, Object> foodQuery = new HashMap<>();
+        foodQuery.put("depFatherId", cankaoDepFatherId);
+        List<GbDepFoodEntity> refFoodList = gbDepFoodService.queryDepFoodByParams(foodQuery);
+        if (refFoodList != null && !refFoodList.isEmpty()) {
+            for (GbDepFoodEntity refFood : refFoodList) {
+                GbDepFoodEntity newFood = new GbDepFoodEntity();
+                newFood.setGbDfDepId(department.getGbDepartmentId());
+                newFood.setGbDfFoodId(refFood.getGbDfFoodId());
+                newFood.setGbDfNxFoodId(refFood.getGbDfNxFoodId());
+                newFood.setGbDfFoodName(refFood.getGbDfFoodName());
+                newFood.setGbDfFoodPrice(refFood.getGbDfFoodPrice());
+                newFood.setGbDfStatus(refFood.getGbDfStatus());
+                newFood.setGbDfFoodPinyin(refFood.getGbDfFoodPinyin());
+                newFood.setGbDfFoodPy(refFood.getGbDfFoodPy());
+                newFood.setGbDfDepFatherId(String.valueOf(department.getGbDepartmentId()));
+                newFood.setGbDfFoodFatherId(refFood.getGbDfFoodFatherId());
+                newFood.setGbDfFoodImg(refFood.getGbDfFoodImg());
+                newFood.setGbDfFoodImgLarge(refFood.getGbDfFoodImgLarge());
+                newFood.setGbDfFoodMethod(refFood.getGbDfFoodMethod());
+                newFood.setGbDfFoodDetail(refFood.getGbDfFoodDetail());
+                newFood.setGbDfGoodsSort(refFood.getGbDfGoodsSort());
+                newFood.setGbDfDistributerId(refFood.getGbDfDistributerId());
+                gbDepFoodService.save(newFood);
             }
         }
 

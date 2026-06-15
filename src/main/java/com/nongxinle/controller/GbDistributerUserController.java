@@ -79,7 +79,7 @@ public class GbDistributerUserController {
 
         Map<String, Object> map = new HashMap<>();
         map.put("openId", openid);
-        map.put("admin", GbConstants.DepartmentUserRole.STORE_MANAGER_APP);
+        map.put("admin", GbConstants.DepartmentUserRole.GROUP_MANAGER_APP);
         GbDepartmentUserEntity depUserEntities = gbDepartmentUserService.queryDepUsersByOpenIdAndAdmin(map);
         NxJrdhUserEntity nxJrdhUserEntity = nxJrdhUserService.queryWhichUserByOpenId(openid);
 
@@ -109,7 +109,7 @@ public class GbDistributerUserController {
             if (disId != null) {
                 Map<String, Object> mapRe = new HashMap<>();
                 // 查询完整批发商信息（含所有部门列表）
-                mapRe.put("disInfo", gbDistributerService.queryDistributerBaseInfo(disId));
+                mapRe.put("disInfo", gbDistributerService.queryDistributerWithAllDepartments(disId));
                 mapRe.put("depUserInfo", gbDepartmentUserService.queryDepUserByOpenId(openid));
                 return R.ok().put("data", mapRe);
             }

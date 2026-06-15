@@ -119,7 +119,7 @@
 
 **菜品行（各 bucket / `priorityGroups[].dishes[]`）**
 
-`dishId`, `dishName`, `quadrantCode`, `quadrantName`, `soldPortionsTotal`, `listPriceRevenue`, `blendedGrossMarginRateOnListPrice`, `actualProfitAmount`, `suggestedActionLabel`, `reason`, `evidenceRefId`
+`dishId`, `dishName`, `quadrantCode`, `quadrantName`, `soldPortionsTotal`, `actualRevenue`, `blendedGrossMarginRateOnListPrice`, `actualProfitAmount`, `suggestedActionLabel`, `reason`, `evidenceRefId`
 
 **副卡形态（Historical · overview / high_sales 追加）**
 

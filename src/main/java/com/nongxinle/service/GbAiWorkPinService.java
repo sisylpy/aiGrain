@@ -3,6 +3,7 @@ package com.nongxinle.service;
 import com.nongxinle.ai.workspace.dto.PromotePinToNoteRequest;
 import com.nongxinle.ai.history.dto.AiMessagePinResponseDTO;
 import com.nongxinle.ai.workspace.dto.WorkPinCreateRequest;
+import com.nongxinle.ai.workspace.dto.WorkPinMineListResponseDTO;
 import com.nongxinle.ai.workspace.dto.WorkPinResponse;
 import com.nongxinle.ai.workspace.dto.WorkNoteResponse;
 
@@ -15,6 +16,16 @@ public interface GbAiWorkPinService {
     WorkPinResponse createPin(WorkPinCreateRequest request);
 
     List<WorkPinResponse> listPins(Long conversationId, Long userId);
+
+    /**
+     * 当前用户跨会话图钉列表（分页）；不含完整 sourceTextSnapshot / cards_json。
+     */
+    WorkPinMineListResponseDTO listMyPins(
+            Long userId,
+            Long conversationId,
+            String sourceType,
+            Integer page,
+            Integer pageSize);
 
     WorkPinResponse getPinDetail(Long pinId, Long userId);
 

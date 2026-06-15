@@ -255,7 +255,7 @@ public class DishSalesAnalysisCapabilityAdapter {
         row.put("foodName", name);
         row.put("dishName", name);
         row.put("soldPortionsTotal", "0");
-        row.put("listPriceRevenue", "0");
+        row.put("actualRevenue", "0");
         if (StringUtils.hasText(food.getGbDfFoodPrice())) {
             row.put("listPrice", food.getGbDfFoodPrice().trim());
         }
@@ -298,7 +298,7 @@ public class DishSalesAnalysisCapabilityAdapter {
         c.put("dishName", name);
         c.put("foodName", name);
         c.put("soldPortionsTotal", "0");
-        c.put("listPriceRevenue", "0");
+        c.put("actualRevenue", "0");
         return c;
     }
 
@@ -372,8 +372,8 @@ public class DishSalesAnalysisCapabilityAdapter {
                 "soldPortionsTotal",
                 sumMetricStrings(str(target.get("soldPortionsTotal")), str(addition.get("soldPortionsTotal"))));
         target.put(
-                "listPriceRevenue",
-                sumMetricStrings(str(target.get("listPriceRevenue")), str(addition.get("listPriceRevenue"))));
+                "actualRevenue",
+                sumMetricStrings(str(target.get("actualRevenue")), str(addition.get("actualRevenue"))));
         if (!StringUtils.hasText(str(target.get("foodName"))) && StringUtils.hasText(str(addition.get("foodName")))) {
             target.put("foodName", addition.get("foodName"));
         }
@@ -478,7 +478,7 @@ public class DishSalesAnalysisCapabilityAdapter {
         Integer foodId = row.get("foodId") instanceof Number n ? n.intValue() : null;
         String dishName = dishDisplayName(row);
         String salesPortions = str(row.get("soldPortionsTotal"));
-        String salesAmount = str(row.get("listPriceRevenue"));
+        String salesAmount = str(row.get("actualRevenue"));
         String salesUnitPrice = str(row.get("listPrice"));
 
         Map<String, Object> cardPayload = DishSalesAnalysisCapabilityResult.buildCardPayload(
@@ -529,7 +529,7 @@ public class DishSalesAnalysisCapabilityAdapter {
         c.put("foodId", row.get("foodId"));
         c.put("dishName", dishDisplayName(row));
         c.put("soldPortionsTotal", row.get("soldPortionsTotal"));
-        c.put("listPriceRevenue", row.get("listPriceRevenue"));
+        c.put("actualRevenue", row.get("actualRevenue"));
         return c;
     }
 

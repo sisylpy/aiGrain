@@ -28,7 +28,7 @@ class AiCardPayloadWireSupportTest {
         row.put("rank", 1);
         row.put("dishName", "烩菜");
         row.put("soldPortionsTotal", "120");
-        row.put("listPriceRevenue", "4200");
+        row.put("actualRevenue", "4200");
         row.put("foodId", "1001");
 
         DishSalesAnswerPlan plan =
@@ -67,7 +67,7 @@ class AiCardPayloadWireSupportTest {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("dishName", "招牌鱼");
         row.put("salesQuantity", "120");
-        row.put("listPriceRevenue", "9600");
+        row.put("actualRevenue", "9600");
         row.put("actualCostAmount", "3200");
         row.put("theoryCostAmount", "2100");
         row.put("blendedGrossMarginRateOnListPrice", "0.66");
@@ -148,7 +148,7 @@ class AiCardPayloadWireSupportTest {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("dishName", "烩菜");
         row.put("soldPortionsTotal", "120");
-        row.put("listPriceRevenue", "4200");
+        row.put("actualRevenue", "4200");
         row.put("foodId", "1001");
         row.put("ranking", 1);
 
@@ -319,7 +319,7 @@ class AiCardPayloadWireSupportTest {
         riskRow.put("foodId", "1001");
         riskRow.put("dishName", "测试菜");
         riskRow.put("soldPortionsTotal", "120");
-        riskRow.put("listPriceRevenue", "3600");
+        riskRow.put("actualRevenue", "3600");
         riskRow.put("actualCostTotalAmount123", "3000");
         riskRow.put("actualProfitAmount", "600");
         riskRow.put("blendedGrossMarginRateOnListPrice", "16.67%");
@@ -424,7 +424,7 @@ class AiCardPayloadWireSupportTest {
                                                 "明星菜",
                                                 "soldPortionsTotal",
                                                 "80",
-                                                "listPriceRevenue",
+                                                "actualRevenue",
                                                 "2400",
                                                 "actualProfitAmount",
                                                 "900",

@@ -127,7 +127,7 @@ actual123_{i,g} = alloc1_{i,g} + alloc2_{i,g} + alloc3_{i,g}
 
 - **`recipeUnitPerDish`**：单份配方用量（如大娃娃菜 **0.3 斤/份**）。
 - **`produceAllocatedPerSoldPortion`**：**仅 type1** 摊到本菜后，再除以本菜实销份数 `q`，即 **`alloc1 ÷ q`**（斤/每实销一份）。
-- **`utilizationRate`**：**`alloc1 ÷ theoryUsage`**，其中 `theoryUsage = q × recipeUnitPerDish`。  
+- **`devianceRate`**：**`alloc1 ÷ theoryUsage`**，其中 `theoryUsage = q × recipeUnitPerDish`。  
   因此与 **「每份生产摊销 ÷ 每份配方」** 数学上**完全等价**：  
   `(alloc1/q) / recipeUnitPerDish = alloc1 / (q×recipeUnitPerDish)`。
 
@@ -135,11 +135,11 @@ actual123_{i,g} = alloc1_{i,g} + alloc2_{i,g} + alloc3_{i,g}
 
 - `alloc1 = W1 × needThis / sumNeed = 3 × 1.5 / 6 = 0.75`（**整段期本菜该料生产摊销合计**，不是 1.0）。
 - **`produceAllocatedPerSoldPortion = 0.75 / 5 = 0.15` 斤/份**（不是 0.2）。
-- **`utilizationRate = 0.75 / 1.5 = 0.15 / 0.3 = 50%`**（不是 0.2÷0.3 的 66.67%）。
+- **`devianceRate = 0.75 / 1.5 = 0.15 / 0.3 = 50%`**（不是 0.2÷0.3 的 66.67%）。
 
 若要出现 **66.67%**，在 **`theoryUsage=1.5` 不变**的前提下，需要 **`alloc1=1.0`**（即 **0.2 斤/份 × 5**）。但在 **`W1=3` 且 sumNeed 按 1.5:4.5 分两菜** 时，烩菜按比例只能分到 **0.75**；若强行按「烩菜应吃 1.0」分，则另一菜或总账会与 **`Σ alloc1 = W1`** 矛盾，除非 **`W1` 或 sumNeed 口径**与系统不一致。
 
-**干锅娃娃菜**：同一模型下本菜该料 **`theoryUsage = 3 × 1.5 = 4.5`**，**`alloc1 = 2.25`**（**每份 0.75 斤**生产摊销），**`utilizationRate = 2.25/4.5 = 50%`**。若您手头的「理论 1.5、实际 0.8」指的是**别的口径**（例如只看了单份配方、或另一时间段出库、或未含全部实销份数），请与接口里 **`theoryUsage`、`actualProduceUsage`、`produceAllocatedPerSoldPortion`** 对齐后再比。
+**干锅娃娃菜**：同一模型下本菜该料 **`theoryUsage = 3 × 1.5 = 4.5`**，**`alloc1 = 2.25`**（**每份 0.75 斤**生产摊销），**`devianceRate = 2.25/4.5 = 50%`**。若您手头的「理论 1.5、实际 0.8」指的是**别的口径**（例如只看了单份配方、或另一时间段出库、或未含全部实销份数），请与接口里 **`theoryUsage`、`actualProduceUsage`、`produceAllocatedPerSoldPortion`** 对齐后再比。
 
 ---
 

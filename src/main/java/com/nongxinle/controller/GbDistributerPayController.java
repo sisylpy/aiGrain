@@ -487,6 +487,15 @@ public class GbDistributerPayController {
 //
 //        }
         if (type == 1) {
+            GbDistributerPayEntity subStore = new GbDistributerPayEntity();
+            subStore.setGbGdpBuyQuantity("1");
+            subStore.setGbGdpPaySubtotal("0");
+            subStore.setGbGdpType(1);
+            subStore.setPerPrice("分店");
+            subStore.setGbGdpImgUrl("uploadImage/imPurchase/guanli.png");
+            subStore.setGbGdpSellDetail("实时监控 精准管理\n 管理者可以随时查看分店库存情况，掌握原料的使用状态、剩余数量，以及新鲜度等关键信息，能够对原料的采购、存储、使用等各环节进行精准的管理。");
+            list.add(subStore);
+
             GbDistributerPayEntity payEntity = new GbDistributerPayEntity();
             payEntity.setGbGdpBuyQuantity("1");
             payEntity.setGbGdpPaySubtotal("2800");
@@ -547,10 +556,14 @@ public class GbDistributerPayController {
         System.out.println("mappd" + mapP);
         List<GbDistributerPayEntity> payEntities = gbDistributerPayService.queryDisPayListByParams(mapP);
 
+        GbDistributerEntity gbDistributerEntity = gbDistributerService.queryDistributerWithAllDepartments(disId);
+
         map.put("list", list);
         map.put("payEntities", payEntities);
         map.put("liwu", 1000);
         map.put("liwuDay", 3);
+        map.put("disInfo", gbDistributerEntity);
+
 
         return R.ok().put("data", map);
     }

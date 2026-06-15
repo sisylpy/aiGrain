@@ -38,4 +38,13 @@ public interface AiConversationCoreService {
             Long distributerId,
             AiConversationScopeMode scopeMode,
             Long userId);
+
+    /**
+     * 店长工作记录长期会话：按 userId + threadKind=WORK_RECORD + 组织锚点幂等查找或插入。
+     */
+    GbAiConversationEntity getOrCreateWorkRecordConversation(
+            Long departmentId,
+            Long distributerId,
+            AiConversationScopeMode scopeMode,
+            Long userId);
 }

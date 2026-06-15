@@ -80,6 +80,13 @@ public class GbDistributerServiceImpl extends ServiceImpl<GbDistributerMapper, G
         GbDepartmentEntity appSupp = gbDepartmentService.getOne(appSuppWrapper);
         distributer.setAppSupplierDepartment(appSupp);
 
+
+        // 查询配送商模块
+        LambdaQueryWrapper<GbDistributerModuleEntity> moduleWrapper = new LambdaQueryWrapper<>();
+        moduleWrapper.eq(GbDistributerModuleEntity::getGbDmDistributerId, disId);
+        GbDistributerModuleEntity module = gbDistributerModuleService.getOne(moduleWrapper);
+        distributer.setGbDistributerModuleEntity(module);
+
         return distributer;
     }
 

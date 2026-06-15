@@ -81,7 +81,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
 | type3 | 损耗 / 丢失、破损、自然损耗 | **损耗**（**不要**叫废弃） |
 | type4 | 退货 | 退货（单独口径） |
 
-**菜品实际毛利/综合毛利率**默认成本侧为 **type1+type2+type3**；**type4 退货**不默认纳入「菜品实际毛利成本」（见 legacy 复盘）。利用率 **`utilizationRate`**：分子**仅 type1**，不把 type2/type3 放进分子。
+**菜品实际毛利/综合毛利率**默认成本侧为 **type1+type2+type3**；**type4 退货**不默认纳入「菜品实际毛利成本」（见 legacy 复盘）。偏差率 **`devianceRate`**：分子**仅 type1**，不把 type2/type3 放进分子。
 
 ---
 
@@ -93,7 +93,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
 
 | 字段（典型） | label | meaning | composer_usage |
 |--------------|-------|---------|------------------|
-| `listPriceRevenue`（及汇总） | 菜品标价销售额 | 当前时间窗与部门范围内，菜品销量 × **部门菜品标价**得到的销售额（具体以服务端实现为准） | 可展示；**不得**用别的方式重算分母 |
+| `actualRevenue`（及汇总） | 菜品标价销售额 | 当前时间窗与部门范围内，菜品销量 × **部门菜品标价**得到的销售额（具体以服务端实现为准） | 可展示；**不得**用别的方式重算分母 |
 | `theoryCostAmount` | 理论成本 | 配方/BOM、销量、扣库均价链汇总的理论成本 | 可展示；与 legacy 一致 |
 | `actualCostAmount` | 实际出库成本（整菜行常见口径） | 出库核销分摊到菜品的实际成本；默认含 **type1+type2+type3**，**不含 type4**（除非接口单独说明） | 可展示；**禁止** Composer 用「心算」从配料反推 |
 | `actualCostTotalAmount123` / `actualCostPerPortion123` | 单份或汇总「1+2+3」成本 | 服务端已算好的单份/汇总实际成本口径 | 展示时引用原文字段或格式化值；不自行换算 |
@@ -108,11 +108,11 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
 | `grossMarginRateOnListPrice` | 仅 type1 相关展示毛利率 | 多与「仅生产」口径相关；**不等于** `blended…` | 仅在 AnswerPlan 明确要求「仅生产口径」时引用；避免与 blended 混谈 |
 | `grossMarginLevel` | 毛利档位 | 相对父级标准带（T±F）的档位 | 可引用；不自己判断阈值 |
 
-### 6.3 利用率与结构指标
+### 6.3 偏差率与结构指标
 
 | 字段（典型） | label | meaning | composer_usage |
 |--------------|-------|---------|------------------|
-| `utilizationRate` | 利用率 | **仅 type1** 分摊相对理论用量；**不含** type2/type3 进分子 | 说明时勿与「制作率」「损耗率」混淆；见 `ai-data-field-lexicon.md` |
+| `devianceRate` | 偏差率 | **仅 type1** 分摊相对理论用量；**不含** type2/type3 进分子 | 说明时勿与「制作率」「损耗率」混淆；见 `ai-data-field-lexicon.md` |
 | `scopeOutboundSubtotals` 等 | 区间出库结构 | type1/2/3 金额及占比等 | 用于总览上下文，不单菜心算 |
 
 ---
@@ -189,7 +189,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
         "dishId": "120883",
         "dishName": "椒麻鸡",
         "salesQuantity": "128",
-        "listPriceRevenue": "8960.00",
+        "actualRevenue": "8960.00",
         "theoryCostAmount": "5120.00",
         "actualCostAmount": "7420.50",
         "actualCostTotalAmount123": "7420.50",
@@ -198,7 +198,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
         "diffCostAmount": "2300.50",
         "grossMarginLevel": "BELOW",
         "riskReason": "实际成本明显高于理论用量成本，建议核对出库与配方",
-        "utilizationRate": "76.2%"
+        "devianceRate": "76.2%"
       }
     ],
     "secondaryRows": [
@@ -206,7 +206,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
         "dishId": "120901",
         "dishName": "凉拌木耳",
         "salesQuantity": "56",
-        "listPriceRevenue": "1680.00",
+        "actualRevenue": "1680.00",
         "theoryCostAmount": "420.00",
         "actualCostAmount": "890.20",
         "actualCostTotalAmount123": "890.20",
@@ -215,7 +215,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
         "diffCostAmount": "470.20",
         "grossMarginLevel": "IN_BAND",
         "riskReason": "",
-        "utilizationRate": "81.0%"
+        "devianceRate": "81.0%"
       }
     ]
   }
@@ -240,7 +240,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
         "dishId": "98102",
         "dishName": "招牌水煮鱼",
         "salesQuantity": "203",
-        "listPriceRevenue": "14210.00",
+        "actualRevenue": "14210.00",
         "theoryCostAmount": "6100.40",
         "actualCostAmount": "9850.00",
         "actualCostTotalAmount123": "9850.00",
@@ -249,7 +249,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
         "diffCostAmount": "3749.60",
         "grossMarginLevel": "IN_BAND",
         "riskReason": "实际成本明显高于理论用量成本，建议核对出库与配方",
-        "utilizationRate": "72.5%"
+        "devianceRate": "72.5%"
       }
     ],
     "secondaryRows": [
@@ -257,7 +257,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
         "dishId": "98120",
         "dishName": "毛血旺",
         "salesQuantity": "88",
-        "listPriceRevenue": "7040.00",
+        "actualRevenue": "7040.00",
         "theoryCostAmount": "2900.00",
         "actualCostAmount": "5100.00",
         "actualCostTotalAmount123": "5100.00",
@@ -266,7 +266,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
         "diffCostAmount": "2200.00",
         "grossMarginLevel": "BELOW",
         "riskReason": "",
-        "utilizationRate": "70.0%"
+        "devianceRate": "70.0%"
       }
     ]
   }
@@ -291,7 +291,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
         "dishId": "110045",
         "dishName": "核桃芽菜西芹",
         "salesQuantity": "42",
-        "listPriceRevenue": "2016.00",
+        "actualRevenue": "2016.00",
         "theoryCostAmount": "680.00",
         "actualCostAmount": "1510.00",
         "actualCostTotalAmount123": "1510.00",
@@ -300,7 +300,7 @@ Debug 字段参考：`AiHarnessResolvedContextSummarizer` 的 `dishProfitStructu
         "diffCostAmount": "830.00",
         "grossMarginLevel": "BELOW",
         "riskReason": "实际成本明显高于理论用量成本，建议核对出库与配方",
-        "utilizationRate": "65.3%"
+        "devianceRate": "65.3%"
       }
     ],
     "secondaryRows": []

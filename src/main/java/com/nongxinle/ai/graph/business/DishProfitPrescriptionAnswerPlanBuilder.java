@@ -203,7 +203,7 @@ public final class DishProfitPrescriptionAnswerPlanBuilder {
         }
         putIfPresent(pricing, "salesUnitPrice", str(costData, "salesUnitPrice"));
         putIfPresent(pricing, "salesPortions", firstNonBlank(str(costData, "salesPortions"), str(profitRow, "soldPortionsTotal")));
-        putIfPresent(pricing, "salesAmount", firstNonBlank(str(costData, "salesAmount"), str(profitRow, "listPriceRevenue")));
+        putIfPresent(pricing, "salesAmount", firstNonBlank(str(costData, "salesAmount"), str(profitRow, "actualRevenue")));
         return pricing;
     }
 

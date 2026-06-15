@@ -83,7 +83,7 @@ public final class DishSalesAnswerPlanCardSupport {
         }
 
         String soldPortions = firstNonBlank(row.get("soldPortionsTotal"), row.get("salesPortions"));
-        String salesAmount = firstNonBlank(row.get("listPriceRevenue"), row.get("salesAmount"));
+        String salesAmount = firstNonBlank(row.get("actualRevenue"), row.get("salesAmount"));
         String salesUnitPrice =
                 firstNonBlank(
                         row.get("salesUnitPrice"),
@@ -96,7 +96,7 @@ public final class DishSalesAnswerPlanCardSupport {
         putOptional(data, "dishId", row.get("foodId"));
         putOptional(data, "soldPortionsTotal", soldPortions);
         putOptional(data, "salesPortions", firstNonBlank(row.get("salesPortions"), soldPortions));
-        putOptional(data, "listPriceRevenue", salesAmount);
+        putOptional(data, "actualRevenue", salesAmount);
         putOptional(data, "salesAmount", salesAmount);
         putOptional(data, "salesUnitPrice", salesUnitPrice);
         putOptional(data, "listPrice", row.get("listPrice"));
@@ -283,7 +283,7 @@ public final class DishSalesAnswerPlanCardSupport {
             putOptional(
                     item,
                     "salesAmount",
-                    firstNonBlank(row.get("salesAmount"), row.get("listPriceRevenue")));
+                    firstNonBlank(row.get("salesAmount"), row.get("actualRevenue")));
             putOptional(item, "foodId", row.get("foodId"));
             if (!item.isEmpty()) {
                 out.add(item);

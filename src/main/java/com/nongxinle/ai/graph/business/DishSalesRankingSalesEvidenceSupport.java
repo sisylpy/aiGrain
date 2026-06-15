@@ -60,7 +60,7 @@ public final class DishSalesRankingSalesEvidenceSupport {
                 continue;
             }
             BigDecimal amt =
-                    firstPositiveDecimal(row.get("listPriceRevenue"), row.get("salesAmount"));
+                    firstPositiveDecimal(row.get("actualRevenue"), row.get("salesAmount"));
             if (amt != null) {
                 return true;
             }

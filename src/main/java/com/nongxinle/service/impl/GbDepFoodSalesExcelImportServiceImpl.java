@@ -557,10 +557,21 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
 
         BigDecimal dineInFromDishes = sumFoodSalesSubtotalByFatherAndDay(depFatherId, fullDate);
 
+        // 计算五类销售汇总，补齐 dailyRevenue 中与 gbDfBusinessInsight 对齐的字段
+        DishDayRollup salesRollup = DishDayRollup.fromRows(salesRows);
+
         Map<String, Object> out = new HashMap<>();
         out.put("submitShape", dto);
         out.put("lineCount", lines.size());
         Map<String, Object> daily = buildDailyRevenueDayPayload(revRow, fullDate, depFatherId, distributerId, dineInFromDishes);
+        // 补齐与 depGeFoodBusiness gbDfBusinessInsight 对齐的字段
+        daily.put("actualRevenue", moneyPlain(salesRollup.totalRevenue()));
+        daily.put("normalSaleAmount", moneyPlain(salesRollup.normalSaleAmount));
+        daily.put("normalSaleQty", qtyPlain(salesRollup.normalPortions));
+        daily.put("discountGiftQty", qtyPlain(salesRollup.discountGiftQty()));
+        daily.put("discountGiftAmount", moneyPlain(salesRollup.discountGiftAmount()));
+        daily.put("employeeMealCostAmount", moneyPlain(salesRollup.employeeMealAmount));
+        daily.put("employeeMealQty", qtyPlain(salesRollup.employeeMealPortions));
         out.put("dailyRevenue", daily);
         out.put("recordDate", fullDate);
         out.put("depFatherId", depFatherId);
@@ -1331,6 +1342,12 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
         BigDecimal complimentaryPortions = BigDecimal.ZERO;
         BigDecimal employeeMealPortions = BigDecimal.ZERO;
         BigDecimal salesAmount = BigDecimal.ZERO;
+        // 各类型金额（与 depGeFoodBusiness gbDfBusinessInsight 口径对齐）
+        BigDecimal normalSaleAmount = BigDecimal.ZERO;       // type=1 subtotal
+        BigDecimal discountSaleAmount = BigDecimal.ZERO;     // type=2 subtotal
+        BigDecimal memberSaleAmount = BigDecimal.ZERO;       // type=3 subtotal
+        BigDecimal complimentaryAmount = BigDecimal.ZERO;    // type=4 subtotal
+        BigDecimal employeeMealAmount = BigDecimal.ZERO;     // type=5 subtotal
 
         static DishDayRollup fromRows(List<GbDepFoodSalesEntity> rows) {
             DishDayRollup r = new DishDayRollup();
@@ -1347,6 +1364,15 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
                 r.complimentaryPortions = r.complimentaryPortions.add(GbDepFoodSalesMetricsSupport.complimentaryQty(row));
                 r.employeeMealPortions = r.employeeMealPortions.add(GbDepFoodSalesMetricsSupport.employeeMealQty(row));
                 r.salesAmount = r.salesAmount.add(GbDepFoodSalesMetricsSupport.operationalActualRevenue(row));
+                r.normalSaleAmount = r.normalSaleAmount.add(GbDepFoodSalesMetricsSupport.normalSaleRevenue(row));
+                r.discountSaleAmount = r.discountSaleAmount.add(GbDepFoodSalesMetricsSupport.discountSaleRevenue(row));
+                r.memberSaleAmount = r.memberSaleAmount.add(GbDepFoodSalesMetricsSupport.memberSaleRevenue(row));
+                r.complimentaryAmount = r.complimentaryAmount.add(
+                        GbConstants.FoodSalesType.isComplimentary(GbDepFoodSalesMetricsSupport.resolveType(row))
+                                ? GbDepFoodSalesMetricsSupport.rowSubtotal(row) : BigDecimal.ZERO);
+                r.employeeMealAmount = r.employeeMealAmount.add(
+                        GbConstants.FoodSalesType.isEmployeeMeal(GbDepFoodSalesMetricsSupport.resolveType(row))
+                                ? GbDepFoodSalesMetricsSupport.rowSubtotal(row) : BigDecimal.ZERO);
             }
             return r;
         }
@@ -1361,6 +1387,11 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
             complimentaryPortions = complimentaryPortions.add(other.complimentaryPortions);
             employeeMealPortions = employeeMealPortions.add(other.employeeMealPortions);
             salesAmount = salesAmount.add(other.salesAmount);
+            normalSaleAmount = normalSaleAmount.add(other.normalSaleAmount);
+            discountSaleAmount = discountSaleAmount.add(other.discountSaleAmount);
+            memberSaleAmount = memberSaleAmount.add(other.memberSaleAmount);
+            complimentaryAmount = complimentaryAmount.add(other.complimentaryAmount);
+            employeeMealAmount = employeeMealAmount.add(other.employeeMealAmount);
         }
 
         BigDecimal operatingSalesPortions() {
@@ -1369,6 +1400,22 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
 
         BigDecimal totalConsumptionPortions() {
             return operatingSalesPortions().add(complimentaryPortions).add(employeeMealPortions);
+        }
+
+        /** 打折餐份数：折扣+会员+赠送（type 2+3+4），与 depGeFoodBusiness discountGiftQty 口径对齐。 */
+        BigDecimal discountGiftQty() {
+            return discountPortions.add(memberPortions).add(complimentaryPortions);
+        }
+
+        /** 打折餐金额：折扣+会员+赠送 subtotal（type 2+3+4），与 depGeFoodBusiness discountGiftAmount 口径对齐。 */
+        BigDecimal discountGiftAmount() {
+            return discountSaleAmount.add(memberSaleAmount).add(complimentaryAmount);
+        }
+
+        /** 实际总收入（type 1-5 全量 subtotal），与 depGeFoodBusiness actualRevenue 口径对齐。 */
+        BigDecimal totalRevenue() {
+            return normalSaleAmount.add(discountSaleAmount).add(memberSaleAmount)
+                    .add(complimentaryAmount).add(employeeMealAmount);
         }
 
         Map<String, Object> toDailyRowMap(String date) {
@@ -1382,6 +1429,14 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
             m.put("operatingSalesPortions", qtyPlain(operatingSalesPortions()));
             m.put("totalConsumptionPortions", qtyPlain(totalConsumptionPortions()));
             m.put("salesAmount", moneyPlain(salesAmount));
+            m.put("normalSaleAmount", moneyPlain(normalSaleAmount));
+            m.put("discountSaleAmount", moneyPlain(discountSaleAmount));
+            m.put("memberSaleAmount", moneyPlain(memberSaleAmount));
+            m.put("complimentaryAmount", moneyPlain(complimentaryAmount));
+            m.put("employeeMealAmount", moneyPlain(employeeMealAmount));
+            m.put("actualRevenue", moneyPlain(totalRevenue()));
+            m.put("discountGiftQty", qtyPlain(discountGiftQty()));
+            m.put("discountGiftAmount", moneyPlain(discountGiftAmount()));
             return m;
         }
 
@@ -1395,6 +1450,14 @@ public class GbDepFoodSalesExcelImportServiceImpl implements GbDepFoodSalesExcel
             m.put("normalPortions", qtyPlain(normalPortions));
             m.put("discountPortions", qtyPlain(discountPortions));
             m.put("memberPortions", qtyPlain(memberPortions));
+            // 与 depGeFoodBusiness gbDfBusinessInsight 对齐的金额字段
+            m.put("actualRevenue", moneyPlain(totalRevenue()));
+            m.put("normalSaleAmount", moneyPlain(normalSaleAmount));
+            m.put("normalSaleQty", qtyPlain(normalPortions));
+            m.put("discountGiftQty", qtyPlain(discountGiftQty()));
+            m.put("discountGiftAmount", moneyPlain(discountGiftAmount()));
+            m.put("employeeMealCostAmount", moneyPlain(employeeMealAmount));
+            m.put("employeeMealQty", qtyPlain(employeeMealPortions));
             return m;
         }
 

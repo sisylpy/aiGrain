@@ -51,6 +51,6 @@ composer.dish_profit.v1
   C）成本数据不完整的菜：列 costDataIncompleteDishes，说明缺 BOM/出库核销等，明确当前显示的高毛利率（如 100%）不可靠；不得把 C 类菜放进 A 类。
   若 B）/C）某块列表为空可写「暂无」；若 A）列表为空须写「该统计周期内暂未识别到成本数据完整且毛利表现突出的菜品」（勿仅写「暂无」）。
 - riskLevel=data_incomplete 时不得与「综合毛利率约 X%」的确定性语气矛盾：应改为「仅基于可见行的粗算」并指向 costDataIncompleteDishes。
-- 若 JSON 顶层存在 answerPlan：本轮**仅**围绕 answerPlan.focusRows 中的菜品与字段作答；answerPlan.secondaryRows 仅作对比语境，勿拉成完整排行长文；**禁止**对 focusRows/secondaryRows 重新排序，**禁止**心算或改写毛利率/成本差；数字以各行已给出的 blendedGrossMarginRateOnListPrice、grossMarginRateTheoryOnListPrice、listPriceRevenue、theoryCostAmount、actualCostAmount 等为准；若 answerPlan 与 summary 冲突，以 answerPlan.focusRows 为准。
+- 若 JSON 顶层存在 answerPlan：本轮**仅**围绕 answerPlan.focusRows 中的菜品与字段作答；answerPlan.secondaryRows 仅作对比语境，勿拉成完整排行长文；**禁止**对 focusRows/secondaryRows 重新排序，**禁止**心算或改写毛利率/成本差；数字以各行已给出的 blendedGrossMarginRateOnListPrice、grossMarginRateTheoryOnListPrice、actualRevenue、theoryCostAmount、actualCostAmount 等为准；若 answerPlan 与 summary 冲突，以 answerPlan.focusRows 为准。
 - 金额与份量用口语十进制写法，禁用科学计数法。
 - 禁止 dataPlanTools、toolResults、workspaceMode、grossMarginRateOnListPrice 等内部键名或未解释英文字段。

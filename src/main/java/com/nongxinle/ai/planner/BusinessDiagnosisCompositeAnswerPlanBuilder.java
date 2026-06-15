@@ -1036,7 +1036,7 @@ public final class BusinessDiagnosisCompositeAnswerPlanBuilder {
         Map<String, Object> bis = bisMap(inner.get("businessInsightSummary"));
         if (!bis.isEmpty()) {
             if (salesAmount == null) {
-                salesAmount = bisNumeric(bis, "totalListPriceRevenue", notes, "salesAmount");
+                salesAmount = bisNumeric(bis, "totalActualRevenue", notes, "salesAmount");
             }
             if (costAmount == null) {
                 costAmount = bisNumeric(bis, "totalActualCostAmount", notes, "costAmount");

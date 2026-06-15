@@ -766,7 +766,7 @@ public class DishProfitAgentNode {
     private static LinkedHashMap<String, Object> portfolioTotalsDiagnosisRow(AiDishProfitOverviewResult out) {
         LinkedHashMap<String, Object> m = new LinkedHashMap<>();
         putAnswerPlanField(m, "dishName", "（区间菜品组合）");
-        putAnswerPlanField(m, "listPriceRevenue", out.getTotalDishSalesAmount());
+        putAnswerPlanField(m, "actualRevenue", out.getTotalDishSalesAmount());
         putAnswerPlanField(m, "theoryCostAmount", out.getTotalTheoreticalCost());
         putAnswerPlanField(m, "actualCostAmount", out.getTotalActualCost());
         putAnswerPlanField(m, "blendedGrossMarginRateOnListPrice", out.getGrossProfitRate());
@@ -780,7 +780,7 @@ public class DishProfitAgentNode {
         }
         putAnswerPlanField(m, "dishName", b.getDishName());
         putAnswerPlanField(m, "salesQuantity", b.getSalesQty());
-        putAnswerPlanField(m, "listPriceRevenue", b.getSalesAmount());
+        putAnswerPlanField(m, "actualRevenue", b.getSalesAmount());
         putAnswerPlanField(m, "theoryCostAmount", b.getTheoreticalCost());
         putAnswerPlanField(m, "productionActualCostAmount", b.getProductionActualCost());
         putAnswerPlanField(m, "totalActualCostAmount123", b.getTotalActualCost123());
@@ -1261,7 +1261,7 @@ public class DishProfitAgentNode {
             m.put("dishId", fid == null ? null : fid.toString());
             putAnswerPlanField(m, "dishName", row.get("dishName"));
             putAnswerPlanField(m, "salesQuantity", row.get("soldPortionsTotal"));
-            putAnswerPlanField(m, "listPriceRevenue", row.get("listPriceRevenue"));
+            putAnswerPlanField(m, "actualRevenue", row.get("actualRevenue"));
             putAnswerPlanField(m, "theoryCostAmount", row.get("theoryCostAmount"));
             putAnswerPlanField(
                     m, "productionActualCostAmount",
@@ -1281,7 +1281,7 @@ public class DishProfitAgentNode {
             putAnswerPlanField(m, "diffCostAmount", row.get("diffCostAmount"));
             putAnswerPlanField(m, "grossMarginLevel", row.get("grossMarginLevel"));
             putAnswerPlanField(m, "riskReason", row.get("riskReason"));
-            putAnswerPlanField(m, "utilizationRate", row.get("utilizationRate"));
+            putAnswerPlanField(m, "devianceRate", row.get("devianceRate"));
         }
         if (brief != null) {
             if (!StringUtils.hasText(stringify(m.get("riskReason")))) {
@@ -2429,7 +2429,7 @@ public class DishProfitAgentNode {
         @SuppressWarnings("unchecked")
         Map<String, Object> bis = toolData == null ? null : (Map<String, Object>) toolData.get("businessInsightSummary");
         if (!focusMode && bis != null) {
-            agg.revenue = moneyFromSummaryField(bis.get("totalListPriceRevenue"));
+            agg.revenue = moneyFromSummaryField(bis.get("totalActualRevenue"));
             agg.theory = moneyFromSummaryField(bis.get("totalTheoryCostAmount"));
             BigDecimal actualType1 = moneyFromSummaryField(bis.get("totalActualCostAmount"));
             BigDecimal actual123 = moneyFromSummaryField(bis.get("totalActualCostTotalAmount123"));
@@ -2444,7 +2444,7 @@ public class DishProfitAgentNode {
             return agg;
         }
         for (Map<String, Object> row : rows) {
-            agg.revenue = agg.revenue.add(dec(row.get("listPriceRevenue")));
+            agg.revenue = agg.revenue.add(dec(row.get("actualRevenue")));
             agg.theory = agg.theory.add(dec(row.get("theoryCostAmount")));
             agg.actual = agg.actual.add(DishProfitActualCostSemanticsSupport.displayActualCost(row));
         }
@@ -2544,7 +2544,7 @@ public class DishProfitAgentNode {
         if (foodIdStr != null && foodIdStr.isEmpty()) {
             foodIdStr = null;
         }
-        BigDecimal rev = dec(row.get("listPriceRevenue"));
+        BigDecimal rev = dec(row.get("actualRevenue"));
         BigDecimal theory = dec(row.get("theoryCostAmount"));
         BigDecimal type1 = DishProfitActualCostSemanticsSupport.productionActualCostType1(row);
         BigDecimal type123 = DishProfitActualCostSemanticsSupport.totalActualCost123(row);

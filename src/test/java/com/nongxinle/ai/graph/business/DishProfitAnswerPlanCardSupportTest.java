@@ -19,7 +19,7 @@ class DishProfitAnswerPlanCardSupportTest {
         Map<String, Object> top = new LinkedHashMap<>();
         top.put("dishName", "招牌鱼");
         top.put("salesQuantity", "120");
-        top.put("listPriceRevenue", "9600");
+        top.put("actualRevenue", "9600");
         top.put("theoryCostAmount", "2100");
         top.put("actualCostAmount", "3200");
         top.put("blendedGrossMarginRateOnListPrice", "0.66");
@@ -28,7 +28,7 @@ class DishProfitAnswerPlanCardSupportTest {
         Map<String, Object> second = new LinkedHashMap<>();
         second.put("dishName", "烩菜");
         second.put("salesQuantity", "80");
-        second.put("listPriceRevenue", "4200");
+        second.put("actualRevenue", "4200");
         second.put("actualCostAmount", "2800");
 
         DishProfitAnswerPlan plan =

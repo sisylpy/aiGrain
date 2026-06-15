@@ -34,8 +34,8 @@
 ### 1.3 数据从哪来（业务层）
 
 - **服务（Insight 聚合）**：**`GbDepFoodBusinessInsightService#buildInsight(disId, depFatherIdInt, start, stop, null, scopeAllow)`** — 返回 `dishes`、`businessInsightSummary`、`dishProfitStoreCoverage`、`scopeOutboundSubtotals` 等。
-- **菜品行字段（节选）**：标价收入 `listPriceRevenue`、销量 `soldPortionsTotal`、理论成本 `theoryCostAmount`、实际成本 `actualCostAmount`、多种毛利率字段（如 `blendedGrossMarginRateOnListPrice`、`grossMarginRateOnListPrice`）等；Tool 侧 **`summarizeDishRow`** 压缩为 `dishRows`。
-- **组合层面汇总**：Tool 对 presented 行求和填 **`listPriceRevenueTotal`**、**`totalTheoreticalCost`**、**`totalActualCostType1`**、**`portfolioGrossProfitAmount`**、**`portfolioBlendedGrossMarginRateOnListPrice`** 等；与 **`businessInsightSummary`** 口径对齐说明见 Tool 内注释。
+- **菜品行字段（节选）**：标价收入 `actualRevenue`、销量 `soldPortionsTotal`、理论成本 `theoryCostAmount`、实际成本 `actualCostAmount`、多种毛利率字段（如 `blendedGrossMarginRateOnListPrice`、`grossMarginRateOnListPrice`）等；Tool 侧 **`summarizeDishRow`** 压缩为 `dishRows`。
+- **组合层面汇总**：Tool 对 presented 行求和填 **`actualRevenueTotal`**、**`totalTheoreticalCost`**、**`totalActualCostType1`**、**`portfolioGrossProfitAmount`**、**`portfolioBlendedGrossMarginRateOnListPrice`** 等；与 **`businessInsightSummary`** 口径对齐说明见 Tool 内注释。
 - **SQL / Mapper**：在 **`GbDepFoodBusinessInsightService`** 及其实现链之下的持久层；**Planner Adapter 禁止新 SQL / 禁止绕过 Tool**。
 
 ---
@@ -93,7 +93,7 @@
 | **菜品成本排行** | **`STRUCTURED_DISH_ACTUAL_COST_RANKING_HIGH/LOW`**、**`THEORETICAL_COST_RANKING_*`** | 实付/理论成本排序 |
 | **菜品毛利异常 / 关切** | 组合：**`STRUCTURED_DISH_GAP_RANKING_MAX`**（`dish_gap_ranking_max`）、低毛利排行、overview 派生 **`abnormalDishes`** / **`lowProfitDishes`** | 「异常」在销售域常映射为 **成本缺口排行** + **低毛利率池**；**具体阈值与分桶以 `DishProfitAgentNode` 为准** |
 
-**C-26 Fake Bridge**：合成数据明示 **`listPriceRevenue`** / **`soldPortionsTotal`** 分列；**`ReadResponse.salesAmount`** = 标价收入汇总占位（与生产 **`listPriceRevenueTotal`** 同源语义），**禁止**将「销量/份数排行」冒充「销售额/标价收入」。
+**C-26 Fake Bridge**：合成数据明示 **`actualRevenue`** / **`soldPortionsTotal`** 分列；**`ReadResponse.salesAmount`** = 标价收入汇总占位（与生产 **`actualRevenueTotal`** 同源语义），**禁止**将「销量/份数排行」冒充「销售额/标价收入」。
 
 ---
 

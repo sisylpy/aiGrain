@@ -293,8 +293,8 @@ public final class DishProfitAnswerPlanCardSupport {
             putOptional(item, "salesQuantity", firstNonBlank(row.get("salesQuantity"), row.get("soldPortionsTotal")));
             putOptional(
                     item,
-                    "listPriceRevenue",
-                    firstNonBlank(row.get("listPriceRevenue"), row.get("salesAmount")));
+                    "actualRevenue",
+                    firstNonBlank(row.get("actualRevenue"), row.get("salesAmount")));
             putOptional(
                     item,
                     "theoryCostAmount",

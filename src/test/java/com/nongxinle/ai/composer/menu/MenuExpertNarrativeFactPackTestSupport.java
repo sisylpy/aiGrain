@@ -16,7 +16,7 @@ final class MenuExpertNarrativeFactPackTestSupport {
         Map<String, Object> dishRow = new LinkedHashMap<>();
         dishRow.put("dishName", "酸奶碗");
         dishRow.put("soldPortionsTotal", "100");
-        dishRow.put("listPriceRevenue", "6200");
+        dishRow.put("actualRevenue", "6200");
         dishRow.put("actualCostTotalAmount123", "5000");
         dishRow.put("blendedGrossMarginRateOnListPrice", "18");
 

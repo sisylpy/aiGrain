@@ -133,7 +133,7 @@ Prompt 正文：`semantic_intake.v1.md`、`query_semantic_parser.v2.md`（经 `A
 
 **Composer 不能做的事（硬约束）**：
 
-- **不得**自行计算毛利率、成本差额、利用率等；**必须**使用 Tool / `buildInsight` / `buildReport` 已给出的字段或已格式化的可读串。
+- **不得**自行计算毛利率、成本差额、偏差率等；**必须**使用 Tool / `buildInsight` / `buildReport` 已给出的字段或已格式化的可读串。
 - **不得**编造 Tool 未返回的数字或排行。
 - **不得**把 type2 叫「损耗」、把 type3 叫「废弃」；退货 type4 为单独口径（与出库链路文档一致）。
 - **不得**用 `metric.rankingType` 覆盖 AnswerPlan 或 `semanticSlots` / `selectedContractId` 已定的业务口径；`rankingType` 仅 **debug/deprecated** 观测字段。

@@ -291,7 +291,7 @@ public final class AiCardPayloadWireSupport {
         }
         Integer foodId = parseFoodId(data.get("dishId"), data.get("foodId"));
         String salesPortions = firstNonBlank(data.get("salesPortions"), data.get("soldPortionsTotal"));
-        String salesAmount = firstNonBlank(data.get("salesAmount"), data.get("listPriceRevenue"));
+        String salesAmount = firstNonBlank(data.get("salesAmount"), data.get("actualRevenue"));
         String salesUnitPrice = stringify(data.get("salesUnitPrice"));
         Integer ranking = parseRanking(data.get("ranking"), data.get("rank"));
         String timeLabel = stringify(data.get("timeLabel"));

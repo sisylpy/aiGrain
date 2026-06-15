@@ -1,0 +1,4 @@
+"gb_ai_wp_id"	"gb_ai_wp_user_id"	"gb_ai_wp_conversation_id"	"gb_ai_wp_run_id"	"gb_ai_wp_message_id"	"gb_ai_wp_title"	"gb_ai_wp_source_type"	"gb_ai_wp_source_text_snapshot"	"gb_ai_wp_source_answer_preview"	"gb_ai_wp_source_role"	"gb_ai_wp_source_agent_name"	"gb_ai_wp_source_created_at"	"gb_ai_wp_created_at"	"gb_ai_wp_updated_at"	"gb_ai_wp_deleted"
+"1"	"13"	"265"	"1781144393074"	"850"	"【时间范围】最近7天（2026-06-05～2026-06-11） 最近7天（2026-06-05～2026-06-11），按「单价波动」口径检出 1 项需关注"	"MESSAGE"	"【时间范围】最近7天（2026-06-05～2026-06-11）
+最近7天（2026-06-05～2026-06-11），按「单价波动」口径检出 1 项需关注：内酯豆腐。"	"【时间范围】最近7天（2026-06-05～2026-06-11）
+最近7天（2026-06-05～2026-06-11），按「单价波动」口径检出 1 项需关注：内酯豆腐。"	"assistant"		"11/6/2026 10:20:30"	"11/6/2026 20:22:15"	"11/6/2026 20:22:15"	"0"

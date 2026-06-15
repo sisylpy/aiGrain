@@ -129,7 +129,7 @@ public final class DishSalesAnswerPlanBuilder {
                 sortKey = "soldPortionsTotal";
             } else if (DishSalesAnswerPlan.TYPE_DISH_SALES_AMOUNT_RANKING_HIGH.equals(planType)) {
                 metricType = DishSalesAnswerPlan.METRIC_AMOUNT_HIGH;
-                sortKey = "listPriceRevenue";
+                sortKey = "actualRevenue";
             } else if (DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_LOW.equals(planType)) {
                 metricType = DishSalesAnswerPlan.METRIC_COUNT_LOW;
                 sortKey = "soldPortionsTotal";
@@ -140,7 +140,7 @@ public final class DishSalesAnswerPlanBuilder {
         } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH.equals(wire)) {
             planType = DishSalesAnswerPlan.TYPE_DISH_SALES_AMOUNT_RANKING_HIGH;
             metricType = DishSalesAnswerPlan.METRIC_AMOUNT_HIGH;
-            sortKey = "listPriceRevenue";
+            sortKey = "actualRevenue";
         } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_LOW.equals(wire)) {
             planType = DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_LOW;
             metricType = DishSalesAnswerPlan.METRIC_COUNT_LOW;
@@ -358,7 +358,7 @@ public final class DishSalesAnswerPlanBuilder {
         m.put("ranking", rank != null ? rank : 1);
         m.put("dishName", dishName);
         m.put("soldPortionsTotal", firstNonBlank(stringify(data.get("soldPortionsTotal")), stringify(data.get("salesPortions"))));
-        m.put("listPriceRevenue", firstNonBlank(stringify(data.get("salesAmount")), stringify(data.get("listPriceRevenue"))));
+        m.put("actualRevenue", firstNonBlank(stringify(data.get("salesAmount")), stringify(data.get("actualRevenue"))));
         m.put("grossMarginRate", stringify(data.get("grossMarginRate")));
         Object fid = data.get("dishId");
         if (fid == null) {
@@ -439,8 +439,8 @@ public final class DishSalesAnswerPlanBuilder {
                 "soldPortionsTotal",
                 sumMetricStrings(stringify(target.get("soldPortionsTotal")), stringify(addition.get("soldPortionsTotal"))));
         target.put(
-                "listPriceRevenue",
-                sumMetricStrings(stringify(target.get("listPriceRevenue")), stringify(addition.get("listPriceRevenue"))));
+                "actualRevenue",
+                sumMetricStrings(stringify(target.get("actualRevenue")), stringify(addition.get("actualRevenue"))));
         if (!StringUtils.hasText(stringify(target.get("dishName")))
                 && StringUtils.hasText(stringify(addition.get("dishName")))) {
             target.put("dishName", addition.get("dishName"));
@@ -486,7 +486,7 @@ public final class DishSalesAnswerPlanBuilder {
                 continue;
             }
             BigDecimal qty = coerceDecimalNullable(row.get("soldPortionsTotal"));
-            BigDecimal amt = coerceDecimalNullable(row.get("listPriceRevenue"));
+            BigDecimal amt = coerceDecimalNullable(row.get("actualRevenue"));
             boolean qtyValid = qty != null;
             scored.add(new ScoredRow(row, qty, amt, qtyValid));
         }
@@ -531,7 +531,7 @@ public final class DishSalesAnswerPlanBuilder {
         m.put("rank", rank);
         m.put("dishName", stringify(row.get("dishName")));
         m.put("soldPortionsTotal", stringify(row.get("soldPortionsTotal")));
-        m.put("listPriceRevenue", stringify(row.get("listPriceRevenue")));
+        m.put("actualRevenue", stringify(row.get("actualRevenue")));
         m.put("grossMarginRate", formatGrossMarginRate(row));
         m.put("actualCostAmount", stringify(row.get("actualCostAmount")));
         m.put("theoryCostAmount", stringify(row.get("theoryCostAmount")));
@@ -561,7 +561,7 @@ public final class DishSalesAnswerPlanBuilder {
             name = "（未命名菜品）";
         }
         String qty = nzString(top.get("soldPortionsTotal"));
-        String rev = nzString(top.get("listPriceRevenue"));
+        String rev = nzString(top.get("actualRevenue"));
         if (DishSalesAnswerPlan.METRIC_SINGLE_DISH.equals(metricType)) {
             return String.format(Locale.CHINA, "%s 本月销量 %s 份，销售额 %s。", name, nzOrDash(qty), nzOrDash(rev));
         }
@@ -738,7 +738,7 @@ public final class DishSalesAnswerPlanBuilder {
             }
             normalized.put("dishName", dishName);
             putIfPresent(normalized, "soldPortionsTotal", row.get("soldPortionsTotal"));
-            putIfPresent(normalized, "listPriceRevenue", row.get("listPriceRevenue"));
+            putIfPresent(normalized, "actualRevenue", row.get("actualRevenue"));
             putIfPresent(normalized, "listPrice", row.get("listPrice"));
             putIfPresent(normalized, "foodId", row.get("foodId"));
             out.add(normalized);

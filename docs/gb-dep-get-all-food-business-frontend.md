@@ -13,7 +13,7 @@
 | 字段 | 说明 |
 |------|------|
 | `dishRowCount` | 参与汇总的行数（有 `gbDfBusinessInsight` 的行，四参齐全时与列表行数一致）。 |
-| `totalListPriceRevenue` | Σ `listPriceRevenue`（元，保留 2 位小数字符串）。 |
+| `totalActualRevenue` | Σ `actualRevenue`（元，保留 2 位小数字符串）。 |
 | `totalActualCostAmount` | Σ `actualCostAmount`（仅 type1 生产口径，与 `report.salesDishRows` 一致）。 |
 | `totalActualCostTotalAmount123` | Σ `actualCostTotalAmount123`（**type1+2+3** 摊销后的整菜区间实际成本合计，与配料分析/看板整菜金额口径一致）。 |
 | `totalTheoryCostAmount` | Σ `theoryCostAmount`。 |
@@ -63,14 +63,14 @@
 | **`soldPortionsUnassignedWeekday`** | 有销量但 **`gb_dfs_revenue_weekday` 为空或不在 0～6** 的份数，仍计入总销量；周几分桶里体现不到的部分。 |
 | **`soldPortionsTotal`** | 区间内**总销量**（周几分桶之和 + 未分配周几部分）。 |
 | **`listPrice`** | 部门菜品标价（来自 `gb_dep_food.gb_df_food_price`，与实体上一致）。 |
-| **`listPriceRevenue`** | **标价收入** = `soldPortionsTotal × listPrice`（元，字符串）。 |
+| **`actualRevenue`** | **标价收入** = `soldPortionsTotal × listPrice`（元，字符串）。 |
 | **`actualCostAmount`** | **实际成本（元）**：与 `gbDishCostAnalysis/report` 中 `salesDishRows` 同 `foodId` 的 **`actualCostAmount`** 一致；仅 **type=1 生产**出库分摊（区间合计）。 |
 | **`theoryCostAmount`** | **理论成本（元）**：同上报表 **`theoryCostAmount`**（销售子表用量等「该用多少料」口径）。 |
-| **`grossMarginRateOnListPrice`** | **type1 实际毛利率（%）**，固定两位小数：`(listPriceRevenue − actualCostAmount) ÷ listPriceRevenue × 100`；无标价收入且成本均为 0 时为 `"0.00"`，有成本无收入时为 `null`。 |
+| **`grossMarginRateOnListPrice`** | **type1 实际毛利率（%）**，固定两位小数：`(actualRevenue − actualCostAmount) ÷ actualRevenue × 100`；无标价收入且成本均为 0 时为 `"0.00"`，有成本无收入时为 `null`。 |
 | **`actualCostPerPortion123`** | **单份实际成本（元/份，type1+2+3）**：与 `gbDishCostAnalysis/ingredientAnalysis` 整菜行 **`actualCostPerPortion`** 同口径；由 `GbDishCostAnalysisService#getDishActualCostPerPortion123ByFoodIds` 批量计算。 |
 | **`actualCostTotalAmount123`** | **实际分摊总金额（元，type1+2+3）**：`actualCostPerPortion123 × soldPortionsTotal`（与看板整菜「单份实际×份数」一致）；**区别于** `actualCostAmount`（仅 type1 生产、`report` 同源）。 |
 | **`blendedGrossMarginRateOnListPrice`** | **单菜实际毛利率（%）**：`(部门标价 listPrice − actualCostPerPortion123) ÷ listPrice × 100`（标价用 **`gb_dep_food.gb_df_food_price`** 解析）；无有效标价且单份成本也为 0 时为 `"0.00"`，否则无标价但有成本时为 `null`。与顶部 **`businessInsightSummary.blendedGrossMarginRateOnListPrice`**（列表汇总、type1 口径）**含义不同**，勿混用。 |
-| **`grossMarginRateTheoryOnListPrice`** | **理论成本毛利率（%）**：`(listPriceRevenue − theoryCostAmount) ÷ listPriceRevenue × 100`；空值规则同 `grossMarginRateOnListPrice`。 |
+| **`grossMarginRateTheoryOnListPrice`** | **理论成本毛利率（%）**：`(actualRevenue − theoryCostAmount) ÷ actualRevenue × 100`；空值规则同 `grossMarginRateOnListPrice`。 |
 | **`foodId`** | 批发商侧菜品 id（`gb_df_food_id`）。 |
 | **`gbDepFoodId`** / **`gbDfDepId`** | 部门菜品主键、部门 id，便于与列表行对应。 |
 

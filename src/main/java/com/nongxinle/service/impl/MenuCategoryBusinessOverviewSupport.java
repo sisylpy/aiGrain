@@ -89,7 +89,7 @@ final class MenuCategoryBusinessOverviewSupport {
             LinkedHashMap<String, Object> acc, Map<String, Object> row) {
         BigDecimal qty =
                 coerce(acc.get("soldPortionsTotal")).add(coerce(row.get("soldPortionsTotal")));
-        BigDecimal rev = coerce(acc.get("listPriceRevenue")).add(coerce(row.get("listPriceRevenue")));
+        BigDecimal rev = coerce(acc.get("actualRevenue")).add(coerce(row.get("actualRevenue")));
         BigDecimal cost123 =
                 coerce(acc.get("actualCostTotalAmount123"))
                         .add(coerce(row.get("actualCostTotalAmount123")));
@@ -104,7 +104,7 @@ final class MenuCategoryBusinessOverviewSupport {
                         .add(coerce(row.get("theoreticalCostTotalAmount")));
 
         acc.put("soldPortionsTotal", moneyPlain(qty));
-        acc.put("listPriceRevenue", moneyPlain(rev));
+        acc.put("actualRevenue", moneyPlain(rev));
         acc.put("actualCostTotalAmount123", moneyPlain(cost123));
         acc.put("theoreticalCostTotalAmount", moneyPlain(theoryTotal));
         if (costType1.compareTo(BigDecimal.ZERO) != 0) {
@@ -123,6 +123,7 @@ final class MenuCategoryBusinessOverviewSupport {
         preferNonEmpty(acc, row, "dishName");
         preferNonEmpty(acc, row, "foodName");
         preferNonEmpty(acc, row, "salesUnitPrice");
+        preferNonEmpty(acc, row, "listPricePerPortion");
         return acc;
     }
 
@@ -146,7 +147,7 @@ final class MenuCategoryBusinessOverviewSupport {
                 if (row == null) {
                     continue;
                 }
-                BigDecimal rev = coerce(row.get("listPriceRevenue"));
+                BigDecimal rev = coerce(row.get("actualRevenue"));
                 BigDecimal qty = coerce(row.get("soldPortionsTotal"));
                 BigDecimal c123 = coerce(row.get("actualCostTotalAmount123"));
                 if (c123.compareTo(BigDecimal.ZERO) == 0) {
@@ -348,7 +349,7 @@ final class MenuCategoryBusinessOverviewSupport {
         List<DishSlice> slices = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             BigDecimal qty = coerce(row.get("soldPortionsTotal"));
-            BigDecimal rev = coerce(row.get("listPriceRevenue"));
+            BigDecimal rev = coerce(row.get("actualRevenue"));
             BigDecimal cost123 = coerce(row.get("actualCostTotalAmount123"));
             if (cost123.compareTo(BigDecimal.ZERO) == 0) {
                 cost123 = coerce(row.get("actualCostTotalAmount"));
@@ -538,7 +539,7 @@ final class MenuCategoryBusinessOverviewSupport {
                 continue;
             }
             BigDecimal qty = coerce(row.get("soldPortionsTotal"));
-            BigDecimal rev = coerce(row.get("listPriceRevenue"));
+            BigDecimal rev = coerce(row.get("actualRevenue"));
             BigDecimal cost123 = dishActualCost(row);
             BigDecimal profit = rev.subtract(cost123);
             salesValues.add(qty);
@@ -567,11 +568,11 @@ final class MenuCategoryBusinessOverviewSupport {
     }
 
     static BigDecimal dishProfit(Map<String, Object> row) {
-        return coerce(row.get("listPriceRevenue")).subtract(dishActualCost(row));
+        return coerce(row.get("actualRevenue")).subtract(dishActualCost(row));
     }
 
     static BigDecimal marginRatioFromRow(Map<String, Object> row) {
-        BigDecimal rev = coerce(row.get("listPriceRevenue"));
+        BigDecimal rev = coerce(row.get("actualRevenue"));
         if (rev.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
@@ -579,11 +580,30 @@ final class MenuCategoryBusinessOverviewSupport {
     }
 
     static BigDecimal theoryMarginRatioFromRow(Map<String, Object> row) {
-        BigDecimal rev = coerce(row.get("listPriceRevenue"));
+        BigDecimal rev = coerce(row.get("actualRevenue"));
         if (rev.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
         return rev.subtract(dishTheoryCost(row)).divide(rev, 8, RoundingMode.HALF_UP);
+    }
+
+    /** 标价收入：listPricePerPortion × soldPortionsTotal（与 dep food 单菜 grossMarginRateTheoryOnListPrice 同口径分母） */
+    static BigDecimal listPriceRevenueFromRow(Map<String, Object> row) {
+        BigDecimal listPp = coerce(row.get("listPricePerPortion"));
+        BigDecimal qty = coerce(row.get("soldPortionsTotal"));
+        if (listPp.compareTo(BigDecimal.ZERO) <= 0 || qty.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return listPp.multiply(qty).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** 理论毛利率（标价口径）：(标价收入 − 理论成本) ÷ 标价收入，与 dep food grossMarginRateTheoryOnListPrice 公式一致 */
+    static BigDecimal theoryMarginRatioOnListPrice(Map<String, Object> row) {
+        BigDecimal listRev = listPriceRevenueFromRow(row);
+        if (listRev.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return listRev.subtract(dishTheoryCost(row)).divide(listRev, 8, RoundingMode.HALF_UP);
     }
 
     static String grossMarginGapRateText(Map<String, Object> row) {
@@ -599,7 +619,7 @@ final class MenuCategoryBusinessOverviewSupport {
     static Map<String, Object> buildFoodPeriodMetrics(Map<String, Object> row, boolean includeRanks) {
         Map<String, Object> m = new LinkedHashMap<>();
         BigDecimal qty = coerce(row.get("soldPortionsTotal"));
-        BigDecimal rev = coerce(row.get("listPriceRevenue"));
+        BigDecimal rev = coerce(row.get("actualRevenue"));
         BigDecimal cost = dishActualCost(row);
         BigDecimal theory = dishTheoryCost(row);
         BigDecimal profit = rev.subtract(cost);
@@ -616,7 +636,7 @@ final class MenuCategoryBusinessOverviewSupport {
             m.put("theoreticalCostPerPortion", moneyDisplay(BigDecimal.ZERO));
         }
         m.put("actualGrossMarginRate", percentDisplayFromRatio(marginRatioFromRow(row)));
-        m.put("theoreticalGrossMarginRate", percentDisplayFromRatio(theoryMarginRatioFromRow(row)));
+        m.put("theoreticalGrossMarginRate", percentDisplayFromRatio(theoryMarginRatioOnListPrice(row)));
         m.put("grossMarginGapRate", grossMarginGapRateText(row));
         if (includeRanks) {
             m.put("salesRank", row.get("salesRank"));
@@ -629,7 +649,7 @@ final class MenuCategoryBusinessOverviewSupport {
     static Map<String, Object> buildFoodCompareMetrics(Map<String, Object> row) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("salesCount", moneyDisplay(coerce(row.get("soldPortionsTotal"))));
-        m.put("salesAmount", moneyDisplay(coerce(row.get("listPriceRevenue"))));
+        m.put("salesAmount", moneyDisplay(coerce(row.get("actualRevenue"))));
         m.put("actualProfitAmount", moneyDisplay(dishProfit(row)));
         m.put("actualGrossMarginRate", percentDisplayFromRatio(marginRatioFromRow(row)));
         return m;
@@ -645,8 +665,8 @@ final class MenuCategoryBusinessOverviewSupport {
         m.put(
                 "salesAmountChangeRate",
                 percentChange(
-                        coerce(current.get("listPriceRevenue")),
-                        coerce(compare.get("listPriceRevenue"))));
+                        coerce(current.get("actualRevenue")),
+                        coerce(compare.get("actualRevenue"))));
         m.put(
                 "actualProfitChangeRate",
                 percentChange(dishProfit(current), dishProfit(compare)));
@@ -811,6 +831,7 @@ final class MenuCategoryBusinessOverviewSupport {
 
     static PeriodRollupWithTheory rollupWithTheory(List<Map<String, Object>> rows) {
         BigDecimal sales = BigDecimal.ZERO;
+        BigDecimal listRevenue = BigDecimal.ZERO;
         BigDecimal portions = BigDecimal.ZERO;
         BigDecimal cost = BigDecimal.ZERO;
         BigDecimal theory = BigDecimal.ZERO;
@@ -819,7 +840,8 @@ final class MenuCategoryBusinessOverviewSupport {
                 if (row == null) {
                     continue;
                 }
-                sales = sales.add(coerce(row.get("listPriceRevenue")));
+                sales = sales.add(coerce(row.get("actualRevenue")));
+                listRevenue = listRevenue.add(listPriceRevenueFromRow(row));
                 portions = portions.add(coerce(row.get("soldPortionsTotal")));
                 cost = cost.add(dishActualCost(row));
                 theory = theory.add(dishTheoryCost(row));
@@ -828,9 +850,9 @@ final class MenuCategoryBusinessOverviewSupport {
         BigDecimal profit = sales.subtract(cost);
         BigDecimal marginRatio = BigDecimal.ZERO;
         BigDecimal theoryMarginRatio = BigDecimal.ZERO;
-        if (sales.compareTo(BigDecimal.ZERO) > 0) {
+        if (listRevenue.compareTo(BigDecimal.ZERO) > 0) {
             marginRatio = profit.divide(sales, 8, RoundingMode.HALF_UP);
-            theoryMarginRatio = sales.subtract(theory).divide(sales, 8, RoundingMode.HALF_UP);
+            theoryMarginRatio = listRevenue.subtract(theory).divide(listRevenue, 8, RoundingMode.HALF_UP);
         }
         return new PeriodRollupWithTheory(sales, portions, cost, theory, profit, marginRatio, theoryMarginRatio);
     }

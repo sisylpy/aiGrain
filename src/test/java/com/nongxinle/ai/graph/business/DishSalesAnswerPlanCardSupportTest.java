@@ -19,7 +19,7 @@ class DishSalesAnswerPlanCardSupportTest {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("dishName", "烩菜");
         row.put("soldPortionsTotal", "120");
-        row.put("listPriceRevenue", "4200");
+        row.put("actualRevenue", "4200");
         row.put("foodId", "1001");
         row.put("rank", 3);
 
@@ -53,7 +53,7 @@ class DishSalesAnswerPlanCardSupportTest {
         row.put("rank", 1);
         row.put("dishName", "烩菜");
         row.put("soldPortionsTotal", "120");
-        row.put("listPriceRevenue", "4200");
+        row.put("actualRevenue", "4200");
         row.put("foodId", "1001");
 
         DishSalesAnswerPlan plan =
@@ -101,7 +101,7 @@ class DishSalesAnswerPlanCardSupportTest {
         row.put("rank", 1);
         row.put("dishName", "招牌鱼");
         row.put("soldPortionsTotal", "80");
-        row.put("listPriceRevenue", "9600");
+        row.put("actualRevenue", "9600");
 
         DishSalesAnswerPlan plan =
                 DishSalesAnswerPlan.builder()
@@ -174,7 +174,7 @@ class DishSalesAnswerPlanCardSupportTest {
         row.put("rank", 1);
         row.put("dishName", "零销量菜");
         row.put("soldPortionsTotal", "0");
-        row.put("listPriceRevenue", "0");
+        row.put("actualRevenue", "0");
 
         DishSalesAnswerPlan plan =
                 DishSalesAnswerPlan.builder()

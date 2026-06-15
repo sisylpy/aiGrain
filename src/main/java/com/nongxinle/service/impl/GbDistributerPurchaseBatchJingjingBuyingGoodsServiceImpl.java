@@ -47,7 +47,7 @@ public class GbDistributerPurchaseBatchJingjingBuyingGoodsServiceImpl implements
         map3.put("arr", batchEntities);
         map3.put("orderAmount", purCount);
         map3.put("wxAmount", purCountOne);
-        map3.put("disInfo", gbDistributerService.queryDistributerInfo(disId));
+        map3.put("disInfo", gbDistributerService.queryDistributerWithAllDepartments(disId));
         return map3;
     }
 

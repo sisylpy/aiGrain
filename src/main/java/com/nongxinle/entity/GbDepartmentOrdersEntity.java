@@ -84,6 +84,7 @@ public class GbDepartmentOrdersEntity implements Serializable, Comparable {
      *  部门订单账单id
      */
     private Integer gbDoBillId;
+    
     /**
      *  部门订单申请商品状态
      */

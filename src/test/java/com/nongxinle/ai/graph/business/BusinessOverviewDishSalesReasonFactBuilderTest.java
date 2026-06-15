@@ -130,7 +130,7 @@ class BusinessOverviewDishSalesReasonFactBuilderTest {
 
     private static Map<String, Object> insightWithDishes(
             String start, String end, List<Map<String, Object>> dishes, String totalRevenue) {
-        Map<String, Object> summary = Map.of("totalListPriceRevenue", totalRevenue);
+        Map<String, Object> summary = Map.of("totalActualRevenue", totalRevenue);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("startDate", start);
         out.put("stopDate", end);
@@ -144,7 +144,7 @@ class BusinessOverviewDishSalesReasonFactBuilderTest {
         row.put("foodId", foodId);
         row.put("foodName", name);
         row.put("soldPortionsTotal", qty);
-        row.put("listPriceRevenue", amount);
+        row.put("actualRevenue", amount);
         return row;
     }
 

@@ -231,7 +231,7 @@ DishProfitAnalysisTool
             ↓
        时间字段: gb_dep_food_sales_date
        门店范围字段: department_id / scopeDepartmentIdsAllowFilter
-       金额口径: listPriceRevenue（挂牌营收）/ theoryCostAmount（理论成本）/ actualCostAmount（实际成本）
+       金额口径: actualRevenue（挂牌营收）/ theoryCostAmount（理论成本）/ actualCostAmount（实际成本）
 ```
 
 ### 5.6 BusinessDiagnosis / BusinessOverview（经营诊断）

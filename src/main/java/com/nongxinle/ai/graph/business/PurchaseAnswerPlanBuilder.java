@@ -693,6 +693,22 @@ public final class PurchaseAnswerPlanBuilder {
         boolean factsAvailable = purchaseAnomalyFactsPayloadPresent(canon, overview);
         debug.put("anomalyFactsAvailable", factsAvailable);
         debug.put("anomalyFocusRowsSize", focusRows == null ? 0 : focusRows.size());
+        if (AiQuerySemanticLexicon.STRUCTURED_PURCHASE_PRICE_ANOMALY.equals(canon) && focusRows != null) {
+            int withBatches = 0;
+            int batchCount = 0;
+            for (Map<String, Object> row : focusRows) {
+                if (row == null) {
+                    continue;
+                }
+                Object batches = row.get("compareBatches");
+                if (batches instanceof List<?> list && !list.isEmpty()) {
+                    withBatches++;
+                    batchCount += list.size();
+                }
+            }
+            debug.put("priceAnomalyCompareBatchRowsCount", batchCount);
+            debug.put("priceAnomalyItemsWithCompareBatches", withBatches);
+        }
         if (!factsAvailable) {
             debug.put("anomalyProjectionGapReason", "PURCHASE_ANOMALY_FACTS_PAYLOAD_MISSING");
         }

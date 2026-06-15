@@ -553,7 +553,7 @@ public class DishIngredientCostBreakdownTool implements AiTool {
         line.put("soldPortions", soldPortions.compareTo(BigDecimal.ZERO) > 0 ? soldPortions.stripTrailingZeros().toPlainString() : null);
         line.put("theoryUsage", ir.get("theoryUsage"));
         line.put("actualUsage", ir.get("actualUsage"));
-        line.put("utilizationRate", ir.get("utilizationRate"));
+        line.put("devianceRate", ir.get("devianceRate"));
 
         String ucWarn = unitConversionWarningMessage(ir);
         String mergedWarn = tag.warning;

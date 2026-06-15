@@ -33,7 +33,7 @@ public class GbDistributerController {
     @RequestMapping(value = "/getDisInfo/{id}")
     @ResponseBody
     public R getDisInfo(@PathVariable Integer id) {
-        return R.ok().put("data", gbDistributerService.queryDistributerInfo(id));
+        return R.ok().put("data", gbDistributerService.queryDistributerWithAllDepartments(id));
     }
 
 

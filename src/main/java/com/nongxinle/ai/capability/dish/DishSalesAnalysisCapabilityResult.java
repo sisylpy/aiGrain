@@ -69,7 +69,7 @@ public class DishSalesAnalysisCapabilityResult {
         data.put("soldPortionsTotal", salesPortions);
         data.put("salesPortions", salesPortions);
         data.put("salesAmount", salesAmount);
-        data.put("listPriceRevenue", salesAmount);
+        data.put("actualRevenue", salesAmount);
         data.put("salesUnitPrice", salesUnitPrice);
         if (ranking != null) {
             data.put("ranking", ranking);

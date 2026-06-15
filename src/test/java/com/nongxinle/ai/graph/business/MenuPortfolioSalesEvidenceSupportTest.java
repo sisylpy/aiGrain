@@ -21,7 +21,7 @@ class MenuPortfolioSalesEvidenceSupportTest {
                         dishRow("4", "菜D", "0", "0"));
 
         MenuPortfolioSalesEvidenceSupport.Assessment assessment =
-                MenuPortfolioSalesEvidenceSupport.assess(rows, Map.of("totalListPriceRevenue", "0"));
+                MenuPortfolioSalesEvidenceSupport.assess(rows, Map.of("totalActualRevenue", "0"));
 
         assertThat(assessment.salesEvidenceAvailable()).isFalse();
         assertThat(assessment.analyzedDishCount()).isEqualTo(4);
@@ -47,7 +47,7 @@ class MenuPortfolioSalesEvidenceSupportTest {
         MenuPortfolioSalesEvidenceSupport.Assessment assessment =
                 MenuPortfolioSalesEvidenceSupport.assess(
                         List.of(dishRow("1", "菜A", "0", "0")),
-                        Map.of("totalListPriceRevenue", "500.00"));
+                        Map.of("totalActualRevenue", "500.00"));
 
         assertThat(assessment.salesEvidenceAvailable()).isTrue();
     }
@@ -83,7 +83,7 @@ class MenuPortfolioSalesEvidenceSupportTest {
         row.put("foodId", foodId);
         row.put("dishName", name);
         row.put("soldPortionsTotal", soldPortions);
-        row.put("listPriceRevenue", revenue);
+        row.put("actualRevenue", revenue);
         return row;
     }
 }

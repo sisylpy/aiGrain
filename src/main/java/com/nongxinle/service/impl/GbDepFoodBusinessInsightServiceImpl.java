@@ -57,9 +57,10 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
     static {
         LinkedHashMap<String, String> m = new LinkedHashMap<>();
         m.put("dishRowCount", "参与汇总的菜品行数（本列表或 insight 内 dishes 条数）");
-        m.put("totalListPriceRevenue", "总营业额（元，全部 type 1-5 subtotal 合计）");
+        m.put("totalActualRevenue", "总营业额（元，全部 type 1-5 subtotal 合计）");
         m.put("totalActualCostAmount", "type=1（生产）实际成本合计（元）：与按菜 grossMarginRateOnListPrice 分子分母同源");
         m.put("totalActualCostTotalAmount123", "type1+2+3 单份实际成本×实销份数后的整菜金额合计（元）");
+        m.put("totalActualProfitAmount", "实际利润合计（元）：标价收入合计 − type1+2+3 整菜成本合计");
         m.put("totalTheoryCostAmount", "type=1 理论成本合计（元）");
         m.put("subtotalOutbound123FromScope", "区间 type1+2+3 出库金额合计（元），与 scopeOutboundSubtotals.subtotalOutbound123 一致");
         m.put("blendedGrossMarginRateOnListPrice", "综合毛利率（仅 type1 实际成本）：(标价收入合计−type1 实际成本合计)÷标价收入合计，百分数两位小数");
@@ -237,9 +238,9 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
             line.put("soldPortionsUnassignedWeekday", unassigned.stripTrailingZeros().toPlainString());
             line.put("soldPortionsTotal", totalQty.stripTrailingZeros().toPlainString());
 
-            BigDecimal listPriceRevenue = foodId == null ? BigDecimal.ZERO
-                    : salesAgg.listPriceRevenueByFood.getOrDefault(foodId, BigDecimal.ZERO);
-            line.put("listPriceRevenue", listPriceRevenue.stripTrailingZeros().toPlainString());
+            BigDecimal actualRevenue = foodId == null ? BigDecimal.ZERO
+                    : salesAgg.actualRevenueByFood.getOrDefault(foodId, BigDecimal.ZERO);
+            line.put("actualRevenue", actualRevenue.stripTrailingZeros().toPlainString());
 
             Map<String, Object> costRow = foodId == null ? null : costRowByFoodId.get(foodId);
             BigDecimal actualCost = BigDecimal.ZERO;
@@ -258,8 +259,6 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
                     : salesAgg.totalConsumptionQtyByFood.getOrDefault(foodId,
                             consumptionQty);
             line.put("totalConsumptionQty", totalConsumptionQty.stripTrailingZeros().toPlainString());
-            BigDecimal operationalActualCost = GbDepFoodSalesMetricsSupport.operationalShareOfCost(
-                    actualCost, totalQty, consumptionQty);
             BigDecimal employeeMealCost = GbDepFoodSalesMetricsSupport.employeeMealShareOfCost(
                     actualCost, totalQty, consumptionQty);
             line.put("employeeMealCostAmount",
@@ -289,42 +288,63 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
             line.put("normalSaleQty", normalSaleQty.stripTrailingZeros().toPlainString());
             line.put("normalSaleAmount", normalSaleAmount.stripTrailingZeros().toPlainString());
 
-            if (listPriceRevenue.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal marginActual = listPriceRevenue.subtract(operationalActualCost)
-                        .divide(listPriceRevenue, 8, RoundingMode.HALF_UP);
+            // 标价收入 = listPrice × 总出品份数（含打折），用于理论毛利率分母
+            BigDecimal listPrice = GbDepartmentGoodsStockReduceSupport.coerceDecimal(f.getGbDfFoodPrice());
+            BigDecimal listRevenue = listPrice.multiply(totalQty).setScale(2, RoundingMode.HALF_UP);
+
+            if (actualRevenue.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal marginActual = actualRevenue.subtract(actualCost)
+                        .divide(actualRevenue, 8, RoundingMode.HALF_UP);
                 line.put("grossMarginRateOnListPrice",
                         GbDepartmentGoodsStockReduceSupport.formatRatioAsPercentTwoDecimals(marginActual));
-                BigDecimal marginTheory = listPriceRevenue.subtract(
-                        GbDepFoodSalesMetricsSupport.operationalShareOfCost(theoryCost, totalQty, consumptionQty))
-                        .divide(listPriceRevenue, 8, RoundingMode.HALF_UP);
+            } else {
+                boolean noRevNoCost = actualRevenue.signum() == 0 && actualCost.signum() == 0;
+                line.put("grossMarginRateOnListPrice", noRevNoCost ? "0.00" : null);
+            }
+
+            if (listRevenue.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal marginTheory = listRevenue.subtract(theoryCost)
+                        .divide(listRevenue, 8, RoundingMode.HALF_UP);
                 line.put("grossMarginRateTheoryOnListPrice",
                         GbDepartmentGoodsStockReduceSupport.formatRatioAsPercentTwoDecimals(marginTheory));
             } else {
-                boolean noRevNoCost = listPriceRevenue.signum() == 0 && actualCost.signum() == 0
-                        && theoryCost.signum() == 0;
-                line.put("grossMarginRateOnListPrice", noRevNoCost ? "0.00" : null);
-                line.put("grossMarginRateTheoryOnListPrice", noRevNoCost ? "0.00" : null);
+                line.put("grossMarginRateTheoryOnListPrice",
+                        listRevenue.signum() == 0 && theoryCost.signum() == 0 ? "0.00" : null);
             }
 
             BigDecimal actPp123 = foodId == null ? BigDecimal.ZERO : actPp123ByFoodId.getOrDefault(foodId, BigDecimal.ZERO);
             line.put("actualCostPerPortion123", insightCostPerPortionTwoDecimals(actPp123));
             BigDecimal actualTotal123 = actPp123.multiply(totalQty).setScale(2, RoundingMode.HALF_UP);
             line.put("actualCostTotalAmount123", actualTotal123.stripTrailingZeros().toPlainString());
+            // 实际利润 = actualRevenue（实收） − actualCostTotalAmount123（制作+损耗成本）
+            BigDecimal actualProfit = actualRevenue.subtract(actualTotal123)
+                    .setScale(2, RoundingMode.HALF_UP);
+            line.put("actualProfitAmount", actualProfit.stripTrailingZeros().toPlainString());
             // 损耗报废成本（type 2+3 分摊）= total123 − type1 制作成本
             BigDecimal wasteLossCost = actualTotal123.subtract(actualCost).max(BigDecimal.ZERO)
                     .setScale(2, RoundingMode.HALF_UP);
             line.put("wasteLossCostAmount", wasteLossCost.stripTrailingZeros().toPlainString());
+            // 平均每份制作成本（仅 type1）= 制作成本 ÷ 总份数
+            BigDecimal actualCostPerPortion = totalQty.signum() > 0
+                    ? actualCost.divide(totalQty, 8, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+            line.put("actualCostPerPortion", insightCostPerPortionTwoDecimals(actualCostPerPortion));
+            // 平均每份损耗报废成本（type 2+3）= 损耗报废成本 ÷ 总份数
+            BigDecimal wasteLossPerPortion = totalQty.signum() > 0
+                    ? wasteLossCost.divide(totalQty, 8, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+            line.put("wasteLossCostPerPortion", insightCostPerPortionTwoDecimals(wasteLossPerPortion));
+            // blendedGrossMarginRateOnListPrice: 实收金额相对 type1+2+3 整菜成本的综合毛利率
+            // 与 grossMarginRateOnListPrice/grossMarginRateTheoryOnListPrice 同分母 actualRevenue
             BigDecimal blendedRatio123 = null;
-            BigDecimal unitPrice = parseAmountSafe(f.getGbDfFoodPrice());
-            if (unitPrice.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal margin123 = unitPrice.subtract(actPp123).divide(unitPrice, 8, RoundingMode.HALF_UP);
+            if (actualRevenue.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal margin123 = actualRevenue.subtract(actualTotal123)
+                        .divide(actualRevenue, 8, RoundingMode.HALF_UP);
                 blendedRatio123 = margin123;
                 line.put("blendedGrossMarginRateOnListPrice",
                         GbDepartmentGoodsStockReduceSupport.formatRatioAsPercentTwoDecimals(margin123));
             } else {
-                boolean noPriceNoCost123 = unitPrice.signum() == 0 && actPp123.signum() == 0;
-                line.put("blendedGrossMarginRateOnListPrice", noPriceNoCost123 ? "0.00" : null);
-                if (noPriceNoCost123) {
+                boolean noRevNoCost123 = actualRevenue.signum() == 0 && actualTotal123.signum() == 0;
+                line.put("blendedGrossMarginRateOnListPrice", noRevNoCost123 ? "0.00" : null);
+                if (noRevNoCost123) {
                     blendedRatio123 = BigDecimal.ZERO;
                 }
             }
@@ -446,9 +466,11 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
     private static Map<String, Object> summarizeBusinessInsightFromDishInsightRows(
             List<Map<String, Object>> dishRows, Map<String, Object> insight) {
         BigDecimal totalRev = BigDecimal.ZERO;
+        BigDecimal totalListRevenue = BigDecimal.ZERO;
         BigDecimal totalActual = BigDecimal.ZERO;
         BigDecimal totalTheory = BigDecimal.ZERO;
         BigDecimal totalActual123 = BigDecimal.ZERO;
+        BigDecimal totalActualProfit = BigDecimal.ZERO;
         // 已核销总额 / 未核销总额
         BigDecimal totalVerifiedAmount = BigDecimal.ZERO;
         // 员工餐份数 / 金额
@@ -467,7 +489,10 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
                     continue;
                 }
                 rowCount++;
-                totalRev = totalRev.add(GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("listPriceRevenue")));
+                totalRev = totalRev.add(GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("actualRevenue")));
+                BigDecimal rowListPrice = GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("listPrice"));
+                BigDecimal rowPortions = GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("soldPortionsTotal"));
+                totalListRevenue = totalListRevenue.add(rowListPrice.multiply(rowPortions));
                 totalActual = totalActual.add(GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("actualCostAmount")));
                 totalTheory = totalTheory.add(GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("theoryCostAmount")));
                 totalActual123 = totalActual123.add(
@@ -490,6 +515,8 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
                         GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("normalSaleQty")));
                 totalNormalSaleAmount = totalNormalSaleAmount.add(
                         GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("normalSaleAmount")));
+                totalActualProfit = totalActualProfit.add(
+                        GbDepartmentGoodsStockReduceSupport.coerceDecimal(ins.get("actualProfitAmount")));
             }
         }
         // 损耗报废成本（type 2+3）：出库即视为已消耗，计入已核销
@@ -522,9 +549,10 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         }
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("dishRowCount", rowCount);
-        m.put("totalListPriceRevenue", plainMoneySummary(totalRev));
+        m.put("totalActualRevenue", plainMoneySummary(totalRev));
         m.put("totalActualCostAmount", plainMoneySummary(totalActual));
         m.put("totalActualCostTotalAmount123", plainMoneySummary(totalActual123));
+        m.put("totalActualProfitAmount", plainMoneySummary(totalActualProfit));
         m.put("totalTheoryCostAmount", plainMoneySummary(totalTheory));
         m.put("subtotalOutbound123FromScope", plainMoneySummary(subtotalOutbound123));
         // 已核销总额 / 未核销总额 / 占比
@@ -544,20 +572,27 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         m.put("totalNormalSaleQty", totalNormalSaleQty.stripTrailingZeros().toPlainString());
         m.put("totalNormalSaleAmount", plainMoneySummary(totalNormalSaleAmount));
         if (totalRev.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal blendActual = totalRev.subtract(totalActual).divide(totalRev, 8, RoundingMode.HALF_UP);
-            BigDecimal blendTheory = totalRev.subtract(totalTheory).divide(totalRev, 8, RoundingMode.HALF_UP);
+            // 与单菜行口径一致：type1+2+3 整菜成本，分母 realRevenue
+            BigDecimal blendActual = totalRev.subtract(totalActual123).divide(totalRev, 8, RoundingMode.HALF_UP);
             m.put("blendedGrossMarginRateOnListPrice",
                     GbDepartmentGoodsStockReduceSupport.formatRatioAsPercentTwoDecimals(blendActual));
-            m.put("blendedGrossMarginRateTheoryOnListPrice",
-                    GbDepartmentGoodsStockReduceSupport.formatRatioAsPercentTwoDecimals(blendTheory));
             BigDecimal comp = totalRev.subtract(subtotalOutbound123).divide(totalRev, 8, RoundingMode.HALF_UP);
             m.put("comprehensiveGrossMarginRateOnListPrice",
                     GbDepartmentGoodsStockReduceSupport.formatRatioAsPercentTwoDecimals(comp));
         } else {
-            boolean allZero = totalRev.signum() == 0 && totalActual.signum() == 0 && totalTheory.signum() == 0;
+            boolean allZero = totalRev.signum() == 0 && totalActual123.signum() == 0;
             m.put("blendedGrossMarginRateOnListPrice", allZero ? "0.00" : null);
-            m.put("blendedGrossMarginRateTheoryOnListPrice", allZero ? "0.00" : null);
             m.put("comprehensiveGrossMarginRateOnListPrice", allZero ? "0.00" : null);
+        }
+        // 理论毛利率分母 = Σ(listPrice × soldPortionsTotal)，即标价收入
+        if (totalListRevenue.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal blendTheory = totalListRevenue.subtract(totalTheory)
+                    .divide(totalListRevenue, 8, RoundingMode.HALF_UP);
+            m.put("blendedGrossMarginRateTheoryOnListPrice",
+                    GbDepartmentGoodsStockReduceSupport.formatRatioAsPercentTwoDecimals(blendTheory));
+        } else {
+            m.put("blendedGrossMarginRateTheoryOnListPrice",
+                    totalListRevenue.signum() == 0 && totalTheory.signum() == 0 ? "0.00" : null);
         }
         Object scope = insight == null ? null : insight.get("scopeOutboundSubtotals");
         if (scope instanceof Map) {
@@ -607,7 +642,7 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         z.put("soldPortionsUnassignedWeekday", "0");
         z.put("soldPortionsTotal", "0");
         z.put("listPrice", "");
-        z.put("listPriceRevenue", "0");
+        z.put("actualRevenue", "0");
         z.put("actualCostAmount", "0");
         z.put("theoryCostAmount", "0");
         z.put("employeeMealCostAmount", "0");
@@ -622,7 +657,10 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
         z.put("grossMarginRateTheoryOnListPrice", "0.00");
         z.put("actualCostPerPortion123", "0.00");
         z.put("actualCostTotalAmount123", "0");
+        z.put("actualProfitAmount", "0");
         z.put("wasteLossCostAmount", "0");
+        z.put("actualCostPerPortion", "0.00");
+        z.put("wasteLossCostPerPortion", "0.00");
         z.put("blendedGrossMarginRateOnListPrice", "0.00");
         z.put("wasteLossRatioInOutbound123", "0.00");
         z.put("grossMarginStandardTarget", null);
@@ -657,7 +695,8 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
     private static final class WeekdaySalesAgg {
         final Map<Integer, Map<Integer, BigDecimal>> byFoodWeekday = new HashMap<>();
         final Map<Integer, BigDecimal> unassignedWeekdayQty = new HashMap<>();
-        final Map<Integer, BigDecimal> listPriceRevenueByFood = new HashMap<>();
+        /** ⚠️ 命名陷阱：不是 "标价×销量"，而是所有 type 1-5 的 rowSubtotal 累计 = 实收金额 */
+        final Map<Integer, BigDecimal> actualRevenueByFood = new HashMap<>();
         /** 核销判定用：type 1-5 总消费份数（与 {@link OutboundIngredientReconcileSupport#hasVerifiableDishConsumption} 同口径） */
         final Map<Integer, BigDecimal> totalConsumptionQtyByFood = new HashMap<>();
         /** 原有：type 1-3 消费份数（用于 {@link com.nongxinle.utils.GbDepFoodSalesMetricsSupport#operationalShareOfCost}） */
@@ -727,8 +766,10 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
                 agg.normalSaleAmountByFood.merge(foodId,
                         GbDepFoodSalesMetricsSupport.rowSubtotal(row), BigDecimal::add);
             }
-            // 总营业额（全部 type 1-5，subtotal 合计）
-            agg.listPriceRevenueByFood.merge(foodId,
+            // ⚠️ 字段名 actualRevenue 含义为「实收金额合计」
+            // All type 1-5 rowSubtotal accumulation (including discount/gift subtotal)
+            // Equivalent to normalSaleAmount + discountGiftAmount + employeeMealAmount
+            agg.actualRevenueByFood.merge(foodId,
                     GbDepFoodSalesMetricsSupport.rowSubtotal(row), BigDecimal::add);
             // 菜品销售数量：不限制 type，全部 type 1-5 都计入 soldPortionsTotal / weekdayQty
             BigDecimal amt = qty;
@@ -1277,7 +1318,7 @@ public class GbDepFoodBusinessInsightServiceImpl implements GbDepFoodBusinessIns
             item.put("salesCount", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(bucket.qty));
             item.put("soldPortionsTotal", item.get("salesCount"));
             item.put("salesAmount", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(bucket.revenue));
-            item.put("listPriceRevenue", item.get("salesAmount"));
+            item.put("actualRevenue", item.get("salesAmount"));
             BigDecimal profit = bucket.revenue.subtract(bucket.qty.multiply(costPerPortion));
             item.put("actualProfitAmount", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(profit));
             item.put("orderCount", bucket.orderCount);

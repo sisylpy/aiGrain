@@ -185,8 +185,8 @@ public class GbDepFoodController {
 	 * 部门菜品列表：配方、主档商品、可选日期内销量。
 	 * <p>可选请求参数 {@code subDepId}：非空时只查该子部门 {@code gb_dep_food}，且经营洞察、{@code gbDfSalesAmount}、{@code ingredientAnalysisRows}、配方出库统计均与该子部门的销量及出库分摊口径对齐（仍须传入正确的 {@code depFatherId} 以校验隶属关系）</p>
 	 * <p>当 {@code startDate}、{@code stopDate}、{@code disId}、{@code depFatherId} 齐全时：在每条 {@code GbDepFoodEntity} 上填充 {@code gbDfBusinessInsight}
-	 *（周销量 0=周日、标价收入、type=1 实际/理论成本、{@code grossMarginRateOnListPrice} = (标价收入−type1 实际成本)÷标价收入；
-	 * {@code actualCostPerPortion123}、{@code actualCostTotalAmount123}（单份 type1+2+3 实际成本×本行实销份数，与配料分析整菜金额口径一致）、{@code blendedGrossMarginRateOnListPrice} = 部门标价下（标价−type1+2+3 单份实际成本）÷标价，与配料分析整菜 {@code actualCostPerPortion} 同口径；与 {@code wasteLossRatioInOutbound123} 区间损耗率并列），
+	 *（周销量 0=周日、实收金额（JSON key: {@code actualRevenue}）、type=1 实际/理论成本、{@code grossMarginRateOnListPrice} = (实收−type1 实际成本)÷实收；
+	 * {@code actualCostPerPortion123}、{@code actualCostTotalAmount123}（单份 type1+2+3 实际成本×本行实销份数，与配料分析整菜金额口径一致）、{@code blendedGrossMarginRateOnListPrice} = (实收−type1+2+3 整菜成本)÷实收，与配料分析整菜 {@code actualCostPerPortion} 同口径；与 {@code wasteLossRatioInOutbound123} 区间损耗率并列），
 	 * 本响应同时带上 {@code businessInsightSummary}（含 {@code comprehensiveGrossMarginRateOnListPrice}：列表标价收入合计相对区间 1+2+3 出库总成本、及仅 type1 的 blended 毛利率等）、{@code businessInsightSummaryChinese}（与 {@code businessInsightSummary} 各英文字段键对应的中文说明）、{@code scopeOutboundSubtotals}（含 type=6 原料型员工餐 {@code subtotalEmployeeMealType6}）、{@code weekdayLegend}、{@code bossColumnHintsZh} 等；
 	 * 有销量时的配方行 {@code gbDistributerFoodEntity.gbdisFoodGoodsEntities} 另挂本区间出库价、type1 制作量/额、2+3 量/差分额、1+2+3 量/额、type6 员工餐量/额。
 	 * {@code gbDfSalesAmount} 与经营分析总销量（子部门口径）对齐。缺参时 {@code gbDfSalesAmount} 为 {@code "0"}，且不填 {@code gbDfBusinessInsight}。</p>
@@ -195,7 +195,7 @@ public class GbDepFoodController {
 	 * ①加载批发商主档与<strong>有效配方行</strong>（同配料分析：{@code gb_dfg_status≠0}）；②③④ 收集 {@code gbDfgDisGoodsId}、批量主档、挂回配方行；最后按 {@code sortBy}/{@code sortOrder} 排序（仅四参齐全时），默认 {@code gbDfSalesAmount} 降序。未传齐四参时不填 {@code ingredientAnalysisRows}、配方仍全量（与旧版一致）。</p>
 	 *
 	 * @param subDepId（可选）仅该子部门的菜品与聚合口径。
-	 * @param sortBy 仅四参齐全时生效：{@code gbDfSalesAmount|sales|salesAmount|销量|份数} 销售份数；{@code blendedGrossMarginRateOnListPrice|margin|毛利率} 综合毛利率（%）；{@code actualProfit|profit|实际利润} {@code listPriceRevenue − actualCostTotalAmount123}。空则同 {@code gbDfSalesAmount}。
+	 * @param sortBy 仅四参齐全时生效：{@code gbDfSalesAmount|sales|salesAmount|销量|份数} 销售份数；{@code blendedGrossMarginRateOnListPrice|margin|毛利率} 综合毛利率（%）；{@code actualProfit|profit|实际利润} 实收金额 − 制作+损耗成本。空则同 {@code gbDfSalesAmount}。
 	 * @param sortOrder {@code desc|降序}（默认）、{@code asc|升序}。
 	 */
 	@RequestMapping(value = "/depGeFoodBusiness", method = RequestMethod.POST)
@@ -415,17 +415,9 @@ public class GbDepFoodController {
 		return businessInsightDecimal(food, "blendedGrossMarginRateOnListPrice");
 	}
 
-	/** {@code listPriceRevenue − actualCostTotalAmount123}，无 {@code gbDfBusinessInsight} 时为 null。 */
+	/** {@code actualProfitAmount}，无 {@code gbDfBusinessInsight} 时为 null。 */
 	private static BigDecimal actualProfitBdNullable(GbDepFoodEntity food) {
-		if (food == null || food.getGbDfBusinessInsight() == null) {
-			return null;
-		}
-		BigDecimal rev = businessInsightDecimal(food, "listPriceRevenue");
-		BigDecimal cost = businessInsightDecimal(food, "actualCostTotalAmount123");
-		if (rev == null && cost == null) {
-			return null;
-		}
-		return nzBd(rev).subtract(nzBd(cost));
+		return businessInsightDecimal(food, "actualProfitAmount");
 	}
 
 	private static BigDecimal businessInsightDecimal(GbDepFoodEntity food, String key) {
@@ -433,10 +425,6 @@ public class GbDepFoodController {
 			return null;
 		}
 		return GbDepartmentGoodsStockReduceSupport.coerceDecimal(food.getGbDfBusinessInsight().get(key));
-	}
-
-	private static BigDecimal nzBd(BigDecimal v) {
-		return v == null ? BigDecimal.ZERO : v;
 	}
 
 	/**

@@ -73,13 +73,13 @@
 #### menu_dish_profit_ranking
 
 - **排序键（Java AnswerPlanBuilder，非 LLM）**：
-  - HIGH：`blendedGrossMarginRateOnListPrice`（type123 单菜口径）或 **实际利润额** `listPriceRevenue - actualCostTotalAmount123`
+  - HIGH：`blendedGrossMarginRateOnListPrice`（type123 单菜口径）或 **实际利润额** `actualRevenue - actualCostTotalAmount123`
   - LOW：同上 ASC
 - **不**复用 `DishProfitAnswerPlan.TYPE_DISH_LOWEST_MARGIN` 等 planType；仅复用 **同一 Tool 快照字段**。
 
 #### menu_dish_sales_ranking
 
-- P1 **不新增** `menu_sales_query` Tool；从 `dish_profit_analysis` 的 `dishRows` 读取 `soldPortionsTotal` / `listPriceRevenue`。
+- P1 **不新增** `menu_sales_query` Tool；从 `dish_profit_analysis` 的 `dishRows` 读取 `soldPortionsTotal` / `actualRevenue`。
 - 与 `DishSalesAnswerPlan` **并行存在**：用户明确只问销量且不需要经营建议时，仍走 `dish_sales_query_path`；问「菜单怎么优化 / 滞销怎么办」走 MenuOperation。
 
 #### menu_dish_high_sales_low_profit
@@ -87,7 +87,7 @@
 - **判定规则（Java，contract 参数化阈值）**：
   - 销量分位 ≥ `salesRankThreshold`（默认 Top 30% 或 absolute Top N）
   - 且 `blendedGrossMarginRateOnListPrice` < 组合参考线（如同期 `businessInsightSummary.comprehensiveGrossMarginRateOnListPrice` 或标准带 T−F）
-  - 或 **实际利润额** < 0（`listPriceRevenue - actualCostTotalAmount123`）
+  - 或 **实际利润额** < 0（`actualRevenue - actualCostTotalAmount123`）
 - 可选拉 `dish_ingredient_cost_breakdown` 仅对 **focus 1～3 道菜** 补充 `RECIPE_REVIEW` 证据。
 
 #### menu_dish_single_analysis
@@ -124,13 +124,13 @@
 
 | 字段 | 说明 |
 |------|------|
-| `listPriceRevenue` | **标价收入** = `soldPortionsTotal × listPrice`（与页面、DishProfit 一致） |
+| `actualRevenue` | **标价收入** = `soldPortionsTotal × listPrice`（与页面、DishProfit 一致） |
 | 非 POS 实收 | MenuOperation **不**声称「实收」 unless 未来接入实收域 |
 
 ### 3.4 实际利润（MenuOperation 标准定义）
 
 ```
-actualProfitAmount = listPriceRevenue − actualCostTotalAmount123
+actualProfitAmount = actualRevenue − actualCostTotalAmount123
 ```
 
 - 汇总：`portfolioActualProfitAmount = Σ actualProfitAmount`（对参与 overview 的菜行求和）
@@ -176,14 +176,14 @@ public class MenuOperationAnswerPlan {
 
     /**
      * 已算好的汇总事实（plain string / number），Composer 只读。
-     * 示例键：totalListPriceRevenue, totalActualCost123, portfolioActualProfitAmount,
+     * 示例键：totalActualRevenue, totalActualCost123, portfolioActualProfitAmount,
      *         comprehensiveGrossMarginRate, wasteLossRatioInOutbound123, dishCountAnalyzed
      */
     Map<String, Object> summaryFacts;
 
     /**
      * 重点菜品（老板应关注的好菜/主推候选）
-     * 每行：foodId, dishName, soldPortionsTotal, listPriceRevenue,
+     * 每行：foodId, dishName, soldPortionsTotal, actualRevenue,
      *       actualCostTotalAmount123, actualProfitAmount, blendedGrossMarginRateOnListPrice,
      *       suggestedActions[]（枚举码）
      */

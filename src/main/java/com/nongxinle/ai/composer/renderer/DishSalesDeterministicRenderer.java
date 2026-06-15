@@ -46,7 +46,7 @@ public final class DishSalesDeterministicRenderer {
         Map<String, Object> top = rows.get(0);
         String name = dishName(top);
         String qty = DeterministicRendererSupport.plainNumericHint(top.get("soldPortionsTotal"));
-        String rev = DeterministicRendererSupport.plainNumericHint(top.get("listPriceRevenue"));
+        String rev = DeterministicRendererSupport.plainNumericHint(top.get("actualRevenue"));
         String pt = plan.getPlanType() == null ? "" : plan.getPlanType().trim();
         if (DishSalesAnswerPlan.TYPE_DISH_SALES_COUNT_RANKING_HIGH.equals(pt)) {
             sb.append("销量最高的是 ")
@@ -101,7 +101,7 @@ public final class DishSalesDeterministicRenderer {
             }
             String dn = dishName(r);
             String q = DeterministicRendererSupport.plainNumericHint(r.get("soldPortionsTotal"));
-            String rv = DeterministicRendererSupport.plainNumericHint(r.get("listPriceRevenue"));
+            String rv = DeterministicRendererSupport.plainNumericHint(r.get("actualRevenue"));
             String gm = DeterministicRendererSupport.nz(r.get("grossMarginRate")).trim();
             sb.append(i + 1)
                     .append(". ")

@@ -250,13 +250,13 @@ metrics:
 
   # 派生指标（规划）：formula 块当前不被 Java MetricDefinition 加载，仅作产品与后续引擎参考。
   # 勿用 procurement_amount 作分母——该指标为「采购金额·元」，与 ingredient_usage_qty（数量）量纲不一致。
-  # 中文「使用率」易与数据词典 §4.2 配料行「利用率」utilizationRate（type1 生产÷理论用量）混淆，对用户宜称「耗用占采购量比」等。
+  # 中文「使用率」易与数据词典 §4.2 配料行「偏差率」devianceRate（type1 生产÷理论用量）混淆，对用户宜称「耗用占采购量比」等。
   - metric_id: usage_rate
     name: 原料耗用占采购量比（规划）
     description: |
       规划口径：同品、同区间、同计量单位下，(原料消耗数量 ÷ 采购入库数量) × 100%。
       分子见 ingredient_usage_qty；分母须为「采购数量」类基指标（如按 gb_DPG_buy_quantity 汇总，目录待建），严禁使用 procurement_amount。
-      与配料分析 utilizationRate 不是同一含义。
+      与配料分析 devianceRate 不是同一含义。
     category: 分析
     unit: "%"
     value_type: ratio

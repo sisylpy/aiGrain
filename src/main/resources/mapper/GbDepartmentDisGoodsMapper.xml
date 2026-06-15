@@ -145,6 +145,22 @@
         <collection property="gbDistributerStandardEntities" resultMap="disStandards"/>
     </resultMap>
 
+    <!-- storeGetDepGoodsGbPage：部门商品 + 批发商侧少量平铺字段 -->
+    <resultMap id="depGoodsWithDisGoodsForAiTree" type="com.nongxinle.entity.GbDepartmentDisGoodsEntity" autoMapping="true">
+        <id property="gbDepartmentDisGoodsId" column="gb_department_dis_goods_id"/>
+        <result property="gbDisGoodsFile" column="gbDisGoodsFile"/>
+        <result property="gbDisGoodsFileLarge" column="gbDisGoodsFileLarge"/>
+        <result property="gbDgControlFresh" column="gbDgControlFresh"/>
+        <result property="gbDgFreshWarnHour" column="gbDgFreshWarnHour"/>
+        <result property="gbDgFreshWasteHour" column="gbDgFreshWasteHour"/>
+        <result property="gbDgGoodsInventoryType" column="gbDgGoodsInventoryType"/>
+        <result property="gbDgQuantityDays" column="gbDgQuantityDays"/>
+        <result property="gbDgCartonUnit" column="gbDgCartonUnit"/>
+        <result property="gbDgItemsPerCarton" column="gbDgItemsPerCarton"/>
+        <result property="gbDgIsFranchisePrice" column="gbDgIsFranchisePrice"/>
+        <result property="gbDdgGbDepartmentName" column="gbDdgGbDepartmentName"/>
+    </resultMap>
+
     <resultMap id="depOrders" type="com.nongxinle.entity.GbDepartmentOrdersEntity">
         <id property="gbDepartmentOrdersId" column="gb_department_orders_id"/>
         <result property="gbDoDisGoodsId" column="gb_DO_dis_goods_id"/>
@@ -518,8 +534,17 @@
                     <if test="depId != null">
                         AND ddg.gb_DDG_department_id = #{depId}
                     </if>
+                    <if test="disId != null">
+                        AND ddg.gb_DDG_gb_dis_id = #{disId}
+                    </if>
                     <if test="pull != null">
                         AND dg.gb_dg_pull_off = #{pull}
+                        <if test="pull == 0">
+                            AND (ddg.gb_DDG_dep_goods_pull_off IS NULL OR ddg.gb_DDG_dep_goods_pull_off = 0)
+                        </if>
+                        <if test="pull == 1">
+                            AND ddg.gb_DDG_dep_goods_pull_off = 1
+                        </if>
                     </if>
                     <if test="supplierId != null">
                         AND dg.gb_dg_gb_supplier_id = #{supplierId}
@@ -528,7 +553,7 @@
                         AND g.gb_dfg_distributer_id = #{disId} AND gg.gb_dfg_distributer_id = #{disId}
                     </if>
                     <if test="goodsType != null">
-                        AND dg.gb_dg_goods_type = #{goodsType}
+                        AND ddg.gb_DDG_goods_type = #{goodsType}
                     </if>
                     <if test="price != null">
                         AND dg.gb_dg_control_price = #{price}
@@ -565,6 +590,15 @@
             </if>
             <if test="pull != null">
                 AND gdg.gb_dg_pull_off = #{pull}
+            </if>
+            <if test="goodsType != null and goodsType &lt; 99">
+                AND gddg.gb_DDG_goods_type = #{goodsType}
+            </if>
+            <if test="goodsType != null and goodsType == 101">
+                AND gdg.gb_dg_control_fresh = 1
+            </if>
+            <if test="goodsType != null and goodsType == 102">
+                AND gddg.gb_DDG_dep_goods_pull_off = 1
             </if>
             <if test="notLinshi != null and notLinshi == 1">
                 AND gdg.gb_dg_dfg_goods_father_id IS NOT NULL
@@ -733,11 +767,26 @@
                     AND ddg.gb_DDG_department_id = #{depId}
                 )
             </if>
-            <if test="pull != null">
-                AND gdg.gb_dg_pull_off = #{pull}
+            <if test="depFatherId != null">
+                AND EXISTS (
+                    SELECT 1 FROM gb_department_dis_goods AS ddg2
+                    WHERE ddg2.gb_DDG_dis_goods_id = gdg.gb_distributer_goods_id
+                    AND ddg2.gb_DDG_department_father_id = #{depFatherId}
+                    <if test="goodsType != null">
+                        AND ddg2.gb_DDG_goods_type = #{goodsType}
+                    </if>
+                    <if test="pull != null">
+                        AND ddg2.gb_DDG_dep_goods_pull_off = #{pull}
+                    </if>
+                )
             </if>
-            <if test="goodsType != null">
-                AND gdg.gb_dg_goods_type = #{goodsType}
+            <if test="depFatherId == null">
+                <if test="pull != null">
+                    AND gdg.gb_dg_pull_off = #{pull}
+                </if>
+                <if test="goodsType != null">
+                    AND gdg.gb_dg_goods_type = #{goodsType}
+                </if>
             </if>
             <if test="price != null">
                 AND gdg.gb_dg_control_price = #{price}
@@ -874,27 +923,26 @@
         </if>
     </select>
 
-    <!-- 按部门分页查询商品（从部门商品表查询，返回分销商商品实体；用于 storeGetDepGoodsGbPage） -->
-    <select id="disQueryDepGoodsWithOrderForAiTree" resultType="com.nongxinle.entity.GbDistributerGoodsEntity">
-        SELECT gdg.*,
-        IFNULL(MAX(stockStats.goodsStockTotal), 0) as 'goodsStockTotal',
-        IFNULL(MAX(stockStats.goodsStockWeightTotal), 0) as 'goodsStockWeightTotal',
-        MAX(gg.gb_dfg_father_goods_sort) as 'sort1',
-        MAX(g.gb_dfg_father_goods_sort) as 'sort2',
-        MAX(f.gb_dfg_father_goods_sort) as 'sort3'
+    <!-- 按部门分页查询商品（从部门商品表查询，返回部门商品实体；用于 storeGetDepGoodsGbPage） -->
+    <select id="disQueryDepGoodsWithOrderForAiTree" resultMap="depGoodsWithDisGoodsForAiTree">
+        SELECT gddg.*,
+        gdg.gb_dg_nx_father_img as gbDisGoodsFile,
+        gdg.gb_dg_nx_father_img_large as gbDisGoodsFileLarge,
+        gdg.gb_dg_control_fresh as gbDgControlFresh,
+        gdg.gb_dg_fresh_warn_hour as gbDgFreshWarnHour,
+        gdg.gb_dg_fresh_waste_hour as gbDgFreshWasteHour,
+        gdg.gb_dg_goods_inventory_type as gbDgGoodsInventoryType,
+        gdg.gb_dg_quantity_days as gbDgQuantityDays,
+        gdg.gb_dg_carton_unit as gbDgCartonUnit,
+        gdg.gb_dg_items_per_carton as gbDgItemsPerCarton,
+        gdg.gb_dg_is_franchise_price as gbDgIsFranchisePrice,
+        purchaseDep.gb_department_name as gbDdgGbDepartmentName
         FROM gb_department_dis_goods AS gddg
         LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_department AS purchaseDep ON purchaseDep.gb_department_id = gddg.gb_DDG_gb_department_id
         LEFT JOIN gb_distributer_father_goods AS g ON g.gb_distributer_father_goods_id = gddg.gb_DDG_dis_goods_grand_id
         LEFT JOIN gb_distributer_father_goods AS gg ON gg.gb_distributer_father_goods_id = g.gb_dfg_fathers_father_id
         LEFT JOIN gb_distributer_father_goods AS f ON f.gb_distributer_father_goods_id = gddg.gb_DDG_dis_goods_father_id
-        LEFT JOIN (
-            SELECT gb_dgs_gb_dis_goods_id,
-                   SUM(gb_dgs_rest_subtotal) as goodsStockTotal,
-                   SUM(gb_dgs_rest_weight) as goodsStockWeightTotal
-            FROM gb_department_goods_stock
-            WHERE gb_dgs_rest_weight > 0
-            GROUP BY gb_dgs_gb_dis_goods_id
-        ) AS stockStats ON stockStats.gb_dgs_gb_dis_goods_id = gdg.gb_distributer_goods_id
         <where>
             <if test="depFatherId != null">
                 AND gddg.gb_DDG_department_father_id = #{depFatherId}
@@ -914,14 +962,37 @@
             <if test="goodsType != null and goodsType == 101">
                 AND gdg.gb_dg_control_fresh = 1
             </if>
+            <if test="goodsType != null and goodsType == 102">
+                AND gddg.gb_DDG_dep_goods_pull_off = 1
+            </if>
 
         </where>
-        GROUP BY gdg.gb_distributer_goods_id
-        ORDER BY sort1, sort2, sort3,
-                 gdg.gb_dg_goods_sort, gdg.gb_dg_goods_sons_sort, gdg.gb_distributer_goods_id DESC
+        ORDER BY gg.gb_dfg_father_goods_sort, g.gb_dfg_father_goods_sort, f.gb_dfg_father_goods_sort,
+                 gdg.gb_dg_goods_sort, gdg.gb_dg_goods_sons_sort, gddg.gb_department_dis_goods_id DESC
         <if test="limit != null">
             LIMIT #{limit} OFFSET #{offset}
         </if>
+    </select>
+
+    <!-- 按主键查询部门商品详情（字段口径与 disQueryDepGoodsWithOrderForAiTree 一致） -->
+    <select id="queryDepGoodsDetailById" resultMap="depGoodsWithDisGoodsForAiTree">
+        SELECT gddg.*,
+        gdg.gb_dg_nx_father_img as gbDisGoodsFile,
+        gdg.gb_dg_nx_father_img_large as gbDisGoodsFileLarge,
+        gdg.gb_dg_control_fresh as gbDgControlFresh,
+        gdg.gb_dg_fresh_warn_hour as gbDgFreshWarnHour,
+        gdg.gb_dg_fresh_waste_hour as gbDgFreshWasteHour,
+        gdg.gb_dg_goods_inventory_type as gbDgGoodsInventoryType,
+        gdg.gb_dg_quantity_days as gbDgQuantityDays,
+        gdg.gb_dg_carton_unit as gbDgCartonUnit,
+        gdg.gb_dg_items_per_carton as gbDgItemsPerCarton,
+        gdg.gb_dg_is_franchise_price as gbDgIsFranchisePrice,
+        purchaseDep.gb_department_name as gbDdgGbDepartmentName
+        FROM gb_department_dis_goods AS gddg
+        LEFT JOIN gb_distributer_goods AS gdg ON gdg.gb_distributer_goods_id = gddg.gb_DDG_dis_goods_id
+        LEFT JOIN gb_department AS purchaseDep ON purchaseDep.gb_department_id = gddg.gb_DDG_gb_department_id
+        WHERE gddg.gb_department_dis_goods_id = #{depGoodsId}
+        LIMIT 1
     </select>
 
     <!-- 老项目: queryDepDisGoodsQuickSearchStrGb — 部门已关联批发商商品的快速检索（名称 / 别名 / 拼音 / 首字母） -->

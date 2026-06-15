@@ -502,7 +502,7 @@ final class BusinessOverviewDishSalesReasonFactBuilder {
                             nz(parseDecimal(firstPresent(row, "soldPortionsTotal", "salesQty", "gbDfSalesQuantity"))));
             agg.totalAmount =
                     agg.totalAmount.add(
-                            nz(parseDecimal(firstPresent(row, "listPriceRevenue", "salesAmount", "gbDfSalesAmount"))));
+                            nz(parseDecimal(firstPresent(row, "actualRevenue", "salesAmount", "gbDfSalesAmount"))));
         }
         return byKey;
     }
@@ -527,13 +527,13 @@ final class BusinessOverviewDishSalesReasonFactBuilder {
         if (insight == null) {
             return null;
         }
-        BigDecimal direct = parseDecimal(insight.get("totalListPriceRevenue"));
+        BigDecimal direct = parseDecimal(insight.get("totalActualRevenue"));
         if (direct != null) {
             return direct;
         }
         Object summary = insight.get("businessInsightSummary");
         if (summary instanceof Map<?, ?> m) {
-            return parseDecimal(m.get("totalListPriceRevenue"));
+            return parseDecimal(m.get("totalActualRevenue"));
         }
         return null;
     }

@@ -20,7 +20,7 @@ public final class MenuPortfolioSalesEvidenceSupport {
     public static final String DEBUG_NO_DATA_REASON = "menuPortfolioNoDataReason";
     public static final String DEBUG_SOLD_DISH_COUNT = "soldDishCount";
     public static final String DEBUG_TOTAL_SALES_AMOUNT = "totalSalesAmount";
-    public static final String DEBUG_TOTAL_LIST_PRICE_REVENUE = "totalListPriceRevenue";
+    public static final String DEBUG_TOTAL_ACTUAL_REVENUE = "totalActualRevenue";
     public static final String DEBUG_TOTAL_SOLD_PORTIONS = "totalSoldPortions";
 
     public static final String SUMMARY_FACT_NO_DATA_REASON = "menuPortfolioNoDataReason";
@@ -39,7 +39,7 @@ public final class MenuPortfolioSalesEvidenceSupport {
             int soldDishCount,
             BigDecimal totalSoldPortions,
             BigDecimal totalSalesAmount,
-            BigDecimal totalListPriceRevenue) {}
+            BigDecimal totalActualRevenue) {}
 
     /**
      * 从 dishRows（已聚合）与 businessInsightSummary 汇总销量证据。
@@ -56,7 +56,7 @@ public final class MenuPortfolioSalesEvidenceSupport {
                 }
                 analyzed++;
                 BigDecimal qty = parseDecimal(row.get("soldPortionsTotal"));
-                BigDecimal rev = parseDecimal(row.get("listPriceRevenue"));
+                BigDecimal rev = parseDecimal(row.get("actualRevenue"));
                 if (rev.compareTo(BigDecimal.ZERO) == 0) {
                     rev = parseDecimal(row.get("salesAmount"));
                 }
@@ -67,7 +67,7 @@ public final class MenuPortfolioSalesEvidenceSupport {
                 }
             }
         }
-        BigDecimal insightRevenue = parseDecimal(insight == null ? null : insight.get("totalListPriceRevenue"));
+        BigDecimal insightRevenue = parseDecimal(insight == null ? null : insight.get("totalActualRevenue"));
         BigDecimal portfolioRevenue =
                 totalSalesAmount.compareTo(BigDecimal.ZERO) > 0 ? totalSalesAmount : insightRevenue;
         boolean available =
@@ -88,7 +88,7 @@ public final class MenuPortfolioSalesEvidenceSupport {
                 continue;
             }
             BigDecimal qty = parseDecimal(row.get("soldPortionsTotal"));
-            BigDecimal rev = parseDecimal(row.get("listPriceRevenue"));
+            BigDecimal rev = parseDecimal(row.get("actualRevenue"));
             if (rev.compareTo(BigDecimal.ZERO) == 0) {
                 rev = parseDecimal(row.get("salesAmount"));
             }
@@ -108,7 +108,7 @@ public final class MenuPortfolioSalesEvidenceSupport {
         debug.put(DEBUG_SOLD_DISH_COUNT, assessment.soldDishCount());
         debug.put(DEBUG_TOTAL_SOLD_PORTIONS, formatAmount(assessment.totalSoldPortions()));
         debug.put(DEBUG_TOTAL_SALES_AMOUNT, formatAmount(assessment.totalSalesAmount()));
-        debug.put(DEBUG_TOTAL_LIST_PRICE_REVENUE, formatAmount(assessment.totalListPriceRevenue()));
+        debug.put(DEBUG_TOTAL_ACTUAL_REVENUE, formatAmount(assessment.totalActualRevenue()));
         if (!assessment.salesEvidenceAvailable()) {
             debug.put(DEBUG_NO_DATA_REASON, NO_DATA_REASON_NO_DISH_SALES_FOR_PERIOD);
         }

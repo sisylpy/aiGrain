@@ -3,10 +3,16 @@ package com.nongxinle.controller;
 import com.nongxinle.dto.GbDepGoodsStockAdjustRequest;
 import com.nongxinle.dto.GbDepGoodsStockAdjustResult;
 import com.nongxinle.entity.*;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.nongxinle.service.GbDepartmentDisGoodsService;
 import com.nongxinle.service.GbDepartmentGoodsStockService;
+import com.nongxinle.service.GbDepartmentOrdersService;
 import com.nongxinle.service.GbDepartmentReorderReminderService;
 import com.nongxinle.service.GbDistributerGoodsService;
+import com.nongxinle.service.GbDistributerPurchaseBatchService;
+import com.nongxinle.service.GbDistributerPurchaseGoodsService;
+import com.nongxinle.service.GbJjOrderPurchaseLinkService;
+import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.R;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -14,6 +20,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.*;
 
 import static com.nongxinle.utils.DateUtils.formatWhatDay;
@@ -36,6 +43,14 @@ public class GbDepartmentDisGoodsController {
     private GbDistributerGoodsService gbDistributerGoodsService;
     @Autowired
     private GbDepartmentReorderReminderService gbDepartmentReorderReminderService;
+    @Autowired
+    private GbDepartmentOrdersService gbDepartmentOrdersService;
+    @Autowired
+    private GbJjOrderPurchaseLinkService gbJjOrderPurchaseLinkService;
+    @Autowired
+    private GbDistributerPurchaseGoodsService gbDistributerPurchaseGoodsService;
+    @Autowired
+    private GbDistributerPurchaseBatchService gbDistributerPurchaseBatchService;
 
 
 
@@ -343,7 +358,7 @@ public class GbDepartmentDisGoodsController {
         // 2. 获取当前页数据
         map.put("limit", limit);
         map.put("offset", (page - 1) * limit);
-        List<GbDistributerGoodsEntity> currentPageList = gbDepartmentDisGoodsService.disQueryDepGoodsWithOrderForAiTree(map);
+        List<GbDepartmentDisGoodsEntity> currentPageList = gbDepartmentDisGoodsService.disQueryDepGoodsWithOrderForAiTree(map);
 
         // 3. 返回分页数据
         Map<String, Object> pageMap = new HashMap<>();
@@ -354,6 +369,253 @@ public class GbDepartmentDisGoodsController {
         pageMap.put("list", currentPageList);
         
         return R.ok().put("page", pageMap);
+    }
+
+    /**
+     * 根据部门商品ID查询部门商品详情
+     * 接口: /gbdepartmentdisgoods/getDepGoodsDetail
+     */
+    @Operation(summary = "查询部门商品详情", description = "根据部门商品主键ID查询单个部门商品的详细信息")
+    @RequestMapping(value = "/getDepGoodsDetail", method = RequestMethod.POST)
+    public R getDepGoodsDetail(
+            @Parameter(description = "部门商品ID", required = true)
+            @RequestParam Integer depGoodsId) {
+        log.info("【getDepGoodsDetail】查询部门商品详情: depGoodsId={}", depGoodsId);
+
+        GbDepartmentDisGoodsEntity entity = gbDepartmentDisGoodsService.queryDepGoodsDetailById(depGoodsId);
+        if (entity == null) {
+            return R.error(-1, "部门商品不存在");
+        }
+        return R.ok().put("data", entity);
+    }
+
+    /**
+     * 修改部门商品
+     * 接口: /gbdepartmentdisgoods/updateDepGoods
+     *
+     * <p>级联规则：
+     * <ul>
+     *   <li><b>gbDdgDepGoodsPullOff 变更</b>：直接保存，不触发任何级联逻辑。</li>
+     *   <li><b>gbDdgGoodsType 或 gbDdgGbDepartmentId 变更</b>：查询该部门商品下所有 status=0（新建）的订单，
+     *       删除旧订单并重新创建新订单，新订单的 gbDoToDepartmentId 改为 gbDdgGbDepartmentId，
+     *       并按 {@code createDepartmentOrderWithNewDepDisGoods} 规则关联采购商品行。</li>
+     * </ul>
+     */
+    @Operation(summary = "修改部门商品", description = "支持级联处理：下架直接保存；出货方式变更会重建status=0的订单并更新目标部门")
+    @RequestMapping(value = "/updateDepGoods", method = RequestMethod.POST)
+    public R updateDepGoods(@RequestBody GbDepartmentDisGoodsEntity entity) {
+        Integer depGoodsId = entity.getGbDepartmentDisGoodsId();
+        log.info("【updateDepGoods】修改部门商品: depGoodsId={}", depGoodsId);
+
+        if (depGoodsId == null) {
+            return R.error(-1, "部门商品ID不能为空");
+        }
+
+        GbDepartmentDisGoodsEntity existing = gbDepartmentDisGoodsService.getById(depGoodsId);
+        if (existing == null) {
+            return R.error(-1, "部门商品不存在");
+        }
+
+        boolean pullOffChanged = entity.getGbDdgDepGoodsPullOff() != null
+                && !Objects.equals(entity.getGbDdgDepGoodsPullOff(), existing.getGbDdgDepGoodsPullOff());
+        boolean goodsTypeChanged = entity.getGbDdgGoodsType() != null
+                && !Objects.equals(entity.getGbDdgGoodsType(), existing.getGbDdgGoodsType());
+        boolean gbDepartmentIdChanged = entity.getGbDdgGbDepartmentId() != null
+                && !Objects.equals(entity.getGbDdgGbDepartmentId(), existing.getGbDdgGbDepartmentId());
+        Integer targetGbDepartmentId = entity.getGbDdgGbDepartmentId() != null
+                ? entity.getGbDdgGbDepartmentId() : existing.getGbDdgGbDepartmentId();
+        Integer targetGoodsType = entity.getGbDdgGoodsType() != null
+                ? entity.getGbDdgGoodsType() : existing.getGbDdgGoodsType();
+
+        boolean orderProcurementMismatch = false;
+        List<GbDepartmentOrdersEntity> pendingOrders = null;
+        if (!pullOffChanged && (goodsTypeChanged || gbDepartmentIdChanged
+                || entity.getGbDdgGbDepartmentId() != null || entity.getGbDdgGoodsType() != null)) {
+            pendingOrders = gbDepartmentOrdersService.list(
+                    new LambdaQueryWrapper<GbDepartmentOrdersEntity>()
+                            .eq(GbDepartmentOrdersEntity::getGbDoDepDisGoodsId, depGoodsId)
+                            .eq(GbDepartmentOrdersEntity::getGbDoStatus, GbConstants.DepartmentOrderStatus.NEW)
+            );
+            for (GbDepartmentOrdersEntity pendingOrder : pendingOrders) {
+                if (!Objects.equals(pendingOrder.getGbDoToDepartmentId(), targetGbDepartmentId)
+                        || !Objects.equals(pendingOrder.getGbDoGoodsType(), targetGoodsType)) {
+                    orderProcurementMismatch = true;
+                    break;
+                }
+                Integer purchaseGoodsId = pendingOrder.getGbDoPurchaseGoodsId();
+                if (purchaseGoodsId != null && purchaseGoodsId != -1 && targetGbDepartmentId != null) {
+                    GbDistributerPurchaseGoodsEntity purchaseGoods =
+                            gbDistributerPurchaseGoodsService.getById(purchaseGoodsId);
+                    if (purchaseGoods != null
+                            && !Objects.equals(purchaseGoods.getGbDpgPurchaseDepartmentId(), targetGbDepartmentId)) {
+                        orderProcurementMismatch = true;
+                        break;
+                    }
+                }
+            }
+        }
+        boolean pendingOrderRebuildNeeded = goodsTypeChanged || gbDepartmentIdChanged || orderProcurementMismatch;
+
+        // 分支A：下架变更 → 直接保存，不级联
+        if (pullOffChanged) {
+            log.info("【updateDepGoods】下架变更, 直接保存: depGoodsId={}, pullOff {} -> {}",
+                    depGoodsId, existing.getGbDdgDepGoodsPullOff(), entity.getGbDdgDepGoodsPullOff());
+            gbDepartmentDisGoodsService.updateById(entity);
+            GbDepartmentDisGoodsEntity result = gbDepartmentDisGoodsService.getById(depGoodsId);
+            return R.ok().put("data", result);
+        }
+
+        // 分支B：出货方式或采购部门变更 → 需级联处理 status=0 的订单
+        if (pendingOrderRebuildNeeded) {
+            log.info("【updateDepGoods】出货方式/采购部门变更, 需级联处理订单: depGoodsId={}, goodsType {} -> {}, gbDepartmentId {} -> {}, orderMismatch={}",
+                    depGoodsId, existing.getGbDdgGoodsType(), entity.getGbDdgGoodsType(),
+                    existing.getGbDdgGbDepartmentId(), entity.getGbDdgGbDepartmentId(), orderProcurementMismatch);
+
+            // 1. 先更新部门商品（MyBatis-Plus 只更新非null字段）
+            gbDepartmentDisGoodsService.updateById(entity);
+
+            // 2. 重新查询，获取最新的 gbDdgGbDepartmentId
+            GbDepartmentDisGoodsEntity updatedDepGoods = gbDepartmentDisGoodsService.getById(depGoodsId);
+            Integer newGbDepartmentId = updatedDepGoods.getGbDdgGbDepartmentId();
+            Integer newGoodsType = updatedDepGoods.getGbDdgGoodsType();
+
+            // 3. 校验 gbDdgGbDepartmentId 必传
+            if (newGbDepartmentId == null) {
+                return R.error(-1, "变更出货方式或采购部门时，gbDdgGbDepartmentId（部门ID）不能为空");
+            }
+
+            // 4. 查询该部门商品下所有 status=0（新建）的订单
+            if (pendingOrders == null) {
+                pendingOrders = gbDepartmentOrdersService.list(
+                        new LambdaQueryWrapper<GbDepartmentOrdersEntity>()
+                                .eq(GbDepartmentOrdersEntity::getGbDoDepDisGoodsId, depGoodsId)
+                                .eq(GbDepartmentOrdersEntity::getGbDoStatus, GbConstants.DepartmentOrderStatus.NEW)
+                );
+            }
+            log.info("【updateDepGoods】找到 status=0 的订单数: {}", pendingOrders.size());
+
+            // 5. 遍历处理：解绑旧采购行、删除旧订单、创建新订单
+            for (GbDepartmentOrdersEntity oldOrder : pendingOrders) {
+                Integer oldOrderId = oldOrder.getGbDepartmentOrdersId();
+                log.info("【updateDepGoods】处理订单: oldOrderId={}, oldToDepId={}, oldGoodsType={}, oldPurGoodsId={}",
+                        oldOrderId, oldOrder.getGbDoToDepartmentId(), oldOrder.getGbDoGoodsType(),
+                        oldOrder.getGbDoPurchaseGoodsId());
+
+                detachPendingOrderFromPurchaseGoods(oldOrder);
+                gbDepartmentOrdersService.removeById(oldOrderId);
+
+                // 构造新订单，从旧订单复制字段
+                GbDepartmentOrdersEntity newOrder = new GbDepartmentOrdersEntity();
+                copyOrderFieldsForRebuild(oldOrder, newOrder);
+
+                // 覆写关键字段
+                newOrder.setGbDoToDepartmentId(newGbDepartmentId);
+                newOrder.setGbDoGoodsType(newGoodsType);
+                newOrder.setGbDoOrderType(newGoodsType);
+                newOrder.setGbDoStatus(GbConstants.DepartmentOrderStatus.NEW);
+                newOrder.setGbDoBuyStatus(GbConstants.OrderBuyStatus.NEW);
+                newOrder.setGbDoPurchaseGoodsId(-1);
+
+                GbDistributerGoodsEntity disGoods = gbDistributerGoodsService.getById(newOrder.getGbDoDisGoodsId());
+                if (disGoods == null) {
+                    log.warn("【updateDepGoods】分销商商品不存在, 跳过订单重建: disGoodsId={}, oldOrderId={}",
+                            newOrder.getGbDoDisGoodsId(), oldOrderId);
+                    continue;
+                }
+                gbJjOrderPurchaseLinkService.applyDisGoodsCategoryHierarchyToOrder(
+                        newOrder, disGoods.getGbDgDfgGoodsFatherId());
+                gbJjOrderPurchaseLinkService.applyJjOrderTimestamps(newOrder);
+
+                gbDepartmentOrdersService.save(newOrder);
+
+                gbJjOrderPurchaseLinkService.resolvePurchaseGoodsLineForJjOrder(
+                        newOrder,
+                        disGoods,
+                        GbJjOrderPurchaseLinkService.PurchaseGoodsLinkMode.MERGE_BY_PUR_DEPARTMENT);
+
+                if (disGoods.getGbDgGbSupplierId() != null && disGoods.getGbDgGbSupplierId() != -1) {
+                    gbJjOrderPurchaseLinkService.ensureSupplierPurchaseBatchForJjOrder(newOrder, disGoods);
+                }
+
+                log.info("【updateDepGoods】新订单创建成功: newOrderId={}, gbDoToDepartmentId={}, gbDoPurchaseGoodsId={}",
+                        newOrder.getGbDepartmentOrdersId(), newGbDepartmentId, newOrder.getGbDoPurchaseGoodsId());
+            }
+        } else {
+            // 普通字段变更，直接保存
+            gbDepartmentDisGoodsService.updateById(entity);
+        }
+
+        GbDepartmentDisGoodsEntity result = gbDepartmentDisGoodsService.getById(depGoodsId);
+        return R.ok().put("data", result);
+    }
+
+    /**
+     * 删除待处理订单前，从原采购商品行解绑（与 deleteOrderGb 一致，不含供货商通知）。
+     */
+    private void detachPendingOrderFromPurchaseGoods(GbDepartmentOrdersEntity order) {
+        if (order == null || order.getGbDoPurchaseGoodsId() == null || order.getGbDoPurchaseGoodsId() == -1) {
+            return;
+        }
+        GbDistributerPurchaseGoodsEntity purchaseGoods =
+                gbDistributerPurchaseGoodsService.getById(order.getGbDoPurchaseGoodsId());
+        if (purchaseGoods == null) {
+            return;
+        }
+        Integer ordersAmount = purchaseGoods.getGbDpgOrdersAmount();
+        if (ordersAmount != null && ordersAmount > 1) {
+            purchaseGoods.setGbDpgOrdersAmount(ordersAmount - 1);
+            BigDecimal subtract = new BigDecimal(purchaseGoods.getGbDpgQuantity())
+                    .subtract(new BigDecimal(order.getGbDoQuantity()));
+            purchaseGoods.setGbDpgQuantity(subtract.toString());
+            gbDistributerPurchaseGoodsService.updateById(purchaseGoods);
+            return;
+        }
+        Integer batchId = purchaseGoods.getGbDpgBatchId();
+        if (batchId != null) {
+            Map<String, Object> mapBatch = new HashMap<>();
+            mapBatch.put("batchId", batchId);
+            List<GbDistributerPurchaseGoodsEntity> batchGoods =
+                    gbDistributerPurchaseGoodsService.queryOnlyPurGoods(mapBatch);
+            if (batchGoods.size() == 1) {
+                gbDistributerPurchaseBatchService.removeById(batchId);
+            }
+        }
+        gbDistributerPurchaseGoodsService.removeById(purchaseGoods.getGbDistributerPurchaseGoodsId());
+    }
+
+    /**
+     * 从旧订单复制字段到新订单（订单重建用，不复制主键和采购/状态相关字段）。
+     */
+    private void copyOrderFieldsForRebuild(GbDepartmentOrdersEntity source, GbDepartmentOrdersEntity target) {
+        target.setGbDoNxGoodsId(source.getGbDoNxGoodsId());
+        target.setGbDoNxGoodsFatherId(source.getGbDoNxGoodsFatherId());
+        target.setGbDoDisGoodsId(source.getGbDoDisGoodsId());
+        target.setGbDoDisGoodsFatherId(source.getGbDoDisGoodsFatherId());
+        target.setGbDoDisGoodsGrandId(source.getGbDoDisGoodsGrandId());
+        target.setGbDoDisGoodsGreatId(source.getGbDoDisGoodsGreatId());
+        target.setGbDoDepDisGoodsId(source.getGbDoDepDisGoodsId());
+        target.setGbDoQuantity(source.getGbDoQuantity());
+        target.setGbDoStandard(source.getGbDoStandard());
+        target.setGbDoRemark(source.getGbDoRemark());
+        target.setGbDoWeight(source.getGbDoWeight());
+        target.setGbDoPrice(source.getGbDoPrice());
+        target.setGbDoSubtotal(source.getGbDoSubtotal());
+        target.setGbDoDepartmentId(source.getGbDoDepartmentId());
+        target.setGbDoDepartmentFatherId(source.getGbDoDepartmentFatherId());
+        target.setGbDoDistributerId(source.getGbDoDistributerId());
+        target.setGbDoOrderUserId(source.getGbDoOrderUserId());
+        target.setGbDoSellingPrice(source.getGbDoSellingPrice());
+        target.setGbDoSellingSubtotal(source.getGbDoSellingSubtotal());
+        target.setGbDoIsAgent(source.getGbDoIsAgent());
+        target.setGbDoNxGoodsGrandId(source.getGbDoNxGoodsGrandId());
+        target.setGbDoNxGoodsGreatId(source.getGbDoNxGoodsGreatId());
+        target.setGbDoPrintStandard(source.getGbDoPrintStandard());
+        target.setGbDoNxDistributerId(source.getGbDoNxDistributerId());
+        target.setGbDoNxDistributerGoodsId(source.getGbDoNxDistributerGoodsId());
+        target.setGbDoNxDepartmentOrderId(source.getGbDoNxDepartmentOrderId());
+        target.setGbDoDsStandardId(source.getGbDoDsStandardId());
+        target.setGbDoDsStandardScale(source.getGbDoDsStandardScale());
+        target.setGbDoGoodsName(source.getGbDoGoodsName());
     }
 
     /**

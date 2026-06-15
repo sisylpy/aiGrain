@@ -127,10 +127,10 @@ class MenuOperationAnswerPlanBuilderPortfolioGateTest {
         for (Map<String, Object> row : dishRows) {
             totalRev =
                     totalRev.add(
-                            MenuPortfolioSalesEvidenceSupport.parseDecimal(row.get("listPriceRevenue")));
+                            MenuPortfolioSalesEvidenceSupport.parseDecimal(row.get("actualRevenue")));
         }
         Map<String, Object> insight = new LinkedHashMap<>();
-        insight.put("totalListPriceRevenue", totalRev.toPlainString());
+        insight.put("totalActualRevenue", totalRev.toPlainString());
         insight.put("comprehensiveGrossMarginRateOnListPrice", "35");
 
         Map<String, Object> data = new LinkedHashMap<>();
@@ -145,7 +145,7 @@ class MenuOperationAnswerPlanBuilderPortfolioGateTest {
         row.put("foodId", foodId);
         row.put("dishName", name);
         row.put("soldPortionsTotal", sold);
-        row.put("listPriceRevenue", revenue);
+        row.put("actualRevenue", revenue);
         row.put("actualCostTotalAmount123", cost123);
         row.put("blendedGrossMarginRateOnListPrice", "0");
         return row;

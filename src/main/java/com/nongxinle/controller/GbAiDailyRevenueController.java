@@ -40,7 +40,7 @@ public class GbAiDailyRevenueController {
     /**
      * 获取营业额统计
      *
-     * @Description 按经营看板页面分区返回：天平（收入/支出）、底座（健康度与月度预测）、核心指标、经营分析、成本明细。扁平 stats 的键名为中文；小程序绑定请用 dashboard.bindings（英文键）。路径参数 departmentId 为父部门 ID，与日营收 gb_ai_daily_revenue_department_id、核销 gb_dgsr_gb_department_father_id 一致。可选 startDate、endDate（yyyy-MM-dd）与营业额统计、核销汇总同一区间。
+     * @Description 按经营看板页面分区返回：天平（收入/支出）、底座（健康度与月度预测）、核心指标、经营分析、成本明细。扁平 stats 的键名为中文；小程序绑定请用 dashboard.bindings（英文键）。路径参数 departmentId 为父部门 ID，与日营收 gb_ai_daily_revenue_parent_department_id、核销 gb_dgsr_gb_department_father_id 一致。可选 startDate、endDate（yyyy-MM-dd）与营业额统计、核销汇总同一区间。
      */
     @GetMapping("/stats/{departmentId}")
     @Operation(summary = "获取营业额统计", description = "结构化 dashboard + 扁平 stats；可选 startDate、endDate（yyyy-MM-dd）；departmentId 为父部门 ID")
@@ -104,16 +104,10 @@ public class GbAiDailyRevenueController {
      * 更新日营业额（纯更新，不新增；当天没有记录则返回错误）
      */
     @PostMapping("/update")
-    @Operation(summary = "更新日营业额", description = "按部门+记录日更新；该日已有记录则覆盖更新，否则返回错误；有子部门ID时按子部门匹配，仅有父部门ID时按父部门匹配")
+    @Operation(summary = "更新日营业额", description = "按父部门+记录日更新；该日已有记录则覆盖更新，否则返回错误")
     public R update(@RequestBody GbAiDailyRevenueEntity dailyRevenue) {
         try {
-            if (dailyRevenue.getGbAiDailyRevenueDepartmentId() != null) {
-                dailyRevenueService.updateByDepartmentAndDate(dailyRevenue);
-            } else if (dailyRevenue.getGbAiDailyRevenueParentDepartmentId() != null) {
-                dailyRevenueService.updateByParentDepartmentAndDate(dailyRevenue);
-            } else {
-                return R.error("子部门ID和父部门ID至少需要提供一个");
-            }
+            dailyRevenueService.updateByDepartmentAndDate(dailyRevenue);
             return R.ok();
         } catch (IllegalArgumentException e) {
             return R.error(e.getMessage());

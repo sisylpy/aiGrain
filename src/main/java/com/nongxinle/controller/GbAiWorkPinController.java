@@ -43,6 +43,26 @@ public class GbAiWorkPinController {
         }
     }
 
+    @GetMapping("/mine")
+    @Operation(summary = "当前用户全部图钉（跨会话，分页；不含完整快照）")
+    public R listMine(
+            @Parameter(description = "用户 ID") @RequestParam Long userId,
+            @Parameter(description = "可选：按会话筛选") @RequestParam(required = false) Long conversationId,
+            @Parameter(description = "可选：RUN / MESSAGE / SELECTION") @RequestParam(required = false)
+                    String sourceType,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "20") Integer pageSize) {
+        try {
+            return R.ok()
+                    .put(
+                            "data",
+                            gbAiWorkPinService.listMyPins(
+                                    userId, conversationId, sourceType, page, pageSize));
+        } catch (IllegalArgumentException ex) {
+            return R.error(400, ex.getMessage());
+        }
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "图钉详情（含 sourceTextSnapshot）")
     public R detail(

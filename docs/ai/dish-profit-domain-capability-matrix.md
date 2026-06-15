@@ -50,7 +50,7 @@
 - **Agent**：`DishProfitAgent`（`query_semantic_parser.v2.md` 与 `master-business-agent-design.md`）。  
 - **Tool ID**：`dish_profit_analysis`（`AiBusinessToolIds.DISH_PROFIT_ANALYSIS`）。
 
-**注意**：**`dish_profit_analysis`** 同时服务 **菜品毛利专线**（`dish_profit_path`）、**D-8 销量专线**（`dish_sales_query_path`，语义 intent 仍为 **`DISH_SALES_QUERY`**）与 **成本诊断链**（`cost_diagnosis_path`，`DEFAULT_COST_INSIGHT_TOOLS` 第 4 步）。**Historical removed（D-CLEAN-DISH-SALES-P2）**：独立 Tool **`dish_sales_query`** / **`DishSalesQueryTool`** 已删除；**不再**编排或读取 `toolResults["dish_sales_query"]`。标价收入读 **`data.businessInsightSummary.totalListPriceRevenue`**。见下文 §4。
+**注意**：**`dish_profit_analysis`** 同时服务 **菜品毛利专线**（`dish_profit_path`）、**D-8 销量专线**（`dish_sales_query_path`，语义 intent 仍为 **`DISH_SALES_QUERY`**）与 **成本诊断链**（`cost_diagnosis_path`，`DEFAULT_COST_INSIGHT_TOOLS` 第 4 步）。**Historical removed（D-CLEAN-DISH-SALES-P2）**：独立 Tool **`dish_sales_query`** / **`DishSalesQueryTool`** 已删除；**不再**编排或读取 `toolResults["dish_sales_query"]`。标价收入读 **`data.businessInsightSummary.totalActualRevenue`**。见下文 §4。
 
 ---
 
@@ -223,7 +223,7 @@ v2 菜品排行白名单与销量 wire 归属仍在 prompt/schema 侧评审；**
 2. 「哪个菜**销量**最高 / **卖得最多** / **销售份数**最多 / **销售额**最高」**不再**作为 DishProfit **长期主能力**；不要求在 DishProfit 文档或产品叙事中把纯销量排行列为核心交付。
 3. **菜品销量**拆入 **D-8 DishSales / 菜品销售域**；独立路径、wire、AnswerPlan（若落地）与 DishProfit **分域**。
 4. DishProfit **只**在「**销量 + 毛利**」**组合分析**中参与，例如「销量高但不赚钱」「销量高但毛利率低」等——此时 DishProfit 提供毛利/成本侧证据，销量侧由 D-8 或复用数据源协同表述（以最终实现为准）。
-5. **短期**若 D-8 Phase 1 **复用** `dish_profit_analysis` 的 **`soldPortionsTotal` / `listPriceRevenue`**（及 `dishRows`）：须在对外说明中标明为 **数据源复用 / buildInsight 行内字段**，**不代表**产品域长期仍归 **DishProfit**。
+5. **短期**若 D-8 Phase 1 **复用** `dish_profit_analysis` 的 **`soldPortionsTotal` / `actualRevenue`**（及 `dishRows`）：须在对外说明中标明为 **数据源复用 / buildInsight 行内字段**，**不代表**产品域长期仍归 **DishProfit**。
 6. **D-7 Phase 3** **不再**继续把「哪个菜销量最高」**修进** DishProfit；后续 **D-8** 统一处理纯销量/销售额排行问法。
 
 ---

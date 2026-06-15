@@ -256,13 +256,13 @@ public final class MultiDomainOrchestrationSubPlanEvidenceSupport {
 
     private static boolean hasDishCoreFact(Map<String, Object> row) {
         return hasText(row.get("dishName"))
-                || hasText(row.get("listPriceRevenue"))
+                || hasText(row.get("actualRevenue"))
                 || hasText(row.get("salesQuantity"))
                 || hasText(row.get("blendedGrossMarginRateOnListPrice"));
     }
 
     private static boolean hasPositiveDishMetric(Map<String, Object> row) {
-        return hasPositiveMetric(row, "listPriceRevenue")
+        return hasPositiveMetric(row, "actualRevenue")
                 || hasPositiveMetric(row, "salesQuantity")
                 || hasPositiveMetric(row, "actualCostAmount")
                 || hasPositiveMetric(row, "theoryCostAmount");
@@ -270,7 +270,7 @@ public final class MultiDomainOrchestrationSubPlanEvidenceSupport {
 
     private static boolean hasExplicitZeroDishRow(Map<String, Object> row) {
         Double salesQty = readDouble(row, "salesQuantity");
-        Double revenue = readDouble(row, "listPriceRevenue");
+        Double revenue = readDouble(row, "actualRevenue");
         return salesQty != null && salesQty == 0 && revenue != null && revenue == 0;
     }
 

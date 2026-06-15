@@ -134,7 +134,7 @@ public class DishProfitAnalysisTool implements AiTool {
             for (Map<String, Object> raw : presented) {
                 Map<String, Object> row = summarizeDishRow(raw);
                 compactRows.add(row);
-                totalRev = totalRev.add(GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.get("listPriceRevenue")));
+                totalRev = totalRev.add(GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.get("actualRevenue")));
                 totalTheory = totalTheory.add(
                         GbDepartmentGoodsStockReduceSupport.coerceDecimal(row.get("theoryCostAmount")));
                 totalActual = totalActual.add(
@@ -148,7 +148,7 @@ public class DishProfitAnalysisTool implements AiTool {
             data.put("dishRows", compactRows);
             data.put("dishLineCountFull", dishes == null ? 0 : dishes.size());
             data.put("dishLineReturned", compactRows.size());
-            data.put("listPriceRevenueTotal", nzPlain(totalRev));
+            data.put("actualRevenueTotal", nzPlain(totalRev));
             data.put("soldPortionsTotal", nzPlainQty(qtyAll));
             data.put("totalTheoreticalCost", nzPlain(totalTheory));
             data.put("totalActualCostType1", nzPlain(totalActual));
@@ -236,7 +236,7 @@ public class DishProfitAnalysisTool implements AiTool {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("foodId", raw.get("foodId"));
         row.put("dishName", raw.getOrDefault("foodName", ""));
-        row.put("listPriceRevenue", str(raw.get("listPriceRevenue")));
+        row.put("actualRevenue", str(raw.get("actualRevenue")));
         row.put("soldPortionsTotal", str(raw.get("soldPortionsTotal")));
         row.put("theoryCostAmount", str(raw.get("theoryCostAmount")));
         row.put("actualCostAmount", str(raw.get("actualCostAmount")));
@@ -249,7 +249,7 @@ public class DishProfitAnalysisTool implements AiTool {
         row.put("actualCostPerPortion123", raw.get("actualCostPerPortion123"));
         row.put("grossMarginLevel", raw.get("grossMarginLevel"));
         row.put("diffCostAmount", raw.get("diffCostAmount"));
-        row.put("utilizationRate", raw.get("utilizationRate"));
+        row.put("devianceRate", raw.get("devianceRate"));
         return row;
     }
 
@@ -303,7 +303,7 @@ public class DishProfitAnalysisTool implements AiTool {
                     .reversed();
         } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_AMOUNT_RANKING_HIGH.equals(sw)) {
             cmp = Comparator.comparing((Map<String, Object> m) ->
-                    GbDepartmentGoodsStockReduceSupport.coerceDecimal(m.get("listPriceRevenue")))
+                    GbDepartmentGoodsStockReduceSupport.coerceDecimal(m.get("actualRevenue")))
                     .reversed();
         } else if (AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_COUNT_RANKING_LOW.equals(sw)
                 || AiQuerySemanticLexicon.STRUCTURED_DISH_SALES_RANKING_LOW.equals(sw)) {
@@ -318,7 +318,7 @@ public class DishProfitAnalysisTool implements AiTool {
 
     /** 标价收入 − 展示用实际成本（与 AnswerPlan grossProfitAmount 一致）。 */
     private static BigDecimal grossProfitAmountSortKey(Map<String, Object> raw) {
-        BigDecimal rev = GbDepartmentGoodsStockReduceSupport.coerceDecimal(raw.get("listPriceRevenue"));
+        BigDecimal rev = GbDepartmentGoodsStockReduceSupport.coerceDecimal(raw.get("actualRevenue"));
         BigDecimal actual =
                 com.nongxinle.ai.graph.business.DishProfitActualCostSemanticsSupport.displayActualCost(raw);
         if (rev == null || actual == null) {

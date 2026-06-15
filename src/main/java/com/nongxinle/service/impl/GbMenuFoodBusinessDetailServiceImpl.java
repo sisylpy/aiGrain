@@ -143,8 +143,8 @@ public class GbMenuFoodBusinessDetailServiceImpl implements GbMenuFoodBusinessDe
         dish.put("listPrice", resolveListPrice(foodEntity, rawRow));
         dish.put("soldPortionsTotal", periodMetrics.get("salesCount"));
         dish.put("salesAmount", periodMetrics.get("salesAmount"));
-        dish.put("listPriceRevenue", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(
-                GbDepartmentGoodsStockReduceSupport.coerceDecimal(rawRow.get("listPriceRevenue"))));
+        dish.put("actualRevenue", MenuCategoryBusinessOverviewSupport.moneyDisplayPublic(
+                GbDepartmentGoodsStockReduceSupport.coerceDecimal(rawRow.get("actualRevenue"))));
         dish.put("actualCostPerPortion", periodMetrics.get("actualCostPerPortion"));
         dish.put("theoreticalCostPerPortion", periodMetrics.get("theoreticalCostPerPortion"));
         dish.put("actualCostTotalAmount123", periodMetrics.get("actualCostAmount"));
@@ -221,8 +221,8 @@ public class GbMenuFoodBusinessDetailServiceImpl implements GbMenuFoodBusinessDe
         m.put("actualWasteUsage", row.get("actualWasteUsage"));
         m.put("actualLossUsage", row.get("actualLossUsage"));
         m.put("actualLossAndWasteUsage", row.get("actualLossAndWasteUsage"));
-        m.put("utilizationRate", row.get("utilizationRate"));
-        m.put("utilization", row.get("utilization"));
+        m.put("devianceRate", row.get("devianceRate"));
+        m.put("deviance", row.get("deviance"));
         m.put("costGapPerPortion", ingredientCostGapPerPortion(row));
         return m;
     }

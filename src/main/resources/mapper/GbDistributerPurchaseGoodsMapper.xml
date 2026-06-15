@@ -1149,7 +1149,9 @@
                CAST(ROUND(
                        (t.current_unit_price - t.previous_unit_price)
                            / NULLIF(t.previous_unit_price, 0) * 100, 1) AS CHAR) AS priceChangePercent,
-               t.stock_finish_date                                         AS stockFinishDate
+               t.stock_finish_date                                         AS stockFinishDate,
+               t.purchase_goods_id                                         AS currentPurchaseGoodsId,
+               t.previous_purchase_goods_id                                AS previousPurchaseGoodsId
         FROM (
                  SELECT x.*,
                         ROW_NUMBER() OVER (
@@ -1169,7 +1171,12 @@
                                      PARTITION BY gdpg.gb_DPG_dis_goods_id
                                      ORDER BY gdpg.gb_DPG_stock_finish_date,
                                               gdpg.gb_distributer_purchase_goods_id
-                                     )                                                   AS previous_unit_price
+                                     )                                                   AS previous_unit_price,
+                                 LAG(gdpg.gb_distributer_purchase_goods_id) OVER (
+                                     PARTITION BY gdpg.gb_DPG_dis_goods_id
+                                     ORDER BY gdpg.gb_DPG_stock_finish_date,
+                                              gdpg.gb_distributer_purchase_goods_id
+                                     )                                                   AS previous_purchase_goods_id
                           FROM gb_distributer_purchase_goods AS gdpg
                                    LEFT JOIN gb_distributer_purchase_batch AS gdpb
                                              ON gdpb.gb_distributer_purchase_batch_id = gdpg.gb_DPG_batch_id
@@ -1510,6 +1517,12 @@
                     #{gid}
                 </foreach>
             </if>
+            <if test="purchaseGoodsIds != null and purchaseGoodsIds.size() &gt; 0">
+                AND gdpg.gb_distributer_purchase_goods_id IN
+                <foreach collection="purchaseGoodsIds" item="pid" open="(" separator="," close=")">
+                    #{pid}
+                </foreach>
+            </if>
             <if test="disId != null">
                 AND gdpg.gb_DPG_distributer_id = #{disId}
             </if>
@@ -1546,6 +1559,9 @@
             </if>
             <if test="purUserId != null">
                 AND gdpg.gb_DPG_pur_user_id = #{purUserId}
+            </if>
+            <if test="purDepId != null">
+                AND gdpg.gb_DPG_purchase_department_id = #{purDepId}
             </if>
             <if test="standard != null">
                 and gdpg.gb_DPG_standard = #{standard}

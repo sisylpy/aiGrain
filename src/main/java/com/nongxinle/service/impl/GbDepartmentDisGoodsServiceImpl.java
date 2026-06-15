@@ -127,8 +127,13 @@ public class GbDepartmentDisGoodsServiceImpl extends ServiceImpl<GbDepartmentDis
     }
 
     @Override
-    public List<GbDistributerGoodsEntity> disQueryDepGoodsWithOrderForAiTree(Map<String, Object> map) {
+    public List<GbDepartmentDisGoodsEntity> disQueryDepGoodsWithOrderForAiTree(Map<String, Object> map) {
         return baseMapper.disQueryDepGoodsWithOrderForAiTree(map);
+    }
+
+    @Override
+    public GbDepartmentDisGoodsEntity queryDepGoodsDetailById(Integer depGoodsId) {
+        return baseMapper.queryDepGoodsDetailById(depGoodsId);
     }
 
     @Override

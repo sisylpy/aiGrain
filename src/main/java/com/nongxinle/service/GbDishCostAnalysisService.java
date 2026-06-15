@@ -159,4 +159,16 @@ public interface GbDishCostAnalysisService {
     Map<String, Object> buildDishIngredientConsumptionAudit(String startDate, String stopDate, Integer disId,
             Integer depFatherId, String searchDepId, Integer foodId,
             Collection<Integer> scopeDepartmentIdsAllowFilter);
+
+    /**
+     * 合并的单菜配料看板+消耗排查：一次数据加载，同时返回 {@code dishIngredientDashboard} 与 {@code dishIngredientConsumptionAudit} 的完整数据。
+     * <p>消除原先两个接口分别调用 {@code loadIngredientAnalysisData} 的重复开销。{@code searchDepId} 非空时限定子部门口径（与 subDepId 对应）。</p>
+     * <p>趋势参数 {@code trendStartDate}/{@code trendEndDate}/{@code trendGranularity}/{@code primaryDisGoodsId} 可空，逻辑与 {@link #buildDishIngredientDashboard} 一致。</p>
+     *
+     * @return 合并响应：{@code dish}（看板）、{@code ingredientRows}（看板配料行）、{@code costStructure}、{@code costTrend}、{@code summarySuggestionZh}、{@code disclaimerZh}；
+     *         {@code dishSummary}（消耗排查整菜汇总）、{@code consumptionAuditIngredients}（消耗排查配料行，含 relatedDishAllocations、stockReduceRecords）、{@code scopeOutboundSubtotals}
+     */
+    Map<String, Object> buildDishIngredientDashboardAndAudit(String startDate, String stopDate, Integer disId,
+            Integer depFatherId, String searchDepId, Integer foodId,
+            String trendStartDate, String trendEndDate, String trendGranularity, Integer primaryDisGoodsId);
 }

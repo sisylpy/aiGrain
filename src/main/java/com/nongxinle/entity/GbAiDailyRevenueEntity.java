@@ -1,5 +1,6 @@
 package com.nongxinle.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -25,11 +26,7 @@ public class GbAiDailyRevenueEntity implements Serializable {
 	@TableId(type = IdType.AUTO)
 	private Long gbAiDailyRevenueId;
 	/**
-	 *  子部门 ID（门店/子组织等业务侧记录的部门，对应 {@code gb_ai_daily_revenue_department_id}）
-	 */
-	private Long gbAiDailyRevenueDepartmentId;
-	/**
-	 *  父级部门 ID（冗余存储，便于按集团/片区汇总；可与 {@link com.nongxinle.entity.GbDepartmentEntity#getGbDepartmentFatherId()} 对齐）
+	 *  父级部门 ID（日营业额的记账部门，对应 {@code gb_ai_daily_revenue_parent_department_id}）
 	 */
 	private Long gbAiDailyRevenueParentDepartmentId;
 	/**
@@ -74,8 +71,9 @@ public class GbAiDailyRevenueEntity implements Serializable {
 	 */
 	private String gbAiDailyRevenueHoliday;
 	/**
-	 *  总营业额（堂食 + 外卖）
+	 *  总营业额（数据库生成列 GENERATED ALWAYS AS (dine_in + takeout)，不可手动插入/更新）
 	 */
+	@TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
 	private BigDecimal gbAiDailyRevenueGrossRevenue;
 	/**
 	 *  净营业额（数据库生成列，无需手动插入）

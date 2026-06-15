@@ -45,6 +45,8 @@ public class GbDepartmentDisGoodsEntity implements Serializable, Comparable {
     private Integer gbDdgNxDistributerId;
     private Integer gbDdgNxDistributerGoodsId;
     private Integer gbDdgGbDepartmentId;
+    @TableField(exist = false)
+    private String gbDdgGbDepartmentName;
     private Integer gbDdgGbSupplierId;
     private Integer gbDdgGbDisId;
     private Integer gbDdgDisGoodsGreatId;
@@ -73,10 +75,21 @@ public class GbDepartmentDisGoodsEntity implements Serializable, Comparable {
     private String gbDdgOrderPriceLevel;
     @TableField(exist = false)
     private String gbDgFreshWasteHour;
+    @TableField(exist = false)
+    private String gbDgFreshWarnHour;
+    @TableField(exist = false)
+    private Integer gbDgGoodsInventoryType;
+    @TableField(exist = false)
+    private Integer gbDgQuantityDays;
+    @TableField(exist = false)
+    private String gbDgCartonUnit;
+    @TableField(exist = false)
+    private String gbDgItemsPerCarton;
+    @TableField(exist = false)
+    private Integer gbDgIsFranchisePrice;
 
     private Integer gbDdgPrepareStatus;
     private Integer gbDdgDepGoodsStatus;
-    @TableField(exist = false)
     private Integer gbDdgDepGoodsPullOff;
     @TableField(exist = false)
     private String gbTipText;
@@ -103,8 +116,6 @@ public class GbDepartmentDisGoodsEntity implements Serializable, Comparable {
     private GbDepartmentEntity outStockDepartmentEntity;
     @TableField(exist = false)
     private GbDepartmentEntity gbGoodsDepartmentEntity;
-    @TableField(exist = false)
-    private GbDepartmentGoodsDailyEntity gbDepGoodsDailyEntity;
 
     @TableField(exist = false)
     private String aiOrderQuantity;

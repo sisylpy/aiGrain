@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.nongxinle.ai.advisor.AiAdvisorConversationConstants;
 import com.nongxinle.ai.scope.AiConversationScopeMode;
+import com.nongxinle.ai.workrecord.WorkRecordConstants;
 import com.nongxinle.entity.GbAiConversationEntity;
 import com.nongxinle.entity.GbDepartmentEntity;
 import com.nongxinle.entity.GbAiMessageEntity;
@@ -165,6 +166,75 @@ public class AiConversationCoreServiceImpl implements AiConversationCoreService 
                 advisorId,
                 userId,
                 mode);
+        return conv;
+    }
+
+    @Override
+    public GbAiConversationEntity getOrCreateWorkRecordConversation(
+            Long departmentId,
+            Long distributerId,
+            AiConversationScopeMode scopeMode,
+            Long userId) {
+
+        if (userId == null) {
+            throw new IllegalArgumentException("userId required");
+        }
+        AiConversationScopeMode mode = scopeMode != null ? scopeMode : AiConversationScopeMode.STORE;
+
+        Long effDistributerId = distributerId;
+        if (mode == AiConversationScopeMode.GROUP) {
+            if (effDistributerId == null) {
+                throw new IllegalArgumentException("集团模式必须提供 distributerId(disId)");
+            }
+        } else {
+            if (departmentId == null) {
+                throw new IllegalArgumentException("单店模式必须提供 departmentId(门店父部门)");
+            }
+            if (effDistributerId == null) {
+                GbDepartmentEntity d = departmentMapper.selectById(departmentId.intValue());
+                if (d != null && d.getGbDepartmentDisId() != null) {
+                    effDistributerId = d.getGbDepartmentDisId().longValue();
+                }
+            }
+        }
+
+        LambdaQueryWrapper<GbAiConversationEntity> w = new LambdaQueryWrapper<>();
+        w.eq(GbAiConversationEntity::getGbAiConversationUserId, userId)
+                .eq(GbAiConversationEntity::getGbAiConversationThreadKind, WorkRecordConstants.THREAD_KIND_WORK_RECORD)
+                .eq(GbAiConversationEntity::getGbAiConversationScopeMode, mode.getCode())
+                .isNull(GbAiConversationEntity::getGbAiConversationAdvisorId);
+        if (mode == AiConversationScopeMode.STORE) {
+            w.eq(GbAiConversationEntity::getGbAiConversationDepartmentId, departmentId)
+                    .eq(GbAiConversationEntity::getGbAiConversationDistributerId, effDistributerId);
+        } else {
+            w.isNull(GbAiConversationEntity::getGbAiConversationDepartmentId)
+                    .eq(GbAiConversationEntity::getGbAiConversationDistributerId, effDistributerId);
+        }
+        w.orderByDesc(GbAiConversationEntity::getGbAiConversationUpdateTime).last("LIMIT 1");
+
+        List<GbAiConversationEntity> found = conversationMapper.selectList(w);
+        if (!found.isEmpty()) {
+            return found.get(0);
+        }
+
+        GbAiConversationEntity conv = new GbAiConversationEntity();
+        conv.setGbAiConversationScopeMode(mode.getCode());
+        conv.setGbAiConversationDepartmentId(mode == AiConversationScopeMode.STORE ? departmentId : null);
+        conv.setGbAiConversationDistributerId(effDistributerId);
+        conv.setGbAiConversationUserId(userId);
+        conv.setGbAiConversationStatus(0);
+        conv.setGbAiConversationTitle("店长工作记录");
+        conv.setGbAiConversationCreateTime(new Date());
+        conv.setGbAiConversationUpdateTime(new Date());
+        conv.setGbAiConversationThreadKind(WorkRecordConstants.THREAD_KIND_WORK_RECORD);
+
+        conversationMapper.insert(conv);
+        log.info(
+                "[WorkRecordConv] inserted conversationId={} userId={} mode={} departmentId={}",
+                conv.getGbAiConversationId(),
+                userId,
+                mode,
+                departmentId);
         return conv;
     }
 }

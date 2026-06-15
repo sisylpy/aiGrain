@@ -770,7 +770,7 @@ curl -s http://localhost:8090/api/ai/runs/<runId>
 | `revenue_query` | `GbAiDailyRevenueService#getStatsByDepartmentId` | `success=true` 且 **`data.days>0`** 或 **`data.rawStats`** 有关键聚合 |
 | `purchase_overview` | `PurchaseOverviewTool` / `GbDistributerPurchaseGoodsService` | **`data.purchaseOverview.purchaseOrderCount>0`** 或 **`totalPurchaseAmount`** 非零 |
 | `stock_reduce_query` | `GbDepartmentGoodsStockReduceService#queryReduceAllTypesTotalOnDailyRevenueDays` | **`data`** 中各类 total 不全为 0 或 **`mock`** 为 false |
-| `dish_profit_analysis`（成本链第 4 步） | `GbDepFoodBusinessInsightService#buildInsight`（`DishProfitAnalysisTool`） | **`data.businessInsightSummary.totalListPriceRevenue`** 或 **`data.dishLineCount>0`**（该步较慢，常见于 数十秒） |
+| `dish_profit_analysis`（成本链第 4 步） | `GbDepFoodBusinessInsightService#buildInsight`（`DishProfitAnalysisTool`） | **`data.businessInsightSummary.totalActualRevenue`** 或 **`data.dishLineCount>0`**（该步较慢，常见于 数十秒） |
 | *(无独立毛利 Tool)* | **Historical removed**：`gross_margin_calculator` 已删；现网在 **`CostDiagnosisAgent`** 内由 **`CostMarginDerivation`** 推导，**不写回** `toolResults` | — |
 
 > **Historical removed（D-CLEAN-BOV-TOOL-DELETE）**：`business_overview_query` / **`BusinessOverviewQueryTool`** 已从 `src/main` 删除；经营看板 KPI 现由 **`revenue_query`**（MULTI 四域）承担，不再单独注册 Tool。

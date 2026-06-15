@@ -36,6 +36,9 @@ public class AiPromptRegistry {
         m.put(
                 AiPromptIds.BUSINESS_OVERVIEW_DISH_SALES_REASON_AGENT_V2,
                 "ai-prompts/semantic/business-overview-dish-sales-reason-agent.v2.md");
+        m.put(
+                AiPromptIds.WORK_RECORD_POLISH_CLASSIFY_V1,
+                "ai-prompts/workrecord/work_record_polish_classify.v1.md");
 
         m.put("common.answer_style_rules.v1", "ai-prompts/common/answer_style_rules.v1.md");
         m.put("common.numeric_safety_rules.v1", "ai-prompts/common/numeric_safety_rules.v1.md");

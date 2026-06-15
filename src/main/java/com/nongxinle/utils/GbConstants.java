@@ -11,7 +11,23 @@ import java.math.RoundingMode;
 public final class GbConstants {
 
     private GbConstants() {
+
     }
+
+
+   public static final class DistributerType {
+    private DistributerType() {
+    }
+
+    /** 单店 */
+    public static final Integer SINGLE_STORE = 0;
+    /** 单区域多店 */
+    public static final Integer SINGLE_REGION_MULTI_STORE = 1;
+    /** 多区域 */
+    public static final Integer MULTI_REGION = 2;
+
+}
+
 
     // -------------------------------------------------------------------------
     // 部门类型（如 gb_department.gb_department_type）
@@ -229,6 +245,31 @@ public final class GbConstants {
         public static final Integer WINDOW = 23;
     }
 
+    // -------------------------------------------------------------------------
+    // 部门商品类型（在批发商商品类型基础上增加其他门店代采）
+    // -------------------------------------------------------------------------
+    public static final class DepartmentGoodsType {
+        private DepartmentGoodsType() {
+        }
+
+        /** 自采 */
+        public static final Integer SELF_PURCHASE = 1;
+        /** 集采 */
+        public static final Integer GROUP_PURCHASE = 2;
+        /** 出库 */
+        public static final Integer OUTBOUND = 3;
+        /** 中央厨房 */
+        public static final Integer CENTRAL_KITCHEN = 4;
+        /** 配送 */
+        public static final Integer DELIVERY_SUPPLIER = 5;
+        /** 其他门店代采 */
+        public static final Integer OTHER_STORE_PURCHASE = 6;
+        /** 自动订货 */
+        public static final Integer AUTO_SUPPLIER = 21;
+        /** 窗口 */
+        public static final Integer WINDOW = 23;
+    }
+
     /** 称重汇总维度 */
     public static final class WeightTotalCategory {
         private WeightTotalCategory() {
@@ -418,14 +459,14 @@ public final class GbConstants {
     }
 
     /**
-     * 配料/食材行「利用率」分档（与前端「食材利用率分布」环图一致）。
-     * <p>接口字段 {@code utilizationRate} 为百分数，如 83.33 表示 83.33%（与 {@link #fromRatePercent(BigDecimal)} 入参单位一致）。</p>
+     * 配料/食材行「偏差率」分档（与前端「食材偏差率分布」环图一致）。
+     * <p>接口字段 {@code devianceRate} 为百分数，如 83.33 表示 83.33%（与 {@link #fromRatePercent(BigDecimal)} 入参单位一致）。</p>
      * <p>区间约定（与 UI）：{@code <90%} 偏低；{@code [90%, 110%]} 正常；{@code (110%, 120%]} 偏高；{@code >120%} 浪费严重
      * （110% 算正常、120% 算偏高；&gt;120% 为严重浪费）。</p>
-     * <p>无利用率（理论用量为 0 等）不调用本类，或调用 {@code fromRatePercent} 时返回 null。</p>
+     * <p>无偏差率（理论用量为 0 等）不调用本类，或调用 {@code fromRatePercent} 时返回 null。</p>
      */
-    public static final class IngredientUtilizationLevel {
-        private IngredientUtilizationLevel() {
+    public static final class IngredientDevianceLevel {
+        private IngredientDevianceLevel() {
         }
 
         /** 偏低，&lt; 90% */
@@ -450,7 +491,7 @@ public final class GbConstants {
         public static final BigDecimal PCT_HIGH_INCLUSIVE_MAX = new BigDecimal("120");
 
         /**
-         * 由利用率百分数解析分档，供 JSON 中返回 {@code level}、{@code labelZh}。
+         * 由偏差率百分数解析分档，供 JSON 中返回 {@code level}、{@code labelZh}。
          *
          * @param ratePercent 百分数，如 100 表示 100%
          * @return 非空；入参为 null 或非有限数时返回 null

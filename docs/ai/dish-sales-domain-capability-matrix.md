@@ -99,7 +99,7 @@
 ### 建议短期技术方案
 
 - **产品域命名**：**DishSales**（与 DishProfit、Revenue 并列叙事）。
-- **第一阶段**：可**暂复用** `dish_profit_analysis` 返回的 **`dishRows`**，按字段 **`soldPortionsTotal`**、**`listPriceRevenue`** 排序与裁剪 Top N。
+- **第一阶段**：可**暂复用** `dish_profit_analysis` 返回的 **`dishRows`**，按字段 **`soldPortionsTotal`**、**`actualRevenue`** 排序与裁剪 Top N。
 - **不**使用 **`revenue_query`** 承接**菜品**侧销量/销售额排行。
 - **不**再把纯销量问题作为 **DishProfit 长期文档能力**写入主矩阵（见 DishProfit 文档 D-7/D-8 边界）。
 
@@ -119,7 +119,7 @@
 
 - **`dishName`**
 - **`soldPortionsTotal`**：销售份数 / 销量（工具 summarize 后多为字符串形式，排序时按数值语义处理）
-- **`listPriceRevenue`**：菜品**标价口径**销售额（同上，多为字符串）
+- **`actualRevenue`**：菜品**标价口径**销售额（同上，多为字符串）
 - **`grossMarginRateOnListPrice` / `blendedGrossMarginRateOnListPrice`**：毛利率参考字段
 - **`actualCostAmount`**
 - **`theoryCostAmount`**
@@ -132,7 +132,7 @@
 
 ### 4. 销售额排行 wire 与排序
 
-**Phase 1 已落地**：**`dish_sales_amount_ranking_high`** 经 Builder 按 **`listPriceRevenue`** 做销售额降序排行。以下历史表述保留为设计对照：**规划**上曾建议与份数排行并列实现，现已并入 Phase 1。
+**Phase 1 已落地**：**`dish_sales_amount_ranking_high`** 经 Builder 按 **`actualRevenue`** 做销售额降序排行。以下历史表述保留为设计对照：**规划**上曾建议与份数排行并列实现，现已并入 Phase 1。
 
 ### 5. `DishProfitAnswerPlan` 不宜作为 DishSales 长期契约
 
@@ -158,15 +158,15 @@
 - 新增 **`DishSalesAnswerPlan`**、**`DishSalesAnswerPlanBuilder`**（或等价命名）。
 - **`BusinessDataPlannerNode`**：对 **`dish_sales_query_path`** 生成 **`dataPlanTools = ["dish_profit_analysis"]`**。
 - **`BusinessToolExecutionNode`**：**仍只执行** `dish_profit_analysis`，**不**新增 Phase 1 Tool。
-- **Builder**：从 **`toolResults["dish_profit_analysis"]["data"]["dishRows"]`** 读取；**销量排行**按 **`soldPortionsTotal`** 排序；**销售额排行**按 **`listPriceRevenue`** 排序。
+- **Builder**：从 **`toolResults["dish_profit_analysis"]["data"]["dishRows"]`** 读取；**销量排行**按 **`soldPortionsTotal`** 排序；**销售额排行**按 **`actualRevenue`** 排序。
 - **`StubAnswerComposerNode`**：Phase 1 **已走确定性输出**（`DishSalesDeterministicRenderer`），LLM Composer 为非主线。
 
 ### 8. 诚实降级（与实现一致）
 
 - **`dishRows` 为空**：**不得**强答「哪个菜最高」。
 - **`soldPortionsTotal` 缺失**：只说明缺少可靠销售份数字段，不编造排行。
-- **`listPriceRevenue` 缺失**：**不得**回答销售额排行。
-- Phase 1 销售额口径为 **`listPriceRevenue`**（标价口径），须在用户可见答复中**说明为标价口径销售额**。
+- **`actualRevenue` 缺失**：**不得**回答销售额排行。
+- Phase 1 销售额口径为 **`actualRevenue`**（标价口径），须在用户可见答复中**说明为标价口径销售额**。
 - **复用 `dish_profit_analysis`** = **数据源复用**，**不意味**产品域仍归 DishProfit。
 
 ### 9. 代码实现
@@ -211,7 +211,7 @@
 ## 8. 诚实降级
 
 - 若仅有可靠 **`soldPortionsTotal`**（逐菜行）：**仅**应答 **销售份数** 排行；**不**承诺「销售额最高」与财务口径完全一致。
-- 若 **`listPriceRevenue`**（或等价字段）在逐菜行上**可用且可排序**：方可应答 **销售额** 排行，并在答复中说明口径（如标价营收等，与业务定义对齐）。
+- 若 **`actualRevenue`**（或等价字段）在逐菜行上**可用且可排序**：方可应答 **销售额** 排行，并在答复中说明口径（如标价营收等，与业务定义对齐）。
 - **勿**把 **门店营业额**（`revenue_query`）**说成**「哪个菜卖得最好」的排行依据。
 - **若无**逐菜行或字段缺失：**不得**强答「哪个菜最高/最低」。
 - **复用 `dish_profit_analysis`** 时：须在内部注释/运营说明中写明——当前基于 **菜品分析/洞察** 数据中的销量与标价营收字段，**域归属仍为 DishSales 产品叙事**，非 DishProfit 主线。

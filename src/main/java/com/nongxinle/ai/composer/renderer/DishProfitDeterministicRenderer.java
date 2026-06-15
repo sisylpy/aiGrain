@@ -322,7 +322,7 @@ public final class DishProfitDeterministicRenderer {
             any = true;
         }
         any = appendLabeledFieldAfterDish(sb, any, "销量", row.get("salesQuantity"));
-        any = appendLabeledFieldAfterDish(sb, any, "标价收入", row.get("listPriceRevenue"));
+        any = appendLabeledFieldAfterDish(sb, any, "标价收入", row.get("actualRevenue"));
         any = appendLabeledFieldAfterDish(sb, any, "理论成本", row.get("theoryCostAmount"));
         any = appendLabeledFieldAfterDish(sb, any, "实际成本", row.get("actualCostAmount"));
         any = appendLabeledFieldAfterDish(sb, any, "毛利率", row.get("blendedGrossMarginRateOnListPrice"));
@@ -500,7 +500,7 @@ public final class DishProfitDeterministicRenderer {
         if (DiagnosisDeterministicRenderer.diagnosisDetailPresent(rate)) {
             sb.append("综合毛利率约").append(rate);
         }
-        String rev = DiagnosisDeterministicRenderer.diagnosisFmtYuan(DiagnosisDeterministicRenderer.r0Get(row, "listPriceRevenue"));
+        String rev = DiagnosisDeterministicRenderer.diagnosisFmtYuan(DiagnosisDeterministicRenderer.r0Get(row, "actualRevenue"));
         if (DiagnosisDeterministicRenderer.diagnosisDetailPresent(rev)) {
             sb.append("，销售额").append(rev).append("元");
         }

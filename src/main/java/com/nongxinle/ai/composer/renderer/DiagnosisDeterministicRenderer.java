@@ -999,7 +999,7 @@ public final class DiagnosisDeterministicRenderer {
         if (diagnosisDetailPresent(rate)) {
             segs.add("毛利率约" + rate);
         }
-        String rev = diagnosisFmtYuan(r0Get(row, "listPriceRevenue"));
+        String rev = diagnosisFmtYuan(r0Get(row, "actualRevenue"));
         if (diagnosisDetailPresent(rev)) {
             segs.add("销售额" + rev + "元");
         }

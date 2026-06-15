@@ -85,7 +85,7 @@
 
 ### 5.1 与 `/ingredientAnalysis` 中 `salesDishRows[].ingredientRows` 一致的字段
 
-包括但不限于：`disGoodsId`、`gbDgGoodsName`、主档鲜品/规格字段、`recipeUnitPerDish`、`theoryUsage`、`salesUsageFromOrders`、`actualUsage`、`actualProduceUsage`、`actualWasteUsage`、`actualLossUsage`、`allocatedOutboundPerSoldPortion`、`produceAllocatedPerSoldPortion`、`theoryCostPerPortion`、`actualCostPerPortion`、`produceCostPerPortion`、`wasteCostPerPortion`、`lossCostPerPortion`、`lossAndWasteCostPerPortion`、`utilizationRate`、`utilization`、`unitPrice`。
+包括但不限于：`disGoodsId`、`gbDgGoodsName`、主档鲜品/规格字段、`recipeUnitPerDish`、`theoryUsage`、`salesUsageFromOrders`、`actualUsage`、`actualProduceUsage`、`actualWasteUsage`、`actualLossUsage`、`allocatedOutboundPerSoldPortion`、`produceAllocatedPerSoldPortion`、`theoryCostPerPortion`、`actualCostPerPortion`、`produceCostPerPortion`、`wasteCostPerPortion`、`lossCostPerPortion`、`lossAndWasteCostPerPortion`、`devianceRate`、`deviance`、`unitPrice`。
 
 **配料行上的三种毛利率**（与 §4 `dish` 不同）：`comprehensiveGrossMarginRateOnListPrice`（**整段报表区间**分子分母，各行**相同**）、`blendedGrossMarginRateTheoryOnListPrice`（**整菜**理论毛利率字符串，各行**相同**）、`blendedGrossMarginRateOnListPrice`（**按该行理论成本占整菜理论成本**摊标价收入后，与该行 **type1** 实摊比较）。详见 `GbDishCostAnalysisServiceImpl#buildIngredientAnalysisDishRow` 与 `GbDepFoodBusinessInsightServiceImpl` 说明。
 
@@ -97,8 +97,8 @@
 | **`usageDeviationPercent`** | string | 上式×100，**固定两位小数**（如 `"30.00"` 表示 30%） |
 | **`usageStatus`** | string | `NORMAL` 或 `ABNORMAL`；当 **\|usageDeviationRatio\| > 0.15** 时为 `ABNORMAL` |
 | **`costShareOfDishActualPercent`** | string | **成本占比**：该行 `actualCostPerPortion` ÷ 本菜所有配料行 `actualCostPerPortion` 之和 ×100，两位小数 |
-| **`listPriceRevenueAllocatedPerPortion`** | string | 本菜标价收入（份数×`gb_df_food_price`）按该行理论成本占整菜理论成本占比摊到**每份**的标价份额（元，两位小数） |
-| **`grossProfitContributionPerPortion`** | string | **毛利贡献（元/份）**：`listPriceRevenueAllocatedPerPortion` − `produceCostPerPortion`（生产 type1 实摊/份） |
+| **`actualRevenueAllocatedPerPortion`** | string | 本菜标价收入（份数×`gb_df_food_price`）按该行理论成本占整菜理论成本占比摊到**每份**的标价份额（元，两位小数） |
+| **`grossProfitContributionPerPortion`** | string | **毛利贡献（元/份）**：`actualRevenueAllocatedPerPortion` − `produceCostPerPortion`（生产 type1 实摊/份） |
 | **`suggestionLevel`** | string | `FOCUS` \| `OPTIMIZE` \| `NORMAL`；规则：异常且成本占比≥25% 为 `FOCUS`；异常或占比≥15% 为 `OPTIMIZE`；否则 `NORMAL` |
 | **`suggestionZh`** | string | 与 `suggestionLevel` 配套的简短中文操作建议 |
 

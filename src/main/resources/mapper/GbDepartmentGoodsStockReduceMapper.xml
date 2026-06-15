@@ -473,13 +473,7 @@
                 and exists (
                     select 1 from gb_ai_daily_revenue dr
                     where r.gb_dgsr_date = DATE_FORMAT(dr.gb_ai_daily_revenue_record_date, '%Y-%m-%d')
-                    and (
-                        dr.gb_ai_daily_revenue_department_id = #{params.matchDailyRevenueDepartmentId}
-                        or dr.gb_ai_daily_revenue_department_id in (
-                            select gb_department_id from gb_department
-                            where gb_department_father_id = #{params.matchDailyRevenueDepartmentId}
-                        )
-                    )
+                    and dr.gb_ai_daily_revenue_parent_department_id = #{params.matchDailyRevenueDepartmentId}
                 )
             </if>
             <if test="params.departmentFatherId != null">
@@ -933,13 +927,7 @@
                 and exists (
                     select 1 from gb_ai_daily_revenue dr
                     where gbdssr.gb_dgsr_date = DATE_FORMAT(dr.gb_ai_daily_revenue_record_date, '%Y-%m-%d')
-                    and (
-                        dr.gb_ai_daily_revenue_department_id = #{params.matchDailyRevenueDepartmentId}
-                        or dr.gb_ai_daily_revenue_department_id in (
-                            select gb_department_id from gb_department
-                            where gb_department_father_id = #{params.matchDailyRevenueDepartmentId}
-                        )
-                    )
+                    and dr.gb_ai_daily_revenue_parent_department_id = #{params.matchDailyRevenueDepartmentId}
                 )
             </if>
             <if test="params.disId != null">

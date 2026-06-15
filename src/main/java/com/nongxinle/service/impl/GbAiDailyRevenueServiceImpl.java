@@ -128,7 +128,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         List<GbAiDailyRevenueEntity> revenueRaw = queryDailyRevenueListByParams(revParams);
         List<GbAiDailyRevenueEntity> revenueByDay = revenueRaw == null || revenueRaw.isEmpty()
                 ? Collections.emptyList()
-                : aggregateDailyRevenueByDateForParentView(revenueRaw, departmentId);
+                : revenueRaw;
 
         List<Integer> intScopeIds = toIntegerScopeIds(scopeIds);
         List<GbDepFoodSalesEntity> foodRows;
@@ -256,34 +256,6 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
     }
 
     @Override
-    public void backfillParentDepartmentIdIfMissing(GbAiDailyRevenueEntity entity) {
-        applyParentDepartmentIdFromDeptTable(entity);
-    }
-
-    /** 与日营收回填 SQL {@code NULLIF(NULLIF(father_id, 0), -1)} 一致 */
-    private static Long normalizedParentDeptId(Integer fatherId) {
-        if (fatherId == null || fatherId == 0 || fatherId == -1) {
-            return null;
-        }
-        return fatherId.longValue();
-    }
-
-    private void applyParentDepartmentIdFromDeptTable(GbAiDailyRevenueEntity entity) {
-        if (entity == null || entity.getGbAiDailyRevenueParentDepartmentId() != null) {
-            return;
-        }
-        Long deptPk = entity.getGbAiDailyRevenueDepartmentId();
-        if (deptPk == null) {
-            return;
-        }
-        GbDepartmentEntity dept = departmentService.getById(deptPk.intValue());
-        if (dept == null) {
-            return;
-        }
-        entity.setGbAiDailyRevenueParentDepartmentId(normalizedParentDeptId(dept.getGbDepartmentFatherId()));
-    }
-
-    @Override
     public void fillUpdateWeekday(GbAiDailyRevenueEntity dailyRevenue) {
         try {
             Date recordDate = dailyRevenue.getGbAiDailyRevenueRecordDate();
@@ -298,53 +270,18 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
 
     @Override
     public void saveOrUpsertByDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue) {
-        if (dailyRevenue.getGbAiDailyRevenueDepartmentId() == null) {
-            throw new IllegalArgumentException("部门ID不能为空");
-        }
-        if (dailyRevenue.getGbAiDailyRevenueRecordDate() == null) {
-            dailyRevenue.setGbAiDailyRevenueRecordDate(new Date());
-        }
-        Date recordDate = dailyRevenue.getGbAiDailyRevenueRecordDate();
-        Date dayStart = GbDateTimeUtils.startOfDay(recordDate);
-        Date dayEnd = GbDateTimeUtils.endOfDay(recordDate);
-        GbAiDailyRevenueEntity existing = getOne(
-                new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
-                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, dailyRevenue.getGbAiDailyRevenueDepartmentId())
-                        .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayStart)
-                        .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayEnd)
-                        .last("LIMIT 1"), false);
-        if (existing != null) {
-            if (dailyRevenue.getGbAiDailyRevenueDistributerId() != null) {
-                existing.setGbAiDailyRevenueDistributerId(dailyRevenue.getGbAiDailyRevenueDistributerId());
-            }
-            copyMutableDailyRevenueFields(dailyRevenue, existing);
-            backfillParentDepartmentIdIfMissing(existing);
-            fillUpdateWeekday(existing);
-            updateById(existing);
-        } else {
-            fillInsertDefaults(dailyRevenue);
-            backfillParentDepartmentIdIfMissing(dailyRevenue);
-            save(dailyRevenue);
-        }
-    }
-
-    @Override
-    public void saveOrUpsertByParentDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue) {
         if (dailyRevenue.getGbAiDailyRevenueParentDepartmentId() == null) {
             throw new IllegalArgumentException("父部门ID不能为空");
         }
         if (dailyRevenue.getGbAiDailyRevenueRecordDate() == null) {
             dailyRevenue.setGbAiDailyRevenueRecordDate(new Date());
         }
-        // 子部门 ID 用 0 表示"父部门级记录"（数据库字段 NOT NULL，不可留空）
-        dailyRevenue.setGbAiDailyRevenueDepartmentId(0L);
         Date recordDate = dailyRevenue.getGbAiDailyRevenueRecordDate();
         Date dayStart = GbDateTimeUtils.startOfDay(recordDate);
         Date dayEnd = GbDateTimeUtils.endOfDay(recordDate);
         GbAiDailyRevenueEntity existing = getOne(
                 new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
                         .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueParentDepartmentId, dailyRevenue.getGbAiDailyRevenueParentDepartmentId())
-                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, 0L)
                         .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayStart)
                         .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayEnd)
                         .last("LIMIT 1"), false);
@@ -363,49 +300,18 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
 
     @Override
     public void updateByDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue) {
-        if (dailyRevenue.getGbAiDailyRevenueDepartmentId() == null) {
-            throw new IllegalArgumentException("部门ID不能为空");
-        }
-        if (dailyRevenue.getGbAiDailyRevenueRecordDate() == null) {
-            dailyRevenue.setGbAiDailyRevenueRecordDate(new Date());
-        }
-        Date recordDate = dailyRevenue.getGbAiDailyRevenueRecordDate();
-        Date dayStart = GbDateTimeUtils.startOfDay(recordDate);
-        Date dayEnd = GbDateTimeUtils.endOfDay(recordDate);
-        GbAiDailyRevenueEntity existing = getOne(
-                new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
-                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, dailyRevenue.getGbAiDailyRevenueDepartmentId())
-                        .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayStart)
-                        .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayEnd)
-                        .last("LIMIT 1"), false);
-        if (existing == null) {
-            throw new IllegalArgumentException("未找到当天(" + GbDateTimeUtils.formatDay(recordDate) + ")该部门的日营业额记录，无法更新");
-        }
-        if (dailyRevenue.getGbAiDailyRevenueDistributerId() != null) {
-            existing.setGbAiDailyRevenueDistributerId(dailyRevenue.getGbAiDailyRevenueDistributerId());
-        }
-        copyMutableDailyRevenueFields(dailyRevenue, existing);
-        backfillParentDepartmentIdIfMissing(existing);
-        fillUpdateWeekday(existing);
-        updateById(existing);
-    }
-
-    @Override
-    public void updateByParentDepartmentAndDate(GbAiDailyRevenueEntity dailyRevenue) {
         if (dailyRevenue.getGbAiDailyRevenueParentDepartmentId() == null) {
             throw new IllegalArgumentException("父部门ID不能为空");
         }
         if (dailyRevenue.getGbAiDailyRevenueRecordDate() == null) {
             dailyRevenue.setGbAiDailyRevenueRecordDate(new Date());
         }
-        dailyRevenue.setGbAiDailyRevenueDepartmentId(0L);
         Date recordDate = dailyRevenue.getGbAiDailyRevenueRecordDate();
         Date dayStart = GbDateTimeUtils.startOfDay(recordDate);
         Date dayEnd = GbDateTimeUtils.endOfDay(recordDate);
         GbAiDailyRevenueEntity existing = getOne(
                 new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
                         .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueParentDepartmentId, dailyRevenue.getGbAiDailyRevenueParentDepartmentId())
-                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, 0L)
                         .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayStart)
                         .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayEnd)
                         .last("LIMIT 1"), false);
@@ -421,9 +327,9 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
     }
 
     @Override
-    public void upsertDineInRevenueOnly(Long departmentId, Long distributerId, Date recordDate, BigDecimal dineInRevenue) {
-        if (departmentId == null) {
-            throw new IllegalArgumentException("部门ID不能为空");
+    public void upsertDineInRevenueOnly(Long parentDepartmentId, Long distributerId, Date recordDate, BigDecimal dineInRevenue) {
+        if (parentDepartmentId == null) {
+            throw new IllegalArgumentException("父部门ID不能为空");
         }
         if (recordDate == null) {
             throw new IllegalArgumentException("记录日期不能为空");
@@ -432,7 +338,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         Date dayEnd = GbDateTimeUtils.endOfDay(recordDate);
         GbAiDailyRevenueEntity existing = getOne(
                 new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
-                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, departmentId)
+                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueParentDepartmentId, parentDepartmentId)
                         .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayStart)
                         .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayEnd)
                         .last("LIMIT 1"), false);
@@ -443,28 +349,26 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
             if (distributerId != null) {
                 existing.setGbAiDailyRevenueDistributerId(distributerId);
             }
-            backfillParentDepartmentIdIfMissing(existing);
             fillUpdateWeekday(existing);
             updateById(existing);
         } else {
             GbAiDailyRevenueEntity row = new GbAiDailyRevenueEntity();
-            row.setGbAiDailyRevenueDepartmentId(departmentId);
+            row.setGbAiDailyRevenueParentDepartmentId(parentDepartmentId);
             row.setGbAiDailyRevenueDistributerId(distributerId);
             row.setGbAiDailyRevenueRecordDate(dayStart);
             row.setGbAiDailyRevenueDineInRevenue(dineIn);
             recomputeGrossRevenue(row);
             fillInsertDefaults(row);
-            backfillParentDepartmentIdIfMissing(row);
             save(row);
         }
     }
 
     @Override
-    public void mergeNonDineInDailyRevenueMetrics(Long departmentId, Long distributerId, Date recordDate,
+    public void mergeNonDineInDailyRevenueMetrics(Long parentDepartmentId, Long distributerId, Date recordDate,
             Integer dineInOrders, Integer dineInCustomers, BigDecimal takeoutRevenue,
             Integer takeoutOrders, BigDecimal platformFee, String notes) {
-        if (departmentId == null) {
-            throw new IllegalArgumentException("部门ID不能为空");
+        if (parentDepartmentId == null) {
+            throw new IllegalArgumentException("父部门ID不能为空");
         }
         if (recordDate == null) {
             throw new IllegalArgumentException("记录日期不能为空");
@@ -473,20 +377,19 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         Date dayEnd = GbDateTimeUtils.endOfDay(recordDate);
         GbAiDailyRevenueEntity existing = getOne(
                 new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
-                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, departmentId)
+                        .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueParentDepartmentId, parentDepartmentId)
                         .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayStart)
                         .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, dayEnd)
                         .last("LIMIT 1"), false);
         if (existing == null) {
             GbAiDailyRevenueEntity row = new GbAiDailyRevenueEntity();
-            row.setGbAiDailyRevenueDepartmentId(departmentId);
+            row.setGbAiDailyRevenueParentDepartmentId(parentDepartmentId);
             row.setGbAiDailyRevenueDistributerId(distributerId);
             row.setGbAiDailyRevenueRecordDate(dayStart);
             row.setGbAiDailyRevenueDineInRevenue(BigDecimal.ZERO);
             applyNonNullNonDineInMetrics(row, dineInOrders, dineInCustomers, takeoutRevenue, takeoutOrders, platformFee, notes);
             recomputeGrossRevenue(row);
             fillInsertDefaults(row);
-            backfillParentDepartmentIdIfMissing(row);
             save(row);
             return;
         }
@@ -495,7 +398,6 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         }
         applyNonNullNonDineInMetrics(existing, dineInOrders, dineInCustomers, takeoutRevenue, takeoutOrders, platformFee, notes);
         recomputeGrossRevenue(existing);
-        backfillParentDepartmentIdIfMissing(existing);
         fillUpdateWeekday(existing);
         updateById(existing);
     }
@@ -560,14 +462,14 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
             for (int i = 0; i < revenueList.size(); i++) {
                 GbAiDailyRevenueEntity revenue = revenueList.get(i);
                 log.debug("upload-excel row {} deptId={} date={} dineIn={}",
-                        i, revenue.getGbAiDailyRevenueDepartmentId(),
+                        i, revenue.getGbAiDailyRevenueParentDepartmentId(),
                         revenue.getGbAiDailyRevenueRecordDate(), revenue.getGbAiDailyRevenueDineInRevenue());
             }
         }
         List<String> emptyDateRecords = new ArrayList<>();
         for (GbAiDailyRevenueEntity revenue : revenueList) {
             if (revenue.getGbAiDailyRevenueRecordDate() == null) {
-                emptyDateRecords.add("部门ID=" + revenue.getGbAiDailyRevenueDepartmentId()
+                emptyDateRecords.add("部门ID=" + revenue.getGbAiDailyRevenueParentDepartmentId()
                         + ", 堂食营业额=" + revenue.getGbAiDailyRevenueDineInRevenue());
             }
         }
@@ -588,17 +490,15 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         }
         Map<String, GbAiDailyRevenueEntity> existingByDay = new HashMap<>();
         if (minDate != null && maxDate != null) {
-            List<Long> scope = departmentScopeIdsForParent(departmentId);
             List<GbAiDailyRevenueEntity> existingRows = list(
                     new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
-                            .in(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, scope)
+                            .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueParentDepartmentId, departmentId)
                             .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, GbDateTimeUtils.startOfDay(minDate))
                             .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, GbDateTimeUtils.endOfDay(maxDate)));
             for (GbAiDailyRevenueEntity ex : existingRows) {
                 String dk = GbDateTimeUtils.formatDay(ex.getGbAiDailyRevenueRecordDate());
                 if (dk != null) {
-                    String k = ex.getGbAiDailyRevenueDepartmentId() + "|" + dk;
-                    existingByDay.putIfAbsent(k, ex);
+                    existingByDay.putIfAbsent(dk, ex);
                 }
             }
         }
@@ -613,7 +513,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
             try {
                 if (log.isDebugEnabled()) {
                     log.debug("upload-excel process deptId={} date={} dineIn={} takeout={}",
-                            revenue.getGbAiDailyRevenueDepartmentId(), revenue.getGbAiDailyRevenueRecordDate(),
+                            revenue.getGbAiDailyRevenueParentDepartmentId(), revenue.getGbAiDailyRevenueRecordDate(),
                             revenue.getGbAiDailyRevenueDineInRevenue(), revenue.getGbAiDailyRevenueTakeoutRevenue());
                 }
                 if (revenue.getGbAiDailyRevenueCreateTime() == null) {
@@ -621,20 +521,17 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
                 }
                 revenue.setGbAiDailyRevenueUpdateTime(now);
                 String dateStr = GbDateTimeUtils.formatDay(revenue.getGbAiDailyRevenueRecordDate());
-                String deptDayKey = revenue.getGbAiDailyRevenueDepartmentId() + "|" + dateStr;
-                GbAiDailyRevenueEntity existing = existingByDay.get(deptDayKey);
+                GbAiDailyRevenueEntity existing = existingByDay.get(dateStr);
                 if (existing != null) {
                     copyMutableDailyRevenueFields(revenue, existing);
                     existing.setGbAiDailyRevenueUpdateTime(now);
-                    backfillParentDepartmentIdIfMissing(existing);
                     updateById(existing);
                     updated++;
                 } else {
-                    backfillParentDepartmentIdIfMissing(revenue);
                     save(revenue);
                     inserted++;
                     if (dateStr != null) {
-                        existingByDay.put(deptDayKey, revenue);
+                        existingByDay.put(dateStr, revenue);
                     }
                 }
             } catch (Exception e) {
@@ -699,7 +596,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         List<String> emptyDateRecords = new ArrayList<>();
         for (GbAiDailyRevenueEntity revenue : revenueList) {
             if (revenue.getGbAiDailyRevenueRecordDate() == null) {
-                emptyDateRecords.add("部门ID=" + revenue.getGbAiDailyRevenueDepartmentId());
+                emptyDateRecords.add("部门ID=" + revenue.getGbAiDailyRevenueParentDepartmentId());
             }
         }
         if (!emptyDateRecords.isEmpty()) {
@@ -717,19 +614,17 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
                 maxDate = rd;
             }
         }
-        Map<String, GbAiDailyRevenueEntity> existingByDeptDay = new HashMap<>();
+        Map<String, GbAiDailyRevenueEntity> existingByDay = new HashMap<>();
         if (minDate != null && maxDate != null) {
-            List<Long> scope = departmentScopeIdsForParent(departmentId);
             List<GbAiDailyRevenueEntity> existingRows = list(
                     new LambdaQueryWrapper<GbAiDailyRevenueEntity>()
-                            .in(GbAiDailyRevenueEntity::getGbAiDailyRevenueDepartmentId, scope)
+                            .eq(GbAiDailyRevenueEntity::getGbAiDailyRevenueParentDepartmentId, departmentId)
                             .ge(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, GbDateTimeUtils.startOfDay(minDate))
                             .le(GbAiDailyRevenueEntity::getGbAiDailyRevenueRecordDate, GbDateTimeUtils.endOfDay(maxDate)));
             for (GbAiDailyRevenueEntity ex : existingRows) {
                 String dk = GbDateTimeUtils.formatDay(ex.getGbAiDailyRevenueRecordDate());
                 if (dk != null) {
-                    String k = ex.getGbAiDailyRevenueDepartmentId() + "|" + dk;
-                    existingByDeptDay.putIfAbsent(k, ex);
+                    existingByDay.putIfAbsent(dk, ex);
                 }
             }
         }
@@ -744,31 +639,28 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
             try {
                 revenue.setGbAiDailyRevenueUpdateTime(now);
                 String dateStr = GbDateTimeUtils.formatDay(revenue.getGbAiDailyRevenueRecordDate());
-                String deptDayKey = revenue.getGbAiDailyRevenueDepartmentId() + "|" + dateStr;
-                GbAiDailyRevenueEntity existing = existingByDeptDay.get(deptDayKey);
+                GbAiDailyRevenueEntity existing = existingByDay.get(dateStr);
                 if (existing != null) {
                     copySupplementMutableDailyRevenueFields(revenue, existing);
                     existing.setGbAiDailyRevenueUpdateTime(now);
                     if (distributerId != null) {
                         existing.setGbAiDailyRevenueDistributerId(distributerId);
                     }
-                    backfillParentDepartmentIdIfMissing(existing);
                     fillUpdateWeekday(existing);
                     updateById(existing);
                     updated++;
                 } else {
                     GbAiDailyRevenueEntity row = new GbAiDailyRevenueEntity();
-                    row.setGbAiDailyRevenueDepartmentId(revenue.getGbAiDailyRevenueDepartmentId());
+                    row.setGbAiDailyRevenueParentDepartmentId(revenue.getGbAiDailyRevenueParentDepartmentId());
                     row.setGbAiDailyRevenueDistributerId(distributerId);
                     row.setGbAiDailyRevenueRecordDate(revenue.getGbAiDailyRevenueRecordDate());
                     row.setGbAiDailyRevenueDineInRevenue(BigDecimal.ZERO);
                     copySupplementMutableDailyRevenueFields(revenue, row);
                     fillInsertDefaults(row);
-                    backfillParentDepartmentIdIfMissing(row);
                     save(row);
                     inserted++;
                     if (dateStr != null) {
-                        existingByDeptDay.put(deptDayKey, row);
+                        existingByDay.put(dateStr, row);
                     }
                 }
             } catch (Exception e) {
@@ -801,7 +693,20 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
 
     @Override
     public List<Long> departmentScopeIdsForParent(Long parentId) {
-        return internalDepartmentScopeIdsForParent(parentId);
+        List<Long> ids = new ArrayList<>();
+        if (parentId == null) {
+            return ids;
+        }
+        ids.add(parentId);
+        List<GbDepartmentEntity> subs = departmentService.querySubDepartments(parentId.intValue());
+        if (subs != null) {
+            for (GbDepartmentEntity s : subs) {
+                if (s.getGbDepartmentId() != null) {
+                    ids.add(s.getGbDepartmentId().longValue());
+                }
+            }
+        }
+        return ids;
     }
 
     @Override
@@ -815,7 +720,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
                 continue;
             }
             List<Integer> ids = new ArrayList<>();
-            for (Long id : internalDepartmentScopeIdsForParent(root.longValue())) {
+            for (Long id : departmentScopeIdsForParent(root.longValue())) {
                 if (id == null || id <= 0) {
                     continue;
                 }
@@ -838,49 +743,8 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         return new ArrayList<>(out);
     }
 
-    private List<Long> internalDepartmentScopeIdsForParent(Long parentId) {
-        List<Long> ids = new ArrayList<>();
-        if (parentId == null) {
-            return ids;
-        }
-        ids.add(parentId);
-        List<GbDepartmentEntity> subs = departmentService.querySubDepartments(parentId.intValue());
-        if (subs != null) {
-            for (GbDepartmentEntity s : subs) {
-                if (s.getGbDepartmentId() != null) {
-                    ids.add(s.getGbDepartmentId().longValue());
-                }
-            }
-        }
-        return ids;
-    }
-
     /**
-     * 同一父部门下按自然日汇总多行（父行堂食 + 子部门外卖等），用于列表/曲线图展示。
-     */
-    private List<GbAiDailyRevenueEntity> aggregateDailyRevenueByDateForParentView(
-            List<GbAiDailyRevenueEntity> raw,
-            Long parentDepartmentId) {
-        if (raw == null || raw.isEmpty()) {
-            return raw;
-        }
-        Map<String, List<GbAiDailyRevenueEntity>> byDay = new LinkedHashMap<>();
-        for (GbAiDailyRevenueEntity r : raw) {
-            String dk = GbDateTimeUtils.formatDay(r.getGbAiDailyRevenueRecordDate());
-            if (dk == null) {
-                continue;
-            }
-            byDay.computeIfAbsent(dk, k -> new ArrayList<>()).add(r);
-        }
-        List<GbAiDailyRevenueEntity> out = new ArrayList<>();
-        for (Map.Entry<String, List<GbAiDailyRevenueEntity>> e : byDay.entrySet()) {
-            out.add(mergeRevenueRowsForSameDay(e.getValue(), parentDepartmentId));
-        }
-        return out;
-    }
-
-    /**
-     * 合并同一自然日的多行日营收（查询父+子后汇总）；用于 getDailyFoodSalesAndRevenue 与列表聚合。
+     * 合并同一自然日的多行日营收（查询父部门条目汇总）；用于 getDailyFoodSalesAndRevenue 与列表聚合。
      */
     public static GbAiDailyRevenueEntity mergeRevenueRowsForSameDay(List<GbAiDailyRevenueEntity> rows,
             Long canonicalDepartmentId) {
@@ -893,7 +757,7 @@ public class GbAiDailyRevenueServiceImpl extends ServiceImpl<GbAiDailyRevenueMap
         GbAiDailyRevenueEntity m = new GbAiDailyRevenueEntity();
         GbAiDailyRevenueEntity first = rows.get(0);
         m.setGbAiDailyRevenueRecordDate(first.getGbAiDailyRevenueRecordDate());
-        m.setGbAiDailyRevenueDepartmentId(canonicalDepartmentId);
+        m.setGbAiDailyRevenueParentDepartmentId(canonicalDepartmentId);
         m.setGbAiDailyRevenueWeekday(first.getGbAiDailyRevenueWeekday());
         m.setGbAiDailyRevenueHoliday(first.getGbAiDailyRevenueHoliday() != null ? first.getGbAiDailyRevenueHoliday() : "");
 

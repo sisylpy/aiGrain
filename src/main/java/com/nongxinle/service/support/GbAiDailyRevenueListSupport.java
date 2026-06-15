@@ -2,6 +2,7 @@ package com.nongxinle.service.support;
 
 import com.nongxinle.entity.GbAiDailyRevenueEntity;
 import com.nongxinle.entity.GbDepFoodSalesEntity;
+import com.nongxinle.utils.GbConstants;
 import com.nongxinle.utils.GbDateTimeUtils;
 import com.nongxinle.utils.GbDepFoodSalesMetricsSupport;
 
@@ -153,6 +154,7 @@ public final class GbAiDailyRevenueListSupport {
         m.put("complimentaryPortions", qtyPlain(food.complimentaryPortions));
         m.put("complimentaryOriginalValue", moneyPlain(food.complimentaryOriginalValue));
         m.put("employeeMealPortions", qtyPlain(food.employeeMealPortions));
+        m.put("employeeMealAmount", moneyPlain(food.employeeMealAmount));
         m.put("employeeMealCostAmount", null);
 
         m.put("dishOperatingSalesAmount", moneyPlain(food.operatingSalesAmount));
@@ -174,6 +176,7 @@ public final class GbAiDailyRevenueListSupport {
         BigDecimal memberConcessionAmount = BigDecimal.ZERO;
         BigDecimal complimentaryOriginalValue = BigDecimal.ZERO;
         BigDecimal operatingSalesAmount = BigDecimal.ZERO;
+        BigDecimal employeeMealAmount = BigDecimal.ZERO;
 
         static FoodSalesTypeDayRollup fromRows(List<GbDepFoodSalesEntity> rows) {
             FoodSalesTypeDayRollup r = new FoodSalesTypeDayRollup();
@@ -198,6 +201,9 @@ public final class GbAiDailyRevenueListSupport {
                         GbDepFoodSalesMetricsSupport.complimentaryOriginalValue(row));
                 r.operatingSalesAmount = r.operatingSalesAmount.add(
                         GbDepFoodSalesMetricsSupport.operationalActualRevenue(row));
+                if (GbConstants.FoodSalesType.isEmployeeMeal(GbDepFoodSalesMetricsSupport.resolveType(row))) {
+                    r.employeeMealAmount = r.employeeMealAmount.add(GbDepFoodSalesMetricsSupport.rowSubtotal(row));
+                }
             }
             return r;
         }
@@ -231,6 +237,7 @@ public final class GbAiDailyRevenueListSupport {
         BigDecimal complimentaryPortions = BigDecimal.ZERO;
         BigDecimal complimentaryOriginalValue = BigDecimal.ZERO;
         BigDecimal employeeMealPortions = BigDecimal.ZERO;
+        BigDecimal employeeMealAmount = BigDecimal.ZERO;
         BigDecimal dishOperatingSalesAmount = BigDecimal.ZERO;
         BigDecimal revenueLedgerDineInAmount = BigDecimal.ZERO;
         BigDecimal reconciliationDifferenceAmount = BigDecimal.ZERO;
@@ -264,6 +271,7 @@ public final class GbAiDailyRevenueListSupport {
             complimentaryPortions = complimentaryPortions.add(parseQty(row.get("complimentaryPortions")));
             complimentaryOriginalValue = complimentaryOriginalValue.add(parseMoney(row.get("complimentaryOriginalValue")));
             employeeMealPortions = employeeMealPortions.add(parseQty(row.get("employeeMealPortions")));
+            employeeMealAmount = employeeMealAmount.add(parseMoney(row.get("employeeMealAmount")));
             dishOperatingSalesAmount = dishOperatingSalesAmount.add(parseMoney(row.get("dishOperatingSalesAmount")));
             revenueLedgerDineInAmount = revenueLedgerDineInAmount.add(parseMoney(row.get("revenueLedgerDineInAmount")));
             reconciliationDifferenceAmount = reconciliationDifferenceAmount.add(
@@ -291,6 +299,7 @@ public final class GbAiDailyRevenueListSupport {
             m.put("complimentaryPortions", qtyPlain(complimentaryPortions));
             m.put("complimentaryOriginalValue", moneyPlain(complimentaryOriginalValue));
             m.put("employeeMealPortions", qtyPlain(employeeMealPortions));
+            m.put("employeeMealAmount", moneyPlain(employeeMealAmount));
             m.put("employeeMealCostAmount", null);
             m.put("dishOperatingSalesAmount", moneyPlain(dishOperatingSalesAmount));
             m.put("revenueLedgerDineInAmount", moneyPlain(revenueLedgerDineInAmount));

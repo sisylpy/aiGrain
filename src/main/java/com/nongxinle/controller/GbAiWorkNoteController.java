@@ -43,6 +43,26 @@ public class GbAiWorkNoteController {
         }
     }
 
+    @GetMapping("/mine")
+    @Operation(summary = "当前用户全部笔记（跨会话，分页；不含完整正文/快照）")
+    public R listMine(
+            @Parameter(description = "用户 ID") @RequestParam Long userId,
+            @Parameter(description = "可选：按会话筛选") @RequestParam(required = false) Long conversationId,
+            @Parameter(description = "可选：MANUAL / FROM_MESSAGE / FROM_PIN 等") @RequestParam(required = false)
+                    String noteType,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "20") Integer pageSize) {
+        try {
+            return R.ok()
+                    .put(
+                            "data",
+                            gbAiWorkNoteService.listMyNotes(
+                                    userId, conversationId, noteType, page, pageSize));
+        } catch (IllegalArgumentException ex) {
+            return R.error(400, ex.getMessage());
+        }
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "笔记详情（含 sourceTextSnapshot）")
     public R detail(

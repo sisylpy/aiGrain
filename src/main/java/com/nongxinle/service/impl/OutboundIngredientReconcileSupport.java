@@ -294,7 +294,7 @@ final class OutboundIngredientReconcileSupport {
         return summ;
     }
 
-    /** {@code all|verified|unverified}；空为 {@code all}。 */
+    /** {@code all|verified|unverified|employeeMeal}；空为 {@code all}。 */
     static String normalizeVerificationStatus(String verificationStatus) {
         if (verificationStatus == null || verificationStatus.trim().isEmpty()) {
             return "all";
@@ -309,8 +309,11 @@ final class OutboundIngredientReconcileSupport {
         if ("unverified".equals(s) || "未核销".equals(s) || "非核销".equals(s)) {
             return "unverified";
         }
+        if ("employeemeal".equals(s) || "员工餐".equals(s) || "type6".equals(s) || "em".equals(s)) {
+            return "employeeMeal";
+        }
         throw new IllegalArgumentException(
-                "verificationStatus 仅支持 all(全量)、verified(已核销)、unverified(未核销)，当前: "
+                "verificationStatus 仅支持 all(全量)、verified(已核销)、unverified(未核销)、employeeMeal(员工餐)，当前: "
                         + verificationStatus);
     }
 
@@ -323,6 +326,9 @@ final class OutboundIngredientReconcileSupport {
         }
         if ("unverified".equals(normalizedStatus)) {
             return hasPositiveDisplayMoney(bd.nonVerified);
+        }
+        if ("employeeMeal".equals(normalizedStatus)) {
+            return hasPositiveDisplayMoney(bd.employeeMeal);
         }
         return true;
     }

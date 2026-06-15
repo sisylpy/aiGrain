@@ -1286,7 +1286,7 @@ public final class MenuOperationAnswerPlanBuilder {
             row.put("dishId", item.getDishId());
             row.put("dishName", item.getDishName());
             putIfPresent(row, "soldPortionsTotal", item.getSoldPortionsTotal());
-            putIfPresent(row, "listPriceRevenue", item.getListPriceRevenue());
+            putIfPresent(row, "actualRevenue", item.getListPriceRevenue());
             putIfPresent(row, "actualProfitAmount", item.getActualProfitAmount());
             putIfPresent(row, "blendedGrossMarginRateOnListPrice", item.getBlendedGrossMarginRateOnListPrice());
             putIfPresent(row, "reason", item.getReason());
@@ -1458,7 +1458,7 @@ public final class MenuOperationAnswerPlanBuilder {
         LinkedHashMap<String, Object> facts = new LinkedHashMap<>();
         facts.put("dishCountAnalyzed", dishRows.size());
         if (insight != null) {
-            putIfPresent(facts, "totalListPriceRevenue", insight.get("totalListPriceRevenue"));
+            putIfPresent(facts, "totalActualRevenue", insight.get("totalActualRevenue"));
             putIfPresent(
                     facts,
                     "comprehensiveGrossMarginRate",
@@ -1492,9 +1492,9 @@ public final class MenuOperationAnswerPlanBuilder {
                     seq,
                     "ev-portfolio-revenue",
                     AiBusinessToolIds.DISH_PROFIT_ANALYSIS,
-                    "businessInsightSummary.totalListPriceRevenue",
+                    "businessInsightSummary.totalActualRevenue",
                     "标价销售额",
-                    insight.get("totalListPriceRevenue"),
+                    insight.get("totalActualRevenue"),
                     "元");
             addEvidence(
                     evidenceRows,
@@ -1609,7 +1609,7 @@ public final class MenuOperationAnswerPlanBuilder {
             }
             String name = nz(row.get("dishName"));
             BigDecimal qty = parseDecimal(row.get("soldPortionsTotal"));
-            BigDecimal rev = parseDecimal(row.get("listPriceRevenue"));
+            BigDecimal rev = parseDecimal(row.get("actualRevenue"));
             BigDecimal cost123 = parseDecimal(row.get("actualCostTotalAmount123"));
             if (cost123.compareTo(BigDecimal.ZERO) == 0) {
                 cost123 = parseDecimal(row.get("actualCostTotalAmount"));
@@ -1641,7 +1641,7 @@ public final class MenuOperationAnswerPlanBuilder {
             m.put("foodId", foodId);
             m.put("dishName", StringUtils.hasText(dishName) ? dishName : "（未命名菜品）");
             m.put("soldPortionsTotal", formatAmount(soldPortions));
-            m.put("listPriceRevenue", formatAmount(listPriceRevenue));
+            m.put("actualRevenue", formatAmount(listPriceRevenue));
             m.put("actualCostTotalAmount123", formatAmount(actualCost123));
             m.put("actualProfitAmount", formatAmount(actualProfit));
             m.put("blendedGrossMarginRateOnListPrice", formatRate(blendedMargin));
@@ -1715,7 +1715,7 @@ public final class MenuOperationAnswerPlanBuilder {
         BigDecimal qty =
                 parseDecimal(acc.get("soldPortionsTotal")).add(parseDecimal(row.get("soldPortionsTotal")));
         BigDecimal rev =
-                parseDecimal(acc.get("listPriceRevenue")).add(parseDecimal(row.get("listPriceRevenue")));
+                parseDecimal(acc.get("actualRevenue")).add(parseDecimal(row.get("actualRevenue")));
         BigDecimal cost123 =
                 parseDecimal(acc.get("actualCostTotalAmount123"))
                         .add(parseDecimal(row.get("actualCostTotalAmount123")));
@@ -1728,7 +1728,7 @@ public final class MenuOperationAnswerPlanBuilder {
                 parseDecimal(acc.get("actualCostAmount")).add(parseDecimal(row.get("actualCostAmount")));
 
         acc.put("soldPortionsTotal", formatAmount(qty));
-        acc.put("listPriceRevenue", formatAmount(rev));
+        acc.put("actualRevenue", formatAmount(rev));
         acc.put("actualCostTotalAmount123", formatAmount(cost123));
         acc.put("totalActualCostAmount123", formatAmount(cost123));
         if (costType1.compareTo(BigDecimal.ZERO) != 0) {

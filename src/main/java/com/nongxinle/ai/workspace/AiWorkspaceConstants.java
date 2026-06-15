@@ -23,4 +23,10 @@ public final class AiWorkspaceConstants {
 
     public static final int PREVIEW_MAX_CHARS = 500;
     public static final int TITLE_MAX_CHARS = 80;
+
+    public static final int MINE_LIST_DEFAULT_PAGE_SIZE = 20;
+    public static final int MINE_LIST_MAX_PAGE_SIZE = 100;
+
+    /** 来源会话已删除或不可读时的列表展示文案 */
+    public static final String CONVERSATION_DELETED_TITLE = "原对话已删除";
 }

@@ -1,9 +1,15 @@
 package com.nongxinle.ai.workspace;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.TypeReference;
 import com.nongxinle.ai.workspace.dto.WorkNoteResponse;
 import com.nongxinle.ai.workspace.dto.WorkPinResponse;
 import com.nongxinle.entity.GbAiWorkNoteEntity;
 import com.nongxinle.entity.GbAiWorkPinEntity;
+import org.springframework.util.StringUtils;
+
+import java.util.List;
+import java.util.Map;
 
 public final class AiWorkspaceDtoMaps {
 
@@ -13,8 +19,10 @@ public final class AiWorkspaceDtoMaps {
         if (e == null) {
             return null;
         }
+        Long id = e.getGbAiWpId();
         WorkPinResponse.WorkPinResponseBuilder b = WorkPinResponse.builder()
-                .id(e.getGbAiWpId())
+                .id(id)
+                .pinId(id)
                 .userId(e.getGbAiWpUserId())
                 .conversationId(e.getGbAiWpConversationId())
                 .runId(e.getGbAiWpRunId())
@@ -26,11 +34,26 @@ public final class AiWorkspaceDtoMaps {
                 .sourceAgentName(e.getGbAiWpSourceAgentName())
                 .sourceCreatedAt(e.getGbAiWpSourceCreatedAt())
                 .createdAt(e.getGbAiWpCreatedAt())
-                .updatedAt(e.getGbAiWpUpdatedAt());
+                .updatedAt(e.getGbAiWpUpdatedAt())
+                .primaryCardType(e.getGbAiWpPrimaryCardType())
+                .cardCount(e.getGbAiWpCardCount() != null ? e.getGbAiWpCardCount() : 0);
         if (includeSnapshot) {
             b.sourceTextSnapshot(e.getGbAiWpSourceTextSnapshot());
+            b.cardsSnapshotJson(e.getGbAiWpCardsSnapshotJson());
+            b.cards(parseCardsSnapshot(e.getGbAiWpCardsSnapshotJson()));
         }
         return b.build();
+    }
+
+    private static List<Map<String, Object>> parseCardsSnapshot(String cardsSnapshotJson) {
+        if (!StringUtils.hasText(cardsSnapshotJson)) {
+            return null;
+        }
+        try {
+            return JSON.parseObject(cardsSnapshotJson, new TypeReference<List<Map<String, Object>>>() {});
+        } catch (Exception ignore) {
+            return null;
+        }
     }
 
     public static WorkNoteResponse toNoteResponse(GbAiWorkNoteEntity e, boolean includeSnapshot) {

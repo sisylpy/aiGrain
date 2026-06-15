@@ -61,7 +61,7 @@ class CostDiagnosisAgentNodeDataIncompleteScenarioTest {
                         "totalPurchaseAmount", "3303",
                         "purchaseOrderCount", 1))));
         Map<String, Object> dishProfitData = new LinkedHashMap<>();
-        dishProfitData.put("businessInsightSummary", Map.of("totalListPriceRevenue", BigDecimal.ZERO));
+        dishProfitData.put("businessInsightSummary", Map.of("totalActualRevenue", BigDecimal.ZERO));
         state.getToolResults().put(AiBusinessToolIds.DISH_PROFIT_ANALYSIS, envData(dishProfitData));
         state.getToolResults().put(AiBusinessToolIds.STOCK_REDUCE_QUERY, envData(Map.of(
                 "productionTotal", BigDecimal.ZERO,

@@ -112,7 +112,7 @@ public final class MenuExpertNarrativeFactPackBuilder {
             LinkedHashMap<String, Object> row = new LinkedHashMap<>();
             row.put("dishName", m.dishName());
             putIfPresent(row, "soldPortionsTotal", formatAmount(m.soldPortions()));
-            putIfPresent(row, "listPriceRevenue", formatAmount(m.listPriceRevenue()));
+            putIfPresent(row, "actualRevenue", formatAmount(m.listPriceRevenue()));
             putIfPresent(row, "listPrice", m.listPrice());
             putIfPresent(row, "currentPrice", firstNonBlank(m.currentPrice(), m.listPrice()));
             putIfPresent(row, "actualCostTotalAmount123", formatAmount(m.actualCost123()));
@@ -224,7 +224,7 @@ public final class MenuExpertNarrativeFactPackBuilder {
                 name = "（未命名菜品）";
             }
             BigDecimal sold = parseDecimal(row.get("soldPortionsTotal"));
-            BigDecimal rev = parseDecimal(row.get("listPriceRevenue"));
+            BigDecimal rev = parseDecimal(row.get("actualRevenue"));
             BigDecimal cost123 = parseDecimal(row.get("actualCostTotalAmount123"));
             if (cost123.compareTo(BigDecimal.ZERO) == 0) {
                 cost123 = parseDecimal(row.get("actualCostTotalAmount"));

@@ -40,7 +40,7 @@ public final class AiBusinessToolIds {
     /**
      * 成本洞察默认执行顺序（后者可读取前者落库的 toolResults）。
      * 采购快照由 {@link #PURCHASE_OVERVIEW}（{@code purchaseOverview.totalPurchaseAmount} 等）提供。
-     * 菜品标价收入汇总由 {@link #DISH_PROFIT_ANALYSIS} 提供（读 {@code businessInsightSummary.totalListPriceRevenue}）。
+     * 菜品标价收入汇总由 {@link #DISH_PROFIT_ANALYSIS} 提供（读 {@code businessInsightSummary.totalActualRevenue}）。
      * D-8 语义 intent/path 见 {@link com.nongxinle.ai.context.AiResolvedQueryIntent}，执行 Tool 同为 {@link #DISH_PROFIT_ANALYSIS}。
      * 门店粗估毛利率由 {@link com.nongxinle.ai.graph.business.CostDiagnosisAgentNode} +
      * {@link com.nongxinle.ai.graph.business.CostMarginDerivation} 内部推导（不写回 toolResults）。

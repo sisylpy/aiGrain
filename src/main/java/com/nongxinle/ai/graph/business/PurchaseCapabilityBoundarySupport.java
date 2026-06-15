@@ -67,7 +67,7 @@ public final class PurchaseCapabilityBoundarySupport {
         if (metric != null) {
             return metric;
         }
-        SemanticFrameValidationResult specificity = validateCapabilitySpecificity(rawParse);
+        SemanticFrameValidationResult specificity = validateCapabilitySpecificity(frame, rawParse);
         if (specificity != null) {
             return specificity;
         }
@@ -180,9 +180,11 @@ public final class PurchaseCapabilityBoundarySupport {
 
     /**
      * {@code capabilitySpecificity} 与采购异常合同一致性（只读 V2 结构化字段）。
+     * 细分合同 / 异常 detection wire / 异常专属 metric 已对齐时视为 structurally explicit，不要求
+     * {@code capabilitySpecificity=EXPLICIT} 字面量。
      */
     private static SemanticFrameValidationResult validateCapabilitySpecificity(
-            AiQuerySemanticParseResult rawParse) {
+            CurrentSemanticFrame frame, AiQuerySemanticParseResult rawParse) {
         if (rawParse == null) {
             return null;
         }
@@ -193,9 +195,24 @@ public final class PurchaseCapabilityBoundarySupport {
                         : null;
         boolean anomalyContract =
                 CapabilitySpecificitySupport.isPurchaseAnomalyContractId(contractId);
+        String wire =
+                frame != null
+                        ? frame.getStructuredIntentDetailWire()
+                        : rawParse.getSemanticSlots() != null
+                                ? rawParse.getSemanticSlots().getStructuredIntentDetailWire()
+                                : null;
+        String metric =
+                frame != null
+                        ? frame.getMetric()
+                        : rawParse.getSemanticSlots() != null
+                                ? rawParse.getSemanticSlots().getMetric()
+                                : null;
+        boolean structurallyExplicit =
+                CapabilitySpecificitySupport.isPurchaseAnomalyStructurallyExplicit(
+                        contractId, wire, metric);
 
         if (CapabilitySpecificitySupport.UNSPECIFIED.equals(specificity)) {
-            if (anomalyContract) {
+            if (anomalyContract && !structurallyExplicit) {
                 return SemanticFrameValidationResult.clarify(
                         Q_ANOMALY_GENERIC,
                         List.of("PURCHASE_ANOMALY_UNSPECIFIED_WITH_SPECIFIC_CONTRACT"));
@@ -204,7 +221,8 @@ public final class PurchaseCapabilityBoundarySupport {
         }
 
         if (anomalyContract
-                && !CapabilitySpecificitySupport.EXPLICIT.equals(specificity)) {
+                && !CapabilitySpecificitySupport.EXPLICIT.equals(specificity)
+                && !structurallyExplicit) {
             return SemanticFrameValidationResult.clarify(
                     Q_ANOMALY_GENERIC,
                     List.of("PURCHASE_ANOMALY_CONTRACT_WITHOUT_EXPLICIT_SPECIFICITY"));
@@ -215,7 +233,8 @@ public final class PurchaseCapabilityBoundarySupport {
 
     /**
      * 泛化异常门禁：仅拦截语义层显式输出的未指定异常 wire（{@code purchase_goods_anomaly}）。
-     * 合法 {@code purchase.anomaly.*} 合同须 {@code capabilitySpecificity=EXPLICIT}（见 {@link #validateCapabilitySpecificity}）。
+     * 合法 {@code purchase.anomaly.*} 合同须 {@code capabilitySpecificity=EXPLICIT} 或结构化 explicit
+     * （见 {@link #validateCapabilitySpecificity}）。
      */
     private static SemanticFrameValidationResult validateAnomalyCapability(CurrentSemanticFrame frame) {
         String wire =

@@ -39,6 +39,15 @@ public class GbAiWorkPinEntity implements Serializable {
 
     private Date gbAiWpSourceCreatedAt;
 
+    /** 创建时从 gb_ai_message_cards_json 复制的完整 cards[] JSON 快照 */
+    private String gbAiWpCardsSnapshotJson;
+
+    /** 首张业务卡的 cardType */
+    private String gbAiWpPrimaryCardType;
+
+    /** 业务卡片数量（0 表示无业务卡） */
+    private Integer gbAiWpCardCount;
+
     private Date gbAiWpCreatedAt;
 
     private Date gbAiWpUpdatedAt;

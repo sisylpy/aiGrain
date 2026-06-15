@@ -40,7 +40,7 @@ public class GbDistributerPurchaseBatchSellerPurchaseBatchsGbServiceImpl
 
         Map<String, Object> mapR = new HashMap<>();
         mapR.put("arr", resultData);
-        mapR.put("disInfo", gbDistributerService.getById(disId));
+        mapR.put("disInfo", gbDistributerService.queryDistributerWithAllDepartments(disId));
         NxJrdhSupplierEntity supplierEntity = nxJrdhSupplierService.getById(supplierId);
         mapR.put("supplierInfo", supplierEntity);
         return mapR;

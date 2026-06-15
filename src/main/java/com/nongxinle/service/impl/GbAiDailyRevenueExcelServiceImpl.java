@@ -129,8 +129,8 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             
             GbAiDailyRevenueEntity entity = new GbAiDailyRevenueEntity();
             
-            // 设置部门ID和分配者ID
-            entity.setGbAiDailyRevenueDepartmentId(rowDeptId);
+            // 设置父部门ID和分配者ID
+            entity.setGbAiDailyRevenueParentDepartmentId(rowDeptId);
             entity.setGbAiDailyRevenueDistributerId(distributerId);
             // 设置记录日期
             entity.setGbAiDailyRevenueRecordDate(recordDate);
@@ -1176,7 +1176,7 @@ public class GbAiDailyRevenueExcelServiceImpl implements GbAiDailyRevenueExcelSe
             dateSet.add(dateKey);
 
             GbAiDailyRevenueEntity entity = new GbAiDailyRevenueEntity();
-            entity.setGbAiDailyRevenueDepartmentId(rowDeptId);
+            entity.setGbAiDailyRevenueParentDepartmentId(rowDeptId);
             entity.setGbAiDailyRevenueDistributerId(distributerId);
             entity.setGbAiDailyRevenueRecordDate(recordDate);
             // 无堂食营业额列：堂食金额由菜品导入逻辑写入

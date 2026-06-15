@@ -75,16 +75,16 @@
 
 - **损耗占采购比**：**(type2 + type3) ÷** 同品、同月 **`gb_distributer_purchase_goods.gb_DPG_buy_subtotal`** 合计（采购口径，与出库表**不同源**，不得与上表三率混在同一句话的分母里）。
 
-### 4.2 配料行与 `depGetAllFood`：利用率、用量偏差、成本偏差
+### 4.2 配料行与 `depGetAllFood`：偏差率、用量偏差、成本偏差
 
-与 **`POST /gbdepfood/depGetAllFood`**（四参齐）、**`/gbDishCostAnalysis/ingredientAnalysis`**、配方行 **`ingredientAnalysisRows`** 等同源。本节与 **§4.1** 不同：§4.1 是**出库金额**在 type1/2/3 之间的**结构占比**；本节是 **「理论用量/成本」vs「实际生产或整单出库」** 的对比——**不得**把 §4.1 的 **「制作率 / 出库率」**（type1÷(1+2+3) 金额）说成配料行的 **「利用率」**。
+与 **`POST /gbdepfood/depGetAllFood`**（四参齐）、**`/gbDishCostAnalysis/ingredientAnalysis`**、配方行 **`ingredientAnalysisRows`** 等同源。本节与 **§4.1** 不同：§4.1 是**出库金额**在 type1/2/3 之间的**结构占比**；本节是 **「理论用量/成本」vs「实际生产或整单出库」** 的对比——**不得**把 §4.1 的 **「制作率 / 出库率」**（type1÷(1+2+3) 金额）说成配料行的 **「偏差率」**。
 
 #### 配料行（按料，重量类字段）
 
 | 名称（对用户可说） | 含义 | 与字段对齐 |
 |--------------------|------|------------|
-| **利用率** | 仅 **生产出库 type=1** 摊到本菜本料的用量 ÷ **配方理论用量** | 配料行 **`utilizationRate`**：分子为 **`actualProduceUsage`**（alloc1，**不含** type2/3）；分母 **`theoryUsage`**。与 `bossColumnHintsZh` / 配料分析说明一致。 |
-| **用量偏差率**（亦称 **实际相对理论超耗率**） | **含报损报失的全量出库用量**相对理论的偏离 | 分子/分母用 **`actualUsage`**（type **1+2+3** 摊到本菜本料重量合计）与 **`theoryUsage`**。示例：**偏差率** = (actualUsage − theoryUsage) ÷ theoryUsage；口语也可用 **「实际用量是理论的多少倍」** = actualUsage ÷ theoryUsage。**禁止**把该比称为「利用率」——会与上表 **`utilizationRate`** 冲突。 |
+| **偏差率** | 仅 **生产出库 type=1** 摊到本菜本料的用量 ÷ **配方理论用量** | 配料行 **`devianceRate`**：分子为 **`actualProduceUsage`**（alloc1，**不含** type2/3）；分母 **`theoryUsage`**。与 `bossColumnHintsZh` / 配料分析说明一致。 |
+| **用量偏差率**（亦称 **实际相对理论超耗率**） | **含报损报失的全量出库用量**相对理论的偏离 | 分子/分母用 **`actualUsage`**（type **1+2+3** 摊到本菜本料重量合计）与 **`theoryUsage`**。示例：**偏差率** = (actualUsage − theoryUsage) ÷ theoryUsage；口语也可用 **「实际用量是理论的多少倍」** = actualUsage ÷ theoryUsage。**禁止**把该比称为「偏差率」——会与上表 **`devianceRate`** 冲突。 |
 
 #### 整菜（`gbDfBusinessInsight` 等，金额）
 
@@ -93,7 +93,7 @@
 | **生产侧成本偏差率** | **仅 type=1 生产**分摊的实际成本相对理论成本的偏离 | **`actualCostAmount`**（仅 type1，与 `report.salesDishRows` 同源）相对 **`theoryCostAmount`**。示例：(actualCostAmount − theoryCostAmount) ÷ theoryCostAmount（无理论成本或分母为 0 时不强算百分比，改口述差额）。 |
 | **整单实际成本相对理论的偏差** | **含 type1+2+3 摊销**的整菜区间实际成本相对理论成本的偏离 | **`actualCostTotalAmount123`**（`actualCostPerPortion123 ×` 销量）相对 **`theoryCostAmount`**。与「生产侧成本偏差」**不要**用同一句混成同一个名字——前者包含损耗/损失摊入整单。 |
 
-**模型叙述边界**：对用户尽量说「生产用料利用率」「相对理论多用了几成」「整单含报损后的成本比理论高多少」，避免在同一段里交替使用「出库率」（§4.1）与「利用率」（本节）却不说明分母差异。
+**模型叙述边界**：对用户尽量说「生产用料偏差率」「相对理论多用了几成」「整单含报损后的成本比理论高多少」，避免在同一段里交替使用「出库率」（§4.1）与「偏差率」（本节）却不说明分母差异。
 
 ---
 
@@ -135,7 +135,7 @@
 | 【本月采购单价波动（采购商品行）】 | 同源统计 + 入库单价 | 同品多笔 **价差**；须逐字引用表内 **buy_price** |
 | 【订货/到货频率与习惯】 | `gb_department_orders` 等 | 到货节奏、订货习惯 |
 | 【本月库存减少数据】 | 库存扣减流水 | 出库成本、损耗等，**非**采购额 |
-| **部门菜品列表（经营分析四参齐）** | `POST /gbdepfood/depGetAllFood` → `gbDfBusinessInsight`、`ingredientAnalysisRows`、配方行出库统计 | 理论/实际成本、**利用率**与 **用量偏差**、毛利率等；名词与 **§4.2** 对齐 |
+| **部门菜品列表（经营分析四参齐）** | `POST /gbdepfood/depGetAllFood` → `gbDfBusinessInsight`、`ingredientAnalysisRows`、配方行出库统计 | 理论/实际成本、**偏差率**与 **用量偏差**、毛利率等；名词与 **§4.2** 对齐 |
 | 【供货商未结账款（采购批次）】 | 采购批次 | 应付 / 未结净额 |
 
 ---

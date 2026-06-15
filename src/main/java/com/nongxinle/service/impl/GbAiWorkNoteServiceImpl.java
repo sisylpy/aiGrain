@@ -9,11 +9,15 @@ import com.nongxinle.ai.workspace.AiWorkspaceNoteRequestMerge;
 import com.nongxinle.ai.workspace.AiWorkspaceTextSupport;
 import com.nongxinle.ai.workspace.dto.PromotePinToNoteRequest;
 import com.nongxinle.ai.workspace.dto.WorkNoteCreateRequest;
+import com.nongxinle.ai.workspace.dto.WorkNoteMineListItemDTO;
+import com.nongxinle.ai.workspace.dto.WorkNoteMineListResponseDTO;
 import com.nongxinle.ai.workspace.dto.WorkNoteResponse;
 import com.nongxinle.ai.workspace.dto.WorkNoteUpdateRequest;
+import com.nongxinle.entity.GbAiConversationEntity;
 import com.nongxinle.entity.GbAiWorkNoteEntity;
 import com.nongxinle.entity.GbAiWorkPinEntity;
 import com.nongxinle.entity.GbAiMessageEntity;
+import com.nongxinle.mapper.GbAiConversationMapper;
 import com.nongxinle.mapper.GbAiWorkNoteMapper;
 import com.nongxinle.mapper.GbAiMessageMapper;
 import com.nongxinle.ai.conversation.AiConversationCoreService;
@@ -27,10 +31,12 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,6 +45,7 @@ public class GbAiWorkNoteServiceImpl implements GbAiWorkNoteService {
 
     private final GbAiWorkNoteMapper noteMapper;
     private final GbAiMessageMapper messageMapper;
+    private final GbAiConversationMapper conversationMapper;
     private final AiConversationCoreService conversationCoreService;
 
     private static boolean noteTypeRequiresSnapshot(String noteTypeUpper) {
@@ -148,6 +155,156 @@ public class GbAiWorkNoteServiceImpl implements GbAiWorkNoteService {
         return noteMapper.selectList(q).stream()
                 .map(e -> AiWorkspaceDtoMaps.toNoteResponse(e, false))
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public WorkNoteMineListResponseDTO listMyNotes(
+            Long userId,
+            Long conversationId,
+            String noteType,
+            Integer page,
+            Integer pageSize) {
+        if (userId == null) {
+            throw new IllegalArgumentException("userId required");
+        }
+
+        int effPage = page == null || page < 1 ? 1 : page;
+        int effSize =
+                pageSize == null || pageSize < 1
+                        ? AiWorkspaceConstants.MINE_LIST_DEFAULT_PAGE_SIZE
+                        : Math.min(pageSize, AiWorkspaceConstants.MINE_LIST_MAX_PAGE_SIZE);
+
+        LambdaQueryWrapper<GbAiWorkNoteEntity> q =
+                Wrappers.<GbAiWorkNoteEntity>lambdaQuery()
+                        .eq(GbAiWorkNoteEntity::getGbAiWnUserId, userId)
+                        .eq(GbAiWorkNoteEntity::getGbAiWnDeleted, 0);
+        if (conversationId != null) {
+            q.eq(GbAiWorkNoteEntity::getGbAiWnConversationId, conversationId);
+        }
+        if (StringUtils.hasText(noteType)) {
+            q.eq(GbAiWorkNoteEntity::getGbAiWnNoteType, normalizeNoteType(noteType));
+        }
+
+        long total = noteMapper.selectCount(q);
+        int offset = (effPage - 1) * effSize;
+        q.orderByDesc(GbAiWorkNoteEntity::getGbAiWnUpdatedAt).last("LIMIT " + offset + "," + effSize);
+
+        List<GbAiWorkNoteEntity> rows = noteMapper.selectList(q);
+        Map<Long, String> conversationTitles = loadConversationTitles(rows);
+        Map<Long, Boolean> hasCardsByMessageId = loadHasCardsByMessageId(rows);
+
+        List<WorkNoteMineListItemDTO> items =
+                rows.stream()
+                        .map(
+                                row ->
+                                        WorkNoteMineListItemDTO.builder()
+                                                .noteId(row.getGbAiWnId())
+                                                .conversationId(row.getGbAiWnConversationId())
+                                                .conversationTitle(
+                                                        resolveConversationTitle(
+                                                                row.getGbAiWnConversationId(),
+                                                                conversationTitles))
+                                                .title(row.getGbAiWnTitle())
+                                                .noteType(row.getGbAiWnNoteType())
+                                                .messageId(row.getGbAiWnPrimaryMessageId())
+                                                .runId(row.getGbAiWnPrimaryRunId())
+                                                .preview(resolveListPreview(row))
+                                                .hasCards(
+                                                        resolveHasCards(
+                                                                row.getGbAiWnPrimaryMessageId(),
+                                                                hasCardsByMessageId))
+                                                .updatedAt(row.getGbAiWnUpdatedAt())
+                                                .build())
+                        .collect(Collectors.toList());
+
+        return new WorkNoteMineListResponseDTO(total, effPage, effSize, items);
+    }
+
+    private Map<Long, String> loadConversationTitles(List<GbAiWorkNoteEntity> rows) {
+        Set<Long> conversationIds = new HashSet<>();
+        for (GbAiWorkNoteEntity row : rows) {
+            if (row.getGbAiWnConversationId() != null) {
+                conversationIds.add(row.getGbAiWnConversationId());
+            }
+        }
+        if (conversationIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<GbAiConversationEntity> conversations =
+                conversationMapper.selectBatchIds(conversationIds);
+        Map<Long, String> out = new HashMap<>();
+        if (conversations != null) {
+            for (GbAiConversationEntity conv : conversations) {
+                if (conv == null || conv.getGbAiConversationId() == null) {
+                    continue;
+                }
+                if (StringUtils.hasText(conv.getGbAiConversationTitle())) {
+                    out.put(conv.getGbAiConversationId(), conv.getGbAiConversationTitle().trim());
+                }
+            }
+        }
+        return out;
+    }
+
+    private static String resolveConversationTitle(
+            Long conversationId, Map<Long, String> conversationTitles) {
+        if (conversationId == null) {
+            return null;
+        }
+        String title = conversationTitles.get(conversationId);
+        if (!StringUtils.hasText(title)) {
+            return AiWorkspaceConstants.CONVERSATION_DELETED_TITLE;
+        }
+        return title;
+    }
+
+    private Map<Long, Boolean> loadHasCardsByMessageId(List<GbAiWorkNoteEntity> rows) {
+        Set<Long> messageIds = new HashSet<>();
+        for (GbAiWorkNoteEntity row : rows) {
+            if (row.getGbAiWnPrimaryMessageId() != null) {
+                messageIds.add(row.getGbAiWnPrimaryMessageId());
+            }
+        }
+        if (messageIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<GbAiMessageEntity> messages = messageMapper.selectBatchIds(messageIds);
+        Map<Long, Boolean> out = new HashMap<>();
+        if (messages == null) {
+            return out;
+        }
+        for (GbAiMessageEntity message : messages) {
+            if (message == null || message.getGbAiMessageId() == null) {
+                continue;
+            }
+            out.put(message.getGbAiMessageId(), hasNonEmptyCardsJson(message.getGbAiMessageCardsJson()));
+        }
+        return out;
+    }
+
+    private static Boolean resolveHasCards(Long messageId, Map<Long, Boolean> hasCardsByMessageId) {
+        if (messageId == null) {
+            return false;
+        }
+        return Boolean.TRUE.equals(hasCardsByMessageId.get(messageId));
+    }
+
+    private static boolean hasNonEmptyCardsJson(String cardsJson) {
+        if (!StringUtils.hasText(cardsJson)) {
+            return false;
+        }
+        String trimmed = cardsJson.trim();
+        return !"[]".equals(trimmed) && !"null".equalsIgnoreCase(trimmed);
+    }
+
+    private static String resolveListPreview(GbAiWorkNoteEntity row) {
+        if (StringUtils.hasText(row.getGbAiWnSourceAnswerPreview())) {
+            return row.getGbAiWnSourceAnswerPreview().trim();
+        }
+        if (StringUtils.hasText(row.getGbAiWnContentMd())) {
+            return AiWorkspaceTextSupport.truncatePreview(row.getGbAiWnContentMd());
+        }
+        return AiWorkspaceTextSupport.truncatePreview(row.getGbAiWnSourceTextSnapshot());
     }
 
     @Override
